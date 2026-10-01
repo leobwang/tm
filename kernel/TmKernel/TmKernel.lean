@@ -77,6 +77,7 @@ import TmKernel.PastCut
 import TmKernel.WallTimer
 import TmKernel.Planner
 import TmKernel.GridCut
+import TmKernel.MidnightCut
 import TmKernel.PlanDiff
 import TmKernel.PlanFold
 import TmKernel.PlanCheck
@@ -89,3 +90,4 @@ import TmKernel.Boundary
 import TmKernel.PlannerWit
 import TmKernel.EmitWire
 import TmKernel.PlanWire
+import TmKernel.PlanStable

@@ -552,10 +552,47 @@ pub fn app_at(h: u32, m: u32) -> App {
 /// derived from. The log is read through the test chokepoint.
 pub fn app_with_log_text(now: DateTime<Tz>, state: RuntimeState, log: &str) -> App {
     let cfg = config();
-    let replay: Replay = chokepoint::replay_of_text(log, cfg.tz);
     let plan = day_plan(&cfg);
     let ghost = ghost_plan(&cfg);
-    let tree = tree(&cfg);
+    app_of_world(
+        &tree_texts(),
+        plan_files(),
+        cfg,
+        World { now, state, log, week_cut: tm_core::review::PauseCut::default() },
+        plan,
+        Some(ghost),
+        arrival(),
+    )
+}
+
+/// **What an app is built over, beside the tree**: the instant, `.tm/state.json`, the log's
+/// text and the kernel's cut of the week's Pauses (`AppData::week_cut`, which the Review
+/// screen's heat grid draws — `PauseCut::default()` cuts nothing, README gap 3721).
+pub struct World<'a> {
+    pub now: DateTime<Tz>,
+    pub state: RuntimeState,
+    pub log: &'a str,
+    pub week_cut: tm_core::review::PauseCut,
+}
+
+/// **An app over any tree** — `texts` its documents as `(path, text)`, `files` their parse,
+/// `cfg` its configuration — built as [`app_with_log_text`] builds §4.3's: the replay through
+/// the test chokepoint, and the ranking and capacity the kernel answers the capacity request
+/// the binary sends (`kernel_capacity::rank`'s, no `planner` section), around the plan, ghost
+/// and arrival record given. One body for both: the fixture's app is this over `plan-basic`.
+pub fn app_of_world(
+    texts: &[(String, String)],
+    files: PlanFiles,
+    cfg: Config,
+    w: World<'_>,
+    plan: DayPlan,
+    ghost: Option<DayPlan>,
+    arrival: Vec<ArrivalBlock>,
+) -> App {
+    let World { now, state, log, week_cut } = w;
+    let replay: Replay = chokepoint::replay_of_text(log, cfg.tz);
+    let refs: Vec<(&str, &str)> = texts.iter().map(|(p, t)| (p.as_str(), t.as_str())).collect();
+    let tree = Tree::from_texts(&refs, &cfg);
     // The ranking `tui::data_of` loads from the kernel (stage 5 D10 L8):
     // `Ctx::priorities` sends the capacity section and reads its grants and its
     // first days in units. Until W-36 track H this stood in the FORK's own §7
@@ -567,9 +604,8 @@ pub fn app_with_log_text(now: DateTime<Tz>, state: RuntimeState, log: &str) -> A
     let model = tm_core::energy::Model::default();
     let date = tm_core::planwire::plan_date(&state, now);
     let candidates = tm_core::priority::collect_candidates(&tree, &replay, &cfg, &model, date, now);
-    let texts = tree_texts();
     let world = planreq::World {
-        docs: &texts,
+        docs: texts,
         log,
         tree: &tree,
         cfg: &cfg,
@@ -590,16 +626,16 @@ pub fn app_with_log_text(now: DateTime<Tz>, state: RuntimeState, log: &str) -> A
         state,
         tree,
         replay,
-        arrival: arrival(),
-        files: plan_files(),
+        arrival,
+        files,
         candidates,
         prios,
         caps,
-        week_cut: tm_core::review::PauseCut::default(),
+        week_cut,
         now,
         cfg,
     };
-    App::with_plan(data, plan, Some(ghost))
+    App::with_plan(data, plan, ghost)
 }
 
 /// One log entry on the day under test (§10.1).

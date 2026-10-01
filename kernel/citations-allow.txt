@@ -698,6 +698,18 @@ can_fail
 # replaced by `the_driven_worlds_are_held_by_the_binarys_rebuild`; the citation is track H's README block.
 1 the_driven_worlds_are_refused_by_binary_holds_only_where_gap_3398_says
 
+# W-40 track K (README gaps 3546, 3714 and 3740-3748): the owner's D74 splits each of §7.5's batches
+# into its RUNS, so the split day no longer serves the later sibling first.  Its W-39 description and the
+# battery's failure there are refuted and renamed (`PlannerWit.the_split_day_serves_the_later_sibling_first_is_refuted`,
+# `PlannerWit.the_rank_and_batch_checks_fail_at_the_split_day_is_refuted`); W-39's two refutations "by the
+# split" are retired, their statements standing word for word as the `..._is_refuted_at_a_paying_day` pair.
+# Every citation counted here is an append-only README block (W-39 track K's, the W-39 land step's)
+# naming the thing as it stood.
+2 the_split_day_serves_the_later_sibling_first
+1 the_rank_and_batch_checks_fail_at_the_split_day
+1 plan_is_monotone_in_rank_is_refuted_by_the_split
+1 plan_never_batches_past_an_equal_ci_candidate_is_refuted_by_the_split
+
 # ====================== 4. GRANDFATHERED (README, unadjudicated) ======================
 #
 # 161 names, seeded from `README.md` at W-19 so check 8 could land as a RATCHET on new prose
@@ -1163,3 +1175,10 @@ with_minute
 #     block's record of track R deleting it as well.
 7 order_differs_only_at_an_interruption
 4 the_interruption_order_class_is_exactly_that
+
+# W-40 land step (README gap 3783, track P's): D77 made the kernel's running break the comparand's
+# logged reading, so the fresh-draw oracle arm's declared class for README gap 3480, its helper and its
+# `TM_ORACLE` witness were DELETED.  Each citation counted here is an append-only README block -- W-39
+# track H's and W-40 track P's -- naming the thing as it stood.
+3 forkplan::gap_3480_explains
+4 gap_3480s_declared_class_holds_on_the_draw_that_found_it

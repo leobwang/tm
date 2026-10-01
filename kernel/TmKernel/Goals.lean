@@ -1253,19 +1253,30 @@ two slots).  README gap **2020** is the residue: `noOverbook` itself on a day th
 needs the count of occupied `Planner.Assign.slotOf` entries against
 `Planner.PlanReq.finalAssign`'s `used`, and nothing in this tree relates the two. -/
 
-/-- **L26 / §8.3 "no ci ≥ 4 Block after wind-down" (P\*), stage 6 — BACK IN THIS FILE since the W-39 repair.**
-It LEFT at W-39 track K, refuted at a Wednesday whose three-day wall carried the kernel's §8.1 window to Friday
-past the night (the day's walls read whole) and whose candidate the wire calls `ci 0` and the plan `ci 5`.  That
-window was a divergence from the fork's planner, which clips each wall to the day (README gap 3556); the W-39
-repair made the kernel's window read the clipped walls (`Look.wallsClippedOn`), the refutation stopped deciding,
-and the conference Wednesday now places no Block at all
-(`PlannerWit.the_wind_down_goal_holds_at_the_conference_wednesday`).  **A goal whose refutation fell comes back:
-deleting it with no proof would make check 7 lie** (AGENTS §3.2; README gap 3713).  Its route, gap 3545's: README
-gap 2326's bound on the planner's window (`PlannerWit.the_conference_window_ends_inside_the_night` meets it at the
-conference, and `Planner.PlanReq.the_windows_walls_end_by_the_days_end` bounds the walls it extends by), after which
-step 3 cuts no slot after the WindDown row and a replayed row ends at `now`, before it.  The restated law over the
-whole day, `PlanCheck.plan_places_no_demanding_block_after_wind_down` (the decoder's fifth clause, the wind-down
-inside the calendar), stays proved beside it. -/
+/-- **L26 / §8.3 "no ci ≥ 4 Block after wind-down" (P\*), stage 6 — BACK IN THIS FILE since the W-39 repair, and
+STILL HERE after W-40 track P, on purpose.**  It LEFT at W-39 track K, refuted at a Wednesday whose three-day wall
+carried the kernel's §8.1 window past the night; that refutation stood on a divergence from the fork's planner
+(README gap 3556), fell with the W-39 repair, and the goal came back (README gap 3713).
+
+**W-40 did the route gap 3545 named and found where it ends** (README gap 3780).  Gap 2326's bound holds for the
+kernel's planner window whenever the `[day]` is one the decoder accepts, the arrival is not past the day's end and a
+stored end clock reads inside the day (`PlanStable.the_window_ends_by_the_night`) — after a second divergence from
+the fork was fixed on the way (README gap 3782: a stored window crossing midnight ended at the NEXT day's clock, an
+hour past the fork's 24 hours on a fall-back night).  Where the window ends by the night, no Block row starts at or
+after a WindDown row at all, so this goal's conclusion holds there **whatever the wire calls the item's `ci`**
+(`PlanStable.plan_places_no_demanding_block_after_wind_down_inside_the_day`, which needs no `candsAgree`).
+
+**As written it is FALSE, and no refutation of it is a discharge.**  At the calendar's last evening (9999-12-31,
+Chicago, a running `ci:5` block) the rows' clock (`Planner.clampSec`) forces the reservation and the WindDown row onto
+the calendar's last second, and the wind-down check FAILS with the wire agreeing
+(`PlannerWit.the_wind_down_goal_fails_where_the_kernels_clock_merges_the_last_evening`).  Fork 4748911, driven at
+that instant, draws the reservation at 17:59 and the wind-down at 21:30 — the witness stands on the kernel's clamp, a
+bound the fork does not have, so by W-39's rule it is not a discharge.  Every other request that falsifies the
+statement needs BOTH a window past the night — a `[day]` window over 24 hours, which the decoder refuses, or a logged
+arrival past the day's end on the eve of a 25-hour day — AND a wire `ci` below its plan's, which the decoder does not
+check (`PlanCheck.candsAgree`, README gap 1984) and the fork, reading one `ci`, cannot produce.  So the goal stays:
+discharging it needs the clamp gone (README gap 3785) and a statement over requests whose wire agrees — an owner
+question, not a proof. -/
 theorem plan_places_no_demanding_block_after_wind_down (r : PlanReq) (b w : WfSeg) (i : Id)
     (hb : b ∈ (dayPlan r).segments) (hw : w ∈ (dayPlan r).segments)
     (hbk : b.val.kind = SegKind.block) (hwk : w.val.kind = SegKind.windDown)
@@ -1278,22 +1289,27 @@ the second assigned only if the first is.  **FALSE, four ways**:
 `PlannerWit.plan_is_monotone_in_rank_as_stage_6_wrote_it_is_refuted` (W-19),
 `PlannerWit.plan_is_monotone_in_rank_is_refuted_at_a_paying_day` (W-32, `loc:`),
 `PlannerWit.monotone_rank_over_step_fives_filter_before_the_walk_is_refuted` (W-37, contiguity) and
-`PlannerWit.plan_is_monotone_in_rank_is_refuted_by_the_split` (W-39, §7.5's split, gap 3546) — and
-the candidate order fails even at the slot the other took
-(`PlannerWit.monotone_rank_in_the_candidate_order_at_the_taken_slot_is_refuted`).  **Restated** in
-the order step 5 serves its GROUPS, at D66's filter before the walk: `PlanFold.plan_is_monotone_in_rank`
-— a group whose key is strictly ahead of another's is never left out while the other takes a slot the
-first fits.  README gaps 3526 and 3542. -/
+PlannerWit.plan_is_monotone_in_rank_is_refuted_by_the_split (W-39, §7.5's split, gap 3546; a dead
+name since W-40, when the owner's D74 split each batch into RUNS and that day stopped refuting it) —
+and the candidate order fails even at the slot the other took
+(`PlannerWit.monotone_rank_in_the_candidate_order_at_the_taken_slot_is_refuted`, since W-40 across a
+`ci`).  **Restated** in the order step 5 serves its GROUPS, at D66's filter before the walk — W-39 gave
+that law this goal's name; since W-40 it is `PlanFold.plan_is_monotone_in_rank_in_the_served_group_order`
+— and since **W-40** (D74, D77) over the CANDIDATE order, at the same filter:
+`PlanCheck.plan_is_monotone_in_rank` — an item strictly ahead of another at one `ci` that fits the slot
+the other's row of the day stands at holds a work row no later.  README gaps 3526, 3542 and 3714. -/
 
 /-! **plan_puts_hot_before_the_queue has LEFT this file** (stage 6, run **W-39**, track K).  It read:
 an item carrying `hot` has a row starting no later than every row carrying an item that does not.
 **FALSE, three times**: `PlannerWit.plan_puts_hot_before_the_queue_as_stage_6_wrote_it_is_refuted`
 (W-19), `PlannerWit.hotBeforeQueue_is_false_on_a_quiet_day` (W-20, the quantifier reaches a Wall
 row) and `PlannerWit.plan_puts_hot_before_the_queue_is_refuted_at_a_day_that_assigns_and_pays`
-(W-32).  **Restated** in the order §8.2 step 5 serves its groups:
-`PlanFold.plan_puts_hot_before_the_queue` — a HOT group (§7.4 key `p = 0`) that fits, before the
-walk, a slot a queue group (`p > 0`) took holds a work row of the day starting no later than that
-group's.  README gap 3543. -/
+(W-32).  **Restated** in the order §8.2 step 5 serves its groups — W-39 gave that law this goal's
+name; since W-40 it is `PlanFold.plan_puts_hot_before_the_queue_in_the_served_group_order` — a HOT
+group (§7.4 key `p = 0`) that fits, before the walk, a slot a queue group (`p > 0`) took holds a work
+row of the day starting no later than that group's; and since **W-40** (D77) over what the user sees:
+`PlanCheck.plan_puts_hot_before_the_queue` — a HOT item that fits, before the walk, the slot of a row
+holding only queue items holds a work row starting strictly earlier.  README gaps 3543 and 3714. -/
 
 /-! **`edfNumbers` has left this file** (stage 6 step P4).  It was the last
 provisional `def` here: §7.3's two numbers for one candidate, its `need` and
@@ -1359,11 +1375,16 @@ a parenthesis added; rewritten in the W-33 repair, gap 2565.)* -/
 track K).  E2 read: a Batch row holding `i` and not `j`, the two one document's siblings at one
 `ci` with `j` written first, puts `j` in `assignedOf (dayPlan r)`.  **FALSE, two ways**:
 `PlannerWit.plan_never_batches_past_an_equal_ci_candidate_is_refuted_at_a_paying_day` (W-32, a
-`loc:` the day cannot meet) and `PlannerWit.plan_never_batches_past_an_equal_ci_candidate_is_refuted_by_the_split`
-(W-39, §7.5's split on a paying day — README gap 3546, the owner's).  **Restated** as what E2's
-`break` buys: every Batch row holds members of one of §7.5's batches, and every batch is a run of
-consecutive equal-`ci` entries of step 4's order — `PlanCheck.plan_never_batches_past_an_equal_ci_candidate`
-over `PlanFold.batchLoop_is_a_run_of_its_ci`.  README gaps 3547 and 3548. -/
+`loc:` the day cannot meet) and PlannerWit.plan_never_batches_past_an_equal_ci_candidate_is_refuted_by_the_split
+(W-39, §7.5's split on a paying day — README gap 3546; a dead name since W-40, when the owner's D74
+split each batch into RUNS).  **Restated** as what E2's `break` buys: every Batch row holds members of
+one of §7.5's batches, and every batch is a run of consecutive equal-`ci` entries of step 4's order —
+W-39 gave that law this goal's name; since W-40 it is
+`PlanCheck.a_batch_row_holds_members_of_one_run_of_its_ci`, over `PlanFold.batchLoop_is_a_run_of_its_ci`
+— and since **W-40** (D74, D77) with the goal's own conclusion over the CANDIDATE order:
+`PlanCheck.plan_never_batches_past_an_equal_ci_candidate` — an item strictly ahead, at the row's `ci`,
+of an item a Batch row holds, that fits the row's slot before the walk, holds a work row no later.
+README gaps 3547, 3548 and 3714. -/
 
 /-! ## L24 and L25 — the two relational laws
 
@@ -1401,7 +1422,16 @@ and plan, at a later `now`: every row that ended BEFORE `now` and is not open is
 day.  Both exclusions are forced by a witness
 (`PlannerWit.the_stability_law_needs_the_row_to_have_ended_before_now`,
 `PlannerWit.the_stability_law_needs_the_row_to_be_closed`), and the law fires an hour later
-(`PlannerWit.the_stability_law_fires_an_hour_later`).  README gap 3550. -/
+(`PlannerWit.the_stability_law_fires_an_hour_later`).  README gap 3550.
+
+**Restated again at W-40 track P over a replan after a LOGGED VERB** (the owner's D77, README gap 3714):
+`PlanStable.plan_is_stable_across_a_replan_after_a_logged_verb` takes a later record that EXTENDS the earlier one —
+every segment and every closed id kept — in place of `htr`, and keeps every closed row that ended before `now` **up to
+its `done` flag, which can only rise**: a `tm done` after `now` raises it on an earlier block of the same item, fork
+`past_segments`' own rule, so the exact form over an extension is refuted
+(`PlannerWit.plan_is_stable_across_a_replan_over_an_extending_record_exactly_is_refuted`); it is exact where the later
+record closes nothing new (`PlanStable.plan_is_stable_across_a_replan_after_a_verb_that_closes_nothing`), and the
+W-39 form is its corollary (`PlanStable.plan_is_stable_across_a_replan_of_the_same_record`). -/
 
 end Goals
 end Tm

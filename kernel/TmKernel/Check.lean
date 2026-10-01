@@ -7661,9 +7661,9 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- APPENDED 2026-09-30: stage 6 W-39 TRACK K (worktree `w39-k`) -- the burn-down, 6 -> 0.  All six
 -- goals leave `Goals.lean`, each refuted as stage 6 wrote it and restated over what §8.2 does:
 -- `PlanCheck.plan_places_no_demanding_block_after_wind_down` (the decoder's fifth clause, the
--- wind-down inside the calendar, the whole day), `PlanFold.plan_is_monotone_in_rank` and
--- `PlanFold.plan_puts_hot_before_the_queue` (the order step 5 SERVES its groups, README gap 3526),
--- `PlanCheck.plan_never_batches_past_an_equal_ci_candidate` (every batch a run of equal-`ci`
+-- wind-down inside the calendar, the whole day), `PlanFold.plan_is_monotone_in_rank_in_the_served_group_order`
+-- and `PlanFold.plan_puts_hot_before_the_queue_in_the_served_group_order` (README gap 3526; renamed at W-40),
+-- `PlanCheck.a_batch_row_holds_members_of_one_run_of_its_ci` (renamed at W-40; every batch a run of equal-`ci`
 -- entries), L24 `PlanFold.plan_tail_drop` (the budget only stops the walk early; D29's form is
 -- `PlanFold.plan_tail_drop_with_the_active_item_erased`) and L25
 -- `PlanFold.plan_is_stable_across_a_replan` (what ended before `now` and is closed stays).  The
@@ -7681,8 +7681,8 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanFold.an_earlier_group_that_fits_a_taken_slot_was_placed_before_it
 #print axioms Tm.PlanFold.a_filled_slot_draws_a_work_row_of_its_groups_members
 #print axioms Tm.PlanFold.an_earlier_slot_starts_earlier
-#print axioms Tm.PlanFold.plan_is_monotone_in_rank
-#print axioms Tm.PlanFold.plan_puts_hot_before_the_queue
+#print axioms Tm.PlanFold.plan_is_monotone_in_rank_in_the_served_group_order
+#print axioms Tm.PlanFold.plan_puts_hot_before_the_queue_in_the_served_group_order
 #print axioms Tm.PlanFold.eq_of_mem_of_nodup_map
 #print axioms Tm.PlanFold.nodup_of_nodup_map
 #print axioms Tm.PlanFold.flatMap_nodup_at_two_positions
@@ -7741,7 +7741,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanCheck.rankedCands_ids_nodup
 #print axioms Tm.PlanCheck.an_item_is_in_one_start_group_at_most
 #print axioms Tm.PlanCheck.plan_places_no_demanding_block_after_wind_down
-#print axioms Tm.PlanCheck.plan_never_batches_past_an_equal_ci_candidate
+#print axioms Tm.PlanCheck.a_batch_row_holds_members_of_one_run_of_its_ci
 -- W-39 TRACK K, continued -- the refutations, the firings and the findings (`PlannerWit.lean`).
 #print axioms Tm.PlannerWit.the_conference_window_runs_past_the_night_is_refuted
 #print axioms Tm.PlannerWit.the_conference_window_ends_inside_the_night
@@ -7750,11 +7750,11 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_wind_down_goal_holds_at_the_conference_wednesday
 #print axioms Tm.PlannerWit.the_wind_down_law_has_a_subject_where_the_wire_agrees_is_refuted
 #print axioms Tm.PlannerWit.the_agreeing_conferences_item_is_not_demanding
-#print axioms Tm.PlannerWit.the_split_day_serves_the_later_sibling_first
-#print axioms Tm.PlannerWit.plan_is_monotone_in_rank_is_refuted_by_the_split
+#print axioms Tm.PlannerWit.the_split_day_serves_the_later_sibling_first_is_refuted
+#print axioms Tm.PlannerWit.the_rank_goal_holds_at_the_split_day
 #print axioms Tm.PlannerWit.monotone_rank_in_the_candidate_order_at_the_taken_slot_is_refuted
-#print axioms Tm.PlannerWit.plan_never_batches_past_an_equal_ci_candidate_is_refuted_by_the_split
-#print axioms Tm.PlannerWit.the_rank_and_batch_checks_fail_at_the_split_day
+#print axioms Tm.PlannerWit.the_batch_goal_holds_at_the_split_day
+#print axioms Tm.PlannerWit.the_rank_and_batch_checks_fail_at_the_split_day_is_refuted
 #print axioms Tm.PlannerWit.the_served_order_rank_law_has_a_subject
 #print axioms Tm.PlannerWit.the_served_order_rank_law_fires_at_the_paying_batch_day
 #print axioms Tm.PlannerWit.the_served_order_hot_law_has_a_subject
@@ -7830,3 +7830,159 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_view_law_without_the_days_walls_inside_it_is_refuted
 #print axioms Tm.PlannerWit.the_view_laws_subjects_have_their_walls_inside_their_day
 #print axioms Tm.PlannerWit.the_conference_is_clipped_to_the_day_for_the_window_and_the_walls
+
+/- =====================================================================
+   APPENDED 2026-09-30: stage 6, run W-40, TRACK K (the owner's D74, parity P64; D77;
+   README gaps 3546, 3714, 3548, 3541).  §7.5's batches split into RUNS; step 5 serves each
+   `ci` in the candidate order; the rank, HOT and batch laws restated over what a user can
+   observe.  Renamed in place above: the W-39 group-order laws (`..._in_the_served_group_order`),
+   the W-39 batch-run law (`a_batch_row_holds_members_of_one_run_of_its_ci`), and the split
+   day's W-39 witnesses (refuted and renamed, or retired with the hole and replaced).
+   ===================================================================== -/
+#print axioms Tm.Planner.mem_splitPush
+#print axioms Tm.PlanFold.splitPush_flatten_eq
+#print axioms Tm.PlanFold.splitFold_flatten_eq
+#print axioms Tm.PlanFold.splitGroups_flatten_eq
+#print axioms Tm.PlanFold.splitPush_head
+#print axioms Tm.PlanFold.splitPush_keeps_closing
+#print axioms Tm.PlanFold.splitFold_closes
+#print axioms Tm.PlanFold.splitGroups_closes
+#print axioms Tm.PlanFold.batchLoop_filter_flatten
+#print axioms Tm.PlanFold.groupsOfBatch_members
+#print axioms Tm.PlanFold.flatMap_members_filter_ci
+#print axioms Tm.PlanFold.rawGroups_members
+#print axioms Tm.PlanFold.rawGroups_filter_ci_members
+#print axioms Tm.PlanFold.natsLe_of_append
+#print axioms Tm.PlanFold.groupKeyLe_of_rankedLe
+#print axioms Tm.PlanFold.a_group_member_is_not_a_wall
+#print axioms Tm.PlanFold.rawGroups_filter_ci_sorted
+#print axioms Tm.PlanFold.buildGroups_filter_ci
+#print axioms Tm.PlanFold.the_walk_serves_each_ci_in_the_candidate_order
+#print axioms Tm.PlanFold.a_same_ci_entry_ahead_is_served_no_later
+#print axioms Tm.PlanCheck.a_work_row_with_an_energy_is_the_folds
+#print axioms Tm.PlanCheck.a_placed_row_at_a_slots_start_is_that_slots
+#print axioms Tm.PlanCheck.a_started_member_is_ranked
+#print axioms Tm.PlanCheck.plan_is_monotone_in_rank
+#print axioms Tm.PlanCheck.plan_puts_hot_before_the_queue
+#print axioms Tm.PlanCheck.a_batch_row_carries_a_slots_energy
+#print axioms Tm.PlanCheck.a_batch_rows_items_are_a_run_of_its_ci
+#print axioms Tm.PlanCheck.plan_never_batches_past_an_equal_ci_candidate
+#print axioms Tm.PlannerWit.the_split_day_serves_the_siblings_in_the_candidate_order
+#print axioms Tm.PlannerWit.the_two_block_split_day_places_the_siblings_in_the_candidate_order
+#print axioms Tm.PlannerWit.the_batch_store_writes_no_item_before_line_one
+#print axioms Tm.PlannerWit.the_split_day_has_no_batch_row
+#print axioms Tm.PlannerWit.the_rank_and_batch_checks_hold_at_the_split_day_and_fail_on_its_planted_inversion
+#print axioms Tm.PlannerWit.the_riding_witness_loads
+#print axioms Tm.PlannerWit.the_riding_day_batches_across_a_ci
+#print axioms Tm.PlannerWit.the_riding_day_refutes_both_weakenings
+#print axioms Tm.PlannerWit.monotone_rank_in_the_candidate_order_needs_one_ci
+#print axioms Tm.PlannerWit.plan_puts_hot_before_the_queue_needs_a_row_of_queue_items
+#print axioms Tm.PlannerWit.the_candidate_order_rank_law_has_a_subject_at_the_two_block_split_day
+#print axioms Tm.PlannerWit.the_candidate_order_rank_law_fires_at_the_two_block_split_day
+#print axioms Tm.PlannerWit.the_candidate_order_hot_law_has_a_subject
+#print axioms Tm.PlannerWit.the_candidate_order_hot_law_fires
+#print axioms Tm.PlannerWit.the_candidate_order_batch_law_has_a_subject
+#print axioms Tm.PlannerWit.the_candidate_order_batch_law_fires
+
+/- =====================================================================
+   APPENDED 2026-09-30: stage 6, run W-40, TRACK P (README gaps 3480, 3666, 2326, 3544,
+   3713, 3714, 3780-3790; parity P67).  `PlanStable.lean` — a running break read once
+   (D77), the planner's window inside the night and the wind-down law without E8's seam,
+   and L25 over a replan after a logged verb — and `PlannerWit`'s W-40 block.
+   `Tm.Planner.PlanReq.window_crosses_midnight_as_the_forks_planner_reads_it` keeps its
+   audit line above: RESTATED, same name (README gap 3782).
+   ===================================================================== -/
+#print axioms Tm.PlanStable.clipTo_drops_walls_ending_by
+#print axioms Tm.PlanStable.freeIntervals_drop_walls_ending_by
+#print axioms Tm.PlanStable.overlapsAny_drops_walls_ending_by
+#print axioms Tm.PlanStable.earliestFree_drops_walls_ending_by
+#print axioms Tm.PlanStable.cutSlots_drop_walls_ending_by
+#print axioms Tm.PlanStable.sinceBreak_is_the_starts_after_the_last_break
+#print axioms Tm.PlanStable.the_running_break_and_its_logged_twin_count_alike
+#print axioms Tm.PlanStable.an_overrun_break_ends_at_now
+#print axioms Tm.PlanStable.nothing_is_reserved_while_the_block_is_paused
+#print axioms Tm.PlanStable.placeStep_drops_walls_ending_by_now
+#print axioms Tm.PlanStable.foldl_placeStep_drops_walls_ending_by_now
+#print axioms Tm.PlanStable.the_cut_does_not_change_when_an_overrun_break_is_logged
+#print axioms Tm.PlanStable.countIn_le_below
+#print axioms Tm.PlanStable.windowEnd_le_of_walls_end_by
+#print axioms Tm.PlanStable.the_window_ends_by_the_night_without_a_stored_window
+#print axioms Tm.PlanStable.the_stored_window_ends_by_the_night
+#print axioms Tm.PlanStable.the_window_ends_by_the_night
+#print axioms Tm.PlanStable.no_block_row_starts_at_or_after_a_wind_down_row_when_the_window_ends_by_the_night
+#print axioms Tm.PlanStable.plan_places_no_demanding_block_after_wind_down_when_the_window_ends_by_the_night
+#print axioms Tm.PlannerWit.plan_places_no_demanding_block_after_wind_down_where_the_wire_agrees_or_the_window_ends_by_the_night
+#print axioms Tm.PlanStable.plan_places_no_demanding_block_after_wind_down_on_a_planned_window
+#print axioms Tm.PlanStable.plan_places_no_demanding_block_after_wind_down_inside_the_day
+#print axioms Tm.PlanStable.a_past_row_is_replayed_from_an_extending_record
+#print axioms Tm.PlanStable.pastRowOf_reads_the_record_only_for_done
+#print axioms Tm.PlanStable.a_closed_row_ended_before_now_is_kept
+#print axioms Tm.PlanStable.plan_is_stable_across_a_replan_after_a_logged_verb
+#print axioms Tm.PlanStable.plan_is_stable_across_a_replan_after_a_verb_that_closes_nothing
+#print axioms Tm.PlanStable.plan_is_stable_across_a_replan_of_the_same_record
+#print axioms Tm.PlanStable.lowestFree_drops_walls_ending_by
+#print axioms Tm.PlanStable.the_logged_twins_inputs
+#print axioms Tm.PlanStable.the_logged_twins_folds
+#print axioms Tm.PlanStable.replayedRows_from_now
+#print axioms Tm.PlanStable.breakRows_from_now
+#print axioms Tm.PlanStable.the_day_from_now_of_the_twins_inputs
+#print axioms Tm.PlanStable.stepOneOrder_from_now_of_the_logged_twin
+#print axioms Tm.PlanStable.the_day_from_now_does_not_change_when_an_overrun_break_is_logged
+#print axioms Tm.PlannerWit.shortBreakRun_resumes_ok
+#print axioms Tm.PlannerWit.the_short_break_running_and_logged_plan_one_day_from_now
+#print axioms Tm.PlannerWit.the_rest_reading_cut_a_break_the_logged_twin_does_not
+#print axioms Tm.PlannerWit.the_counter_reads_the_sit_as_a_break_running_or_logged
+#print axioms Tm.PlannerWit.the_cut_law_fires_at_the_short_break
+#print axioms Tm.PlannerWit.the_wind_down_law_needs_the_wind_down_inside_the_calendar
+#print axioms Tm.PlannerWit.the_wind_down_goal_fails_where_the_kernels_clock_merges_the_last_evening
+#print axioms Tm.PlannerWit.the_window_crossing_midnight_ends_on_the_next_days_clock_is_refuted
+#print axioms Tm.PlannerWit.the_fall_back_window_ends_inside_the_night_as_the_forks_does
+#print axioms Tm.PlannerWit.the_planned_window_bound_fires_at_the_witness_wednesday
+#print axioms Tm.PlannerWit.eveRun_resumes_ok
+#print axioms Tm.PlannerWit.the_eves_window_runs_past_the_night
+#print axioms Tm.PlannerWit.the_eve_places_a_block_after_the_wind_down
+#print axioms Tm.PlannerWit.the_wind_down_law_has_a_subject_on_the_eve
+#print axioms Tm.PlannerWit.the_window_bound_needs_the_arrival_inside_the_day
+#print axioms Tm.PlannerWit.no_block_after_the_wind_down_needs_the_window_inside_the_night
+#print axioms Tm.PlannerWit.recordExtends_spec
+#print axioms Tm.PlannerWit.morningRun_resumes_ok
+#print axioms Tm.PlannerWit.the_morning_is_extended_by_tm_done
+#print axioms Tm.PlannerWit.flipEarlyRun_resumes_ok
+#print axioms Tm.PlannerWit.flipLateRun_resumes_ok
+#print axioms Tm.PlannerWit.tm_done_after_now_raises_an_earlier_blocks_done_flag
+#print axioms Tm.PlannerWit.plan_is_stable_across_a_replan_over_an_extending_record_exactly_is_refuted
+#print axioms Tm.PlannerWit.the_l25_law_fires_after_tm_done_with_the_flag_raised
+#print axioms Tm.PlannerWit.undoEarlyRun_resumes_ok
+#print axioms Tm.PlannerWit.undoLateRun_resumes_ok
+#print axioms Tm.PlannerWit.an_undo_after_now_is_not_an_extension
+#print axioms Tm.PlannerWit.the_day_law_fires_at_the_short_break
+
+/- =====================================================================
+   APPENDED 2026-09-30: stage 6, run W-40, TRACK T (README gap 3620; the campaign's D77 call,
+   parity P63 restated).  A Pause past local midnight is cut by EACH calendar day's own walls:
+   `GridCut.daySpans`/`dayCovered`, the partition laws over the days and the `Cal` lemma that a
+   zone's midnights rise (`MidnightCut.lean`).
+   ===================================================================== -/
+#print axioms Tm.GridCut.the_call_past_midnight_is_its_days_wall
+#print axioms Tm.Cal.spansFrom_off_mem
+#print axioms Tm.Cal.Span.hit_sec
+#print axioms Tm.Cal.localHits_sec
+#print axioms Tm.Cal.gapHit_some
+#print axioms Tm.Cal.instantOf_sec
+#print axioms Tm.Cal.instantOf_midnights_rise
+#print axioms Tm.Cal.chicago_midnights_rise
+#print axioms Tm.Cal.a_date_line_table_is_not_near
+#print axioms Tm.GridCut.mem_daySpans_iff
+#print axioms Tm.GridCut.mem_dayCovered_iff
+#print axioms Tm.GridCut.one_le_clipDays
+#print axioms Tm.GridCut.last_at_or_below
+#print axioms Tm.GridCut.a_second_of_the_clip_is_in_a_days_part
+#print axioms Tm.GridCut.midnights_rise_over
+#print axioms Tm.GridCut.a_second_is_in_one_days_part
+#print axioms Tm.GridCut.a_days_part_is_inside_the_clip
+#print axioms Tm.GridCut.the_grid_draws_every_second_of_the_clip_once_day_by_day
+#print axioms Tm.GridCut.a_second_is_covered_iff_a_wall_of_its_own_day_covers_it
+#print axioms Tm.GridCut.the_grid_cuts_every_second_once_in_a_zone_near_utc
+#print axioms Tm.GridCut.the_cut_inside_its_day_is_unchanged
+#print axioms Tm.GridCut.the_call_past_midnight_is_its_days_wall_in_chicago
+#print axioms Tm.GridCut.the_day_by_day_cut_is_run

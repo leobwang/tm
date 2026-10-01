@@ -449,7 +449,8 @@ pub struct ActiveOut {
     pub est_min: u32,
     /// Minutes WORKED: the wall clock since `started`, net of the pauses,
     /// interruptions and breaks that fell inside the block — the minutes
-    /// `tm done` would log (`Replay::active_worked_min`, README gaps 2741 and 2920).
+    /// `tm done` would log (`Replay::running_worked_min`, README gaps 2741 and 2920),
+    /// counted from the log's own `start` since D75 (gap 3715, parity P65).
     pub elapsed_min: u32,
     /// Timer paused.
     pub paused: bool,
@@ -492,7 +493,15 @@ pub fn now(g: &Globals) -> Result<i32, CliError> {
     let current = current_idx.map(|i| segs[i].clone());
     let next: Vec<SegOut> = next_idx.into_iter().map(|i| segs[i].clone()).collect();
     let active = ctx.state.active.as_ref().map(|a| {
-        let started = ctx.at(a.started);
+        // **The log's start** (the owner's D75, README gaps 3715 and 3625,
+        // parity P65): `.tm/state.json`'s `HH:MM` placed on today's date was
+        // tonight's after local midnight, so the header read `0m` of a block
+        // worked across it. The cache's clock is printed only where the log
+        // holds no open block for it, which D42's reconcile makes unreachable,
+        // and it is never placed on a date.
+        let started = super::day::running_start(&ctx)
+            .map(hhmm)
+            .unwrap_or_else(|| a.started.format("%H:%M").to_string());
         ActiveOut {
             id: a.id.clone(),
             title: ctx
@@ -500,7 +509,7 @@ pub fn now(g: &Globals) -> Result<i32, CliError> {
                 .get(&a.id)
                 .map(|i| i.title.clone())
                 .unwrap_or_default(),
-            started: hhmm(started),
+            started,
             est_min: a.est_min,
             // **One reading of worked minutes** (W-35, README gaps 2741 and
             // 2920). The header used the wall clock since `started`; W-35
@@ -509,7 +518,11 @@ pub fn now(g: &Globals) -> Result<i32, CliError> {
             // `tm done` logged 25. It is `tm done`'s own reading now —
             // `day::worked_min`, the wall clock net of the day's pauses,
             // interruptions and breaks — and the TUI calls the same rule.
-            elapsed_min: super::day::worked_min(&ctx, started),
+            // Since D75 it reads the block's start from the log, and the marks
+            // of every day since (P65) — `Replay::shown_worked_min`, the rule
+            // the TUI's timer shows, whose cache fallback D42's reconcile makes
+            // unreachable here.
+            elapsed_min: super::day::shown_worked_min(&ctx, a),
             paused: a.paused,
         }
     });

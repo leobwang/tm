@@ -1523,7 +1523,7 @@ pub fn order_worlds(parent: &ClassWorld) -> Vec<ClassWorld> {
 /// `shipped` is fork 4748911's drawing). A line no such rule departs on carries
 /// none of them, so the 41 lines frozen before W-38 did not change by carrying
 /// the new list.
-pub const ANSWERS: [&str; 9] = ["day", "shipped", "d57", "d60", "whatif", "p45", "p52", "p55", "p56"];
+pub const ANSWERS: [&str; 10] = ["day", "shipped", "d57", "d60", "whatif", "p45", "p52", "p55", "p56", "p64"];
 
 /// **The answers every line carries, `null` where there is none** — the five a
 /// line has carried since W-36. The rest of [`ANSWERS`] are present only where

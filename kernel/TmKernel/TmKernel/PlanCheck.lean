@@ -6112,18 +6112,16 @@ theorem plan_places_no_demanding_block_after_wind_down (r : PlanReq) (hca : cand
   · exact ((AssignedRowsPay_of_a_paying_decoder r hca hwdcal) t ht i
       (by rw [← segOf_item]; exact hi)).2 (by rw [clampSec_id _ hwdcal]; exact hafter)
 
-/-- **§7.5's "does not reach past an equal-`ci` candidate", restated over the day's Batch rows**
-(W-39, README gaps 3547 and 3548).  Every Batch row of the day holds members of ONE of §7.5's
-batches (`Planner.PlanReq.dayBatches`), and that batch is a run of consecutive equal-`ci` entries
-of step 4's order (`PlanFold.a_batch_is_a_run_of_equal_ci_entries_of_the_order`): the gather never
-skipped an equal-`ci` entry between two members, which is E2's bug, and it keeps the order's order.
+/-- **Every Batch row of the day holds members of ONE of §7.5's batches, and that batch is a run of
+consecutive equal-`ci` entries of step 4's order** (W-39, README gaps 3547 and 3548;
+`PlanFold.a_batch_is_a_run_of_equal_ci_entries_of_the_order`): the gather never skipped an
+equal-`ci` entry between two members, which is E2's bug, and it keeps the order's order.
 
-`Goals.plan_never_batches_past_an_equal_ci_candidate` left `Goals.lean` for this with its
-refutations beside it: a `loc:` the day cannot meet
-(`PlannerWit.plan_never_batches_past_an_equal_ci_candidate_is_refuted_at_a_paying_day`) and §7.5's
-SPLIT (`PlannerWit.plan_never_batches_past_an_equal_ci_candidate_is_refuted_by_the_split`) — the
-second drops the ranked-ahead sibling on a day the decoder pays, and it is gap 3546, the owner's. -/
-theorem plan_never_batches_past_an_equal_ci_candidate (r : PlanReq) (s : WfSeg) (ids : BatchIds)
+W-39 stated `Goals.plan_never_batches_past_an_equal_ci_candidate` this way.  Since W-40 (D74) the
+ROW is a run as well (`a_batch_rows_items_are_a_run_of_its_ci`), and the goal's name is the law
+with the goal's own conclusion — an equal-`ci` item ranked ahead that fits the row's slot before the
+walk is placed no later (`plan_never_batches_past_an_equal_ci_candidate`). -/
+theorem a_batch_row_holds_members_of_one_run_of_its_ci (r : PlanReq) (s : WfSeg) (ids : BatchIds)
     (hs : s ∈ (dayPlan r).segments) (hk : s.val.kind = SegKind.batch ids) :
     ∃ B ∈ r.dayBatches, (∀ i ∈ ids.val, ∃ y ∈ B, y.cand.id = i) ∧
       ∃ c : Fin 6, B <:+: r.rankedCands.filter (fun y => decide (y.cand.ci = c)) := by
@@ -6142,6 +6140,271 @@ theorem plan_never_batches_past_an_equal_ci_candidate (r : PlanReq) (s : WfSeg) 
   obtain ⟨m, hm, hmi⟩ := List.mem_map.1 (hids.subset hi)
   have hm0 : m ∈ e'.2 := by rw [← (groupOf_members hgo).1, hmem]; exact hm
   exact ⟨m, (mem_batchMembers (mem_of_mem_splitGroups he' hm0)).1, hmi⟩
+
+
+/-! ## W-40 (the owner's D74 and D77): the rank, HOT and batch laws over what a user can observe
+
+D77 (README gap 3714): the restated laws are stated over the CANDIDATE order — step 4's order,
+which the day's response carries as `diagnostics.served` (`Planner.PlanReq.dayServed`) — over §8.2
+step 5's filter BEFORE the walk (`Planner.fitsBefore`, D66's), and over the day's own rows; never
+over step 5's own state (`assignFold.slotOf`, the groups it serves), which is D67's declined shape.
+D74 is what makes the rank law TRUE in the candidate order: a bucket of a batch closes where the
+next member cannot join it, so step 5 serves each `ci`'s entries in the candidate order
+(`PlanFold.a_same_ci_entry_ahead_is_served_no_later`).
+
+**The one bridge from the day to the walk.**  A work row that carries a slot's energy is a row §8.2
+step 5 placed — the replayed rows and the reservation carry none — and the row a slot's start names
+is that slot's, holding exactly the ids of the group the slot went to
+(`a_placed_row_at_a_slots_start_is_that_slots`).  Its one hypothesis is the slot inside the calendar
+(`LogStamp.yearEnd`, AGENTS R10), below which `Planner.clampSec` tells two slots' starts apart. -/
+
+/-- **A work row of the day that carries a slot's energy is one §8.2 step 5 placed** — every
+replayed row (`Planner.replayedRows_carry_no_energy`) and §8.2 choice 5b's reservation
+(`Planner.PlanReq.activeRow_is_an_energyless_block`) carries none. -/
+theorem a_work_row_with_an_energy_is_the_folds (r : PlanReq) (s : WfSeg)
+    (hs : s ∈ (dayPlan r).segments) (hw : s.val.kind.isWork = true)
+    (he : s.val.energy.isSome = true) : ∃ t ∈ r.assignedRows, s = segOf t := by
+  have hbb : s.val.kind = SegKind.block ∨ ∃ ids, s.val.kind = SegKind.batch ids := by
+    revert hw; cases s.val.kind <;> simp [SegKind.isWork]
+  rcases hbb with hk | ⟨ids, hk⟩
+  · rcases dayPlan_block_rows_are_replayed_reserved_or_assigned r s hs hk with
+      ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩ | h
+    · have e1 : (segOf t).val.energy = t.energy := rfl
+      rw [e1, replayedRows_carry_no_energy r t ht] at he
+      exact absurd he (by simp)
+    · have e1 : (segOf t).val.energy = t.energy := rfl
+      rw [e1, (r.activeRow_is_an_energyless_block t ht).2.1] at he
+      exact absurd he (by simp)
+    · exact h
+  · exact a_batch_row_of_the_day_is_the_folds r s hs ids hk
+
+/-- **The row a slot's start names is that slot's**: a work row of the day with a slot's energy,
+starting at a slot's start, is the row of the group step 5 gave THAT slot, and holds exactly that
+group's ids.  The slot must lie inside the calendar, below which the rows' clock separates two
+slots. -/
+theorem a_placed_row_at_a_slots_start_is_that_slots (r : PlanReq) (x : (Fin 6 × Look.Slot) × Nat)
+    (hx : x ∈ r.energisedSlots.zipIdx) (hcal : x.1.2.stop < LogStamp.yearEnd)
+    (s : WfSeg) (hs : s ∈ (dayPlan r).segments) (hw : s.val.kind.isWork = true)
+    (he : s.val.energy.isSome = true) (hst : s.val.start = clampSec x.1.2.start) :
+    ∃ (gj : Nat) (h : Group), r.assignFold.slotOf[x.2]? = some (some gj) ∧
+      r.startGroups[gj]? = some h ∧ s.val.items = h.ids := by
+  obtain ⟨t, ht, rfl⟩ := a_work_row_with_an_energy_is_the_folds r s hs hw he
+  obtain ⟨vi, gi, e, sl, g, hes, hslot, hg, rfl⟩ := mem_assignedRows_at_a_slot ht
+  have hxg := List.mem_zipIdx_iff_getElem?.1 hx
+  have hxne : x.1.2.start < x.1.2.stop := by
+    refine r.a_slot_is_not_empty x.1.2 ?_
+    rw [← PlanFold.todaySlots_of_energisedSlots]
+    exact List.mem_map.2 ⟨x.1, List.mem_of_getElem? hxg, rfl⟩
+  have hvi : vi = x.2 := by
+    have e1 : (segOf (assignedSeg e sl g)).val.start = clampSec sl.start := rfl
+    have hc : clampSec sl.start = clampSec x.1.2.start := e1.symm.trans hst
+    have hx1 : clampSec x.1.2.start = x.1.2.start := clampSec_id _ (by omega)
+    rw [hx1] at hc
+    have hc2 : min sl.start (LogStamp.yearEnd - 1) = x.1.2.start := hc
+    have hsl : sl.start = x.1.2.start := by
+      rcases Nat.le_total sl.start (LogStamp.yearEnd - 1) with hle | hle
+      · rw [Nat.min_eq_left hle] at hc2; exact hc2
+      · rw [Nat.min_eq_right hle] at hc2; omega
+    have hxg' : r.energisedSlots[x.2]? = some (x.1.1, x.1.2) := hxg
+    rcases Nat.lt_trichotomy vi x.2 with hlt | heq | hgt
+    · have h1 : sl.start < x.1.2.start := PlanFold.energised_start_lt r hlt hes hxg'
+      omega
+    · exact heq
+    · have h1 : x.1.2.start < sl.start := PlanFold.energised_start_lt r hgt hxg' hes
+      omega
+  subst hvi
+  rw [PlanFold.finalAssign_is_assignFold] at hslot hg
+  obtain ⟨g0, hg0, hm⟩ := PlanFold.foldl_assignStep_keeps_the_members r _ _ _ _ _ gi g hg
+  refine ⟨gi, g0, hslot, hg0, ?_⟩
+  have hids : g.ids = g0.ids := by unfold Group.ids; rw [hm]
+  have hbound : g.ids.length ≤ maxBatch := by
+    obtain ⟨gb, hgb, -, hmb, -⟩ := PlanReq.a_started_group_is_a_built_group (List.mem_of_getElem? hg0)
+    rw [hids]
+    unfold Group.ids
+    rw [List.length_map, hmb]
+    exact (PlanReq.a_group_is_a_bounded_batch hgb).2
+  rw [segOf_items, assignedSeg_items_when_the_group_fits_the_batch_bound e sl g hbound, hids]
+
+/-- A member of a group the cursor receives is an entry of step 4's order. -/
+theorem a_started_member_is_ranked {r : PlanReq} {g : Group} (hg : g ∈ r.startGroups) {y : Ranked}
+    (hy : y ∈ g.members) : y ∈ r.rankedCands := by
+  obtain ⟨g0, h0, -, hm, -⟩ := PlanReq.a_started_group_is_a_built_group hg
+  exact PlanReq.a_group_member_is_ranked h0 (hm ▸ hy)
+
+/-- **§8.3's monotone rank, over the CANDIDATE order** (D74, D77; README gaps 3546 and 3714).  An
+item every instance of which is strictly ahead of every instance of `j` in step 4's order, at the
+same `ci`, and which §8.2 step 5's filter admits BEFORE the walk at the slot `j`'s row of the day
+was placed at, holds a work row of the day starting no later than `j`'s.
+
+No hypothesis reads step 5's own state: the candidate order is `diagnostics.served`'s, the filter is
+D66's, and `j`'s row is a row of the day.  `hcal` is the slot inside the calendar.  The `ci`
+hypothesis is §8.3's own comparable class and it is NEEDED: §7.5 gathers past an entry of another
+`ci`, so a later entry of one `ci` rides with an earlier leader ahead of an item of another
+(`PlannerWit.monotone_rank_in_the_candidate_order_needs_one_ci`, shipped behaviour of fork 4748911).
+Every instance is quantified because the day's rows hold ids and a request may send one id twice
+(README gap 3541). -/
+theorem plan_is_monotone_in_rank (r : PlanReq) (i j : Id)
+    (hahead : ∀ a ∈ r.rankedCands, a.cand.id = i → ∀ b ∈ r.rankedCands, b.cand.id = j →
+      rankedLe b a = false ∧ a.cand.ci = b.cand.ci)
+    (x : (Fin 6 × Look.Slot) × Nat) (hx : x ∈ r.energisedSlots.zipIdx)
+    (hcal : x.1.2.stop < LogStamp.yearEnd) (hfit : fitsBefore r i x = true)
+    (sj : WfSeg) (hsj : sj ∈ (dayPlan r).segments) (hwj : sj.val.kind.isWork = true)
+    (hej : sj.val.energy.isSome = true) (hstj : sj.val.start = clampSec x.1.2.start)
+    (hj : j ∈ sj.val.items) :
+    ∃ si ∈ (dayPlan r).segments, si.val.kind.isWork = true ∧ i ∈ si.val.items ∧
+      si.val.start ≤ sj.val.start := by
+  obtain ⟨gj, h, htook, hh, hsub⟩ :=
+    a_placed_row_at_a_slots_start_is_that_slots r x hx hcal sj hsj hwj hej hstj
+  obtain ⟨b, hb, hbj⟩ := List.mem_map.1 (hsub ▸ hj)
+  obtain ⟨g, hgm, hgfit⟩ := List.any_eq_true.1 hfit
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hgfit
+  obtain ⟨gi, hg⟩ := List.mem_iff_getElem?.1 hgm
+  obtain ⟨a, ha, hai⟩ := List.mem_map.1 hgfit.1
+  have hra := a_started_member_is_ranked hgm ha
+  have hrb := a_started_member_is_ranked (List.mem_of_getElem? hh) hb
+  obtain ⟨hab, hci⟩ := hahead a hra hai b hrb hbj
+  have hle := PlanFold.a_same_ci_entry_ahead_is_served_no_later r hab hci hg hh ha hb
+  rcases Nat.lt_or_eq_of_le hle with hlt | heq
+  · obtain ⟨y, hy, hyx, hyg⟩ := PlanFold.an_earlier_group_that_fits_a_taken_slot_was_placed_before_it
+      r x hx gi gj g hg hlt htook hgfit.2
+    obtain ⟨si, hsi, hwi, hsti, hmemi⟩ :=
+      PlanFold.a_filled_slot_draws_a_work_row_of_its_groups_members r y hy gi hyg g hg
+    refine ⟨si, hsi, hwi, hmemi i hgfit.1, ?_⟩
+    rw [hsti, hstj]
+    exact PlanFold.clampSec_mono (Nat.le_of_lt (PlanFold.an_earlier_slot_starts_earlier r hy hx hyx))
+  · subst heq
+    rw [hg] at hh
+    have hgh : g = h := Option.some.inj hh
+    subst hgh
+    obtain ⟨si, hsi, hwi, hsti, hmemi⟩ :=
+      PlanFold.a_filled_slot_draws_a_work_row_of_its_groups_members r x hx gi htook g hg
+    exact ⟨si, hsi, hwi, hmemi i hgfit.1, by rw [hsti, hstj]; exact Nat.le_refl _⟩
+
+/-- **§8.3's "HOT before queue", over what the user sees** (D77, README gap 3714).  An item every
+instance of which is HOT (`p = 0` in step 4's order), which §8.2 step 5's filter admits BEFORE the
+walk at the slot of a row of the day holding only QUEUE items (every instance `p > 0`), holds a work
+row of the day that starts strictly EARLIER.
+
+The row's own items are the hypothesis, and it is needed: §7.5 gathers a queue item behind a HOT
+leader, and that row is HOT work (`PlannerWit.plan_puts_hot_before_the_queue_needs_a_row_of_queue_items`). -/
+theorem plan_puts_hot_before_the_queue (r : PlanReq) (i : Id)
+    (hhot : ∀ a ∈ r.rankedCands, a.cand.id = i → a.key.p = 0)
+    (x : (Fin 6 × Look.Slot) × Nat) (hx : x ∈ r.energisedSlots.zipIdx)
+    (hcal : x.1.2.stop < LogStamp.yearEnd) (hfit : fitsBefore r i x = true)
+    (sj : WfSeg) (hsj : sj ∈ (dayPlan r).segments) (hwj : sj.val.kind.isWork = true)
+    (hej : sj.val.energy.isSome = true) (hstj : sj.val.start = clampSec x.1.2.start)
+    (hqueue : ∀ k ∈ sj.val.items, ∀ b ∈ r.rankedCands, b.cand.id = k → 0 < b.key.p) :
+    ∃ si ∈ (dayPlan r).segments, si.val.kind.isWork = true ∧ i ∈ si.val.items ∧
+      si.val.start < sj.val.start := by
+  obtain ⟨gj, h, htook, hh, hsub⟩ :=
+    a_placed_row_at_a_slots_start_is_that_slots r x hx hcal sj hsj hwj hej hstj
+  obtain ⟨g, hgm, hgfit⟩ := List.any_eq_true.1 hfit
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hgfit
+  obtain ⟨gi, hg⟩ := List.mem_iff_getElem?.1 hgm
+  obtain ⟨a, ha, hai⟩ := List.mem_map.1 hgfit.1
+  have hra := a_started_member_is_ranked hgm ha
+  obtain ⟨g0, hg0, hk0, hm0, -⟩ := PlanReq.a_started_group_is_a_built_group hgm
+  obtain ⟨h0, hh0, hkh, hmh, -⟩ := PlanReq.a_started_group_is_a_built_group (List.mem_of_getElem? hh)
+  have hgp : g.key.p = 0 := by
+    have hk := PlanReq.a_group_key_is_its_minimum hg0 (hm0 ▸ ha)
+    unfold groupKeyLe GroupKey.nums at hk
+    have hle := (natsLe_cons_le hk).1
+    have hap : (groupKeyOf a).p = a.key.p := rfl
+    have := hhot a hra hai
+    rw [hk0]; omega
+  have hhp : 0 < h.key.p := by
+    obtain ⟨z, hz, hkz⟩ := PlanReq.a_group_key_is_a_members hh0
+    have hz' : z ∈ h.members := hmh ▸ hz
+    have hzr := a_started_member_is_ranked (List.mem_of_getElem? hh) hz'
+    have hzi : z.cand.id ∈ sj.val.items := by
+      rw [hsub]; exact List.mem_map.2 ⟨z, hz', rfl⟩
+    have hzp := hqueue _ hzi z hzr rfl
+    rw [hkh, hkz]
+    exact hzp
+  have hkey : groupLe h g = false := by
+    unfold groupLe groupKeyLe GroupKey.nums
+    rw [natsLe_cons, if_neg (by omega), if_pos (by omega)]
+  have hlt := PlanFold.served_earlier_of_the_key r hg hh hkey
+  obtain ⟨y, hy, hyx, hyg⟩ := PlanFold.an_earlier_group_that_fits_a_taken_slot_was_placed_before_it
+    r x hx gi gj g hg hlt htook hgfit.2
+  obtain ⟨si, hsi, hwi, hsti, hmemi⟩ :=
+    PlanFold.a_filled_slot_draws_a_work_row_of_its_groups_members r y hy gi hyg g hg
+  refine ⟨si, hsi, hwi, hmemi i hgfit.1, ?_⟩
+  have hys := PlanFold.an_earlier_slot_starts_earlier r hy hx hyx
+  have hxne : x.1.2.start < x.1.2.stop := by
+    refine r.a_slot_is_not_empty x.1.2 ?_
+    rw [← PlanFold.todaySlots_of_energisedSlots]
+    exact List.mem_map.2 ⟨x.1, List.mem_of_getElem? (List.mem_zipIdx_iff_getElem?.1 hx), rfl⟩
+  rw [hsti, hstj, clampSec_id _ (by omega), clampSec_id _ (by omega)]
+  exact hys
+
+/-- **A Batch row carries its slot's energy** — every Batch row is one step 5 placed. -/
+theorem a_batch_row_carries_a_slots_energy (r : PlanReq) (s : WfSeg) (ids : BatchIds)
+    (hs : s ∈ (dayPlan r).segments) (hk : s.val.kind = SegKind.batch ids) :
+    s.val.energy.isSome = true := by
+  obtain ⟨t, ht, rfl⟩ := a_batch_row_of_the_day_is_the_folds r s hs ids hk
+  obtain ⟨-, -, e, sl, g, -, -, -, rfl⟩ := mem_assignedRows_at_a_slot ht
+  rfl
+
+/-- **D74: a Batch row's items ARE a run of consecutive equal-`ci` entries of step 4's order** —
+not only the members of one batch (`a_batch_row_holds_members_of_one_run_of_its_ci`), but the
+row's own group: no equal-`ci` entry that step 5 could serve sits between two of its items in the
+candidate order.  With the fork's group-by this was false (README gap 3546's `[^t3, ^t2]` past
+`^t1`). -/
+theorem a_batch_rows_items_are_a_run_of_its_ci (r : PlanReq) (s : WfSeg) (ids : BatchIds)
+    (hs : s ∈ (dayPlan r).segments) (hk : s.val.kind = SegKind.batch ids) :
+    ∃ (c : Fin 6) (G : List Ranked), ids.val = G.map (·.cand.id) ∧
+      G <:+: batchMembers (r.rankedCands.filter (fun y => decide (y.cand.ci = c))) := by
+  obtain ⟨t, ht, rfl⟩ := a_batch_row_of_the_day_is_the_folds r s hs ids hk
+  obtain ⟨vi, gi, e, sl, g, -, -, hg, rfl⟩ := mem_assignedRows_at_a_slot ht
+  rw [PlanFold.finalAssign_is_assignFold] at hg
+  obtain ⟨g0, hg0, hm⟩ := PlanFold.foldl_assignStep_keeps_the_members r _ _ _ _ _ gi g hg
+  have hg0m : g0 ∈ r.startGroups := List.mem_of_getElem? hg0
+  obtain ⟨gb, hgb, -, hmb, hcb, -⟩ := PlanReq.a_started_group_is_a_built_group hg0m
+  have hids : g.ids = g0.ids := by unfold Group.ids; rw [hm]
+  have hbound : g.ids.length ≤ maxBatch := by
+    rw [hids]
+    unfold Group.ids
+    rw [List.length_map, hmb]
+    exact (PlanReq.a_group_is_a_bounded_batch hgb).2
+  have hkind : (assignedSeg e sl g).kind = SegKind.batch ids := (segOf_kind _).symm.trans hk
+  have hval : ids.val = g.ids := by
+    have hi := assignedSeg_items_when_the_group_fits_the_batch_bound e sl g hbound
+    unfold Seg.items at hi
+    rw [hkind] at hi
+    exact hi
+  refine ⟨g0.ci, g0.members, by rw [hval, hids]; rfl, ?_⟩
+  have hwalk := PlanFold.the_walk_serves_each_ci_in_the_candidate_order r g0.ci
+  have hall : g0.members.filter (fun y => decide (y.cand.ci = g0.ci)) = g0.members :=
+    List.filter_eq_self.2 (fun y hy => by
+      have := PlanReq.a_group_member_carries_the_groups_ci hgb (hmb ▸ hy)
+      simp [this, hcb])
+  rw [← hwalk, ← hall]
+  exact List.infix_of_mem_flatten (List.mem_map.2 ⟨g0, hg0m, rfl⟩)
+
+/-- **§7.5's "never batches past an equal-`ci` candidate", over the CANDIDATE order** (D74, D77;
+README gaps 3546 and 3548) — the goal's own conclusion, which W-39's restatement could not reach.
+An item every instance of which is strictly ahead of every instance of an item a Batch row of the
+day holds, at the same `ci`, and which §8.2 step 5's filter admits BEFORE the walk at that row's
+slot, holds a work row starting no later than the Batch row: the batch never reaches past it, and
+it does not "simply never appear".  `PlanCheck.batchDoesNotReachPast` is its checker in LINE order;
+this is the law in the planner's own order. -/
+theorem plan_never_batches_past_an_equal_ci_candidate (r : PlanReq) (s : WfSeg) (ids : BatchIds)
+    (hs : s ∈ (dayPlan r).segments) (hk : s.val.kind = SegKind.batch ids) (i j : Id)
+    (hi : i ∈ ids.val)
+    (hahead : ∀ a ∈ r.rankedCands, a.cand.id = j → ∀ b ∈ r.rankedCands, b.cand.id = i →
+      rankedLe b a = false ∧ a.cand.ci = b.cand.ci)
+    (x : (Fin 6 × Look.Slot) × Nat) (hx : x ∈ r.energisedSlots.zipIdx)
+    (hcal : x.1.2.stop < LogStamp.yearEnd) (hst : s.val.start = clampSec x.1.2.start)
+    (hfit : fitsBefore r j x = true) :
+    ∃ sj ∈ (dayPlan r).segments, sj.val.kind.isWork = true ∧ j ∈ sj.val.items ∧
+      sj.val.start ≤ s.val.start := by
+  have hw : s.val.kind.isWork = true := by rw [hk]; rfl
+  have hitems : i ∈ s.val.items := by
+    show i ∈ (match s.val.kind with | .batch ids => ids.val | _ => s.val.item.toList)
+    rw [hk]; exact hi
+  exact plan_is_monotone_in_rank r j i hahead x hx hcal hfit s hs hw
+    (a_batch_row_carries_a_slots_energy r s ids hs hk) hst hitems
 
 end PlanCheck
 end Tm

@@ -97,6 +97,10 @@ pub struct ForkAsk<'a> {
     pub now: DateTime<Tz>,
     /// Run D60's key in the fork (`forkclass::d60_cands`), or rank the candidates as collected.
     pub d60: bool,
+    /// Run D74's split in the fork (parity P64, README gap 3740: §7.5's batches split into
+    /// their RUNS, `PlanInput::with_runs`; the oracle's `p64-runs.patch`), or the fork's
+    /// group-by. The comparand sets it wherever it sets `d60`; the shipped fork's day never.
+    pub p64: bool,
     /// The grants the candidates are ranked by, 1:1 with `Built::cands`.
     pub prios: &'a [Prio],
     /// §9.1's what-if: this many minutes more on this item (fork `PlanOverrides::extending`).
@@ -372,26 +376,41 @@ pub fn grown_prios(b: &Built) -> Option<Vec<Prio>> {
 
 /// **P45's comparand after the running break** (README gap 3207): the fork planned
 /// where the kernel's P45 restarts the cut — at the break's end (or `now`, once it has
-/// overrun), the break a REST that resets the cut's break counter when it is at least
-/// `break_min` long (`Look.restfulEnd`; the fork resets its counter at a logged break, so
-/// one is logged ending there) — D60's key and the kernel's ranking, as the comparand
-/// runs them. Its rows from that instant are the fork's own assignment, rests and kept
-/// breaks over its own cut. `None` on a day with no running break. What it does not
-/// model, measured and left to P45's owner (README gap 3480): `Look.restfulEnd` also
-/// asks that the break END where a free stretch begins, and a logged break resets the
-/// fork's counter at any length — so the kernel's running break and the same break once
-/// ended are two readings of one span.
+/// overrun), with the break LOGGED ending there, so the fork's counter resets at it — D60's
+/// key and the kernel's ranking, as the comparand runs them. Its rows from that instant are
+/// the fork's own assignment, rests and kept breaks over its own cut. `None` on a day with no
+/// running break. **Since W-40 (the owner's D77, README gaps 3480 and 3666; parity P67) the
+/// break is logged at ANY length and wherever it ends**: the kernel's running break resets the
+/// cut's counter exactly as the same break once logged (`Planner.PlanReq.sinceBreak`), and is
+/// no longer a rest of the cut, so the comparand's old length rule (logged once it had run
+/// `break_min`, `Look.restfulEnd`'s) would hold the reading D77 retired.
 pub fn p45_after(b: &Built, prios: &[Prio], fp: &dyn ForkPlan) -> Result<Option<Value>, String> {
-    p45_rows(b, prios, fp, None).map(|r| r.map(|(from, rows)| json!({"p45": true, "from": from, "rows": rows})))
+    p45_after_with(b, prios, fp, true)
+}
+
+/// [`p45_after`] with D74's split chosen (`runs`, parity P64): the comparand's own is `true`;
+/// [`comparand_answers`] asks `false` once, to see whether P64 moved the comparand.
+fn p45_after_with(b: &Built, prios: &[Prio], fp: &dyn ForkPlan, runs: bool) -> Result<Option<Value>, String> {
+    p45_rows_with(b, prios, fp, None, runs).map(|r| r.map(|(from, rows)| json!({"p45": true, "from": from, "rows": rows})))
 }
 
 /// **P45's comparand after the break, with the break's `log_line` chosen** — [`p45_after`]'s
-/// rows (`None`: the comparand's own rule, the break logged once it has run `break_min`), or
-/// with the break logged or left unlogged whatever its length (`Some(true)`, `Some(false)`):
-/// README gap 3480's two readings of one span, the second of which is the kernel's where the
-/// break does not end where a free stretch begins. `(from, rows)`, `None` on a day with no
-/// running break.
+/// rows (`None`: the comparand's own rule, the break logged whatever its length since D77 —
+/// the same as `Some(true)`), or with the break left unlogged (`Some(false)`): README gap 3480's
+/// two readings of one span, the second of which was the kernel's until W-40 where the break
+/// did not end where a free stretch begins or was shorter than `break_min`. `(from, rows)`,
+/// `None` on a day with no running break.
 pub fn p45_rows(b: &Built, prios: &[Prio], fp: &dyn ForkPlan, logged: Option<bool>) -> Result<Option<(String, Vec<Value>)>, String> {
+    p45_rows_with(b, prios, fp, logged, true)
+}
+
+fn p45_rows_with(
+    b: &Built,
+    prios: &[Prio],
+    fp: &dyn ForkPlan,
+    logged: Option<bool>,
+    runs: bool,
+) -> Result<Option<(String, Vec<Value>)>, String> {
     let st = &b.world.state;
     let Some(brk) = st.break_.as_ref().filter(|x| x.started.is_some()) else { return Ok(None) };
     let Some(started) = brk.started else { return Ok(None) };
@@ -400,50 +419,51 @@ pub fn p45_rows(b: &Built, prios: &[Prio], fp: &dyn ForkPlan, logged: Option<boo
     let (_, day_end) = b.day_bounds();
     let e = (t + Duration::minutes(i64::from(brk.planned_min))).min(day_end).max(b.world.now);
     let taken = (e - t).num_minutes();
-    let log_line = logged.unwrap_or(taken >= i64::from(b.cfg.day.break_min)).then(|| {
+    // D77 (P67): logged at any length — `taken >= break_min` was the rest's reading, retired.
+    let log_line = logged.unwrap_or(true).then(|| {
         format!(
             "{{\"t\":\"{}\",\"ev\":\"break\",\"planned_min\":{},\"actual_min\":{taken}}}\n",
             t.to_rfc3339(),
             brk.planned_min
         )
     });
-    let p = fp.plan(b, &ForkAsk { state: st, now: e, d60: true, prios, extend: None, log_line })?;
+    let p = fp.plan(b, &ForkAsk { state: st, now: e, d60: true, p64: runs, prios, extend: None, log_line })?;
     let e_fixed = e.fixed_offset();
     let rows: Vec<Value> = segments_of(&p.day).iter().filter(|s| at(&s["start"]).is_some_and(|a| a >= e_fixed)).cloned().collect();
     Ok(Some((e.to_rfc3339(), rows)))
 }
 
-/// **README gap 3480's two readings, asked of the fork**: whether the kernel's rows from where
-/// P45 restarts the cut are, row for row, the fork's own planned with the running break UNLOGGED
-/// (`p45_rows(.., Some(false))`, an under-used row's note left to the renderer as
-/// `forkday::underused_note_left_to_the_renderer` leaves it) — the kernel's reading of a running
-/// break that does not end where a free stretch begins, against the comparand's, which logs it.
-/// `false` on a day with no running break.
-pub fn gap_3480_explains(b: &Built, prios: &[Prio], fp: &dyn ForkPlan) -> Result<bool, String> {
-    let Some((from, rows)) = p45_rows(b, prios, fp, Some(false))? else { return Ok(false) };
-    let kday = forkclass::kernel_answer(b)?;
-    let kv = serde_json::to_value(&kday.day).map_err(|e| e.to_string())?;
-    let from = DateTime::parse_from_rfc3339(&from).map_err(|e| e.to_string())?;
-    let krows: Vec<Value> = segments_of(&kv).iter().filter(|r| at(&r["start"]).is_some_and(|a| a >= from)).cloned().collect();
-    let want: Vec<Value> = rows
-        .iter()
-        .map(|r| crate::forkday::underused_note_left_to_the_renderer(r, &krows).unwrap_or_else(|| r.clone()))
-        .collect();
-    Ok(krows == want)
-}
 
 /// **The fork's answers for one stored world** — the ONE definition of what a frozen line
 /// holds beside its world (`forkclass::ANSWERS`): the shipped day, the comparand (D57's
 /// P46/P47 and D60's P51 applied by their properties, P55's host minutes, P56's drawing)
 /// with its flags, on a running-block day the what-ifs, and on a break day P45's
 /// comparand after the break — over the kernel's grants `prios`, with `fp` planning.
+///
+/// **Since the W-40 land step the comparand runs D74's split in the fork** (parity P64, README
+/// gap 3740): every comparand plan asks `p64` (`PlanInput::with_runs`, the oracle's
+/// `p64-runs.patch`) exactly where it asks `d60`, and the shipped fork's day never does. Where
+/// the runs MOVE an answer — the same world planned with the fork's group-by gives a different
+/// `day`, `whatif` or `p45` — the line carries `p64: {"p64": true}`, the flag D64's gate reads
+/// (`forkclass::d64_allows`), as `d60: {"p51": …}` is P51's.
 pub fn comparand_answers(b: &Built, prios: &[Prio], fp: &dyn ForkPlan) -> Result<Value, String> {
+    let mut with = comparand_with(b, prios, fp, true)?;
+    let without = comparand_with(b, prios, fp, false)?;
+    let p64 = ["day", "whatif", "p45"].iter().any(|k| with[*k] != without[*k]);
+    if p64 {
+        with["p64"] = json!({"p64": true});
+    }
+    Ok(with)
+}
+
+/// The comparand's answers with D74's split chosen: `runs = true` is the comparand.
+fn comparand_with(b: &Built, prios: &[Prio], fp: &dyn ForkPlan, runs: bool) -> Result<Value, String> {
     let st = &b.world.state;
     let now = b.world.now;
     let tz = b.cfg.tz;
     // The SHIPPED fork's day is fork 4748911's (P56: the in-tree fork was changed to agree
     // with the kernel's drawing of a meeting's pause at W-37 track T).
-    let shipped_p = fp.plan(b, &ForkAsk { state: st, now, d60: false, prios, extend: None, log_line: None })?;
+    let shipped_p = fp.plan(b, &ForkAsk { state: st, now, d60: false, p64: false, prios, extend: None, log_line: None })?;
     let shipped = shipped_p.fork_day.clone();
     let p56 = shipped != shipped_p.day;
     // P55: on a day whose host reading of the running block's worked minutes is not the
@@ -451,7 +471,7 @@ pub fn comparand_answers(b: &Built, prios: &[Prio], fp: &dyn ForkPlan) -> Result
     let p55 = p55_state(b, st);
     let st1 = p55.as_ref().map_or_else(|| st.clone(), |(s, _)| s.clone());
     let st2 = p46_state(b, &st1);
-    let comparand_p = fp.plan(b, &ForkAsk { state: &st2, now, d60: true, prios, extend: None, log_line: None })?;
+    let comparand_p = fp.plan(b, &ForkAsk { state: &st2, now, d60: true, p64: runs, prios, extend: None, log_line: None })?;
     // P51: D60's key moved the fork's §7.4 order (`forkclass::is_p51`'s reading).
     let p51 = comparand_p.ranked != shipped_p.ranked;
     let mut comparand = comparand_p.day;
@@ -479,7 +499,7 @@ pub fn comparand_answers(b: &Built, prios: &[Prio], fp: &dyn ForkPlan) -> Result
         let rt = p55_state(b, &rt).map_or(rt, |(s, _)| s);
         let rt = p46_state(b, &rt);
         let whatif_day = |ps: &[Prio], full: bool| -> Result<Value, String> {
-            let ask = ForkAsk { state: &rt, now, d60: true, prios: ps, extend: full.then_some((id, bm)), log_line: None };
+            let ask = ForkAsk { state: &rt, now, d60: true, p64: runs, prios: ps, extend: full.then_some((id, bm)), log_line: None };
             let mut d = fp.plan(b, &ask)?.day;
             p47_pause(now, &mut d);
             fp.diff(tz, &comparand, &d)
@@ -507,7 +527,7 @@ pub fn comparand_answers(b: &Built, prios: &[Prio], fp: &dyn ForkPlan) -> Result
         "d57": {"p46": p46, "p47": p47},
         "d60": {"p51": p51},
         "whatif": whatif,
-        "p45": p45_after(b, prios, fp)?,
+        "p45": p45_after_with(b, prios, fp, runs)?,
         "p52": flag(p52, "p52"),
         "p55": flag(p55.is_some(), "p55"),
         "p56": flag(p56, "p56"),
@@ -564,9 +584,12 @@ pub fn oracle_path() -> Option<std::path::PathBuf> {
     std::env::var_os("TM_ORACLE").map(std::path::PathBuf::from)
 }
 
-/// **`tm-oracle plan`, running**: one request line in, one answer line out.
+/// **`tm-oracle plan`, running**: one request line in, one answer line out — or, built
+/// [`Oracle::with_mode`], another mode of the same protocol (`review`, the fork's week grid,
+/// README gap 3718).
 pub struct Oracle {
     bin: std::path::PathBuf,
+    mode: &'static str,
     io: Mutex<Option<(Child, ChildStdin, BufReader<ChildStdout>)>>,
     /// Requests answered, for the arm's census.
     pub asked: Mutex<u64>,
@@ -575,8 +598,14 @@ pub struct Oracle {
 impl Oracle {
     /// The oracle at `bin`, its `plan` mode checked by name before anything is asked.
     pub fn new(bin: std::path::PathBuf) -> Oracle {
-        assert_oracle_mode(&bin, "plan");
-        Oracle { bin, io: Mutex::new(None), asked: Mutex::new(0) }
+        Oracle::with_mode(bin, "plan")
+    }
+
+    /// The oracle at `bin` in `mode` — one JSON request per line in, one answer per line out —
+    /// the mode checked by name in its usage banner before anything is asked (README gap 196).
+    pub fn with_mode(bin: std::path::PathBuf, mode: &'static str) -> Oracle {
+        assert_oracle_mode(&bin, mode);
+        Oracle { bin, mode, io: Mutex::new(None), asked: Mutex::new(0) }
     }
 
     /// One request, one answer; `Err` carries the oracle's own refusal or its death.
@@ -584,7 +613,7 @@ impl Oracle {
         let mut io = self.io.lock().expect("the oracle's pipe");
         if io.is_none() {
             let mut child = Command::new(&self.bin)
-                .arg("plan")
+                .arg(self.mode)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .spawn()
@@ -648,6 +677,7 @@ impl ForkPlan for Oracle {
             "order": order,
             "prios": ask.prios.iter().map(prio_wire).collect::<Vec<_>>(),
             "extend": ask.extend.map(|(id, m)| json!([id.as_str(), m])),
+            "runs": ask.p64,
         });
         let a = self.ask(&req)?;
         // The fork's candidates are its OWN collection over its own reading of the world;
@@ -784,7 +814,8 @@ impl ForkPlan for InTree {
         let cands = if ask.d60 { forkclass::d60_cands(&b.cands, ask.prios) } else { b.cands.clone() };
         let ov = ask.extend.map(|(id, m)| PlanOverrides::new().extending(id, m));
         let mut input = planner::PlanInput::new(&b.tree, &replay, &b.cfg, &b.model, ask.state, ask.now)
-            .with_ranking(&cands, ask.prios);
+            .with_ranking(&cands, ask.prios)
+            .with_runs(ask.p64);
         if let Some(ov) = ov.as_ref() {
             input = input.with_overrides(ov);
         }

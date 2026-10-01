@@ -45,7 +45,12 @@ fn plan_by_hour(tm: &Tm, at: &str, kind: &str) -> Vec<u64> {
         if s["kind"] != kind {
             continue;
         }
-        let (a, b) = (min(s["start"].as_str().unwrap_or("0:0")), min(s["end"].as_str().unwrap_or("0:0")));
+        let (a, mut b) = (min(s["start"].as_str().unwrap_or("0:0")), min(s["end"].as_str().unwrap_or("0:0")));
+        // A row that ends at the next midnight prints `00:00` (W-40: the wall
+        // of a call clipped to its day ends there).
+        if b < a {
+            b += 24 * 60;
+        }
         for (h, c) in hours.iter_mut().enumerate() {
             let (lo, hi) = (h as u64 * 60, h as u64 * 60 + 60);
             *c += b.min(hi).saturating_sub(a.max(lo));
@@ -124,15 +129,17 @@ fn the_grid_is_the_plans_cut_on_every_day_of_the_week() {
     }
 }
 
-/// **Parity P63, pinned: the plan's cut is the DAY's.** A block run past
-/// midnight into a call that crosses midnight with it (Tuesday 23:30 to
-/// Wednesday 00:30): D61 pauses the block over the call, and the pause is
-/// Tuesday's record. The planner cuts a pause of Tuesday's record by
-/// Tuesday's walls clipped to Tuesday, so the grid's Tuesday row draws the
-/// call's half before midnight as the wall and its half after midnight as
-/// the pause — where the host's own cut, over walls it never clipped, drew
-/// both halves as the wall. A pause wholly inside its day is untouched by
-/// the change (the test above).
+/// **Parity P63 as restated by the campaign's D77 call (README gap 3620),
+/// pinned: each calendar day's part of a pause is cut by THAT day's walls.** A
+/// block run past midnight into a call that crosses midnight with it (Tuesday
+/// 23:30 to Wednesday 00:30): D61 pauses the block over the call, and the
+/// pause is Tuesday's record. W-39 cut the whole pause by Tuesday's walls
+/// clipped to Tuesday, so the grid's Tuesday row drew the call's half after
+/// midnight as the pause while Wednesday's own plan draws those minutes as the
+/// call's Wall row — one span, two readings. Now the half after midnight is
+/// cut by Wednesday's walls: the Tuesday row draws BOTH halves as the wall,
+/// and each day's `tm plan` draws its own half of the call as a wall row. A
+/// pause wholly inside its day is untouched by the change (the test above).
 #[test]
 fn a_pause_past_midnight_is_cut_by_its_days_walls() {
     let tm = Tm::new();
@@ -143,12 +150,21 @@ fn a_pause_past_midnight_is_cut_by_its_days_walls() {
     tm.ok_at("2026-09-08T06:05:00-05:00", &["wake", "06:05", "--slept", "8h"]);
     tm.ok_at("2026-09-08T23:00:00-05:00", &["start", "^t4", "--energy", "4"]);
     tm.ok_at("2026-09-08T23:40:00-05:00", &["now"]);
+    let tuesday_walls = plan_by_hour(&tm, "2026-09-08T23:45:00-05:00", "wall");
     tm.ok_at("2026-09-09T00:40:00-05:00", &["now"]);
     tm.ok_at("2026-09-09T00:50:00-05:00", &["done"]);
+    let wednesday_walls = plan_by_hour(&tm, "2026-09-09T09:00:00-05:00", "wall");
     let rows = heat(&tm, "2026-09-09T09:00:00-05:00", "2026-09-07");
     let tuesday = row(&rows, "2026-09-08");
     assert_eq!(cell(tuesday, 23, Style::Wall), 30, "the call before midnight is the wall: {tuesday}");
     assert_eq!(cell(tuesday, 23, Style::Pause), 0, "{tuesday}");
-    assert_eq!(cell(tuesday, 0, Style::Pause), 30, "P63: after midnight the day's walls do not reach: {tuesday}");
-    assert_eq!(cell(tuesday, 0, Style::Wall), 0, "{tuesday}");
+    assert_eq!(cell(tuesday, 0, Style::Wall), 30, "D77: after midnight Wednesday's wall covers it: {tuesday}");
+    assert_eq!(cell(tuesday, 0, Style::Pause), 0, "D77: nothing of the call is drawn as the pause: {tuesday}");
+    assert_eq!(tuesday_walls[23], 30, "Tuesday's plan draws its half of the call as a wall row: {tuesday_walls:?}");
+    assert_eq!(wednesday_walls[0], 30, "Wednesday's plan draws its half as a wall row: {wednesday_walls:?}");
+    assert_eq!(
+        (cell(tuesday, 23, Style::Wall), cell(tuesday, 0, Style::Wall)),
+        (tuesday_walls[23], wednesday_walls[0]),
+        "the grid draws each day's half as that day's plan draws it: {tuesday}"
+    );
 }

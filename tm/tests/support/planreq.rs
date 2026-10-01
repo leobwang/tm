@@ -5,24 +5,30 @@
 //!
 //! # Whose spelling this is
 //!
-//! The `planner` section and the reading of the answer are **not** spelled
-//! here: they are `tm_core::planwire`'s, the one host codec R3 swaps into the
-//! binary. What IS spelled here is the capacity section, because its shipped
-//! encoder is `tm/src/cli/kernel_capacity.rs::request`, which takes a `Ctx` and
-//! lives in a `[[bin]]` no test can link (README gap 2006). This is that
-//! encoder's shape — `cand_json`, `plan_json`, `send_order`, the `[day]`,
-//! `[priority]`, `[energy]` and `[expected]` tables — read off the tree's own
-//! `Config`, never off literals: `tm/tests/planner_invariants.rs`' world spells
-//! the same section for its generated days, and the two are the second and
-//! third spellings gap 2006 already counts. It is shared so that a third caller
-//! does not make a fourth.
+//! **No section is spelled here** (W-40 track E, README gap 2875). The
+//! `planner` section and the reading of the answer are `tm_core::planwire`'s,
+//! the one host codec R3 swaps into the binary, and since W-40 so is the
+//! capacity section: `planwire::capacity_json` is the pure half that
+//! `tm/src/cli/kernel_capacity.rs`'s `request` calls, moved into `tm-core` so a
+//! test can link it. Until then this file spelled the section a third time
+//! (`cand_json`, `plan_json`, `send_order` and the `[day]`, `[priority]`,
+//! `[energy]` and `[expected]` tables), and the two drifted: the binary sent no
+//! `priority.batchMaxMin`, this file sent no `pLounge.model`, its candidates'
+//! floors and its lookahead were dated by `state.date` where the binary's are
+//! dated by `now`, and its lookahead was not clamped (gaps 2875 and 3720). What
+//! is still this file's is the request AROUND the sections — the documents with
+//! no region, the whole log from line 1, the zone table with no cache — and
+//! `tm/tests/planner_request_keys.rs` diffs its key set against the binary's.
 //!
 //! # What it deliberately leaves out
 //!
-//! * `pLounge.model`, `arrival.model` and `energy` — the learned model's
-//!   tables. Every caller here plans with `Model::default()`, which has none,
-//!   and the kernel falls back to `config` exactly as the shipped request does
-//!   when the model's tables are empty.
+//! * The learned model: every caller here plans with `Model::default()`, whose
+//!   tables are empty, so the codec writes `pLounge.model`, `arrival.model` and
+//!   `energy` empty and the kernel falls back to `config` exactly as it does for
+//!   a plan with no `.tm/model.json` (README gap 3901).
+//! * The files' literals: `Written::default()`, so every configured decimal is
+//!   sent as its double's shortest text — the codec's own fallback for a key no
+//!   file writes.
 //! * `yesterday` on every candidate record is `null`: the callers' states carry
 //!   no `priorities_yesterday`, so the fork reads an empty map too.
 
@@ -31,13 +37,16 @@
 #[path = "../../src/cli/tz_table.rs"]
 pub mod tz_table;
 
-use chrono::{DateTime, Timelike};
+use std::collections::BTreeMap;
+
+use chrono::DateTime;
 use chrono_tz::Tz;
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 
 use tm_core::config::Config;
-use tm_core::model::{fmt_time as hhmm, Id, Loc};
-use tm_core::planwire::{self, CapacityAnswer, DayCtx, KernelDay, RoutineInst};
+use tm_core::energy::Model;
+use tm_core::model::{Id, Loc};
+use tm_core::planwire::{self, CapacityAnswer, CapacityIn, DayCtx, KernelDay, Ranked, RoutineInst, Written};
 use tm_core::priority::{self, Candidate};
 use tm_core::store::{MemStore, RuntimeState, Store};
 use tm_core::tree::Tree;
@@ -60,132 +69,36 @@ pub struct World<'a> {
     pub cands: &'a [Candidate],
 }
 
-/// **A configured double as the exact decimal pair the wire carries** (D17):
-/// its shortest `Display` digits over a power of ten, as digit strings — the
-/// shape `kernel_capacity::written_pair` gives a written decimal.
-pub fn dec(x: f64) -> Value {
-    let t = format!("{x}");
-    let (int, frac) = t.split_once('.').unwrap_or((t.as_str(), ""));
-    json!({"num": format!("{int}{frac}"), "den": format!("1{}", "0".repeat(frac.len()))})
-}
+/// **The order the candidates are sent in** — `planwire::send_order`, the order
+/// the binary's own request sends them in (README gap 2875).
+pub use tm_core::planwire::send_order;
 
-/// The same pair as JSON naturals (`kernel_capacity::nat_pair_of`), for every
-/// section whose reader is `natAt` rather than a digit string.
-pub fn decn(x: f64) -> Value {
-    let v = dec(x);
-    json!({"num": v["num"].as_str().unwrap_or("0").parse::<u64>().unwrap_or(0),
-           "den": v["den"].as_str().unwrap_or("1").parse::<u64>().unwrap_or(1)})
-}
-
-/// **The order the candidates are sent in**: `kernel_capacity::send_order`,
-/// the fork's `(effective_due, own_order, index)`.
-pub fn send_order(cands: &[Candidate]) -> Vec<usize> {
-    let mut order: Vec<usize> = (0..cands.len()).collect();
-    order.sort_by(|&a, &b| {
-        let (ca, cb) = (&cands[a], &cands[b]);
-        (ca.effective_due.is_none(), ca.effective_due, ca.own_order, a)
-            .cmp(&(cb.effective_due.is_none(), cb.effective_due, cb.own_order, b))
-    });
-    order
-}
-
-/// One candidate record: `kernel_capacity::cand_json` and `plan_json`.
-fn cand_json(w: &World<'_>, c: &Candidate) -> Value {
-    let date = planwire::plan_date(w.state, w.now);
-    let root_prio = w.tree.get(&w.tree.root(&c.id)).and_then(|r| r.priority);
-    let floor = c.floor.as_ref().map(|r| {
-        json!({"left": r.amount.as_minutes().saturating_sub(c.floor_done_min),
-               "until": priority::period_range(r.per, date).1.to_string()})
-    });
-    json!({
-        "id": c.id.as_str(), "ci": c.ci, "rootPrio": root_prio,
-        "remaining": c.remaining_min,
-        "due": c.effective_due.map(|d| d.date_naive().to_string()),
-        "window": c.window.is_some(), "wall": c.is_wall,
-        "optional": c.is_optional, "overdue": c.overdue,
-        "mandatory": c.mandatory, "hot": c.hot,
-        "yesterday": Option::<u8>::None,
-        "floor": floor,
-        "plan": {"plannedMin": c.planned_min,
-                 "multiplier": decn(c.multiplier),
-                 "loc": c.loc.as_str(), "splittable": c.splittable,
-                 "cap": c.cap.as_ref().map(|r| json!({
-                     "capMin": r.amount.as_minutes(), "doneMin": c.cap_done_min})),
-                 "state": c.state.glyph().to_string(),
-                 "blockedBy": c.blocked_by.iter().map(ToString::to_string).collect::<Vec<String>>(),
-                 "wallToday": c.wall_today}})
-}
-
-/// **The capacity section**, read off the tree's `Config`.
+/// **The capacity section** — the binary's own encoder, `planwire::capacity_json`
+/// (README gap 2875), over this world: the tree's `Config`, an empty model, no
+/// file literals, `now`'s own date as the request's today (`Ctx::today`), the
+/// stored location read as `Ctx::loc` reads it, and the lookahead
+/// `kernel_capacity::rank` asks for (`planwire::horizon` over
+/// `priority::lookahead_days`).
 fn capacity(w: &World<'_>, order: &[usize]) -> Value {
-    let cfg = w.cfg;
-    let date = planwire::plan_date(w.state, w.now);
-    let week = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-    let wds = [chrono::Weekday::Mon, chrono::Weekday::Tue, chrono::Weekday::Wed,
-               chrono::Weekday::Thu, chrono::Weekday::Fri, chrono::Weekday::Sat,
-               chrono::Weekday::Sun];
-    let p_config: Map<String, Value> =
-        week.iter().zip(wds).map(|(k, wd)| ((*k).to_string(), dec(*cfg.expected.p_lounge.get(wd)))).collect();
-    let arrival: Map<String, Value> =
-        week.iter().zip(wds).map(|(k, wd)| ((*k).to_string(), json!(hhmm(*cfg.expected.arrival.get(wd))))).collect();
-    let prior: Map<String, Value> = cfg
-        .energy
-        .prior
-        .iter()
-        .map(|(loc, steps)| {
-            let s: Vec<Value> = steps
-                .0
-                .iter()
-                .map(|s| json!({"from": decn(s.from), "to": s.to.map(decn), "level": s.level}))
-                .collect();
-            (loc.clone(), Value::Array(s))
-        })
-        .collect();
-    let d = &cfg.day;
-    let shift = cfg.energy.sleep_debt.shift;
-    let mut shift_pair = decn(shift.abs());
-    shift_pair["neg"] = json!(shift < 0.0);
-    let mut section = json!({
-        "wake": match w.state.wake {
-            Some(t) => json!({"sec": t.num_seconds_from_midnight(), "ns": t.nanosecond()}),
-            None => json!("log"),
-        },
-        "pLounge": {"config": p_config},
-        "arrival": {"config": arrival},
-        "prior": prior,
-        "homeMaxCi": cfg.location.home_max_ci,
-        "day": {"breakMin": d.break_min, "breakAfterBlocks": d.break_after_blocks,
-                "minLastBlockMin": d.min_last_block_min,
-                "windowHours": decn(d.window_hours), "windowCap": hhmm(d.window_cap),
-                "budgetRatio": decn(d.budget_ratio),
-                "windDown": hhmm(d.wind_down), "bed": hhmm(d.bed)},
-        "priority": {"bins": cfg.priority.bins.iter().map(|b| decn(*b)).collect::<Vec<_>>(),
-                     "safety": decn(cfg.priority.safety),
-                     "defaultPriority": cfg.priority.default_priority},
-        "days": priority::lookahead_days(w.cands, date),
-        "at": w.now.to_rfc3339(),
-        "state": {
-            "date": w.state.date.map(|x| x.to_string()),
-            "window": w.state.window.map(|(f, t)| json!({"from": hhmm(f), "to": hhmm(t)})),
-            "budget": w.state.budget,
-            "arrival": w.state.arrival.map(hhmm),
-            // `Ctx::loc`'s reading, as the shipped encoder sends it: the stored
-            // location, else the lounge. This sent `state.loc` raw until W-36
-            // track H, so a day before `tm arrive` (`loc: null`) was refused
-            // `badState state.loc` here and planned by the binary (README gap
-            // 3083, gap 2875's drift).
-            "loc": w.state.loc.as_deref().and_then(|s| Loc::parse(s).ok()).unwrap_or(Loc::Lounge).as_str(),
-            "allowHome": false},
-        "posterior": {"fullHours": decn(cfg.energy.posterior_full_hours),
-                      "zeroHours": decn(cfg.energy.posterior_zero_hours)},
-        "sleep": {"shiftModel": null, "shiftConfig": shift_pair,
-                  "underHours": decn(cfg.energy.sleep_debt.under_hours)},
-        "candidates": {"hysteresis": cfg.priority.hysteresis,
-                       "items": order.iter().map(|&i| cand_json(w, &w.cands[i])).collect::<Vec<_>>()},
-    });
-    // The one key the planner section needs from the capacity section, written
-    // by the host codec and not here.
-    planwire::add_batch_max_min(&mut section, cfg);
+    let today = w.now.date_naive();
+    let (model, written, yesterday) = (Model::default(), Written::default(), BTreeMap::new());
+    let input = CapacityIn {
+        cfg: w.cfg,
+        model: &model,
+        written: &written,
+        tree: w.tree,
+        state: w.state,
+        now: w.now,
+        // `Ctx::loc`'s reading: the stored location, else the lounge (README gap 3083).
+        loc: w.state.loc.as_deref().and_then(|s| Loc::parse(s).ok()).unwrap_or(Loc::Lounge),
+        allow_home: false,
+        days: planwire::horizon(today, priority::lookahead_days(w.cands, today)).0,
+    };
+    let section = planwire::capacity_json(&input, Some(&Ranked { cands: w.cands, yesterday: &yesterday }))
+        .unwrap_or_else(|e| panic!("the world's configuration is one the codec carries: {e}"));
+    // `request` hands `order` back to read the grants with, so it must be the order the encoder
+    // wrote the candidates in -- or every grant is read as another candidate's.
+    assert_eq!(order, planwire::send_order(w.cands).as_slice(), "the candidates' order is the encoder's");
     section
 }
 

@@ -1708,7 +1708,7 @@ fn the_overrun_lines_witness_p45s_reset() {
         let prios = forkclass::kernel_answer_with_grants(&b).expect("the kernel answers").1;
         let with = forkplan::p45_after(&b, &prios, &forkplan::InTree).expect("the fork plans").expect("a running break");
         let from = DateTime::parse_from_rfc3339(with["from"].as_str().expect("from")).expect("an instant").with_timezone(&tz);
-        let ask = forkplan::ForkAsk { state: &b.world.state, now: from, d60: true, prios: &prios, extend: None, log_line: None };
+        let ask = forkplan::ForkAsk { state: &b.world.state, now: from, d60: true, p64: true, prios: &prios, extend: None, log_line: None };
         let day = forkplan::ForkPlan::plan(&forkplan::InTree, &b, &ask).expect("the fork plans").day;
         let unlogged: Vec<Value> = day["segments"]
             .as_array()
@@ -1901,7 +1901,7 @@ fn the_frozen_fork_classes_are_reblessed() {
             forkclass::set_answer(&mut line, key, answers[key].clone());
         }
         // The SHIPPED fork's day is fork 4748911's (P56), as `fork_answers` keeps it.
-        let ask = forkplan::ForkAsk { state: &b.world.state, now: b.world.now, d60: false, prios: &prios, extend: None, log_line: None };
+        let ask = forkplan::ForkAsk { state: &b.world.state, now: b.world.now, d60: false, p64: false, prios: &prios, extend: None, log_line: None };
         let shipped_day = forkplan::ForkPlan::plan(&forkplan::InTree, &b, &ask).expect("the fork plans").fork_day;
         match forkclass::d64_allows(&old, &line, &shipped_day, &because, &registered) {
             Err(e) => refused.push(e),
@@ -1990,7 +1990,7 @@ fn the_frozen_batch_is_blessed() {
                 refused.push(format!("draw {index}: the generator draws another world — a re-draw, which D64(b) must decide"));
             }
             Some(old) => {
-                let ask = forkplan::ForkAsk { state: &b.world.state, now: b.world.now, d60: false, prios: &prios, extend: None, log_line: None };
+                let ask = forkplan::ForkAsk { state: &b.world.state, now: b.world.now, d60: false, p64: false, prios: &prios, extend: None, log_line: None };
                 let shipped_day = forkplan::ForkPlan::plan(&forkplan::InTree, &b, &ask).expect("the fork plans").fork_day;
                 match forkclass::d64_allows(old, &line, &shipped_day, &because, &registered) {
                     Err(e) => refused.push(e),
@@ -2073,7 +2073,7 @@ fn the_frozen_driven_days_are_blessed() {
             if old["world"] != line["world"] {
                 refused.push(format!("{}: the binary writes another world now — a re-draw, which D64(b) must decide", d.name));
             } else {
-                let ask = forkplan::ForkAsk { state: &b.world.state, now: b.world.now, d60: false, prios: &prios, extend: None, log_line: None };
+                let ask = forkplan::ForkAsk { state: &b.world.state, now: b.world.now, d60: false, p64: false, prios: &prios, extend: None, log_line: None };
                 let shipped_day = forkplan::ForkPlan::plan(&forkplan::InTree, &b, &ask).expect("the fork plans").fork_day;
                 if let Err(e) = forkclass::d64_allows(old, &line, &shipped_day, &because, &registered) {
                     refused.push(e);

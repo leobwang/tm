@@ -615,8 +615,9 @@ def inputs_main(audit, files, codes):
 # And an optional key an encoder MISSPELLS reads as absent with no refusal, so
 # a typo in the host is a feature quietly switched off.
 #
-# THE PROPERTY.  Every JSON key path the host codec's `<section>_json` writes
-# (`sentkeys.host_paths`: its `json!` literals, inserts, index assignments and
+# THE PROPERTY, AS W-36 STATED IT FOR ONE SECTION (since W-40 the host side is
+# `sentkeys.host_sections`, below).  Every JSON key path the host codec's `<section>_json`
+# writes (`sentkeys.host_paths`: its `json!` literals, inserts, index assignments and
 # arrays, its helpers composed by call, a caller's value placed by the module's
 # `<key>_json`) must be DECODED by the kernel's reader of that section
 # (`sentkeys.kernel_paths`: the section's value followed from the definition
@@ -627,16 +628,31 @@ def inputs_main(audit, files, codes):
 # FAILS as STALE, and a line the committed file did not hold FAILS as RATCHET:
 # the file may only shrink, W-27's shape.
 #
-# WHAT IT CANNOT SEE is `sentkeys.py`'s header, and one more thing: it asks
-# ONE section, the planner's, of ONE encoder, `tm-core/src/planwire.rs`.  The
-# capacity section's host encoder is `tm/src/cli/kernel_capacity.rs::request`
-# (and `planwire::add_batch_max_min`, which writes into it); the log, tz, emit,
-# docs and plan-row sections have encoders of their own.  None of them is
-# asked here (README gap 3081), and the reach of the rule is said in the line
-# this half prints so a reader does not take it for more.
+# WHAT IT CANNOT SEE is `sentkeys.py`'s header.  Until W-40 it asked ONE section,
+# the planner's, of ONE encoder, `tm-core/src/planwire.rs` (README gap 3081, and gap
+# 3717: `day.rs`' `call_the_walls` wrote `emit.walls.week` with no gate asking whether
+# a kernel reader decoded it).
+#
+# SINCE W-40 TRACK E (README gap 3717) IT ASKS EVERY SECTION, AT EVERY PLACE A REQUEST
+# GAINS ONE.  The sections are the kernel's own -- `sections.spine`, the walk from the
+# export that check 12 roots itself on -- and the host side of each is
+# `sentkeys.host_sections`: every `json!` object any function of the program (`tm/src`
+# and every crate it links by path) builds that carries `docs`, wherever it is written,
+# and every request built as TEXT (`kernel_log`'s `log` section and request, the
+# `format!` that splices it into the capacity and walls requests) is a request, and
+# each of its top-level keys a section whose value is read through the helpers it
+# calls, in whatever module (`Foreign`); the codec's `<section>_json` that no codec
+# function composes is a section's root (the only host side `planner` has until R3),
+# and its `&mut Value` writers join it.  The sites are held to check 12's own scan of
+# `tm/src` (`sections.sent_sections`): a request that scan reads and no site holds
+# FAILS, UNREAD REQUEST.
+# Both sides are compared NORMALIZED (`sentkeys.normalized`): prefix-closed, an array
+# of scalars read as its key.  A key path is reported once, at its shallowest, and an
+# exemption line names a path or a whole section and answers everything under it.
 # ===========================================================================
+# The section R3 swaps in: its host side is the codec's alone until then, so a
+# reader that lost it would compare nothing where it matters most (a floor, not a scope).
 SENT_SECTION = "planner"
-HOST_CODEC = HERE.parent / "tm-core" / "src" / "planwire.rs"
 SENT_EXEMPT_FILE = HERE / "sent-exempt.txt"
 
 # ===========================================================================
@@ -652,8 +668,9 @@ SENT_EXEMPT_FILE = HERE / "sent-exempt.txt"
 # one override is `PlanOverrides::extending`.  After R3 the section is sent,
 # that code counts as reached, and no host key ever drives it.
 #
-# THE PROPERTY.  Every key path `sentkeys.kernel_paths` decodes under the
-# section is WRITTEN by the codec (`sentkeys.host_paths`, which since this
+# THE PROPERTY, AS THE W-36 REPAIR STATED IT (since W-40 the writers are every place a
+# request is built, `sentkeys.host_sections`).  Every key path `sentkeys.kernel_paths`
+# decodes under the section is WRITTEN by the codec (`sentkeys.host_paths`, which since this
 # repair also follows every codec function taking the section as `&mut
 # Value`), or is named in `written-exempt.txt` under a dated reason with an
 # EXIT -- reported once at its shallowest path, STALE when it is written now or
@@ -668,140 +685,174 @@ SENT_EXEMPT_FILE = HERE / "sent-exempt.txt"
 WRITTEN_EXEMPT_FILE = HERE / "written-exempt.txt"
 
 
-def ratchet_file(path, shallow, under, why_stale, bad):
+HEADING = re.compile(r"^##[ \t]+(.*)$")
+
+
+def ratchet_file(path, shallow, under, why_stale, bad, sections):
     """The exemption entries of `path` against the shallow key paths they may
-    exempt: a malformed, undated or repeated line, a line whose key is not in
-    `shallow` (`why_stale(p)` says why), and a line the committed file did not
-    hold are each a complaint in `bad`.  Returns `{path: lineno}`."""
-    entries = {}
+    exempt.  An entry is `<section>[.key.path] -- <reason with an ISO date and an
+    EXIT>`, for any section in `sections`, and answers every shallow path equal to or
+    under it.  A malformed, undated or repeated line, a line no shallow path is at or
+    under (STALE; `why_stale(p)` says why), and a line the committed file did not hold
+    are each a complaint in `bad` -- unless it sits under a `## <heading>` the committed
+    file did not hold either, and the heading carries an ISO date: growth is a dated
+    section in the diff, never a line (reach.py's rule, D51; W-40).  Returns
+    `{entry: lineno}`."""
+    entries, heading_of, headings = {}, {}, {}
     text = path.read_text() if path.exists() else ""
+    current = None
     for lineno, raw in enumerate(text.splitlines(), 1):
         line = raw.strip()
+        hd = HEADING.match(line)
+        if hd:
+            current = hd.group(1).strip()
+            headings[current] = lineno
+            if not ISO_DATE.search(current):
+                bad.append("%s:%d  the heading `%s` carries no ISO date" % (path.name, lineno, current))
+            continue
         if not line or line.startswith("#"):
             continue
         name, sep, reason = line.partition(" -- ")
-        if not sep or not name.startswith(SENT_SECTION + "."):
-            bad.append("%s:%d  an entry is `<%s.key.path> -- <reason>`"
-                       % (path.name, lineno, SENT_SECTION))
+        sec = re.split(r"[.\[]", name, 1)[0]
+        if not sep or sec not in sections:
+            bad.append("%s:%d  an entry is `<section>[.key.path] -- <reason>`, the section one the "
+                       "kernel reads off a request" % (path.name, lineno))
             continue
         if not ISO_DATE.search(reason) or not EXIT.search(reason):
             bad.append("%s:%d  `%s` needs an ISO date and an EXIT" % (path.name, lineno, name))
         if name in entries:
             bad.append("%s:%d  `%s` is listed twice" % (path.name, lineno, name))
         entries[name] = lineno
-    for p, lineno in sorted(entries.items(), key=lambda kv: kv[1]):
-        if p not in shallow:
+        heading_of[name] = current
+    for e, lineno in sorted(entries.items(), key=lambda kv: kv[1]):
+        if not any(p == e or under(p, e) for p in shallow):
             bad.append("STALE: %s:%d  `%s` is %s -- delete this line, the file may only shrink"
-                       % (path.name, lineno, p, why_stale(p)))
+                       % (path.name, lineno, e, why_stale(e)))
     prev = committed_exemptions(path)
     if prev is not None:
-        held = {ln.strip().partition(" -- ")[0] for ln in prev.splitlines()
-                if ln.strip() and not ln.strip().startswith("#")}
-        for p in sorted(set(entries) - held):
-            if not any(under(p, q) for q in held):
-                bad.append("RATCHET: %s:%d  `%s` is a NEW exemption and no key it is under was "
-                           "exempt at HEAD -- this file may only SHRINK" % (path.name, entries[p], p))
+        held, held_heads = set(), set()
+        for ln in prev.splitlines():
+            ln = ln.strip()
+            hd = HEADING.match(ln)
+            if hd:
+                held_heads.add(hd.group(1).strip())
+            elif ln and not ln.startswith("#"):
+                held.add(ln.partition(" -- ")[0])
+        for e in sorted(set(entries) - held):
+            if any(under(e, q) for q in held):
+                continue
+            h = heading_of.get(e)
+            if h is not None and h not in held_heads and ISO_DATE.search(h):
+                continue
+            bad.append("RATCHET: %s:%d  `%s` is a NEW exemption, under no key exempt at HEAD and no "
+                       "dated heading new in this diff -- this file may only SHRINK"
+                       % (path.name, entries[e], e))
     return entries
 
 
-def written_main(host, kernel, under):
-    """The written half: every decoded key path has a writer in the codec."""
+def answered(p, entries, under):
+    """Is the shallow path `p` answered by an exemption entry (itself or an ancestor)?"""
+    return any(p == e or under(p, e) for e in entries)
+
+
+def under(p, q):
+    """Is key path `p` strictly under `q`?"""
+    return p != q and (p.startswith(q + ".") or p.startswith(q + "[]"))
+
+
+def section_paths(files, codes):
+    """`(sections, host, kernel, where, complaints)`: the kernel's top-level sections
+    (`sections.spine`), and for each the normalized key paths the program writes and
+    the kernel's reader decodes."""
+    import sentkeys
+    import sections as reqsec
+    # Check 12's own qualified map, read off the text this process already stripped:
+    # `Lib` builds it from the raw files otherwise, 1.6 s of this check's wall (W-40).
+    defs = []
+    for p in files:
+        for kw in ("def", "abbrev"):
+            pairs, _ = leanfiles.qualified_names(p, kw, code=codes[p] if codes else None)
+            defs.extend((pathlib.Path(p).name, w, q) for w, q in pairs)
+    lib = reqsec.Lib(LIB, defs=defs)
+    secs, _, _ = reqsec.spine(lib)
+    names = sorted(secs)
+    host_raw, where, complaints = sentkeys.host_sections(HERE.parent, names)
+    reader = sentkeys.LeanReader(files, codes)
+    host, kernel = {}, {}
+    for sec in names:
+        host[sec] = sentkeys.normalized(host_raw.get(sec, ()), sec)
+        kernel[sec] = sentkeys.normalized(sentkeys.kernel_paths(files, sec, codes, reader), sec)
+    return names, host, kernel, where, complaints
+
+
+def written_main(names, host, kernel):
+    """The written half: every decoded key path has a writer where a request is built."""
     bad = []
-    unwritten = [p for p in kernel if p not in host]
+    unwritten = sorted(p for sec in names for p in kernel[sec] if p not in host[sec])
     shallow = [p for p in unwritten if not any(under(p, q) for q in unwritten)]
+    allk = set().union(*kernel.values()) if kernel else set()
+    allh = set().union(*host.values()) if host else set()
     entries = ratchet_file(
         WRITTEN_EXEMPT_FILE, shallow, under,
-        lambda p: ("WRITTEN now" if p in host else "not a key the kernel decodes"
-                   if p not in kernel else "under `%s`, which is unwritten itself"
-                   % next((q for q in shallow if under(p, q)), "?")), bad)
+        lambda p: ("WRITTEN now" if p in allh else "not a key the kernel decodes"
+                   if p not in allk and p not in names else "under a key unwritten itself"),
+        bad, names)
     for p in shallow:
-        if p not in entries:
-            bad.append("UNWRITTEN: `%s` is decoded by the kernel's reader of `%s` and written by "
-                       "no function of %s -- write it, stop decoding it, or name it in %s under a "
-                       "dated reason with an EXIT"
-                       % (p, SENT_SECTION, HOST_CODEC.name, WRITTEN_EXEMPT_FILE.name))
+        if not answered(p, entries, under):
+            bad.append("UNWRITTEN: `%s` is decoded by the kernel's reader of `%s` and written at no "
+                       "place a request is built (`sentkeys.host_sections`) -- write it, stop "
+                       "decoding it, or name it in %s under a dated reason with an EXIT"
+                       % (p, re.split(r"[.\[]", p, 1)[0], WRITTEN_EXEMPT_FILE.name))
     for line in bad:
         print(line)
-    print("written: %d key path(s) the kernel's reader of `%s` decodes, %d written by %s, "
-          "%d unwritten of which %d exempt, %d UNANSWERED"
-          % (len(kernel), SENT_SECTION, len(kernel) - len(unwritten), HOST_CODEC.name,
-             len(shallow), sum(1 for p in shallow if p in entries), len(bad)))
+    print("written: %d key path(s) the kernel decodes over %d section(s), %d written where a "
+          "request is built, %d unwritten (%d shallow, %d answered by %d exemption(s)), %d UNANSWERED"
+          % (len(allk), len(names), len(allk) - len(unwritten), len(unwritten), len(shallow),
+             sum(1 for p in shallow if answered(p, entries, under)), len(entries), len(bad)))
     return 1 if bad else 0
 
 
 def sent_main(audit, files, codes=None):
-    import sentkeys
-    host, complaints = sentkeys.host_paths(HOST_CODEC.read_text(), SENT_SECTION)
-    kernel = sentkeys.kernel_paths(files, SENT_SECTION, codes)
+    names, host, kernel, where, complaints = section_paths(files, codes)
     bad = list(complaints)
-    if not host:
-        bad.append("NO HOST KEYS: `%s_json` in %s writes nothing this reader can see -- the "
-                   "half would compare nothing" % (SENT_SECTION, HOST_CODEC.name))
-    if not kernel:
+    if not host.get(SENT_SECTION):
+        bad.append("NO HOST KEYS: nothing the program builds writes `%s` -- the half would "
+                   "compare nothing for the section R3 swaps in" % SENT_SECTION)
+    if not kernel.get(SENT_SECTION):
         bad.append("NO KERNEL READS: no definition reads `%s` off the request, or the walk from "
                    "it was lost -- every key would read as unread" % SENT_SECTION)
-    unread = [p for p in host if p not in kernel]
-
-    def under(p, q):
-        return p != q and (p.startswith(q + ".") or p.startswith(q + "[]"))
-
+    unread = sorted(p for sec in names for p in host[sec] if p not in kernel[sec])
     shallow = [p for p in unread if not any(under(p, q) for q in unread)]
-    entries = {}
-    text = SENT_EXEMPT_FILE.read_text() if SENT_EXEMPT_FILE.exists() else ""
-    for lineno, raw in enumerate(text.splitlines(), 1):
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        name, sep, reason = line.partition(" -- ")
-        if not sep or not name.startswith(SENT_SECTION + "."):
-            bad.append("%s:%d  an entry is `<%s.key.path> -- <reason>`"
-                       % (SENT_EXEMPT_FILE.name, lineno, SENT_SECTION))
-            continue
-        if not ISO_DATE.search(reason) or not EXIT.search(reason):
-            bad.append("%s:%d  `%s` needs an ISO date and an EXIT" % (SENT_EXEMPT_FILE.name, lineno, name))
-        if name in entries:
-            bad.append("%s:%d  `%s` is listed twice" % (SENT_EXEMPT_FILE.name, lineno, name))
-        entries[name] = lineno
+    allk = set().union(*kernel.values()) if kernel else set()
+    allh = set().union(*host.values()) if host else set()
+    entries = ratchet_file(
+        SENT_EXEMPT_FILE, shallow, under,
+        lambda p: ("DECODED now" if p in allk else "not a key any request writes"
+                   if p not in allh and p not in names else "under a key unread itself"),
+        bad, names)
     for p in shallow:
-        if p not in entries:
-            bad.append("UNREAD: `%s` is written by the host's `%s_json` (%s) and decoded by no "
-                       "kernel reader of `%s` -- read it, stop sending it, or name it in %s under "
-                       "a dated reason with an EXIT"
-                       % (p, SENT_SECTION, HOST_CODEC.name, SENT_SECTION, SENT_EXEMPT_FILE.name))
-    for p, lineno in sorted(entries.items(), key=lambda kv: kv[1]):
-        if p not in shallow:
-            above = next((q for q in shallow if under(p, q)), None)
-            why = ("DECODED now" if p in kernel else
-                   "not a key the encoder writes" if p not in host else
-                   "under `%s`, which is unread itself" % above)
-            bad.append("STALE: %s:%d  `%s` is %s -- delete this line, the file may only shrink"
-                       % (SENT_EXEMPT_FILE.name, lineno, p, why))
-    # THE RATCHET is on the exempted KEYS, not on the lines: a line may be
-    # replaced by one for a key UNDER it (the exempted subtree only narrows --
-    # when a reader starts decoding `grown` and two of its three keys, the one
-    # left takes the line's place), and any other new line FAILS.
-    prev = committed_exemptions(SENT_EXEMPT_FILE)
-    if prev is not None:
-        held = {ln.strip().partition(" -- ")[0] for ln in prev.splitlines()
-                if ln.strip() and not ln.strip().startswith("#")}
-        for p in sorted(set(entries) - held):
-            if not any(under(p, q) for q in held):
-                bad.append("RATCHET: %s:%d  `%s` is a NEW exemption and no key it is under was "
-                           "exempt at HEAD -- this file may only SHRINK"
-                           % (SENT_EXEMPT_FILE.name, entries[p], p))
+        if not answered(p, entries, under):
+            bad.append("UNREAD: `%s` is written into a request (%s) and decoded by no kernel reader "
+                       "of `%s` -- read it, stop sending it, or name it in %s under a dated reason "
+                       "with an EXIT"
+                       % (p, ", ".join(where.get(re.split(r"[.\[]", p, 1)[0], ["?"])[:3]),
+                          re.split(r"[.\[]", p, 1)[0], SENT_EXEMPT_FILE.name))
     if audit:
-        for p in host:
-            print("  sent %-44s %s" % (p, "read" if p in kernel else
-                                       "exempt" if p in entries else
-                                       "unread (under %s)" % next(q for q in shallow if under(p, q) or p == q)))
+        for sec in names:
+            print("  section %-9s host %3d kernel %3d  written at %s"
+                  % (sec, len(host[sec]), len(kernel[sec]), ", ".join(where.get(sec, ["nowhere"]))))
+            for p in sorted(host[sec]):
+                print("    sent %-52s %s" % (p, "read" if p in kernel[sec] else
+                                             "exempt" if answered(p, entries, under) else "UNREAD"))
     for line in bad:
         print(line)
-    print("sent: %d key path(s) the host's `%s_json` writes (%s), %d decoded by the kernel's "
-          "reader of `%s`, %d unread of which %d exempt, %d UNANSWERED; the other sections' "
-          "encoders are not asked (gap 3081)"
-          % (len(host), SENT_SECTION, HOST_CODEC.name, len(host) - len(unread), SENT_SECTION,
-             len(shallow), sum(1 for p in shallow if p in entries), len(bad)))
-    written_rc = written_main(host, kernel, under) if host and kernel else 1
+    print("sent: %d key path(s) written into a request over %d section(s) (%s), %d decoded by the "
+          "kernel, %d unread (%d shallow, %d answered by %d exemption(s)), %d UNANSWERED"
+          % (len(allh), len(names), ", ".join("%s %d" % (sec, len(host[sec])) for sec in names
+                                               if host[sec]),
+             len(allh) - len(unread), len(unread), len(shallow),
+             sum(1 for p in shallow if answered(p, entries, under)), len(entries), len(bad)))
+    written_rc = written_main(names, host, kernel)
     return 1 if bad or written_rc else 0
 
 

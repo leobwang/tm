@@ -45,7 +45,7 @@
 //!   ```text
 //!   {"op":"plan", "world":{docs,log,state,now,mult,ratio}, "state":{..}, "now":"..",
 //!    "log_line":null|"..", "order":null|{id:[[r,r],[o,o]]}, "prios":[grant..],
-//!    "extend":null|[id,minutes]}
+//!    "extend":null|[id,minutes], "runs":false|true}
 //!     -> {"day":<DayPlan>, "hash":<DayPlan::hash>, "ranked":[id..], "cands":[id..]}
 //!   {"op":"diff", "old":[segment..], "new":[segment..]}
 //!     -> {"diff":<planner::diff>}
@@ -59,8 +59,31 @@
 //!   so `build-oracle.sh` grafts `09d38fa`'s two edits onto it
 //!   (`plan-seam.patch`, whose header says which). `order` is D60's key, the
 //!   two order fields rewritten by id; `extend` is §9.1's what-if
-//!   (`PlanOverrides::extending`). A request the fork cannot answer is answered
+//!   (`PlanOverrides::extending`); `runs` is D74's split of a batch into its runs (parity P64,
+//!   `p64-runs.patch`, the W-40 land step), the comparand's departure for P64. A request the fork cannot answer is answered
 //!   `{"error": ...}`, by name, and the process keeps reading.
+//! * `review` — **the fork's WEEK GRID, out of the tree** (stage 6 W-40 track H,
+//!   README gap 3718; D23's shape, as `plan` is for the planner): one JSON request
+//!   per line of stdin, one answer per line of stdout. Until W-40 every test of the
+//!   week grid compared the kernel's cut of a Pause (`GridCut.segSpans`) with the
+//!   day plan's (`Planner.pastSpans`, after R3) — the kernel with itself through
+//!   two surfaces. This is fork 4748911's own drawing of the same world, for a
+//!   comparand that outlives R3:
+//!
+//!   ```text
+//!   {"op":"week", "world":{docs, log, config}, "date":"YYYY-MM-DD"|"YYYY-Www"}
+//!     -> {"week":"YYYY-Www", "heat":[<DayHeat> x7], "pauses":[[date, start, end, id]..]}
+//!   ```
+//!
+//!   The world is read as the FORK reads it — its own parser (`Tree::from_texts`
+//!   over the documents, `config.toml`'s text through `Config::parse`, the default
+//!   configuration when the world carries none), its own `log::replay(None, tz)`
+//!   over the same bytes, as fork `Ctx::load` replays the whole log — and the grid
+//!   is fork `review::week_review`'s `heat`, the seven `DayHeat` rows its
+//!   `heat_of` draws (seven styles, every Pause whole as `pause`). `pauses` is every
+//!   `Pause` segment of the week's day records, in record order, with the day whose
+//!   record holds it: what a comparand needs to apply a registered departure that
+//!   moves a Pause's minutes (parity P63) by its property.
 //!
 //! One JSON object per line, on stdout:
 //!
@@ -382,7 +405,10 @@ fn plan_one(req: &Value) -> Result<Value, String> {
         }
         None => None,
     };
-    let mut input = PlanInput::new(&tree, &log, &replay, &cfg, &model, &state, now).with_ranking(&cands, &prios);
+    // `runs`: D74's split into runs (parity P64, `p64-runs.patch`), the comparand's.
+    let runs = req["runs"].as_bool().unwrap_or(false);
+    let mut input =
+        PlanInput::new(&tree, &log, &replay, &cfg, &model, &state, now).with_ranking(&cands, &prios).with_runs(runs);
     if let Some(ov) = ov.as_ref() {
         input = input.with_overrides(ov);
     }
@@ -444,6 +470,72 @@ fn diff_one(req: &Value) -> Result<Value, String> {
     };
     let (old, new) = (day_of(&req["old"])?, day_of(&req["new"])?);
     Ok(json!({ "diff": planner::diff(&old, &new) }))
+}
+
+// ---------------------------------------------------------------------------
+// `review`: the fork's week grid (README gap 3718)
+// ---------------------------------------------------------------------------
+
+/// **One `week` op**: fork `review::week_review`'s heat grid for the ISO week holding
+/// `date`, over the world read as the fork reads it, and every Pause segment of the
+/// week's day records with the day that holds it. A date is read as fork `IsoWeek::
+/// from_date` reads it; `YYYY-Www` as fork `IsoWeek::parse` does.
+fn week_one(req: &Value) -> Result<Value, String> {
+    use tm_core::log::SegmentKind;
+    use tm_core::model::IsoWeek;
+    let world = &req["world"];
+    let cfg = match &world["config"] {
+        Value::Null => tm_core::config::Config::default(),
+        Value::String(t) => tm_core::config::Config::parse(t).map_err(|e| format!("world.config: {e}"))?,
+        other => return Err(format!("world.config is {other}, not a config.toml's text")),
+    };
+    let tz = cfg.tz;
+    let docs: Vec<(String, String)> = world["docs"]
+        .as_array()
+        .ok_or("world.docs is not an array")?
+        .iter()
+        .map(|d| match (d[0].as_str(), d[1].as_str()) {
+            (Some(p), Some(t)) => Ok((p.to_string(), t.to_string())),
+            _ => Err(format!("world.docs holds {d}")),
+        })
+        .collect::<Result<_, _>>()?;
+    let files: Vec<(&str, &str)> = docs.iter().map(|(p, t)| (p.as_str(), t.as_str())).collect();
+    let tree = tm_core::tree::Tree::from_texts(&files, &cfg);
+    let log_text = world["log"].as_str().ok_or("world.log is not a string")?;
+    let replay = Log::parse(log_text).replay(None, tz);
+    let model = tm_core::energy::Model::default();
+    let spelled = req["date"].as_str().ok_or("`date` is not a string")?;
+    let week = match chrono::NaiveDate::parse_from_str(spelled, "%Y-%m-%d") {
+        Ok(d) => IsoWeek::from_date(d),
+        Err(_) => IsoWeek::parse(spelled).map_err(|e| format!("`date` {spelled:?}: {e}"))?,
+    };
+    let review = tm_core::review::week_review(
+        &tree,
+        &replay,
+        &cfg,
+        &model,
+        week,
+        tz,
+        &tm_core::review::WeekExtras::default(),
+    );
+    let mut pauses: Vec<Value> = Vec::new();
+    for date in week.dates() {
+        for seg in replay.day(date).map(|d| d.segments.as_slice()).unwrap_or_default() {
+            if let SegmentKind::Pause { id } = &seg.kind {
+                pauses.push(json!([date.to_string(), seg.start.to_rfc3339(), seg.end.to_rfc3339(), id]));
+            }
+        }
+    }
+    Ok(json!({ "week": week.to_string(), "heat": review.heat, "pauses": pauses }))
+}
+
+/// A `review` request, answered — or refused `{"error": …}` by name.
+fn observe_review(req: &Value) -> Value {
+    let answer = match req["op"].as_str() {
+        Some("week") => week_one(req),
+        other => Err(format!("unknown op {other:?}")),
+    };
+    answer.unwrap_or_else(|e| json!({ "error": e }))
 }
 
 /// A request, answered — or refused `{"error": …}` by name, so the caller sees why.
@@ -547,6 +639,21 @@ fn main() {
                 w.flush().unwrap();
             }
         }
+        Some("review") => {
+            // `plan`'s protocol: one request, one answer, FLUSHED.
+            for l in std::io::stdin().lock().lines() {
+                let l = l.unwrap();
+                if l.trim().is_empty() {
+                    continue;
+                }
+                let answer = match serde_json::from_str::<Value>(&l) {
+                    Ok(req) => observe_review(&req),
+                    Err(e) => json!({ "error": format!("a request is one JSON object per line: {e}") }),
+                };
+                writeln!(w, "{answer}").unwrap();
+                w.flush().unwrap();
+            }
+        }
         Some("fit") => {
             let tz: chrono_tz::Tz = args
                 .get(2)
@@ -574,7 +681,8 @@ fn main() {
                  \x20      tm-oracle parse-entry  (ONE log line per line: a JSON string, or a JSON array of bytes)\n\
                  \x20      tm-oracle replay <tz>  (whole log texts, one JSON string per line)\n\
                  \x20      tm-oracle fit <tz> <today>  (the same, fitted: `tm model --fit`)\n\
-                 \x20      tm-oracle plan  (one planning request per line: the fork's planner, ranked as the binary ranks it)"
+                 \x20      tm-oracle plan  (one planning request per line: the fork's planner, ranked as the binary ranks it)\n\
+                 \x20      tm-oracle review  (one week-grid request per line: the fork's review::week_review heat over a world)"
             );
             std::process::exit(2);
         }

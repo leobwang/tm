@@ -921,10 +921,10 @@ when the state stores no arrival, read by `PlanReq.window` through `Look.Today.p
 def PlanReq.loggedArrival (r : PlanReq) : Option Cal.Instant := (r.todayRecord.bind (·.arrival)).map (·.1)
 
 /-- §8.1's window as the fork's PLANNER reads it (`Planner::window_and_budget`, README gaps 320 and 3341): the window stored for
-`plan_date`'s day (`Look.Today.planWindow`: a state naming no day is today's, and no budget is needed beside it), its end on the
-NEXT day when earlier than its start; else §8.1's formula from `Planner::new`'s arrival (`Look.Today.planArrivalSec` over `loggedArrival`, gap 3390), extended by the day's walls CLIPPED to it (`Look.wallsClippedOn`, fork `collect_walls`; gap 3556). -/
+`plan_date`'s day (`Look.Today.planWindow`: a state naming no day is today's, and no budget is needed beside it), its end 24 HOURS
+later when earlier than its start (fork `end += Duration::days(1)`; until W-40 the NEXT day's clock, README gap 3782); else §8.1's formula from `Planner::new`'s arrival (`Look.Today.planArrivalSec` over `loggedArrival`, gap 3390), extended by the day's walls CLIPPED to it (`Look.wallsClippedOn`, fork `collect_walls`; gap 3556). -/
 def PlanReq.window (r : PlanReq) : Nat × Nat := match r.look.today0.planWindow r.look.today with
-  | some w => ((Cal.instantOf r.look.tz r.look.today w.1).sec, (Cal.instantOf r.look.tz (if w.2 < w.1 then r.look.today + 1 else r.look.today) w.2).sec) | none => Look.windowFrom r.look.tz (r.look.today0.planArrivalSec r.look.today r.look.tz r.loggedArrival) (Look.windowMinOf r.look.day.windowHours) r.look.day.windowCap (Look.wallsClippedOn (Cal.instantOf r.look.tz r.look.today 0).sec (Cal.instantOf r.look.tz (r.look.today + 1) 0).sec r.look.walls r.look.today)
+  | some w => ((Cal.instantOf r.look.tz r.look.today w.1).sec, (Cal.instantOf r.look.tz r.look.today w.2).sec + (if w.2 < w.1 then 86400 else 0)) | none => Look.windowFrom r.look.tz (r.look.today0.planArrivalSec r.look.today r.look.tz r.loggedArrival) (Look.windowMinOf r.look.day.windowHours) r.look.day.windowCap (Look.wallsClippedOn (Cal.instantOf r.look.tz r.look.today 0).sec (Cal.instantOf r.look.tz (r.look.today + 1) 0).sec r.look.walls r.look.today)
 
 /-- §8.1's budget as the fork's planner reads it: the one stored for `plan_date`'s day, with or without a window
 (`Look.Today.planBudget`, gap 320), else the formula (`Look.budgetOf`, stage 5 L2).  Never recomputed here. -/
@@ -2881,23 +2881,23 @@ README gap **551** recorded that (closed at W-37: `PlanReq.keptBreakRows`), and 
 `plan_places_no_block_over_a_break` was **not** discharged by this step.
 ############################################################################ -/
 
-/-- **Fork `blocks_since_last_break`** (`planner.rs:2229`): the `start` events of today that
-come after the last logged break, counted.  Through D24's seam, off this call's own run — the
-kernel does not read the log a second time (D9). -/
+/-- **Fork `blocks_since_last_break`** (`planner.rs:2229`): today's `start`s after the last break, counted, off this call's own
+run (D24's seam, D9).  Since W-40 the RUNNING break's start is a break here too, at the instant the `break` line `tm break` appends
+will carry (owner D77, parity P67, README gaps 3480 and 3666): a running break resets the counter as the same break once logged. -/
 def PlanReq.sinceBreak (r : PlanReq) : Nat :=
   match r.todayRecord with
   | none => 0
   | some d =>
-    let lastBreak : Option Nat :=
-      if d.breaks.isEmpty then none else some (d.breaks.foldl (fun m b => max m b.t.1.sec) 0)
+    let starts := d.breaks.map (·.t.1.sec) ++ (r.state.brk.bind (·.started)).toList.map (·.sec)
+    let lastBreak : Option Nat := if starts.isEmpty then none else some (starts.foldl max 0)
     (d.starts.filter (fun s =>
       match lastBreak with | none => true | some t => decide (t < s.t.1.sec))).length
 
-/-- **Fork `run()`'s `rests`** (`planner.rs:939`): the stretches step 2 placed — and since W-35 the
-running break (P45) — which the cut treats as rests: one of at least `break_min` that ends where a
-stretch does resets the break counter (`Look.restfulEnd`), so the next block starts after it. -/
+/-- **Fork `run()`'s `rests`** (`planner.rs:939`): the stretches step 2 placed, which the cut treats as rests — one of at least
+`break_min` ending where a stretch does resets the break counter (`Look.restfulEnd`).  The running break was one from W-35 (P45)
+until W-40 (D77): `PlanReq.sinceBreak` counts it now, and `blockedByWalls` keeps its span blocked. -/
 def PlanReq.restsToday (r : PlanReq) : List (Nat × Nat) :=
-  r.placedRoutines.filterMap (·.placedAt) ++ (breakRows r).map (fun s => (s.start, s.stop))
+  r.placedRoutines.filterMap (·.placedAt)
 
 /-- **Fork `run()`'s `slot_blocked`** (`planner.rs:940-942`): everything blocked when step 2
 finishes, plus `night()` — so nothing is cut in the evening. -/
@@ -3862,13 +3862,15 @@ theorem batchLoop_ci (ms bm : Nat) : ∀ (fuel : Nat) (l : List Ranked),
 theorem batches_ci {ms bm : Nat} {l b : List Ranked} (hb : b ∈ batches ms bm l) :
     ∀ y ∈ b, ∀ z ∈ b, y.cand.ci = z.cand.ci := batchLoop_ci ms bm l.length l b hb
 
-/-! ### The batch split (fork `split_by_filters`)
+/-! ### The batch split (fork `split_by_filters`) — RUNS, since the owner's D74 (parity P64)
 
-**It is a group-by, not a run-split**, and the fork's own doc comment says "runs": `out.iter_mut
-().find(|(k, _)| *k == key)` puts a member into the *first* bucket with its key wherever that
-bucket already sits, so two members with one key end up together even with a differently-keyed
-member between them.  The fork is what the parity harness measures against (design §13), so the
-group-by is what is ported and this sentence is the record of the disagreement. -/
+**A bucket closes where the next member cannot join it** — another `loc:`, an atomic item, the
+running block — so every bucket is a run of CONSECUTIVE members of its batch, in §7.4's order,
+and the split never serves a lower-ranked sibling ahead of a higher-ranked one (README gap 3546).
+The fork's own doc comment says "runs" and its code is a group-by: `out.iter_mut().find(|(k, _)|
+*k == key)` puts a member into the FIRST bucket with its key wherever it sits, so `[^t3, ^t1,
+^t2]` with `^t1` atomic was split `{^t3, ^t2}`, `{^t1}`, the pair keyed by `^t3` and served first.
+That group-by is fork 4748911's and is the divergence P64 records; the runs are the kernel's. -/
 
 /-- The key `split_by_filters` groups by (`planner.rs:2360`): the two halves of §8.2 step 5's
 filter that are written about the *item* — its `loc:` and whether `atomic` cleared its
@@ -3883,31 +3885,32 @@ deriving DecidableEq, Repr
 def splitKeyOf (act : Option Id) (x : Ranked) : SplitKey :=
   ⟨x.facts.loc, x.facts.splittable, act == some x.cand.id⟩
 
-/-- One member into its bucket, appended at the end so a bucket keeps the order §7.4 gave it. -/
+/-- One member onto the LAST bucket when it carries that bucket's key, else into a new bucket
+after it (D74): the bucket before it is closed for good, and a bucket keeps §7.4's order. -/
 def splitPush (k : SplitKey) (x : Ranked) :
     List (SplitKey × List Ranked) → List (SplitKey × List Ranked)
   | [] => [(k, [x])]
-  | e :: rest => if e.1 = k then (e.1, e.2 ++ [x]) :: rest else e :: splitPush k x rest
+  | [e] => if e.1 = k then [(e.1, e.2 ++ [x])] else [e, (k, [x])]
+  | e :: f :: rest => e :: splitPush k x (f :: rest)
 
-/-- **Fork `split_by_filters`**: one batch's members bucketed by the key above, the buckets in
-first-appearance order. -/
+/-- **§8.2 step 5's split of one batch** — its RUNS of equal key, in order (D74; fork
+`split_by_filters` is the group-by P64 departs from). -/
 def splitGroups (act : Option Id) (members : List Ranked) : List (SplitKey × List Ranked) :=
   members.foldl (fun acc x => splitPush (splitKeyOf act x) x acc) []
 
-/-- The flattened buckets are the members, rearranged. -/
+/-- The flattened buckets are the members, rearranged — in order: `PlanFold.splitGroups_flatten_eq`. -/
 theorem splitPush_flatten (k : SplitKey) (x : Ranked) :
     ∀ acc : List (SplitKey × List Ranked),
       (((splitPush k x acc).map Prod.snd).flatten).Perm (((acc.map Prod.snd).flatten) ++ [x])
   | [] => by simp [splitPush]
-  | e :: rest => by
-    unfold splitPush
+  | [e] => by
+    simp only [splitPush]
     by_cases hk : e.1 = k
-    · rw [if_pos hk]
-      simp only [List.map_cons, List.flatten_cons, List.append_assoc]
-      exact List.Perm.append_left _ (List.perm_append_comm)
-    · rw [if_neg hk]
-      simp only [List.map_cons, List.flatten_cons, List.append_assoc]
-      exact List.Perm.append_left _ (splitPush_flatten k x rest)
+    · rw [if_pos hk]; simp
+    · rw [if_neg hk]; simp
+  | e :: f :: rest => by
+    simp only [splitPush, List.map_cons, List.flatten_cons, List.append_assoc]
+    exact List.Perm.append_left _ (by simpa using splitPush_flatten k x (f :: rest))
 
 theorem splitFold_flatten (act : Option Id) :
     ∀ (members : List Ranked) (acc : List (SplitKey × List Ranked)),
@@ -3954,32 +3957,38 @@ theorem splitGroups_length {act : Option Id} {members : List Ranked}
 def SplitOk (act : Option Id) (acc : List (SplitKey × List Ranked)) : Prop :=
   ∀ e ∈ acc, ∀ y ∈ e.2, splitKeyOf act y = e.1
 
+/-- **What a push leaves**: the buckets it had, the LAST one grown by `x` under its own key, or a
+new bucket holding `x` alone under `k`. -/
+theorem mem_splitPush {k : SplitKey} {x : Ranked} :
+    ∀ {acc : List (SplitKey × List Ranked)} {f : SplitKey × List Ranked}, f ∈ splitPush k x acc →
+      f ∈ acc ∨ (∃ e ∈ acc, e.1 = k ∧ f = (e.1, e.2 ++ [x])) ∨ f = (k, [x])
+  | [], f, h => by simp only [splitPush, List.mem_singleton] at h; exact Or.inr (Or.inr h)
+  | [e], f, h => by
+    simp only [splitPush] at h
+    split at h <;> simp only [List.mem_cons, List.not_mem_nil, or_false] at h
+    · next hk => exact Or.inr (Or.inl ⟨e, List.mem_singleton_self _, hk, h⟩)
+    · rcases h with rfl | rfl
+      · exact Or.inl (List.mem_singleton_self _)
+      · exact Or.inr (Or.inr rfl)
+  | e :: g :: rest, f, h => by
+    simp only [splitPush, List.mem_cons] at h
+    rcases h with rfl | h
+    · exact Or.inl (List.mem_cons_self ..)
+    · rcases mem_splitPush (acc := g :: rest) h with h | ⟨e', he', hk, rfl⟩ | rfl
+      · exact Or.inl (List.mem_cons_of_mem _ h)
+      · exact Or.inr (Or.inl ⟨e', List.mem_cons_of_mem _ he', hk, rfl⟩)
+      · exact Or.inr (Or.inr rfl)
+
 theorem splitPush_keeps_SplitOk {act : Option Id} {x : Ranked} :
     ∀ {acc : List (SplitKey × List Ranked)}, SplitOk act acc →
-      SplitOk act (splitPush (splitKeyOf act x) x acc)
-  | [], _ => by
-    intro e he y hy
-    simp only [splitPush, List.mem_singleton] at he
-    subst he
-    simp only [List.mem_singleton] at hy
-    subst hy; rfl
-  | e :: rest, h => by
-    unfold splitPush
-    by_cases hk : e.1 = splitKeyOf act x
-    · rw [if_pos hk]
-      intro f hf y hy
-      rcases List.mem_cons.1 hf with rfl | hf
-      · simp only at hy
-        rcases List.mem_append.1 hy with hy | hy
-        · exact h e (List.mem_cons_self ..) y hy
-        · simp only [List.mem_singleton] at hy; subst hy; exact hk.symm
-      · exact h f (List.mem_cons_of_mem _ hf) y hy
-    · rw [if_neg hk]
-      intro f hf y hy
-      rcases List.mem_cons.1 hf with rfl | hf
-      · exact h f (List.mem_cons_self ..) y hy
-      · exact splitPush_keeps_SplitOk
-          (fun g hg z hz => h g (List.mem_cons_of_mem _ hg) z hz) f hf y hy
+      SplitOk act (splitPush (splitKeyOf act x) x acc) := by
+  intro acc h f hf y hy
+  rcases mem_splitPush hf with hf | ⟨e, he, hk, rfl⟩ | rfl
+  · exact h f hf y hy
+  · rcases List.mem_append.1 hy with hy | hy
+    · exact h e he y hy
+    · simp only [List.mem_singleton] at hy; subst hy; exact hk.symm
+  · simp only [List.mem_singleton] at hy; subst hy; rfl
 
 theorem splitFold_SplitOk (act : Option Id) :
     ∀ (members : List Ranked) (acc : List (SplitKey × List Ranked)), SplitOk act acc →
@@ -3997,21 +4006,12 @@ theorem splitGroups_keys (act : Option Id) (members : List Ranked) :
 def SplitNe (acc : List (SplitKey × List Ranked)) : Prop := ∀ e ∈ acc, e.2 ≠ []
 
 theorem splitPush_keeps_SplitNe {k : SplitKey} {x : Ranked} :
-    ∀ {acc : List (SplitKey × List Ranked)}, SplitNe acc → SplitNe (splitPush k x acc)
-  | [], _ => by intro e he; simp only [splitPush, List.mem_singleton] at he; subst he; simp
-  | e :: rest, h => by
-    unfold splitPush
-    by_cases hk : e.1 = k
-    · rw [if_pos hk]
-      intro f hf
-      rcases List.mem_cons.1 hf with rfl | hf
-      · simp
-      · exact h f (List.mem_cons_of_mem _ hf)
-    · rw [if_neg hk]
-      intro f hf
-      rcases List.mem_cons.1 hf with rfl | hf
-      · exact h f (List.mem_cons_self ..)
-      · exact splitPush_keeps_SplitNe (fun g hg => h g (List.mem_cons_of_mem _ hg)) f hf
+    ∀ {acc : List (SplitKey × List Ranked)}, SplitNe acc → SplitNe (splitPush k x acc) := by
+  intro acc h f hf
+  rcases mem_splitPush hf with hf | ⟨e, -, -, rfl⟩ | rfl
+  · exact h f hf
+  · simp
+  · simp
 
 theorem splitFold_SplitNe (act : Option Id) :
     ∀ (members : List Ranked) (acc : List (SplitKey × List Ranked)), SplitNe acc →
@@ -9136,15 +9136,15 @@ theorem PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window
     | some b =>
       have hn : ¬ w.2 < w.1 := Nat.not_lt.mpr (h w hw)
       simp [hn]
-/-- **A stored window that crosses midnight ends on the next day** — the fork planner's reading
-(`Planner::window_and_budget`), which the shipped binary plans a late day with.  Stated over the planner's own
-stored window since W-38 (`Look.Today.planWindow`), which every window the capacity counts is
-(`Look.Today.storedWindow_is_a_planWindow`), so this implies its W-37 form. -/
+/-- **A stored window that crosses midnight ends 24 hours after its end clock on the planned day** — the fork planner's
+reading (`Planner::window_and_budget`: `end += Duration::days(1)`), which the shipped binary plans a late day with.  RESTATED AT
+W-40 (README gap 3782; D5): it read the NEXT day's clock, an hour past the fork's on a fall-back night, which
+`PlannerWit.the_window_crossing_midnight_ends_on_the_next_days_clock_is_refuted` refutes. -/
 theorem PlanReq.window_crosses_midnight_as_the_forks_planner_reads_it (r : PlanReq)
     (w : Field.Clock × Field.Clock) (hs : r.look.today0.planWindow r.look.today = some w)
     (hlt : w.2 < w.1) :
     r.window = ((Cal.instantOf r.look.tz r.look.today w.1).sec,
-      (Cal.instantOf r.look.tz (r.look.today + 1) w.2).sec) := by
+      (Cal.instantOf r.look.tz r.look.today w.2).sec + 86400) := by
   unfold PlanReq.window
   rw [hs]
   simp [hlt]

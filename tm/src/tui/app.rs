@@ -1174,12 +1174,20 @@ impl App {
     /// Minutes the running block has been **worked** — what §9.1's `est × r`
     /// is measured against, and what the Today pane's timer shows.
     ///
-    /// The host's ONE reading, [`tm_core::log::Replay::active_worked_min`] (README
-    /// gaps 2741 and 2920): the wall clock since `started` net of the day's
-    /// pauses, interruptions and breaks, the running break included — the
-    /// minutes `tm done` logs and `tm now`'s header prints. `started` counts
-    /// from `state.date`: `active.started` is a bare `HH:MM` and the block may
-    /// have started before midnight (§10.2).
+    /// The host's ONE reading, [`tm_core::log::Replay::shown_worked_min`]
+    /// (README gaps 2741 and 2920): the wall clock since the block's start net
+    /// of its pauses, interruptions and breaks, the running break included —
+    /// the minutes `tm done` logs and `tm now`'s header prints.
+    ///
+    /// **The start is the log's** — the owner's **D75** (README gaps 3715 and
+    /// 3625, parity **P65**). This read `active.started` on `state.date`, which
+    /// the first verb after local midnight rolls to the new day (`roll_day` in
+    /// `cli/ctx.rs`), so past midnight a block begun the evening before read
+    /// as started tonight: `elapsed 0m`, and §9.1's overtime prompt never came.
+    /// `active.started` on `state.date` is read only where the log holds no
+    /// open block for the running item — a world the binary does not build
+    /// (D42's reconcile at load) and the harness does. `None` with nothing
+    /// running.
     pub fn active_elapsed_min(&self) -> Option<u32> {
         let active = self.state.active.as_ref()?;
         let running_break = self
@@ -1188,7 +1196,8 @@ impl App {
             .as_ref()
             .and_then(|br| br.started)
             .map(|s| self.local(s).fixed_offset());
-        Some(self.replay.active_worked_min(
+        Some(self.replay.shown_worked_min(
+            active.id.as_str(),
             self.today,
             self.local(active.started).fixed_offset(),
             self.now.fixed_offset(),

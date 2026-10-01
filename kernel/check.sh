@@ -1001,7 +1001,8 @@ fi
 #     sends EIGHT.  `planner` and `plan` -- W-24's rows -- are sent by
 #     `tm/tests/planner_invariants.rs` and `tm/tests/kernel_planner_wire.rs` and
 #     by nothing a user can run, and `tm/src`'s three `"plan":` occurrences are
-#     all a CANDIDATE's nested field inside `kernel_capacity.rs`'s `plan_json`.
+#     all a CANDIDATE's nested field inside `kernel_capacity.rs`'s `plan_json`
+#     (in `tm-core/src/planwire.rs` since W-40 track E, README gap 2875).
 #     **1,467 reachable became 1,178** -- 228 behind `planner`, 53 behind
 #     `plan`, 8 behind the two together.
 #
@@ -1265,6 +1266,26 @@ fi
 #     section as `&mut Value`), or be a dated line of `written-exempt.txt` with
 #     an EXIT, which may only shrink.  `overrides.drop` is read by the day's
 #     `d done` what-if and written by no host function.
+#     AND SINCE W-40 TRACK E (README gap 3717) BOTH HALVES ASK EVERY SECTION, AT
+#     EVERY PLACE A REQUEST GAINS ONE.  "One section of one encoder" let
+#     `day.rs`' `call_the_walls` write `emit.walls.week` with no gate asking
+#     whether a kernel reader decoded it.  The sections are the kernel's own
+#     (`sections.spine`, check 12's walk); the host side of each is
+#     `sentkeys.host_sections` over the PROGRAM (`tm/src` and every crate the
+#     binary links by path): every `json!` object carrying `docs`, WHEREVER it is
+#     written (a call's own argument included), and every request built as TEXT
+#     (`kernel_log`'s `log` section and request, and the `format!` that splices
+#     the `log` section into the capacity and walls requests) -- each top-level
+#     key a section, its value read through the helpers it calls in whatever
+#     module -- plus the codec's `<section>_json` root and its `&mut Value`
+#     writers.  The sites are held to check 12's own scan
+#     (`sections.sent_sections`): a region that scan reads as a request is a line
+#     some site must hold, or this fails UNREAD REQUEST.  The kernel side's
+#     getters, pass-throughs, key parameters and `where` helpers are derived by
+#     PROPERTY from the source, not listed.  Both sides are compared normalized
+#     (prefix-closed, an array of scalars read as its key).  An exemption names
+#     a key path or a whole section, and growth of either file is a `## `
+#     heading new in the diff, with an ISO date -- reach.py's rule, D51.
 out=$( python3 fields.py 2>&1 )
 if [ $? -eq 0 ]; then
   say "every emitted field has a writer" "ok  ($( printf '%s\n' "$out" | tail -4 | head -1 ))"

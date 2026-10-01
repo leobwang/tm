@@ -265,21 +265,88 @@ fn end_break(ctx: &mut Ctx) -> Result<Option<u32>, CliError> {
     Ok(Some(actual))
 }
 
-/// **Minutes actually worked on the running block** — the one host reading,
-/// [`log::Replay::active_worked_min`] (README gap 2920, W-35 repair): the wall clock
-/// since `started` net of the day's pauses, interruptions and breaks, the
-/// break `state.json` still holds running included. `tm done`, `tm stop` and
-/// `tm now`'s header all call this, and the TUI calls the replay's rule with
-/// the same arguments, so no surface keeps a reading of its own.
-pub(crate) fn worked_min(ctx: &Ctx, started: DateTime<chrono_tz::Tz>) -> u32 {
-    let running_break = ctx
-        .state
+/// The break `.tm/state.json` holds running, as the instant its clock names on
+/// TODAY's date — the reading README gap 3820 records as wrong after local
+/// midnight (the log has no line for a running break, so D75's instant does
+/// not exist for it).
+fn running_break_at(ctx: &Ctx) -> Option<DateTime<FixedOffset>> {
+    ctx.state
         .break_
         .as_ref()
         .and_then(|br| br.started)
-        .map(|s| ctx.at(s).fixed_offset());
+        .map(|s| ctx.at(s).fixed_offset())
+}
+
+/// **Minutes actually worked on the running block, as a verb LOGS them** — the
+/// one host reading, [`log::Replay::running_worked_min`] (README gap 2920,
+/// W-35 repair): the wall clock since the block's start net of its pauses,
+/// interruptions and breaks, the break `state.json` still holds running
+/// included. `tm done` (and `--partial`) and `tm stop` call this; `tm now`'s
+/// header and the TUI's timer show the same rule ([`shown_worked_min`],
+/// [`log::Replay::shown_worked_min`]), so no surface keeps a reading of its
+/// own.
+///
+/// **The start is the log's** — the owner's **D75** (README gap 3715, parity
+/// **P65**): the instant of the open block's own `start` line, never
+/// `.tm/state.json`'s `active.started`. That field is a bare `HH:MM`, and fork
+/// 4748911 (and this function until W-40, through `ctx.at(a.started)` at its
+/// three callers) put it on TODAY's date: after local midnight the start was
+/// tonight's, in the future, so `tm done` logged `actual_min: 0` for a block
+/// worked across midnight and `tm now` read `0m` (gap 3625). This function
+/// takes no start any more, so the cache's clock cannot be handed to it.
+///
+/// `None` with nothing running, and — unreachable after D42's reconcile, which
+/// makes `.tm/state.json`'s running block the log's — when the log holds no
+/// open block for it; never a number then.
+pub(crate) fn worked_min(ctx: &Ctx) -> Option<u32> {
+    let active = ctx.state.active.as_ref()?;
     ctx.replay
-        .active_worked_min(ctx.today, started.fixed_offset(), ctx.now, running_break)
+        .running_worked_min(active.id.as_str(), ctx.today, ctx.now, running_break_at(ctx))
+}
+
+/// **What `tm now` shows for the running block** — [`log::Replay::shown_worked_min`],
+/// the rule the TUI's timer calls too: the log's reading (D75), and the
+/// cache's clock on the date the cache gives it only where the log holds no
+/// open block for it, which D42's reconcile at load makes unreachable here.
+pub(crate) fn shown_worked_min(ctx: &Ctx, active: &ActiveBlock) -> u32 {
+    let clock = tm_core::capacity::local_dt(
+        ctx.cfg.tz,
+        ctx.state.date.unwrap_or(ctx.today),
+        active.started,
+    );
+    ctx.replay.shown_worked_min(
+        active.id.as_str(),
+        ctx.today,
+        clock.fixed_offset(),
+        ctx.now,
+        running_break_at(ctx),
+    )
+}
+
+/// **The running block's start, as the log has it** — the instant of its own
+/// `start` line ([`log::OpenBlock::started`]), local: what `tm now` prints
+/// beside the minutes [`worked_min`] counts from it, and what D76's refusal of
+/// `tm wake` names. `None` with nothing running, or when the log holds no open
+/// block for `.tm/state.json`'s (unreachable after D42's reconcile).
+pub(crate) fn running_start(ctx: &Ctx) -> Option<DateTime<chrono_tz::Tz>> {
+    let active = ctx.state.active.as_ref()?;
+    ctx.replay
+        .open_block
+        .as_ref()
+        .filter(|b| b.id == active.id.as_str())
+        .map(|b| b.started.with_timezone(&ctx.cfg.tz))
+}
+
+/// The error `tm done` and `tm stop` give when `.tm/state.json` names a running
+/// block the log holds no `start` for — unreachable after D42's reconcile, and
+/// never answered with a zero (D75: a wrong `actual_min` in the log is the
+/// silent-wrong-answer class).
+fn no_logged_start(id: &Id) -> CliError {
+    CliError::msg(format!(
+        "{} is running in .tm/state.json but .tm/log.jsonl holds no `start` for it, so its \
+         worked minutes cannot be read (D75)",
+        id.token()
+    ))
 }
 
 /// **A calendar wall that starts while a block is running STOPS THE TIMER** —
@@ -699,6 +766,20 @@ pub struct WakeOut {
 /// `tm wake [HH:MM] [--slept 8h10m] [--onset 25m]`.
 pub fn wake(g: &Globals, args: &super::WakeArgs) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
+    // **The owner's D76 (README gap 3725, parity P66): `tm wake` while a block
+    // is still running is REFUSED BY NAME**, before the gate, the undo recorder
+    // and every write. The wake cleared `active` in `.tm/state.json` while the
+    // log held nothing that ended the block, so the next verb's reconcile (D42)
+    // read the block back as running — a verb that did not do what it said.
+    // Ending the block at the wake would write a duration nobody stated (the
+    // night counted as work), so the user says how it ended: `tm stop` or
+    // `tm done`, as D71 has `tm resume` end an interruption first. The running
+    // block is `.tm/state.json`'s as the reconcile leaves it — the log's open
+    // block, paused or not — read as every other verb reads it, and its start
+    // is the log's own (`running_start`, D75).
+    if let Some(active) = ctx.state.active.as_ref() {
+        return Err(CliError::msg(wake_over_a_running_block(&ctx, active)));
+    }
     super::kernel_bridge::gate(&ctx, "wake")?;
     let rec = Recorder::start(&ctx, "wake")?;
     let time = match &args.time {
@@ -776,6 +857,23 @@ pub fn wake(g: &Globals, args: &super::WakeArgs) -> Result<i32, CliError> {
         &out,
     )?;
     Ok(0)
+}
+
+/// **D76's refusal, in words** (README gap 3725): the running block, when it
+/// began — the log's own instant, with its date when that is not today's — and
+/// the two verbs that end it. Paused or not, it is running until one of them
+/// says how it ended.
+fn wake_over_a_running_block(ctx: &Ctx, active: &ActiveBlock) -> String {
+    let since = match running_start(ctx) {
+        Some(t) if t.date_naive() == ctx.today => format!(" since {}", hhmm(t)),
+        Some(t) => format!(" since {} {}", t.date_naive(), hhmm(t)),
+        None => format!(" since {}", active.started.format("%H:%M")),
+    };
+    format!(
+        "{} is still running{since} — stop it (`tm stop`) or finish it (`tm done`) before \
+         `tm wake`; the wake was not recorded",
+        active.id.token()
+    )
 }
 
 /// `tm arrive --json`.
@@ -1178,7 +1276,8 @@ pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
         (ctx.tree.remaining(&id).unwrap_or(0), 0)
     } else {
         let a = active.as_ref().expect("an active block");
-        (a.est_min, worked_min(&ctx, ctx.at(a.started)))
+        // D75 (parity P65): the worked minutes count from the log's own `start`.
+        (a.est_min, worked_min(&ctx).ok_or_else(|| no_logged_start(&a.id))?)
     };
     let stateless = item.as_ref().is_some_and(is_stateless);
     // **D62**: a partial's remainder is written by the kernel's `est` op FIRST —
@@ -1371,8 +1470,8 @@ pub fn stop(g: &Globals) -> Result<i32, CliError> {
     super::kernel_bridge::gate(&ctx, "stop")?;
     let rec = Recorder::start(&ctx, "stop")?;
     let id = active.id.clone();
-    let started = ctx.at(active.started);
-    let worked = worked_min(&ctx, started);
+    // D75 (parity P65): the worked minutes count from the log's own `start`.
+    let worked = worked_min(&ctx).ok_or_else(|| no_logged_start(&id))?;
     let remaining = ctx
         .tree
         .remaining(&id)

@@ -1650,6 +1650,17 @@ impl Replay {
     /// audit's drive). The planner's `▶` row still reads the open block, the
     /// fork's `active_run` until R3 and the kernel's `openWorkedMin` after it —
     /// README gap 2920 is that residue, by name.
+    ///
+    /// **`started` is an instant, and the binary passes the log's own** (the
+    /// owner's **D75**, README gap 3715, parity **P65**): every host path that
+    /// computes the running block's worked minutes reaches this through
+    /// [`Replay::running_worked_min`], which reads the instant of the open
+    /// block's `start` line ([`OpenBlock::started`]). Fork 4748911 put
+    /// `.tm/state.json`'s bare `HH:MM` on TODAY's date, so after local midnight
+    /// the start lay in the future and a block worked across midnight logged
+    /// `actual_min: 0`; and it read `day`'s marks alone, so a pause stamped
+    /// before midnight was never netted out. Both are this function's to get
+    /// right, because both are what "worked" means.
     pub fn active_worked_min(
         &self,
         day: NaiveDate,
@@ -1661,14 +1672,110 @@ impl Replay {
         elapsed.saturating_sub(self.idle_min_since(day, started, now, running_break))
     }
 
+    /// **The running block's worked minutes as of `now`, its start read from
+    /// the log** — the owner's **D75** (README gap 3715, parity **P65**), and
+    /// the entrance every host surface takes: `tm done` (and `--partial`) and
+    /// `tm stop` log it (`tm/src/cli/day.rs`' `worked_min`), and `tm now`'s
+    /// header, `--json`'s `active.elapsed_min`, the TUI's timer and §9.1's
+    /// overtime prompt show it ([`Replay::shown_worked_min`]). It takes no
+    /// start, so no caller can hand it the cache's `HH:MM` placed on today's
+    /// date — the shape the defect had.
+    ///
+    /// The start is [`OpenBlock::started`], the instant of the block's own
+    /// `start` line (`.tm/state.json`'s `active.started` is a cache of it,
+    /// D42); the rule is [`Replay::active_worked_min`]'s. `None` when the log
+    /// holds no open block, or holds one for another item than `id` — which
+    /// D42's reconcile at load makes unreachable for `.tm/state.json`'s
+    /// running block, and which a verb that LOGS minutes never answers with a
+    /// number.
+    pub fn running_worked_min(
+        &self,
+        id: &str,
+        day: NaiveDate,
+        now: DateTime<FixedOffset>,
+        running_break: Option<DateTime<FixedOffset>>,
+    ) -> Option<u32> {
+        let open = self.open_block.as_ref().filter(|b| b.id == id)?;
+        Some(self.active_worked_min(day, open.started, now, running_break))
+    }
+
+    /// **What a surface SHOWS for the running block** — the one rule `tm
+    /// now`'s header (and `--json`'s `active.elapsed_min`) and the TUI's timer
+    /// and §9.1's overtime prompt call: [`Replay::running_worked_min`], the
+    /// log's own reading (D75, parity **P65**), and only where the log holds no
+    /// open block for `id` the same rule over `clock` — the cache's own start,
+    /// placed on the date the cache gives it, which is then all there is to go
+    /// on.
+    ///
+    /// The binary does not build that second world: D42's reconcile at load
+    /// makes `.tm/state.json`'s running block the log's, so every surface reads
+    /// the log's start whenever there is one. The TUI's harness builds such
+    /// apps directly, without a load — an empty log
+    /// (`tui_today_prompts.rs`' `a_block_started_before_midnight_still_goes_overtime`)
+    /// and another item running than the log's
+    /// (`the_overtime_box_names_the_remainder_that_stays_in_the_week_queue`) —
+    /// and they read what they always read. A verb that LOGS minutes never
+    /// takes `clock` (README gap 3715): its number is the log's or none.
+    pub fn shown_worked_min(
+        &self,
+        id: &str,
+        day: NaiveDate,
+        clock: DateTime<FixedOffset>,
+        now: DateTime<FixedOffset>,
+        running_break: Option<DateTime<FixedOffset>>,
+    ) -> u32 {
+        self.running_worked_min(id, day, now, running_break)
+            .unwrap_or_else(|| self.active_worked_min(day, clock, now, running_break))
+    }
+
+    /// **The day the replay files the block begun at `started` under** — the
+    /// wake-attributed day of its own surviving `start` row ([`ViewRow::day`],
+    /// the same index the seams are keyed by). `None` when the scope's rows do
+    /// not reach it.
+    fn start_row_day(&self, started: DateTime<FixedOffset>) -> Option<NaiveDate> {
+        // The tag is asked of `Event` rather than spelled a second time (§5.3).
+        let start = Event::Start {
+            id: String::new(),
+            pred: 0,
+            rep: None,
+            hsw: 0.0,
+            slept_min: 0,
+            loc: String::new(),
+            blocks_done: 0,
+            since_break_min: 0,
+        };
+        let tag = start.name();
+        self.rows
+            .iter()
+            .rev()
+            .find(|r| !r.cancelled && r.tag == tag && r.t == started)
+            .map(|r| r.day)
+    }
+
     /// The minutes of the running block that were *not* worked: §9 pauses
     /// (`pause`…`unpause`), interruptions (`interrupt`…`resume`) and breaks
-    /// (`break`…) that fell inside it, out of `day`'s [`DaySeam::idle_marks`],
-    /// plus the running break since `running_break`. log.rs's own convention
-    /// for a block's worked minutes is "elapsed since `start` minus paused and
-    /// interrupted time"; §8.5's duration multiplier and §11's ledgers both
-    /// double-count without it (the same minutes are already `resume{lost_min}`).
-    /// Fork `day::idle_min_since`, moved (W-35 repair).
+    /// (`break`…) that fell inside it, plus the running break since
+    /// `running_break`. log.rs's own convention for a block's worked minutes is
+    /// "elapsed since `start` minus paused and interrupted time"; §8.5's
+    /// duration multiplier and §11's ledgers both double-count without it (the
+    /// same minutes are already `resume{lost_min}`). Fork `day::idle_min_since`,
+    /// moved (W-35 repair).
+    ///
+    /// **The marks are every day's from the one the replay files the block's
+    /// `start` under through `day`** ([`DaySeam::idle_marks`], day by day, each
+    /// in file order — the owner's **D75**, README gap 3715). Fork
+    /// `idle_min_since` read `day`'s marks alone, which is right only when the
+    /// block began on `day`: a block begun before local midnight keeps its
+    /// evening's pause under the evening's seam, and after the wake index's
+    /// own rule a block begun after midnight but before the next `wake` is
+    /// filed under the evening's seam too — so neither half was ever netted
+    /// out. A `start` the scope's rows do not reach, or one filed after `day`,
+    /// reads `day`'s marks alone, as before. A mark before `started` is the
+    /// pairing's to place ([`idle_spans`]: another block's pause never opens,
+    /// an interruption still open at the start holds the block), and a span is
+    /// clipped to `[started, now]`. The total is no longer clamped to one day
+    /// (it was `24 * 60`, the one-day reading's own bound): a block can run
+    /// past one, and the caller subtracts with saturation.
     pub fn idle_min_since(
         &self,
         day: NaiveDate,
@@ -1676,16 +1783,21 @@ impl Replay {
         now: DateTime<FixedOffset>,
         running_break: Option<DateTime<FixedOffset>>,
     ) -> u32 {
-        let marks = self.seam(day).map_or(&[][..], |s| s.idle_marks.as_slice());
+        let from = self.start_row_day(started).filter(|d| *d <= day).unwrap_or(day);
+        let marks: Vec<IdleMark> = self
+            .seams
+            .range(from..=day)
+            .flat_map(|(_, s)| s.idle_marks.iter().copied())
+            .collect();
         let mut total = 0i64;
-        for (a, b) in idle_spans(marks, started, running_break) {
+        for (a, b) in idle_spans(&marks, started, running_break) {
             let a = a.max(started);
             let b = b.unwrap_or(now).min(now);
             if b > a {
                 total += (b - a).num_minutes();
             }
         }
-        total.clamp(0, 24 * 60) as u32
+        total.clamp(0, i64::from(u32::MAX)) as u32
     }
 
     /// The facts D14 keeps though nothing reads them ([`PortedFacts`]),

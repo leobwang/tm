@@ -1659,9 +1659,10 @@ fn fresh_draw(bytes: &[u8; 12]) -> (String, forkclass::Draw, forkclass::ClassWor
 }
 
 /// **The oracle arm's census** (W-39): `[cases, drawn worlds the binary refuses, lines
-/// compared, what-ifs compared, P45 days, P46, P47, P51, P52, P55, P56 lines, oracle requests,
-/// break days README gap 3480's declared class explained]`.
-static ORACLE_CENSUS: Mutex<[u64; 13]> = Mutex::new([0; 13]);
+/// compared, what-ifs compared, P45 days, P46, P47, P51, P52, P55, P56 lines, oracle requests]`.
+/// (Its thirteenth count, the break days README gap 3480's declared class explained, went with
+/// the class at the W-40 land step: README gap 3783.)
+static ORACLE_CENSUS: Mutex<[u64; 12]> = Mutex::new([0; 12]);
 
 proptest! {
     #![proptest_config(ProptestConfig {
@@ -1683,23 +1684,17 @@ proptest! {
     /// kernel held to the line by `forkclass::compare_line`, the frozen lines' one comparison.
     /// Inert without `TM_ORACLE`; nothing of the in-tree planner is reached.
     ///
-    /// **ONE DECLARED CLASS, README gap 3480's, and it is exact.** On a running-break day the
-    /// comparand plans the fork after the break with the break LOGGED once it has run
-    /// `break_min`, which resets the fork's cut counter wherever the break ends; the kernel
-    /// reads the running break as a rest that resets it only where a free stretch begins
-    /// (`Look.restfulEnd`) — two readings of one span, an open question P45's owner has to
-    /// decide. The frozen lines hold only break days where the two agree; fresh draws reach the
-    /// others (found by this arm's first run in W-39's R3 simulation, seed
-    /// `96e7339b0c1745683b47728b`, `break/home`). So a difference AFTER the running break is
-    /// explained only when the kernel's rows from there are, row for row, the fork's own
-    /// planned with the break UNLOGGED (`forkplan::p45_rows`) — the other reading, asked of the
-    /// fork itself — and counted; any other difference fails.
+    /// **No declared class since the W-40 land step** (README gap 3783): W-39 declared README
+    /// gap 3480's — a difference after a running break explained by the fork planned with the
+    /// break UNLOGGED — while the kernel read a running break as a rest of the cut. The owner's
+    /// D77 (parity P67) made the kernel's running break reset the cut's counter exactly as the
+    /// same break once logged, which is the comparand's reading, so every difference fails.
     #[test]
     #[ignore]
     fn the_kernel_plans_every_fresh_draw_as_the_forks_oracle_plans_it(bytes in any::<[u8; 12]>()) {
         let Some(oracle) = the_oracle() else { return Ok(()) };
         let (seed, draw, world, holds) = fresh_draw(&bytes);
-        let mut c = [0u64; 13];
+        let mut c = [0u64; 12];
         c[0] = 1;
         if holds.is_err() {
             c[1] = 1;
@@ -1716,17 +1711,7 @@ proptest! {
                 forkclass::set_answer(&mut line, key, answers[key].clone());
             }
             let mut t = forkclass::ClassTally::default();
-            let (after_break, mut findings): (Vec<String>, Vec<String>) =
-                forkclass::compare_line(&line, &mut t).into_iter().partition(|f| f.contains("after the running break (P45"));
-            if !after_break.is_empty() {
-                let explained = forkplan::gap_3480_explains(&b, &prios, oracle)
-                    .map_err(|e| TestCaseError::fail(format!("seed {seed}: {e}")))?;
-                if explained {
-                    c[12] = 1;
-                } else {
-                    findings.extend(after_break);
-                }
-            }
+            let findings = forkclass::compare_line(&line, &mut t);
             prop_assert!(
                 findings.is_empty(),
                 "{} disagreement(s) with fork 4748911 on a fresh draw (repeat it: class_draws({seed:?}, None).next()):\n  {}",
@@ -1744,7 +1729,7 @@ proptest! {
             c[10] = t.p56 as u64;
         }
         let asked = *oracle.asked.lock().expect("census");
-        let [cases, refused, compared, whatifs, p45, p46, p47, p51, p52, p55, p56, requests, gap3480] = {
+        let [cases, refused, compared, whatifs, p45, p46, p47, p51, p52, p55, p56, requests] = {
             let mut g = ORACLE_CENSUS.lock().expect("census");
             for (a, x) in g.iter_mut().zip(c) {
                 *a += x;
@@ -1762,8 +1747,7 @@ proptest! {
         eprintln!(
             "planner_invariants oracle census: {cases} fresh draws, {refused} the binary cannot hold, {compared} compared with \
              fork 4748911's planner out of the tree ({asked_now} oracle requests): what-ifs {whatifs}; P45 days {p45}, P46 {p46}, \
-             P47 {p47}, P51 {p51}, P52 {p52}, P55 {p55}, P56 {p56}; break days README gap 3480's declared class explained \
-             {gap3480}"
+             P47 {p47}, P51 {p51}, P52 {p52}, P55 {p55}, P56 {p56}"
         );
     }
 }
@@ -1815,18 +1799,20 @@ proptest! {
             .map_err(|e| TestCaseError::fail(format!("seed {seed}: the kernel did not plan the day: {e}")))?
             .1;
         let mut cut = 0u64;
-        for d60 in [false, true] {
-            let ask = forkplan::ForkAsk { state: &b.world.state, now: b.world.now, d60, prios: &prios, extend: None, log_line: None };
+        // D60's key and D74's runs (P64, the W-40 land step) each asked of both forks, in-tree
+        // and the oracle's `p64-runs.patch` graft, so the graft is held to the in-tree opt-in.
+        for (d60, p64) in [(false, false), (true, false), (false, true), (true, true)] {
+            let ask = forkplan::ForkAsk { state: &b.world.state, now: b.world.now, d60, p64, prios: &prios, extend: None, log_line: None };
             let i = forkplan::ForkPlan::plan(&forkplan::InTree, &b, &ask).map_err(TestCaseError::fail)?;
             let o = forkplan::ForkPlan::plan(oracle, &b, &ask)
                 .map_err(|e| TestCaseError::fail(format!("seed {seed}: the fork oracle did not answer: {e}")))?;
             for (what, x, y) in [("fork 4748911's drawing", &i.fork_day, &o.fork_day), ("the shipped fork's day", &i.day, &o.day)] {
                 if let Some(d) = forkplan::first_difference("day", x, y) {
-                    prop_assert!(false, "seed {seed} (D60's key {d60}): {what} differs, in-tree against the oracle: {d}");
+                    prop_assert!(false, "seed {seed} (D60's key {d60}, D74's runs {p64}): {what} differs, in-tree against the oracle: {d}");
                 }
             }
             prop_assert_eq!(&i.ranked, &o.ranked, "seed {}: the fork's §7.4 order differs", seed);
-            cut += u64::from(i.day != i.fork_day);
+            cut += u64::from(!p64 && i.day != i.fork_day);
         }
         let a = forkplan::comparand_answers(&b, &prios, &forkplan::InTree).map_err(TestCaseError::fail)?;
         let z = forkplan::comparand_answers(&b, &prios, oracle)
@@ -1859,7 +1845,7 @@ struct Fork;
 
 impl Planner for Fork {
     fn day(&self, w: &World, state: &RuntimeState, now: DateTime<Tz>) -> Result<DayPlan, String> {
-        Ok(planner::plan(&w.input(state, now)))
+        Ok(planner::plan(&w.shipped_input(state, now)))
     }
     fn rank_view(&self, _w: &World, cands: &[Candidate], _prios: &[Prio]) -> Vec<Candidate> {
         cands.to_vec()
@@ -1882,7 +1868,17 @@ proptest! {
 }
 
 impl World {
+    /// **The fork as the comparand plans** — with D74's split run in it (parity P64, the W-40
+    /// land step, README gap 3740: `PlanInput::with_runs`), as D60's key is run in it by
+    /// rewriting its inputs. Every arm that holds the kernel to the fork's day asks this.
     fn input<'a>(&'a self, state: &'a RuntimeState, now: DateTime<Tz>) -> PlanInput<'a> {
+        self.shipped_input(state, now).with_runs(true)
+    }
+
+    /// **The fork as the shipped binary plans** — its group-by, the behaviour P64 departs
+    /// from; asked only where an arm names the SHIPPED fork's day, and by the fork's own §7
+    /// pass ([`Fork`]), which no shipped path plans.
+    fn shipped_input<'a>(&'a self, state: &'a RuntimeState, now: DateTime<Tz>) -> PlanInput<'a> {
         PlanInput::new(
             &self.tree,
             &self.replay,
@@ -3918,29 +3914,8 @@ proptest! {
         // and walls freely), drawn more often. An interruption drawn on the same case is left
         // out of THIS draw (§9's other event); the shared generator is untouched.
         let mut case = case;
-        if force && !case.items.is_empty() {
-            let tz = tm_core::config::Config::default().tz;
-            let now = case.now(tz);
-            let floor = case.arrival(tz) + Duration::minutes(i64::from(case.done(tz)) * 60 - 5) + Duration::minutes(1);
-            // The first whole hour at least eleven minutes after `floor` whose hour-long wall
-            // ends eleven minutes before `now`: an existing wall there is used as it is, and
-            // otherwise a one-hour wall is added to the calendar (a wall the generator draws).
-            let first = (floor + Duration::minutes(11 + 59)).format("%H").to_string().parse::<u32>().unwrap_or(24);
-            for h in first..23 {
-                let lo = local_dt(tz, date(), NaiveTime::from_hms_opt(h, 0, 0).expect("time"));
-                if lo + Duration::minutes(60 + 11) > now {
-                    break;
-                }
-                if !case.walls.iter().any(|x| x.hour == h) {
-                    case.walls.push(WallSpec { hour: h, hours: 1 });
-                }
-                let start = (lo - Duration::minutes(30)).max(floor);
-                let ago = u32::try_from((now - start).num_minutes()).unwrap_or(0);
-                let est = case.active.map_or(60, |a| a.2);
-                case.active = Some((0, ago, est));
-                case.interrupt = None;
-                break;
-            }
+        if force {
+            plangen::pass_a_meeting(&mut case);
         }
         let w = build_with(&case, tm_core::config::Config::default(), typed);
         let tz = w.cfg.tz;
@@ -4336,7 +4311,7 @@ proptest! {
             W35_CENSUS.lock().expect("census")[10] += 1;
             return Ok(());
         };
-        let shipped = planner::plan(&w.input(&w.state, w.now).with_ranking(&cvec, &ps));
+        let shipped = planner::plan(&w.shipped_input(&w.state, w.now).with_ranking(&cvec, &ps));
         let d57 = w35_fork_plan(&w, &w.state, &cvec, &ps);
 
         // **P45** — the rule, asserted (one rule since W-38, `forkclass::p45_rule` over the day
@@ -4526,7 +4501,7 @@ fn a_p46_day_is_compared_on_every_run() {
         .map(|s| rowwire::kernel_sec(s.end));
     assert_eq!(k, Some(now_sec + 50 * 60), "the block the item is in ends fifty minutes from now");
     assert_eq!(k, f, "P46: the kernel's overtime reservation is not the comparand's");
-    let shipped = planner::plan(&w.input(&w.state, w.now).with_ranking(&cvec, &ps));
+    let shipped = planner::plan(&w.shipped_input(&w.state, w.now).with_ranking(&cvec, &ps));
     assert!(
         !shipped.segments.iter().any(|s| matches!(s.kind, SegKind::Block) && s.flags.current
             && s.energy.is_none() && rowwire::kernel_sec(s.start) == now_sec),
@@ -4823,7 +4798,7 @@ proptest! {
         let p51 = forkclass::is_p51(&cvec, &ps);
         let mut shipped_differs = false;
         if p51 {
-            let shipped = planner::plan(&w.input(&w35_p46_state(&w, &w.state), w.now)
+            let shipped = planner::plan(&w.shipped_input(&w35_p46_state(&w, &w.state), w.now)
                 .with_ranking(&cvec, &ps));
             shipped_differs = w36_work_rows(&shipped, w.now) != c;
         }
@@ -4876,7 +4851,7 @@ fn the_reversed_day_is_served_by_due_date_on_every_run() {
     assert_eq!(k[0].2, vec![ids[1].clone()], "the kernel serves the item due today first: {k:?}");
     let d60 = w35_fork_plan(&w, &w.state, &cvec, &ps);
     assert_eq!(k, w36_work_rows(&d60, w.now), "the kernel's rows are the D60 comparand's");
-    let shipped = planner::plan(&w.input(&w.state, w.now).with_ranking(&cvec, &ps));
+    let shipped = planner::plan(&w.shipped_input(&w.state, w.now).with_ranking(&cvec, &ps));
     let f = w36_work_rows(&shipped, w.now);
     assert_eq!(f[0].2, vec![ids[0].clone()], "the SHIPPED fork serves the first line: {f:?}");
     assert_ne!(k, f, "parity P51: the kernel and the shipped fork differ on the reversed day");
@@ -5395,46 +5370,3 @@ proptest! {
 
 
 
-/// **README gap 3480's declared class has its witness** (W-39): on the fresh draw the oracle arm's
-/// first run found it on (`96e7339b0c1745683b47728b`, `break/home`: a 25-minute walk begun 09:46,
-/// planned at 10:00), the kernel differs from P45's comparand after the break, and its rows from
-/// there are the fork's own planned with the break UNLOGGED (`forkplan::gap_3480_explains`) — so the
-/// class the arm declares is not vacuous, and it is not wider than that. Inert without `TM_ORACLE`.
-#[test]
-#[ignore]
-fn gap_3480s_declared_class_holds_on_the_draw_that_found_it() {
-    let Some(oracle) = the_oracle() else { return };
-    let seed = "96e7339b0c1745683b47728b";
-    let draw = forkclass::class_draws(seed, None).next().expect("a draw");
-    let world = forkclass::world_of(&draw);
-    let b = forkclass::Built::of(world.clone());
-    assert_eq!(forkclass::class_of(&b).key(), "break/home");
-    let prios = forkclass::kernel_answer_with_grants(&b).expect("the kernel plans the day").1;
-    let answers = forkplan::comparand_answers(&b, &prios, oracle).expect("the fork answers");
-    let mut line = forkclass::drawn_line(format!("fresh seed {seed}"), seed, 0, &draw, &world, "break/home");
-    for key in forkclass::ANSWERS {
-        forkclass::set_answer(&mut line, key, answers[key].clone());
-    }
-    let findings = forkclass::compare_line(&line, &mut forkclass::ClassTally::default());
-    assert!(
-        !findings.is_empty() && findings.iter().all(|f| f.contains("after the running break (P45")),
-        "the draw that found gap 3480 differs otherwise now: {findings:?}"
-    );
-    assert!(forkplan::gap_3480_explains(&b, &prios, oracle).expect("the fork answers"), "the unlogged reading no longer explains the draw");
-    // And it is not wider: on the frozen `overrun` lines — break days where the kernel agrees with
-    // the LOGGED comparand (the class arm holds them to it) — the unlogged reading explains a line
-    // exactly when logging the break moves none of the fork's rows (W-38's
-    // `the_overrun_lines_witness_p45s_reset`: it moves them on five of the six).
-    let tz = tm_core::config::Config::default().tz;
-    let mut refuted = 0;
-    for l in forkclass::frozen_lines().iter().filter(|l| l["secondary"] == "overrun") {
-        let b = forkclass::Built::of(forkclass::ClassWorld::of_json(&l["world"], tz).expect("a stored world"));
-        let prios = forkclass::kernel_answer_with_grants(&b).expect("the kernel plans the day").1;
-        let rows = |logged| forkplan::p45_rows(&b, &prios, oracle, Some(logged)).expect("the fork answers").expect("a break").1;
-        let moved = rows(true) != rows(false);
-        let explains = forkplan::gap_3480_explains(&b, &prios, oracle).expect("the fork answers");
-        assert_eq!(explains, !moved, "{}: the unlogged reading explains it {explains} and logging moves its rows {moved}", l["class"]);
-        refuted += usize::from(!explains);
-    }
-    assert!(refuted >= 1, "the unlogged reading explains every frozen overrun line: it explains everything");
-}

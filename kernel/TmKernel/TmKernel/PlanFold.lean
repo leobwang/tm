@@ -933,10 +933,9 @@ Three facts the walk has always had and nothing stated, each a deliverable on it
 * **E2 — every batch is a run of consecutive equal-`ci` entries of step 4's order**
   (`batchLoop_is_a_run_of_its_ci`): the gather's `break` is what the infix says.
 
-The restated laws: `plan_is_monotone_in_rank` and `plan_puts_hot_before_the_queue` here,
-`PlanCheck.plan_never_batches_past_an_equal_ci_candidate` and
-`PlanCheck.plan_places_no_demanding_block_after_wind_down` beside the checker.  Theorems only, as
-above: nothing here is compiled into the export. -/
+W-39's laws in the GROUP order are here (`plan_is_monotone_in_rank_in_the_served_group_order`,
+`plan_puts_hot_before_the_queue_in_the_served_group_order`); since W-40 (D74, D77) the goals' names
+are the laws over the CANDIDATE order, beside the checker (`PlanCheck.plan_is_monotone_in_rank`). -/
 
 /-- **A step that fills a free slot fills it with the FIRST group that fits** — `List.findIdx?`'s
 own clause (`Planner.pickedGroup_is_the_first_that_fits`), read off the slot the step wrote:
@@ -1268,18 +1267,18 @@ theorem an_earlier_slot_starts_earlier (r : PlanReq) {y x : (Fin 6 × Look.Slot)
   simp only
   omega
 
-/-- **§8.3's monotone rank, restated in the order §8.2 step 5 SERVES its groups** (W-39, README
-gaps 3526 and 3542).  A group whose §7.4 key (with D60's component, `Planner.groupLe`) is strictly
-ahead of another's is never left out while the other takes a slot the first fits on the empty
-cursor — D66's filter before the walk, at THAT slot.
+/-- **§8.3's monotone rank in the order §8.2 step 5 SERVES its groups** (W-39, README gaps 3526 and
+3542).  A group whose §7.4 key (with D60's component, `Planner.groupLe`) is strictly ahead of
+another's is never left out while the other takes a slot the first fits on the empty cursor — D66's
+filter before the walk, at THAT slot.
 
-This is `Goals.plan_is_monotone_in_rank` restated, and the goal left `Goals.lean` for it with its
-refutations beside it: line order (`PlannerWit.plan_is_monotone_in_rank_as_stage_6_wrote_it_is_refuted`,
-`PlannerWit.plan_is_monotone_in_rank_is_refuted_at_a_paying_day`), eligibility somewhere before the
-walk (`PlannerWit.monotone_rank_over_step_fives_filter_before_the_walk_is_refuted`), and — the
-reason the order is the GROUPS' and not the candidates' — §7.5's split
-(`PlannerWit.monotone_rank_in_the_candidate_order_at_the_taken_slot_is_refuted`). -/
-theorem plan_is_monotone_in_rank (r : PlanReq) (i : Id) (gi gj : Nat) (g h : Group)
+W-39 stated `Goals.plan_is_monotone_in_rank` this way; since W-40 the goal's name is the law over
+the CANDIDATE order (`PlanCheck.plan_is_monotone_in_rank`, D74 and D77, README gap 3714), which
+rests on this one through `a_same_ci_entry_ahead_is_served_no_later`.  The refutations stand beside
+the goal: line order (`PlannerWit.plan_is_monotone_in_rank_as_stage_6_wrote_it_is_refuted`), a paying
+day (`PlannerWit.plan_is_monotone_in_rank_is_refuted_at_a_paying_day`), eligibility anywhere before
+the walk (`PlannerWit.monotone_rank_over_step_fives_filter_before_the_walk_is_refuted`). -/
+theorem plan_is_monotone_in_rank_in_the_served_group_order (r : PlanReq) (i : Id) (gi gj : Nat) (g h : Group)
     (hg : r.startGroups[gi]? = some g) (hh : r.startGroups[gj]? = some h) (hi : i ∈ g.ids)
     (hkey : groupLe h g = false)
     (x : (Fin 6 × Look.Slot) × Nat) (hx : x ∈ r.energisedSlots.zipIdx)
@@ -1290,17 +1289,18 @@ theorem plan_is_monotone_in_rank (r : PlanReq) (i : Id) (gi gj : Nat) (g h : Gro
     hg (served_earlier_of_the_key r hg hh hkey) htook hfit
   exact a_filled_slot_assigns_its_groups_members r y.2 gi hy g hg i hi
 
-/-- **§8.3's "HOT before queue", restated in the order §8.2 step 5 serves its groups** (W-39, README
-gap 3543).  §7.4's key reads `p` first, so a group whose key is HOT (`p = 0`, which a group has as
-soon as one member has, `Planner.PlanReq.a_group_key_is_its_minimum`) is served ahead of every
-queue group (`p > 0`); at a slot a queue group took and the HOT group fits before the walk, the HOT
-group already holds a work row of the day that starts no later.
+/-- **§8.3's "HOT before queue" in the order §8.2 step 5 serves its groups** (W-39, README gap 3543).
+§7.4's key reads `p` first, so a group whose key is HOT (`p = 0`, which a group has as soon as one
+member has, `Planner.PlanReq.a_group_key_is_its_minimum`) is served ahead of every queue group
+(`p > 0`); at a slot a queue group took and the HOT group fits before the walk, the HOT group already
+holds a work row of the day that starts no later.
 
-`Goals.plan_puts_hot_before_the_queue` left `Goals.lean` for this with its three refutations
-beside it (`PlannerWit.plan_puts_hot_before_the_queue_as_stage_6_wrote_it_is_refuted`,
-`PlannerWit.hotBeforeQueue_is_false_on_a_quiet_day`,
+Since W-40 (D77) the goal's name is this law over what the user sees — the candidate order, the
+row's own items and step 5's filter before the walk (`PlanCheck.plan_puts_hot_before_the_queue`).
+The refutations of the goal as written stand beside it
+(`PlannerWit.plan_puts_hot_before_the_queue_as_stage_6_wrote_it_is_refuted`,
 `PlannerWit.plan_puts_hot_before_the_queue_is_refuted_at_a_day_that_assigns_and_pays`). -/
-theorem plan_puts_hot_before_the_queue (r : PlanReq) (i : Id) (gi gj : Nat) (g h : Group)
+theorem plan_puts_hot_before_the_queue_in_the_served_group_order (r : PlanReq) (i : Id) (gi gj : Nat) (g h : Group)
     (hg : r.startGroups[gi]? = some g) (hh : r.startGroups[gj]? = some h) (hi : i ∈ g.ids)
     (hhot : g.key.p = 0) (hqueue : 0 < h.key.p)
     (x : (Fin 6 × Look.Slot) × Nat) (hx : x ∈ r.energisedSlots.zipIdx)
@@ -2619,6 +2619,368 @@ theorem plan_is_stable_across_a_replan (r r' : PlanReq)
     rw [hstop] at hend
     have := hlate t.start this
     omega
+
+
+/-! ## W-40 (the owner's D74, parity P64): §7.5's batches split into RUNS, and step 5 serves the
+entries of one `ci` in the CANDIDATE order
+
+`Planner.splitGroups` closes a bucket where the next member of the batch cannot join it (another
+`loc:`, an atomic item, the running block), so a bucket is a run of consecutive members and the
+buckets, flattened, ARE the batch in its order (`splitGroups_flatten_eq`), and two buckets side by
+side carry different keys (`splitGroups_closes`) — the runs and not any finer cut.  Fork
+`split_by_filters` is a group-by and was ported as one until W-40; README gap 3546 is the day it
+served `{^t3, ^t2}` before the ranked-ahead `^t1`.
+
+What the runs buy, at the level step 5 walks: §7.5's batches partition each `ci`'s entries of step
+4's order into consecutive runs (`batchLoop_filter_flatten`, the whole of which E2 is one half), so
+the groups of one `ci`, in the order `build_groups` makes them, flatten to that `ci`'s entries in
+the candidate order (`rawGroups_filter_ci_members`); their keys are then sorted already
+(`rawGroups_filter_ci_sorted`), the stable sort moves none of them (`buildGroups_filter_ci`), and the
+walk serves each `ci` in the candidate order (`the_walk_serves_each_ci_in_the_candidate_order`): an
+entry strictly ahead of another of its `ci` sits in a group served no later
+(`a_same_ci_entry_ahead_is_served_no_later`).  That is what `PlanCheck.plan_is_monotone_in_rank`
+stands on.  Theorems only. -/
+
+/-- **A push grows the flattened buckets by the member, at the end** — the equality
+`Planner.splitPush_flatten` states as a permutation. -/
+theorem splitPush_flatten_eq (k : SplitKey) (x : Ranked) :
+    ∀ acc : List (SplitKey × List Ranked),
+      ((splitPush k x acc).map Prod.snd).flatten = (acc.map Prod.snd).flatten ++ [x]
+  | [] => by simp [splitPush]
+  | [e] => by
+    simp only [splitPush]
+    by_cases hk : e.1 = k
+    · rw [if_pos hk]; simp
+    · rw [if_neg hk]; simp
+  | e :: f :: rest => by
+    have h := splitPush_flatten_eq k x (f :: rest)
+    simp only [splitPush, List.map_cons, List.flatten_cons] at h ⊢
+    rw [h]
+    simp
+
+theorem splitFold_flatten_eq (act : Option Id) :
+    ∀ (members : List Ranked) (acc : List (SplitKey × List Ranked)),
+      ((members.foldl (fun a x => splitPush (splitKeyOf act x) x a) acc).map Prod.snd).flatten =
+        (acc.map Prod.snd).flatten ++ members
+  | [], acc => by simp
+  | x :: xs, acc => by
+    simp only [List.foldl_cons]
+    rw [splitFold_flatten_eq act xs, splitPush_flatten_eq]
+    simp
+
+/-- **D74: the buckets of a batch, flattened, ARE the batch, in its order** — each bucket is a run
+of consecutive members (`Planner.splitGroups_flatten` was a permutation, and for the group-by it
+had to be). -/
+theorem splitGroups_flatten_eq (act : Option Id) (members : List Ranked) :
+    ((splitGroups act members).map Prod.snd).flatten = members := by
+  unfold splitGroups
+  simpa using splitFold_flatten_eq act members []
+
+/-- A push onto a non-empty bucket list keeps its first key. -/
+theorem splitPush_head (k : SplitKey) (x : Ranked) :
+    ∀ (e : SplitKey × List Ranked) (rest : List (SplitKey × List Ranked)),
+      ∃ t, (splitPush k x (e :: rest)).map Prod.fst = e.1 :: t
+  | e, [] => by
+    simp only [splitPush]
+    by_cases hk : e.1 = k
+    · rw [if_pos hk]; exact ⟨[], rfl⟩
+    · rw [if_neg hk]; exact ⟨[k], rfl⟩
+  | e, f :: rest => by
+    simp only [splitPush, List.map_cons]
+    exact ⟨_, rfl⟩
+
+theorem splitPush_keeps_closing (k : SplitKey) (x : Ranked) :
+    ∀ acc : List (SplitKey × List Ranked),
+      (∀ p ∈ (acc.map Prod.fst).zip (acc.map Prod.fst).tail, p.1 ≠ p.2) →
+      ∀ p ∈ ((splitPush k x acc).map Prod.fst).zip ((splitPush k x acc).map Prod.fst).tail,
+        p.1 ≠ p.2
+  | [], _ => by simp [splitPush]
+  | [e], _ => by
+    simp only [splitPush]
+    by_cases hk : e.1 = k
+    · rw [if_pos hk]; simp
+    · rw [if_neg hk]; simpa using hk
+  | e :: f :: rest, h => by
+    simp only [splitPush]
+    obtain ⟨t, ht⟩ := splitPush_head k x f rest
+    have hrec := splitPush_keeps_closing k x (f :: rest) (fun p hp => h p (by
+      simp only [List.map_cons, List.tail_cons, List.zip_cons_cons] at hp ⊢
+      exact List.mem_cons_of_mem _ hp))
+    rw [ht] at hrec
+    have hef : e.1 ≠ f.1 := h (e.1, f.1) (by simp)
+    intro p hp
+    simp only [List.map_cons, List.tail_cons, ht, List.zip_cons_cons, List.mem_cons] at hp
+    rcases hp with rfl | hp
+    · exact hef
+    · exact hrec p (by simpa using hp)
+
+theorem splitFold_closes (act : Option Id) :
+    ∀ (members : List Ranked) (acc : List (SplitKey × List Ranked)),
+      (∀ p ∈ (acc.map Prod.fst).zip (acc.map Prod.fst).tail, p.1 ≠ p.2) →
+      ∀ p ∈ ((members.foldl (fun a x => splitPush (splitKeyOf act x) x a) acc).map Prod.fst).zip
+          ((members.foldl (fun a x => splitPush (splitKeyOf act x) x a) acc).map Prod.fst).tail,
+        p.1 ≠ p.2
+  | [], _, h => h
+  | x :: xs, acc, h => by
+    simp only [List.foldl_cons]
+    exact splitFold_closes act xs _ (splitPush_keeps_closing _ x acc h)
+
+/-- **D74: a bucket closes ONLY where the next member cannot join it** — two buckets side by side
+carry different keys, so the split is the batch's runs and no finer cut (with
+`splitGroups_flatten_eq` and `Planner.splitGroups_keys`, this pins the split down). -/
+theorem splitGroups_closes (act : Option Id) (members : List Ranked) :
+    ∀ p ∈ ((splitGroups act members).map Prod.fst).zip ((splitGroups act members).map Prod.fst).tail,
+      p.1 ≠ p.2 :=
+  splitFold_closes act members [] (by simp)
+
+/-- **§7.5's batches of one `ci`, in order, ARE that `ci`'s entries of the walked order** — the
+batching partitions each `ci` into consecutive runs.  E2 (`batchLoop_is_a_run_of_its_ci`) says each
+batch is a run; this says together they are all of it, in order. -/
+theorem batchLoop_filter_flatten (ms bm : Nat) (c : Fin 6) :
+    ∀ (fuel : Nat) (l : List Ranked), l.length ≤ fuel →
+      (batchLoop ms bm fuel l).flatMap (fun B => B.filter (fun y => decide (y.cand.ci = c))) =
+        l.filter (fun y => decide (y.cand.ci = c))
+  | 0, l, h => by
+    have : l = [] := List.eq_nil_of_length_eq_zero (by omega)
+    subst this; simp [batchLoop]
+  | fuel + 1, [], _ => by simp [batchLoop]
+  | fuel + 1, x :: xs, h => by
+    unfold batchLoop
+    generalize hp : (if x.gatherable ms = true then
+        gatherBatch ms bm x.cand.ci (maxBatch - 1) x.facts.plannedMin xs else ([], xs)) = p
+    have hfst : p.1 <+: xs.filter (fun y => decide (y.cand.ci = x.cand.ci)) := by
+      rw [← hp]
+      split
+      · exact gatherBatch_fst_is_a_prefix_of_its_ci ms bm x.cand.ci xs _ _
+      · exact List.nil_prefix
+    have hlen : p.2.length ≤ fuel := by
+      have : p.2.length ≤ xs.length := by
+        rw [← hp]
+        split
+        · exact gatherBatch_snd_length _ _ _ _ _ _
+        · exact Nat.le_refl _
+      simp only [List.length_cons] at h
+      omega
+    have hci1 : ∀ y ∈ p.1, y.cand.ci = x.cand.ci := fun y hy => by
+      have := hfst.subset hy
+      simpa using (List.mem_filter.1 this).2
+    rw [List.flatMap_cons, batchLoop_filter_flatten ms bm c fuel p.2 hlen]
+    by_cases hc : x.cand.ci = c
+    · subst hc
+      have hown : p.2.filter (fun y => decide (y.cand.ci = x.cand.ci)) =
+          (xs.filter (fun y => decide (y.cand.ci = x.cand.ci))).drop p.1.length := by
+        rw [← hp]
+        split
+        · exact gatherBatch_snd_filter_own ms bm x.cand.ci xs _ _
+        · simp
+      have hall : (x :: p.1).filter (fun y => decide (y.cand.ci = x.cand.ci)) = x :: p.1 :=
+        List.filter_eq_self.2 (fun y hy => by
+          rcases List.mem_cons.1 hy with rfl | hy
+          · simp
+          · simp [hci1 y hy])
+      rw [hall, hown, List.filter_cons_of_pos (by simp), List.cons_append]
+      congr 1
+      obtain ⟨t, ht⟩ := hfst
+      rw [← ht, List.drop_left]
+    · have hother : p.2.filter (fun y => decide (y.cand.ci = c)) =
+          xs.filter (fun y => decide (y.cand.ci = c)) := by
+        rw [← hp]
+        split
+        · exact gatherBatch_snd_filter_other ms bm x.cand.ci c (fun h' => hc h'.symm) xs _ _
+        · rfl
+      have hnone : (x :: p.1).filter (fun y => decide (y.cand.ci = c)) = [] :=
+        List.filter_eq_nil_iff.2 (fun y hy => by
+          rcases List.mem_cons.1 hy with rfl | hy
+          · simpa using hc
+          · simpa [hci1 y hy] using hc)
+      rw [hnone, hother, List.nil_append, List.filter_cons_of_neg (by simpa using hc)]
+
+/-- **The groups `build_groups` makes of one batch carry its plain members, in order** (D74). -/
+theorem groupsOfBatch_members (act : Option Id) (b : List Ranked) :
+    ((splitGroups act (batchMembers b)).filterMap (fun e => groupOf e.1 e.2)).flatMap (·.members) =
+      batchMembers b := by
+  rw [filterMap_groupOf_members]
+  have := splitGroups_flatten_eq act (batchMembers b)
+  rwa [← List.flatMap_def] at this
+
+/-- Over groups each of whose members carry the group's `ci`, the groups of one `ci` flattened are
+the entries of that `ci`. -/
+theorem flatMap_members_filter_ci (c : Fin 6) :
+    ∀ gs : List Group, (∀ g ∈ gs, ∀ y ∈ g.members, y.cand.ci = g.ci) →
+      (gs.filter (fun g => decide (g.ci = c))).flatMap (·.members) =
+        (gs.flatMap (·.members)).filter (fun y => decide (y.cand.ci = c))
+  | [], _ => rfl
+  | g :: gs, h => by
+    have ih := flatMap_members_filter_ci c gs (fun g' hg' => h g' (List.mem_cons_of_mem _ hg'))
+    rw [List.flatMap_cons, List.filter_append]
+    by_cases hc : g.ci = c
+    · rw [List.filter_cons_of_pos (by simpa using hc), List.flatMap_cons, ih]
+      congr 1
+      exact (List.filter_eq_self.2 (fun y hy => by simp [h g (List.mem_cons_self ..) y hy, hc])).symm
+    · have hnil : g.members.filter (fun y => decide (y.cand.ci = c)) = [] :=
+        List.filter_eq_nil_iff.2 (fun y hy => by simp [h g (List.mem_cons_self ..) y hy, hc])
+      rw [List.filter_cons_of_neg (by simpa using hc), ih, hnil, List.nil_append]
+
+/-- **The raw groups' members ARE the batches' plain members, in order** (D74) —
+`rawGroups_members_perm`, as an equality. -/
+theorem rawGroups_members (r : PlanReq) :
+    r.rawGroups.flatMap (·.members) = r.dayBatches.flatMap batchMembers := by
+  unfold PlanReq.rawGroups
+  rw [List.flatMap_assoc]
+  congr 1
+  funext b
+  exact groupsOfBatch_members _ b
+
+/-- **The groups of one `ci`, in the order `build_groups` makes them, flatten to that `ci`'s entries
+in the candidate order** (D74) — the batching partitions each `ci` into consecutive runs
+(`batchLoop_filter_flatten`) and the split cuts each batch into consecutive runs
+(`splitGroups_flatten_eq`). -/
+theorem rawGroups_filter_ci_members (r : PlanReq) (c : Fin 6) :
+    (r.rawGroups.filter (fun g => decide (g.ci = c))).flatMap (·.members) =
+      batchMembers (r.rankedCands.filter (fun y => decide (y.cand.ci = c))) := by
+  rw [flatMap_members_filter_ci c r.rawGroups (fun g hg y hy =>
+      PlanReq.a_group_member_carries_the_groups_ci (PlanReq.mem_buildGroups.2 hg) hy),
+    rawGroups_members]
+  have hpart := batchLoop_filter_flatten r.prio.batchMaxMin r.blockMin c r.rankedCands.length
+    r.rankedCands (Nat.le_refl _)
+  unfold batchMembers
+  rw [← hpart, List.filter_flatMap, List.filter_flatMap]
+  unfold PlanReq.dayBatches batches
+  congr 1
+  funext b
+  rw [List.filter_filter, List.filter_filter]
+  congr 1
+  funext y
+  exact Bool.and_comm _ _
+
+/-- Two key-number lists of one length compare as their own prefixes do whatever follows them. -/
+theorem natsLe_of_append : ∀ (a b c d : List Nat), a.length = b.length →
+    natsLe (a ++ c) (b ++ d) = true → natsLe a b = true
+  | [], _, _, _, _, _ => rfl
+  | _ :: _, [], _, _, h, _ => by simp at h
+  | x :: a, y :: b, c, d, hl, h => by
+    simp only [List.cons_append, natsLe_cons] at h ⊢
+    by_cases h1 : x < y
+    · rw [if_pos h1]
+    · rw [if_neg h1] at h ⊢
+      by_cases h2 : y < x
+      · rw [if_pos h2] at h; exact absurd h (by simp)
+      · rw [if_neg h2] at h ⊢
+        exact natsLe_of_append a b c d (by simpa using hl) h
+
+/-- **§7.4's order between two entries of one kind is the order of their group keys** — the group
+key is step 5's key without the request position, which only breaks a tie. -/
+theorem groupKeyLe_of_rankedLe {x y : Ranked} (hw : x.key.notWall = y.key.notWall)
+    (h : rankedLe x y = true) : groupKeyLe (groupKeyOf x) (groupKeyOf y) = true := by
+  unfold rankedLe at h
+  simp only at h
+  rw [hw, natsLe_cons] at h
+  simp only [Nat.lt_irrefl, if_false] at h
+  unfold groupKeyLe GroupKey.nums groupKeyOf
+  simp only
+  refine natsLe_of_append _ _ [x.key.ix] [y.key.ix] ?_ ?_
+  · cases x.imp <;> cases y.imp <;> cases x.key.root <;> cases y.key.root <;>
+      cases x.key.own <;> cases y.key.own <;> simp [impNums, siteNums]
+  · simpa [List.append_assoc] using h
+
+/-- A member of a group step 5 walks is never a wall (`Planner.batchMembers` leaves walls out). -/
+theorem a_group_member_is_not_a_wall {r : PlanReq} {g : Group} {y : Ranked}
+    (hg : g ∈ r.rawGroups) (hy : y ∈ g.members) : y.key.notWall = true := by
+  obtain ⟨b, hb, e, he, hgo⟩ := PlanReq.mem_rawGroups hg
+  rw [(groupOf_members hgo).1] at hy
+  have hm := mem_batchMembers (mem_of_mem_splitGroups he hy)
+  have hr : y ∈ r.rankedCands := mem_of_mem_batches hb hm.1
+  rw [(PlanReq.a_ranked_entry_carries_its_answers_facts hr).1]
+  simpa [Ranked.cand] using hm.2.1
+
+/-- **The groups of one `ci`, as `build_groups` makes them, are already in §7.4's key order**
+(D74) — every member of an earlier one is ahead of every member of a later one, and a group's key
+is one of its members' (`Planner.PlanReq.a_group_key_is_a_members`). -/
+theorem rawGroups_filter_ci_sorted (r : PlanReq) (c : Fin 6) :
+    (r.rawGroups.filter (fun g => decide (g.ci = c))).Pairwise (fun a b => groupLe a b = true) := by
+  have hM : (batchMembers (r.rankedCands.filter (fun y => decide (y.cand.ci = c)))).Pairwise
+      (fun a b => rankedLe a b = true) :=
+    (r.rankedCands_sorted).sublist (List.filter_sublist.trans List.filter_sublist)
+  rw [← rawGroups_filter_ci_members] at hM
+  refine (List.pairwise_flatMap.1 hM).2.imp_of_mem ?_
+  intro g1 g2 hg1 hg2 h
+  have hg1' := (List.mem_filter.1 hg1).1
+  have hg2' := (List.mem_filter.1 hg2).1
+  obtain ⟨z, hz, hk2⟩ := PlanReq.a_group_key_is_a_members (PlanReq.mem_buildGroups.2 hg2')
+  obtain ⟨w, hw⟩ : ∃ w, w ∈ g1.members := by
+    cases hm : g1.members with
+    | nil => exact absurd hm (PlanReq.a_group_is_a_bounded_batch (PlanReq.mem_buildGroups.2 hg1')).1
+    | cons w ws => exact ⟨w, List.mem_cons_self ..⟩
+  have h1 := PlanReq.a_group_key_is_its_minimum (PlanReq.mem_buildGroups.2 hg1') hw
+  have h2 := groupKeyLe_of_rankedLe (by rw [a_group_member_is_not_a_wall hg1' hw,
+    a_group_member_is_not_a_wall hg2' hz]) (h w hw z hz)
+  unfold groupLe
+  rw [hk2]
+  exact groupKeyLe_trans _ _ _ h1 h2
+
+/-- **`build_groups`' stable sort moves no group of one `ci` relative to another** (D74) — they were
+in key order already (`rawGroups_filter_ci_sorted`), and a sorted sublist survives a stable sort
+(core's List.sublist_mergeSort). -/
+theorem buildGroups_filter_ci (r : PlanReq) (c : Fin 6) :
+    r.buildGroups.filter (fun g => decide (g.ci = c)) =
+      r.rawGroups.filter (fun g => decide (g.ci = c)) := by
+  have hsub : List.Sublist (r.rawGroups.filter (fun g => decide (g.ci = c))) r.buildGroups := by
+    unfold PlanReq.buildGroups sortGroups
+    rw [Replay.insSort_eq_mergeSort groupLe groupLe_trans groupLe_total]
+    exact List.sublist_mergeSort (fun a b c h1 h2 => groupLe_trans a b c h1 h2)
+      (fun a b => groupLe_total a b) (rawGroups_filter_ci_sorted r c) List.filter_sublist
+  have hsub' := hsub.filter (fun g => decide (g.ci = c))
+  rw [List.filter_filter] at hsub'
+  simp only [Bool.and_self] at hsub'
+  have hlen : (r.buildGroups.filter (fun g => decide (g.ci = c))).length =
+      (r.rawGroups.filter (fun g => decide (g.ci = c))).length :=
+    ((Replay.insSort_perm groupLe r.rawGroups).filter _).length_eq
+  exact (hsub'.eq_of_length hlen.symm).symm
+
+/-- **D74's law, at the walk: §8.2 step 5 serves each `ci`'s entries in the CANDIDATE order** — the
+groups the cursor receives, read for one `ci`, are that `ci`'s entries of step 4's order, every one
+of them and in its order. -/
+theorem the_walk_serves_each_ci_in_the_candidate_order (r : PlanReq) (c : Fin 6) :
+    r.startGroups.flatMap (fun g => g.members.filter (fun y => decide (y.cand.ci = c))) =
+      batchMembers (r.rankedCands.filter (fun y => decide (y.cand.ci = c))) := by
+  have hs : r.startGroups.flatMap (fun g => g.members.filter (fun y => decide (y.cand.ci = c))) =
+      r.buildGroups.flatMap (fun g => g.members.filter (fun y => decide (y.cand.ci = c))) := by
+    unfold PlanReq.startGroups
+    cases r.activeRun with
+    | none => rfl
+    | some q =>
+      simp only
+      have hfm : ∀ l : List Group,
+          l.flatMap (fun g => g.members.filter (fun y => decide (y.cand.ci = c))) =
+            (l.map (·.members)).flatMap (fun m => m.filter (fun y => decide (y.cand.ci = c))) :=
+        fun l => (List.flatMap_map _ _ l).symm
+      rw [hfm, hfm, spendActive_members]
+  rw [hs, ← List.filter_flatMap, ← flatMap_members_filter_ci c r.buildGroups
+      (fun g hg y hy => PlanReq.a_group_member_carries_the_groups_ci hg hy),
+    buildGroups_filter_ci, rawGroups_filter_ci_members]
+
+/-- **An entry strictly ahead of another of its `ci` in the candidate order sits in a group step 5
+serves no later** (D74).  With the fork's group-by this was false — README gap 3546's day put the
+later-ranked `^t2` in a group served before the ranked-ahead `^t1`'s. -/
+theorem a_same_ci_entry_ahead_is_served_no_later (r : PlanReq) {x y : Ranked}
+    (hxy : rankedLe y x = false) (hci : x.cand.ci = y.cand.ci)
+    {a b : Nat} {ga gb : Group} (ha : r.startGroups[a]? = some ga) (hb : r.startGroups[b]? = some gb)
+    (hxa : x ∈ ga.members) (hyb : y ∈ gb.members) : a ≤ b := by
+  refine Nat.le_of_not_lt (fun hba => ?_)
+  have hsorted : (batchMembers (r.rankedCands.filter (fun z => decide (z.cand.ci = x.cand.ci)))).Pairwise
+      (fun u v => rankedLe u v = true) :=
+    (r.rankedCands_sorted).sublist (List.filter_sublist.trans List.filter_sublist)
+  rw [← the_walk_serves_each_ci_in_the_candidate_order] at hsorted
+  have hp := (List.pairwise_flatMap.1 hsorted).2
+  have hal : a < r.startGroups.length := lt_of_getElem?_some ha
+  have hbl : b < r.startGroups.length := lt_of_getElem?_some hb
+  have hpair := List.pairwise_iff_getElem.1 hp b a hbl hal hba
+  have ea : r.startGroups[a] = ga := Option.some.inj ((List.getElem?_eq_getElem hal).symm.trans ha)
+  have eb : r.startGroups[b] = gb := Option.some.inj ((List.getElem?_eq_getElem hbl).symm.trans hb)
+  rw [ea, eb] at hpair
+  have := hpair y (List.mem_filter.2 ⟨hyb, by simp [hci]⟩) x (List.mem_filter.2 ⟨hxa, by simp⟩)
+  rw [hxy] at this
+  exact absurd this (by simp)
 
 end PlanFold
 end Tm

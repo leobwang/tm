@@ -220,6 +220,15 @@ pub struct PlanInput<'a> {
     pub allow_home: bool,
     /// §9.1's what-if overrides, when this is a consequence replan.
     pub overrides: Option<&'a PlanOverrides>,
+    /// **§8.2 step 5 splits each §7.5 batch into its RUNS** (the owner's D74,
+    /// parity P64; README gap 3740): a member joins the LAST bucket when it
+    /// carries that bucket's key, else opens a new one — the kernel's
+    /// `Planner.splitPush`. `false` = fork 4748911's group-by, which is what the
+    /// shipped binary plans with: nothing in `tm/src` sets this. It is the
+    /// comparand's, set by the tests' fork arm ([`PlanInput::with_runs`]) the way
+    /// D60's key is run in the fork by rewriting its inputs, and R3 deletes it
+    /// with this file.
+    pub runs: bool,
 }
 
 impl<'a> PlanInput<'a> {
@@ -245,6 +254,7 @@ impl<'a> PlanInput<'a> {
             prios: None,
             allow_home: false,
             overrides: None,
+            runs: false,
         }
     }
     /// Reuse a lookahead the caller already has (exact units).
@@ -265,6 +275,12 @@ impl<'a> PlanInput<'a> {
     pub fn with_ranking(mut self, cands: &'a [Candidate], prios: &'a [Prio]) -> PlanInput<'a> {
         self.candidates = Some(cands);
         self.prios = Some(prios);
+        self
+    }
+    /// **Split §7.5's batches into their runs** (D74, parity P64) — the comparand's
+    /// [`PlanInput::runs`]; the shipped binary never calls it.
+    pub fn with_runs(mut self, runs: bool) -> PlanInput<'a> {
+        self.runs = runs;
         self
     }
     /// `tm plan --allow-home` (§13).
@@ -1116,7 +1132,7 @@ impl<'a> Planner<'a> {
             // does not take the rest of its batch out of the day with it. The
             // item that is *running* is split out for the same reason: the
             // minutes its block still needs are its own, not its batch's.
-            for members in split_by_filters(cands, &members, active.map(|r| &r.id)) {
+            for members in split_by_filters(cands, &members, active.map(|r| &r.id), self.input.runs) {
                 let first = &cands[members[0]];
                 let planned: u32 = members.iter().map(|i| cands[*i].planned_min).sum();
                 let cap_left = members
@@ -2101,6 +2117,7 @@ fn split_by_filters(
     cands: &[Candidate],
     members: &[usize],
     active: Option<&Id>,
+    runs: bool,
 ) -> Vec<Vec<usize>> {
     let mut out: Vec<((Loc, bool, bool), Vec<usize>)> = Vec::new();
     for m in members {
@@ -2109,7 +2126,14 @@ fn split_by_filters(
             cands[*m].splittable,
             active == Some(&cands[*m].id),
         );
-        match out.iter_mut().find(|(k, _)| *k == key) {
+        // D74 (P64): the runs join only the LAST bucket; the fork's group-by, the first
+        // bucket with the key wherever it sits.
+        let bucket = if runs {
+            out.last_mut().filter(|(k, _)| *k == key)
+        } else {
+            out.iter_mut().find(|(k, _)| *k == key)
+        };
+        match bucket {
             Some((_, group)) => group.push(*m),
             None => out.push((key, vec![*m])),
         }

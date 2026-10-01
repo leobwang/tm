@@ -1,9 +1,16 @@
 # kernel/sent-exempt.txt -- check 13's SENT half (fields.py `sent_main`; W-36 track H, README
-# gap 2931).  The property: every JSON key path the host codec's `planner_json`
-# (`tm-core/src/planwire.rs`) writes into the planner section is DECODED by the kernel's reader of
-# that section (`PlanWire.lean`, followed from the definition that reads `planner` off the
-# request).  These are the keys the host sends and no kernel reader decodes, measured by the gate
-# itself on its first run: exactly one.  The file is W-27's shape -- an enumeration you join to be
-# EXEMPT -- and it may only SHRINK: a line for a key that is decoded now FAILS as STALE, a line the
-# committed file does not hold FAILS as RATCHET.  One line per key path, at its SHALLOWEST unread
-# path: `<planner.key.path> -- <dated reason naming its EXIT>`.
+# gap 2931; every section since W-40 track E, README gap 3717).  The property: every JSON key
+# path written into a request -- at EVERY place the program builds one (`sentkeys.host_sections`:
+# a `json!` object carrying `docs` wherever it is written, a request built as TEXT, each section's
+# codec root `<section>_json` and its `&mut Value` writers), each of its top-level keys a section
+# -- is DECODED by the kernel's reader of that section (followed from the definition that reads
+# the section off the request).  Until W-40 it asked the planner section of `planwire.rs` alone,
+# and its first run there found exactly one key, since read.  The file is W-27's shape -- an
+# enumeration you join to be EXEMPT -- and it may only SHRINK: a line no shallow unread path is at
+# or under FAILS as STALE, a line the committed file does not hold FAILS as RATCHET unless it sits
+# under a `## <heading>` that is new in the same diff and carries an ISO date (reach.py's rule,
+# D51).  One line per key path or section, at its SHALLOWEST unread path:
+# `<section.key.path> -- <dated reason naming its EXIT>`.
+
+## W-40 track E (2026-09-30): the sent half asks every section at every place a request is built (README gap 3717)
+capacity.priority.batchMaxMin -- 2026-09-30: READ, by `PlanWire.readBatchMaxMin`, but through `parts.sec` -- the capacity section reaches the planner as the `sec` field of `Boundary.CapParts`, and the walk follows bindings and calls, not a structure built in one definition (`runCapZP`'s anonymous constructor) and projected in another (`runPlanner`); README gap 3081's mechanism, gap 3910.  `planner_request_keys.rs` drives the read through the FFI on the binary's own request (`the_binarys_request_with_the_swaps_planner_section_is_planned`). EXIT: the walk follows a `JVal` structure field from its constructor to its projection, or the planner reads the key off a binding of its own.

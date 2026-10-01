@@ -21,6 +21,8 @@
 #   <binary> replay <tz> < log.jsonstrings the fork's `log::replay`, as JSON
 #   <binary> plan < requests.jsonl         the fork's planner, ranked as the
 #                                          shipped binary ranks it (owner D72)
+#   <binary> review < requests.jsonl       the fork's week grid, review::week_review's
+#                                          heat over a world (README gap 3718)
 #
 # and feed either to `cargo run --example oracle-compare` in tm-kernel-ffi.
 #
@@ -43,7 +45,9 @@ fork=${TM_FORK:-4748911}
 # silently reused.
 stamp="$out/.oracle-ref"
 seam="$here/plan-seam.patch"
-want="$(git -C "$repo" rev-parse "$fork") $(git hash-object "$seam")"
+# D74's runs (parity P64, W-40 land): applied after the seam, behind an opt-in.
+runs="$here/p64-runs.patch"
+want="$(git -C "$repo" rev-parse "$fork") $(git hash-object "$seam") $(git hash-object "$runs")"
 if [ ! -d "$out/tm-core" ] || [ ! -f "$stamp" ] || [ "$(cat "$stamp")" != "$want" ]; then
   echo "extracting $fork (${want%% *}) into $out" >&2
   rm -rf "$out/tm-core" "$out/tm" "$out/Cargo.toml" "$out/Cargo.lock"
@@ -52,8 +56,9 @@ if [ ! -d "$out/tm-core" ] || [ ! -f "$stamp" ] || [ "$(cat "$stamp")" != "$want
   # The ceiling keeps `git apply` from finding a repository above the scratch
   # tree, where it would read the patch's paths from that repository's root.
   ( cd "$out" && export GIT_CEILING_DIRECTORIES="$(dirname "$out")" \
-      && git apply --check "$seam" && git apply "$seam" ) || {
-    echo "build-oracle.sh: $seam does not apply to $fork -- the oracle's planner would not be the one it describes" >&2
+      && git apply --check "$seam" && git apply "$seam" \
+      && git apply --check "$runs" && git apply "$runs" ) || {
+    echo "build-oracle.sh: $seam or $runs does not apply to $fork -- the oracle's planner would not be the one it describes" >&2
     exit 1
   }
   printf '%s\n' "$want" > "$stamp"

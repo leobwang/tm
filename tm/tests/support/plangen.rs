@@ -408,6 +408,45 @@ pub fn calendar_text(case: &Case) -> String {
     s
 }
 
+/// **A passed meeting, drawn on purpose** (the P56 arm's draw, W-37 repair, README gap 3332;
+/// shared since W-40 track H, README gap 3719): the shared generator runs a block across a
+/// meeting that has ended on ~6 of 256 cases, so the running block is started half an hour
+/// before a wall that begins after the last `done` and ends at least eleven minutes before
+/// `now` — a one-hour wall on the hour, added when the calendar has none there — and an
+/// interruption drawn on the same case is left out (§9's other event). A day the generator can
+/// already draw (it draws `ago` and walls freely), drawn more often; the shared generator is
+/// untouched. `false`, and the case as it was, when no such hour fits before `now` or the case
+/// has no item. ONE definition: `planner_invariants.rs`' P56 arm and the seeded P56 days
+/// (`support/forkp56.rs`) both draw through it.
+pub fn pass_a_meeting(case: &mut Case) -> bool {
+    if case.items.is_empty() {
+        return false;
+    }
+    let tz = Config::default().tz;
+    let now = case.now(tz);
+    let floor = case.arrival(tz) + Duration::minutes(i64::from(case.done(tz)) * 60 - 5) + Duration::minutes(1);
+    // The first whole hour at least eleven minutes after `floor` whose hour-long wall
+    // ends eleven minutes before `now`: an existing wall there is used as it is, and
+    // otherwise a one-hour wall is added to the calendar (a wall the generator draws).
+    let first = (floor + Duration::minutes(11 + 59)).format("%H").to_string().parse::<u32>().unwrap_or(24);
+    for h in first..23 {
+        let lo = local_dt(tz, date(), NaiveTime::from_hms_opt(h, 0, 0).expect("time"));
+        if lo + Duration::minutes(60 + 11) > now {
+            break;
+        }
+        if !case.walls.iter().any(|x| x.hour == h) {
+            case.walls.push(WallSpec { hour: h, hours: 1 });
+        }
+        let start = (lo - Duration::minutes(30)).max(floor);
+        let ago = u32::try_from((now - start).num_minutes()).unwrap_or(0);
+        let est = case.active.map_or(60, |a| a.2);
+        case.active = Some((0, ago, est));
+        case.interrupt = None;
+        return true;
+    }
+    false
+}
+
 pub fn routines_text(case: &Case) -> String {
     let mut s = String::new();
     for (i, line) in ROUTINES.iter().enumerate() {

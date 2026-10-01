@@ -36,6 +36,15 @@ clip: a Pause of day `d`'s record is cut by `d`'s walls clipped to `d` and clipp
 `[local midnight of d, now]`, where the host's cut took the segment whole and the walls unclipped.  The
 two agree on every Pause that lies inside its own day before `now`; they part only across local midnight
 (and past `now`), which the census in the README block measures.
+
+**And since W-40 each calendar day's part is cut by that day's walls** — the campaign's D77 call on README
+gap 3620, parity P63 restated.  The wire answers `daySpans` and `dayCovered`: `segSpans` and
+`coveredSpans` at every day the clip reaches, each at that day's own `dayNow` (its next midnight or
+`now`), so the half of a midnight-crossing meeting after midnight is the wall again — the next day's —
+as the next day's plan draws it.  `segSpans` is unchanged and is still the planner's cut by `rfl`
+(`pastSpans_is_segSpans`); a Pause inside its day is cut exactly as before
+(`the_cut_inside_its_day_is_unchanged`), and the partition laws over the days, with the `Cal` lemma
+that the midnights rise, are `MidnightCut.lean`'s.
 -/
 
 namespace Tm
@@ -199,6 +208,41 @@ theorem nothing_but_a_pause_is_covered (z : Cal.Tz) (ix : List Look.WallIx) (d n
     · omega
     · simp <;> omega
 
+/-! ## Each calendar day's part, cut by its own walls (the campaign's D77 call on README gap 3620)
+
+A Pause of day `d`'s record can run past `d`'s next local midnight — a block run into a call that
+crosses midnight with it, D61 pausing it over the call — and `segSpans` cuts the whole of it by `d`'s
+walls clipped to `d`, so the part after midnight was drawn `pause` (parity P63 as issued) while the
+next day's plan draws the same minutes as that day's wall row.  One span, two readings (AGENTS §5.3),
+and against D65's "the wall alone" as D69's call carried it to the grid.  **D77: each calendar day's
+part of the clip is cut by that day's own walls** — `segSpans` itself, at each day `d + i` the clip
+reaches, its `now` the next midnight or `now`, whichever is first, and `now` itself on the last day.
+`clipCut` and `wallsOfDay` are still called, never re-spelled, and a Pause inside its day is cut
+exactly as before (`the_cut_inside_its_day_is_unchanged`).  The partition laws, that theorem and the
+`Cal` lemma they rest on are `MidnightCut.lean`'s. -/
+
+/-- **The calendar days a segment's clip at `now` reaches from `d`**: through the local date of the
+clip's last second, and never fewer than one — day `d` itself, whose part is `segSpans`' clip. -/
+def clipDays (z : Cal.Tz) (d now : Nat) (g : Replay.Segment) : Nat :=
+  max 1 (Cal.localDate z ⟨min g.stop.1.sec now - 1, 0⟩ + 1 - d)
+
+/-- **Day `d + i`'s `now`, of `n` days**: the next local midnight, or `now` if it comes first — and
+`now` itself on the last day, so no part of the clip past it is dropped. -/
+def dayNow (z : Cal.Tz) (d now n i : Nat) : Nat :=
+  if i + 1 < n then min now (Cal.instantOf z (d + i + 1) 0).sec else now
+
+/-- **What stays a pause, day by day** (D77): each calendar day's part of the segment's clip with that
+day's walls cut out — `segSpans` at day `d + i`, at its own `dayNow`. -/
+def daySpans (z : Cal.Tz) (ix : List Look.WallIx) (d now : Nat) (g : Replay.Segment) : List (Nat × Nat) :=
+  (List.range (clipDays z d now g)).flatMap fun i =>
+    segSpans z ix (d + i) (dayNow z d now (clipDays z d now g) i) g
+
+/-- **What a wall covers, day by day** (D77): `coveredSpans` at each day's part — the stretches under a
+wall of the calendar day they fall on, which the grid draws as the wall. -/
+def dayCovered (z : Cal.Tz) (ix : List Look.WallIx) (d now : Nat) (g : Replay.Segment) : List (Nat × Nat) :=
+  (List.range (clipDays z d now g)).flatMap fun i =>
+    coveredSpans z ix (d + i) (dayNow z d now (clipDays z d now g) i) g
+
 /-! ## The wire: the `emit` section's walls form, with a week -/
 
 /-- **The walls form's refusals, with the week's**: `WallTimer.Refusal` unchanged, and one more. -/
@@ -239,11 +283,13 @@ def isPause (g : Replay.Segment) : Bool :=
 def cutPieceJson (q : Nat × Nat) : JVal := .arr [.num q.1, .num q.2]
 
 /-- **One Pause's cut, on the wire**: its own `[from, to)` in whole seconds — the key the host finds its
-segment by — then what stays a pause and what a wall covers. -/
+segment by — then what stays a pause and what a wall covers, each calendar day's part by that day's
+walls (D77, README gap 3620: `daySpans` and `dayCovered`, where W-39 sent `segSpans` and
+`coveredSpans` of the record's day alone). -/
 def cutPauseJson (z : Cal.Tz) (ix : List Look.WallIx) (d now : Nat) (g : Replay.Segment) : JVal :=
   .obj [("from".toList, .num g.start.1.sec), ("to".toList, .num g.stop.1.sec),
-    ("pause".toList, .arr ((segSpans z ix d now g).map cutPieceJson)),
-    ("wall".toList, .arr ((coveredSpans z ix d now g).map cutPieceJson))]
+    ("pause".toList, .arr ((daySpans z ix d now g).map cutPieceJson)),
+    ("wall".toList, .arr ((dayCovered z ix d now g).map cutPieceJson))]
 
 /-- **One day of the week, on the wire**: its date, and the cut of every Pause its record holds, in the
 record's order. -/
@@ -359,7 +405,9 @@ typed pause 12:40–14:00 straddling the meeting keeps 12:40–12:50 and 13:50�
 covered; a pause no wall touches (09:10–09:30) is kept whole and nothing covered; a block through the
 meeting is kept whole — the cut is a Pause's alone; a pause begun before the day's midnight is clipped at
 it; and a pause crossing into the next day under a wall that crosses with it keeps the part after
-midnight, because the planner's walls are the day's, clipped to it (parity P63). -/
+midnight, because the planner's walls are the day's, clipped to it (parity P63 as issued: this is the
+planner's cut, and since the campaign's D77 call the grid's is `daySpans`, which covers that part by
+the next day's walls — `the_call_past_midnight_is_its_days_wall`). -/
 theorem the_cut_is_run :
     segSpans Replay.utcZone [⟨['g','1'], 739865, 739865, 63924382200, 63924382200, 63924385800⟩] 739865 63924390000
         ⟨(⟨63924381600, 0⟩, Cal.Offset.utc), (⟨63924386400, 0⟩, Cal.Offset.utc), .pause ['t','4']⟩
@@ -405,6 +453,25 @@ theorem readWeek_is_run :
       | .error .badWeek => true | _ => false) = true ∧
     (match readWeek (.obj [("walls".toList, .obj [("week".toList, .str "2026-9-7".toList)])]) with
       | .error .badWeek => true | _ => false) = true := by
+  decide
+
+/-- **The call past midnight is its day's wall** (D77, README gap 3620), and the theorem that separates
+the rule from the one it replaces (AGENTS §4's last row): Monday 2026-09-07 in UTC, a call `^g2` from
+23:30 to 00:30 Tuesday, and a Pause of Monday's record from 23:40 to 00:20.  P63's cut (`segSpans`, the
+record's day alone) keeps the twenty minutes after midnight as the pause; the day-by-day cut covers
+them by Tuesday's part of the call, so the whole Pause is the wall — two pieces, one per day — and
+nothing of it is kept.  The clip reaches two days. -/
+theorem the_call_past_midnight_is_its_days_wall :
+    segSpans Replay.utcZone [⟨['g','2'], 739865, 739866, 63924420600, 63924420600, 63924424200⟩] 739865 63924500000
+        ⟨(⟨63924421200, 0⟩, Cal.Offset.utc), (⟨63924423600, 0⟩, Cal.Offset.utc), .pause ['t','4']⟩
+      = [(63924422400, 63924423600)] ∧
+    clipDays Replay.utcZone 739865 63924500000
+        ⟨(⟨63924421200, 0⟩, Cal.Offset.utc), (⟨63924423600, 0⟩, Cal.Offset.utc), .pause ['t','4']⟩ = 2 ∧
+    daySpans Replay.utcZone [⟨['g','2'], 739865, 739866, 63924420600, 63924420600, 63924424200⟩] 739865 63924500000
+        ⟨(⟨63924421200, 0⟩, Cal.Offset.utc), (⟨63924423600, 0⟩, Cal.Offset.utc), .pause ['t','4']⟩ = [] ∧
+    dayCovered Replay.utcZone [⟨['g','2'], 739865, 739866, 63924420600, 63924420600, 63924424200⟩] 739865 63924500000
+        ⟨(⟨63924421200, 0⟩, Cal.Offset.utc), (⟨63924423600, 0⟩, Cal.Offset.utc), .pause ['t','4']⟩
+      = [(63924421200, 63924422400), (63924422400, 63924423600)] := by
   decide
 
 set_option maxRecDepth 8000 in

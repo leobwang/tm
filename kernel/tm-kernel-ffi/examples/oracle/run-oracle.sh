@@ -29,6 +29,21 @@
 #      round trip the frozen file cannot make (the fork reading back every
 #      rendering the kernel writes).
 #
+#   5. the week grid, through the `review` mode: fork 4748911's heat grid of
+#      every frozen world and of fresh generated weeks, cell for cell against
+#      the shipped binary's `tm review week` with parity P63's cells moved by
+#      its rule (README gap 3718).  Driven from `tm/tests/fork_week_grid.rs`.
+#
+#   6. the planner, through the `plan` mode (owner D72): every frozen class,
+#      batch and driven line, and every frozen P56 day (README gap 3719), still
+#      fork 4748911's answer, and fresh draws -- the class draw's and the
+#      seeded P56 days' --
+#      against the kernel with every registered departure applied by its
+#      property.  Driven from `tm/tests/planner_classes.rs`,
+#      `tm/tests/planner_invariants.rs` and `tm/tests/planner_p56_cut.rs`; these
+#      are the arms that outlive R3, so this set is the fork's last word on the
+#      planner once `tm-core/src/planner.rs` is gone.
+#
 # Nothing is written inside the repository and no Rust is built in this
 # worktree.
 set -euo pipefail
@@ -79,3 +94,30 @@ echo "############ input set 4: every log line the grammar tests feed, per-line"
 ( cd "$repo" && TM_ORACLE="$oracle" cargo test --quiet --test kernel_log_grammar \
     -- --ignored --exact --nocapture \
     the_fork_reads_back_every_rendering_the_kernel_writes )
+
+echo
+echo "############ input set 5: the week grid, through the review mode"
+# The kernel's half is `tm/tests/fork_week_grid.rs` (it holds the worlds and the
+# shipped binary's review of each): every frozen grid still fork 4748911's answer,
+# and fresh weeks drawn and compared cell by cell with P63's cells applied by its
+# rule (README gap 3718).  The bless does NOT run here (AGENTS §7.2): it needs
+# TM_GRID_BLESS as well, and its command is in that file.
+( cd "$repo" && TM_ORACLE="$oracle" cargo test --quiet -p tm --test fork_week_grid \
+    -- --ignored --exact --nocapture \
+    the_frozen_week_grids_are_the_forks_oracle_answer_today \
+    the_binary_draws_every_fresh_week_as_the_forks_oracle_draws_it )
+
+echo
+echo "############ input set 6: the planner, through the plan mode"
+# The frozen lines against the oracle, then the two fresh-draw arms; each reads
+# the oracle's banner and refuses a binary without the `plan` mode by name.
+( cd "$repo" && TM_ORACLE="$oracle" cargo test --quiet -p tm --test planner_classes \
+    -- --ignored --exact --nocapture \
+    the_frozen_lines_are_the_forks_oracle_answer_today )
+( cd "$repo" && TM_ORACLE="$oracle" cargo test --quiet -p tm --test planner_invariants \
+    -- --ignored --exact --nocapture \
+    the_kernel_plans_every_fresh_draw_as_the_forks_oracle_plans_it )
+( cd "$repo" && TM_ORACLE="$oracle" cargo test --quiet -p tm --test planner_p56_cut \
+    -- --ignored --exact --nocapture \
+    the_frozen_p56_days_are_the_forks_oracle_answer_today \
+    the_kernel_plans_every_fresh_p56_day_as_the_forks_oracle_plans_it )

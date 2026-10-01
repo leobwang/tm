@@ -3,14 +3,14 @@ import TmKernel.PlanCheck
 import TmKernel.Emit
 import TmKernel.Recur
 import TmKernel.PlanWire
+import TmKernel.PlanStable
 /-!
 # A `PlanReq` that can be written down, and the four witnesses it unblocks
 
 Stage 6, track W (run W-15).  README **gap 348**: *"no `PlanReq` can be built inside
 `Planner.lean`, so the wall laws have no end-to-end witness"* — and the W-14 repair step made
-that gap the blocker for three others (366, 393's witness half, 396).  This module is gap 348
-item 4's second option, taken by name: *"a small `PlannerWit.lean` importing `Boundary` and
-`Planner`"*.  `Boundary` for `loadPlan`, `PlanCheck` for the battery, `PlanWire` since W-28.
+that gap the blocker for three others (366, 393's witness half, 396).  This module is gap 348 item 4's second option, taken by name: *"a small `PlannerWit.lean` importing `Boundary` and `Planner`"*.  `Boundary` for
+`loadPlan`, `PlanCheck` for the battery, `PlanWire` since W-28, `PlanStable` since W-40 (its laws fire here).
 
 **What imports it, measured (W-17, track G).**  The sentence that stood here said *"nothing
 imports it, so no shipped path grows"*, and the first clause is **false as written**:
@@ -9041,9 +9041,9 @@ def theWallOnNowRequest : PlanReq :=
 set_option maxRecDepth 400000 in
 /-- **P45, computed: the walk is a Break row, and nothing is scheduled over it.**  The walk is
 drawn 14:00-14:30, not open, with its place (`PlanWire.placeOf_reads_the_word`); its span is blocked, so
-`^c1` starts at 14:30, where the walk ends — and the walk is a rest to the cut, so no second break
-is cut there.  The same day with no break running — the fork's reading of this state, which reads
-no `runtime.break_` — starts `^c1` at 14:20, inside the walk. -/
+`^c1` starts at 14:30, where the walk ends — and the walk resets the cut's break counter as it will once logged (D77, P67;
+a rest of the cut until W-40), so no second break is cut there.  The same day with no break running — the fork's reading of
+this state, which reads no `runtime.break_` — starts `^c1` at 14:20, inside the walk. -/
 theorem the_running_break_is_drawn_and_nothing_is_scheduled_over_it :
     (breakRows theBreakRequest).map (fun s => (s.start, s.stop, s.flags.isOpen, s.note))
       = [((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 870).sec,
@@ -9065,8 +9065,8 @@ theorem the_running_break_is_drawn_and_nothing_is_scheduled_over_it :
 
 set_option maxRecDepth 400000 in
 /-- **P45's other half: "Break overran → next block starts now."**  The sit started at 13:20 and
-overran at 13:40, so its row runs to `now`, open, and blocks nothing ahead; it is a rest to the
-cut, so `^c1` starts at 14:00 — the fork starts it at 14:20, after a break of its own cutting,
+overran at 13:40, so its row runs to `now`, open, and blocks nothing ahead; it resets the cut's
+break counter as it will once logged (W-40, D77, parity P67), so `^c1` starts at 14:00 — the fork starts it at 14:20, after a break of its own cutting,
 because it counts the morning's two blocks as "since the last break". -/
 theorem an_overrun_break_is_open_and_the_next_block_starts_now :
     (breakRows theOverrunBreakRequest).map (fun s => (s.start, s.stop, s.flags.isOpen, s.note))
@@ -10914,8 +10914,16 @@ theorem the_agreeing_conferences_item_is_not_demanding :
   -- (One subject for the restated law is owed: a wind-down with a Block after it, which the window no longer cuts.)
   --
 
-/-! ### §7.5's split: the rank and batch goals refuted on a paying day, and the candidate order refuted
-at the taken slot (README gaps 3542, 3546, 3547) -/
+/-! ### §7.5's split: the rank and batch goals refuted on it until W-40, and since the owner's D74
+(parity P64) the day that shows the RUNS (README gaps 3542, 3546, 3547)
+
+Three theorems stood in this section until W-40 and stood on the hole D74 closed: the split day
+refuted `Goals.plan_is_monotone_in_rank` (plan_is_monotone_in_rank_is_refuted_by_the_split, a dead
+name now) and `Goals.plan_never_batches_past_an_equal_ci_candidate`
+(plan_never_batches_past_an_equal_ci_candidate_is_refuted_by_the_split, likewise), and the rank law in the
+candidate order at the taken slot (`monotone_rank_in_the_candidate_order_at_the_taken_slot_is_refuted`).
+The first two are retired with the hole — their goals stay refuted by line order and at a paying
+day — and the third is refuted again at the end of this file, at a day §7.5 batches across a `ci`. -/
 
 /-- **The split day**: the batch store's three siblings, all `ci 2` and small enough to share a block,
 `^t1` ATOMIC, and ONE block of budget (the shipped `[day]` at `budget_ratio` 1/8 of eight hours). -/
@@ -10929,11 +10937,45 @@ def theOneBlockSplitRequest : PlanReq :=
                pCandSmall ['t','3'] 10 10 .any (by decide)], by decide⟩ }
 
 set_option maxRecDepth 400000 in
-/-- **What the split day computes**: §7.4 ranks `^t3`, `^t1`, `^t2`; §7.5 gathers all three; the
-split and `build_groups`' least-member key serve `{^t3, ^t2}` before `{^t1}`; the one block goes to
-the pair — and `^t1`, ranked ahead of `^t2` and fitting every slot before the walk, is not placed,
-on a request that pays `candsAgree`. -/
-theorem the_split_day_serves_the_later_sibling_first :
+/-- **What the split day computes since D74**: §7.4 ranks `^t3`, `^t1`, `^t2`; §7.5 gathers all
+three; the split cuts the batch into its RUNS — `{^t3}`, the atomic `{^t1}`, `{^t2}` — and step 5
+serves them in the candidate order; the one block goes to `^t3`, and neither sibling is placed
+ahead of the other.  No Batch row: the batch the fork would form, `{^t3, ^t2}`, is not formed
+(D74's accepted cost). -/
+theorem the_split_day_serves_the_siblings_in_the_candidate_order :
+    rankedIds theOneBlockSplitRequest = [['t','3'], ['t','1'], ['t','2']] ∧
+    batchIds theOneBlockSplitRequest = [[['t','3'], ['t','1'], ['t','2']]] ∧
+    theOneBlockSplitRequest.startGroups.map (fun g => (g.ids, g.splittable))
+      = [([['t','3']], true), ([['t','1']], false), ([['t','2']], true)] ∧
+    remainingBudget theOneBlockSplitRequest = 1 ∧
+    theOneBlockSplitRequest.assignFold.slotOf = [some 0, none, none, none] ∧
+    assignedOf (dayPlan theOneBlockSplitRequest) = [['t','3']] ∧
+    PlanCheck.candsAgree theOneBlockSplitRequest = true := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide⟩
+
+/-- **The split day with TWO blocks** (`budget_ratio` 1/4): the second block goes to the atomic
+`^t1`, ranked second, and not to `^t2`. -/
+def theTwoBlockSplitRequest : PlanReq :=
+  { theOneBlockSplitRequest with
+    look := { witInput with day := { witInput.day with budgetRatio := Arith.mkPos 1 4 (by decide) } } }
+
+set_option maxRecDepth 400000 in
+/-- **…and the second block serves `^t1`**: the runs are served `^t3`, `^t1`, `^t2`, so a sibling
+ranked ahead is placed first — where the fork's group-by gave both blocks to `{^t3, ^t2}`'s turn
+first. -/
+theorem the_two_block_split_day_places_the_siblings_in_the_candidate_order :
+    remainingBudget theTwoBlockSplitRequest = 2 ∧
+    theTwoBlockSplitRequest.assignFold.slotOf = [some 0, some 1, none, none] ∧
+    assignedOf (dayPlan theTwoBlockSplitRequest) = [['t','3'], ['t','1']] := by
+  refine ⟨by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **REFUTED at W-40 (the owner's D74, parity P64): the split day no longer serves the later
+sibling first.**  Until D74 §7.5's split was fork `split_by_filters`' group-by: `{^t3, ^t2}` keyed by
+`^t3` took the one block and the ranked-ahead `^t1` got nothing (README gap 3546).  The split now
+cuts `[^t3, ^t1, ^t2]` into its RUNS, `{^t3}`, `{^t1}`, `{^t2}`, and the block goes to `^t3` alone
+(`the_split_day_serves_the_siblings_in_the_candidate_order`). -/
+theorem the_split_day_serves_the_later_sibling_first_is_refuted : ¬ (
     rankedIds theOneBlockSplitRequest = [['t','3'], ['t','1'], ['t','2']] ∧
     batchIds theOneBlockSplitRequest = [[['t','3'], ['t','1'], ['t','2']]] ∧
     theOneBlockSplitRequest.startGroups.map (fun g => (g.ids, g.splittable))
@@ -10944,132 +10986,90 @@ theorem the_split_day_serves_the_later_sibling_first :
     PlanCheck.candsAgree theOneBlockSplitRequest = true ∧
     PlanCheck.rankedBefore theOneBlockSplitRequest ['t','1'] ['t','2'] = true ∧
     theOneBlockSplitRequest.energisedSlots.zipIdx.all (fitsBefore theOneBlockSplitRequest ['t','1']) = true ∧
-    rootPrio batchStorePlan.val ['t','2'] = none := by
-  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide,
-    by decide, by decide⟩
+    rootPrio batchStorePlan.val ['t','2'] = none) := by
+  decide
 
 set_option maxRecDepth 400000 in
-/-- **`Goals.plan_is_monotone_in_rank` is refuted a FOURTH way, by §7.5's split** — `^t1` and `^t2`
-are siblings of one document at equal `rootPrio` and equal `ci`, `^t1` written first, `^t2` placed
-and `^t1` not.  Neither W-32's `loc:` nor W-37's contiguity is the cause. -/
-theorem plan_is_monotone_in_rank_is_refuted_by_the_split :
-    ¬ (∀ (r : PlanReq) (i j : Id) (e f : Entity),
-        r.plan.val.store.get i = some e → r.plan.val.store.get j = some f →
-        rootPrio r.plan.val i = rootPrio r.plan.val j →
-        effectiveCi r.plan.val i = effectiveCi r.plan.val j →
-        e.val.live.doc = f.val.live.doc →
-        e.val.live.rank < f.val.live.rank →
-        j ∈ assignedOf (dayPlan r) →
-        i ∈ assignedOf (dayPlan r)) := by
-  intro h
-  obtain ⟨-, -, -, -, -, hass, -, -, -, hrp2⟩ := the_split_day_serves_the_later_sibling_first
-  cases h1 : batchStorePlan.val.store.get ['t','1'] with
-  | none => exact absurd h1 (by decide)
-  | some e =>
-    cases h2 : batchStorePlan.val.store.get ['t','2'] with
-    | none => exact absurd h2 (by decide)
-    | some f =>
-      have q1 := the_batch_store_holds_three_siblings_at_one_ci.2.2.2.2.2.2.1
-      rw [h1, Option.map_some] at q1
-      have q2 := the_batch_store_holds_three_siblings_at_one_ci.2.2.2.2.2.2.2.1
-      rw [h2, Option.map_some] at q2
-      have e1 := Option.some.inj q1
-      have e2 := Option.some.inj q2
-      simp only [Prod.mk.injEq] at e1 e2
-      have hd : e.val.live.doc = f.val.live.doc := by rw [e1.1, e2.1]
-      have hr : e.val.live.rank < f.val.live.rank := by rw [e1.2.1, e2.2.1]; decide
-      have hp : rootPrio batchStorePlan.val ['t','1'] = rootPrio batchStorePlan.val ['t','2'] := by
-        rw [hrp2, the_batch_store_holds_three_siblings_at_one_ci.2.2.2.2.1]
-      have hj : (['t','2'] : Id) ∈ assignedOf (dayPlan theOneBlockSplitRequest) := by rw [hass]; simp
-      have hmem := h theOneBlockSplitRequest ['t','1'] ['t','2'] e f h1 h2 hp (by decide) hd hr hj
-      rw [hass] at hmem
-      exact absurd hmem (by decide)
+/-- In the batch store's week file no item sits at line 0 (`# Tasks` does), so no item is written
+before `^t3`, its first line (`the_batch_store_holds_three_siblings_at_one_ci`). -/
+theorem the_batch_store_writes_no_item_before_line_one :
+    batchStorePlan.val.store.dom.all (fun i => match batchStorePlan.val.store.get i with
+      | some e => !(e.val.live.doc == 1) || decide (1 ≤ e.val.live.rank)
+      | none => true) = true := by
+  decide
 
 set_option maxRecDepth 400000 in
-/-- **§8.3's rank law in the CANDIDATE order is false even at the slot the other item took** — on a
-request that pays `candsAgree`, with `^t1` strictly before `^t2` in step 4's own order
-(`PlanCheck.rankedBefore`) and admitted by step 5's filter before the walk at the very slot `^t2`'s
-group took.  This is why `PlanFold.plan_is_monotone_in_rank` is stated in the order step 5 serves
-its GROUPS (README gap 3542). -/
-theorem monotone_rank_in_the_candidate_order_at_the_taken_slot_is_refuted :
-    ¬ ∀ (r : PlanReq) (i j : Id) (x : (Fin 6 × Look.Slot) × Nat) (gj : Nat) (h : Group),
-        PlanCheck.candsAgree r = true → x ∈ r.energisedSlots.zipIdx →
-        r.assignFold.slotOf[x.2]? = some (some gj) → r.startGroups[gj]? = some h → j ∈ h.ids →
-        PlanCheck.rankedBefore r i j = true → fitsBefore r i x = true →
-        i ∈ assignedOf (dayPlan r) := by
-  intro h
-  obtain ⟨-, -, -, -, -, hass, hca, hrb, -, -⟩ := the_split_day_serves_the_later_sibling_first
-  have hany : (theOneBlockSplitRequest.energisedSlots.zipIdx.any (fun x =>
-      theOneBlockSplitRequest.startGroups.zipIdx.any (fun p =>
-        decide (theOneBlockSplitRequest.assignFold.slotOf[x.2]? = some (some p.2)) &&
-          decide (['t','2'] ∈ p.1.ids) && fitsBefore theOneBlockSplitRequest ['t','1'] x))) = true := by
-    decide
-  obtain ⟨x, hx, hp⟩ := List.any_eq_true.1 hany
-  obtain ⟨p, hpm, hpp⟩ := List.any_eq_true.1 hp
-  simp only [Bool.and_eq_true, decide_eq_true_eq] at hpp
-  have hmem := h theOneBlockSplitRequest ['t','1'] ['t','2'] x p.2 p.1 hca hx hpp.1.1
-    (List.mem_zipIdx_iff_getElem?.1 hpm) hpp.1.2 hrb hpp.2
-  rw [hass] at hmem
-  exact absurd hmem (by decide)
+/-- **At the split day the stage-6 rank goal HOLDS, as written** (W-40, D74).  The day assigns `^t3`
+alone, the store's first line, so no item written before an assigned one is left out.  Until D74 the
+split refuted the goal here — `^t2` placed, `^t1` written first and not — under the name
+plan_is_monotone_in_rank_is_refuted_by_the_split; that hole is closed and the name is retired with
+it.  The goal stays refuted as written by line order
+(`plan_is_monotone_in_rank_as_stage_6_wrote_it_is_refuted`) and at a paying day
+(`plan_is_monotone_in_rank_is_refuted_at_a_paying_day`). -/
+theorem the_rank_goal_holds_at_the_split_day (i j : Id) (e f : Entity)
+    (hi : theOneBlockSplitRequest.plan.val.store.get i = some e)
+    (hj : theOneBlockSplitRequest.plan.val.store.get j = some f)
+    (hd : e.val.live.doc = f.val.live.doc) (hr : e.val.live.rank < f.val.live.rank)
+    (hjm : j ∈ assignedOf (dayPlan theOneBlockSplitRequest)) :
+    i ∈ assignedOf (dayPlan theOneBlockSplitRequest) := by
+  have hass : assignedOf (dayPlan theOneBlockSplitRequest) = [['t','3']] := by decide
+  rw [hass, List.mem_singleton] at hjm
+  subst hjm
+  have q3 := the_batch_store_holds_three_siblings_at_one_ci.2.2.2.2.2.2.2.2
+  have hj' : batchStorePlan.val.store.get ['t','3'] = some f := hj
+  rw [hj', Option.map_some] at q3
+  simp only [Option.some.injEq, Prod.mk.injEq] at q3
+  have hdom : i ∈ batchStorePlan.val.store.dom :=
+    (batchStorePlan.val.store.domSpec i).2 (by rw [show batchStorePlan.val.store.get i = some e from hi]; rfl)
+  have hall := List.all_eq_true.1 the_batch_store_writes_no_item_before_line_one i hdom
+  rw [show batchStorePlan.val.store.get i = some e from hi] at hall
+  simp only [Bool.or_eq_true, Bool.not_eq_true', beq_eq_false_iff_ne, decide_eq_true_eq] at hall
+  rcases hall with hall | hall
+  · exact absurd (hd.trans q3.1) hall
+  · rw [q3.2.1] at hr
+    omega
+
+/- `monotone_rank_in_the_candidate_order_at_the_taken_slot_is_refuted` stood here until W-40, at
+this day: `^t1` strictly before `^t2` in step 4's order, admitted before the walk at the slot
+`^t2`'s group took, and not placed.  D74 closed that: `^t2` takes no slot on this day.  The
+statement — the rank law in the candidate order with NO `ci` hypothesis — is still false: it is
+refuted at the end of this file where §7.5 batches ACROSS a `ci` (`theRidingRequest`, shipped
+behaviour of fork 4748911), which is why `PlanCheck.plan_is_monotone_in_rank` needs the `ci`. -/
 
 set_option maxRecDepth 400000 in
-/-- **`Goals.plan_never_batches_past_an_equal_ci_candidate` is refuted a SECOND way, by the split**:
-the Batch row `[^t3, ^t2]` holds `^t2` and not `^t1`, siblings at one `ci` with `^t1` written
-first, and `^t1` is not placed — E2's own symptom ("the skipped item simply never appears") on a
-paying day, although the gather took `^t1` (`batchIds` above). -/
-theorem plan_never_batches_past_an_equal_ci_candidate_is_refuted_by_the_split :
-    ¬ (∀ (r : PlanReq) (s : WfSeg) (ids : BatchIds) (i j : Id) (e f : Entity),
-        s ∈ (dayPlan r).segments → s.val.kind = SegKind.batch ids →
-        i ∈ ids.val → j ∉ ids.val →
-        r.plan.val.store.get i = some e → r.plan.val.store.get j = some f →
-        effectiveCi r.plan.val i = effectiveCi r.plan.val j →
-        e.val.live.doc = f.val.live.doc →
-        f.val.live.rank < e.val.live.rank →
-        j ∈ assignedOf (dayPlan r)) := by
-  intro h
-  obtain ⟨-, -, -, -, -, hass, -, -, -, -⟩ := the_split_day_serves_the_later_sibling_first
-  have hany : ((dayPlan theOneBlockSplitRequest).segments.any (fun s =>
+/-- **At the split day the stage-6 batch goal HOLDS: the day has no Batch row** (W-40, D74).  Until
+D74 the Batch row `[^t3, ^t2]` reached past `^t1` here
+(plan_never_batches_past_an_equal_ci_candidate_is_refuted_by_the_split, retired with the hole); the
+goal stays refuted as written at a paying day by a `loc:`
+(`plan_never_batches_past_an_equal_ci_candidate_is_refuted_at_a_paying_day`). -/
+theorem the_split_day_has_no_batch_row :
+    (dayPlan theOneBlockSplitRequest).segments.all (fun s =>
       match s.val.kind with
-      | SegKind.batch ids => decide (['t','2'] ∈ ids.val) && decide (['t','1'] ∉ ids.val)
-      | _ => false)) = true := by decide
-  obtain ⟨s, hs, hp⟩ := List.any_eq_true.1 hany
-  cases hk : s.val.kind with
-  | batch ids =>
-      rw [hk] at hp
-      simp only [Bool.and_eq_true, decide_eq_true_eq] at hp
-      cases h2 : batchStorePlan.val.store.get ['t','2'] with
-      | none => exact absurd h2 (by decide)
-      | some e =>
-        cases h1 : batchStorePlan.val.store.get ['t','1'] with
-        | none => exact absurd h1 (by decide)
-        | some f =>
-          have q1 := the_batch_store_holds_three_siblings_at_one_ci.2.2.2.2.2.2.1
-          rw [h1, Option.map_some] at q1
-          have q2 := the_batch_store_holds_three_siblings_at_one_ci.2.2.2.2.2.2.2.1
-          rw [h2, Option.map_some] at q2
-          have e1 := Option.some.inj q1
-          have e2 := Option.some.inj q2
-          simp only [Prod.mk.injEq] at e1 e2
-          have hd : e.val.live.doc = f.val.live.doc := by rw [e1.1, e2.1]
-          have hr : f.val.live.rank < e.val.live.rank := by rw [e1.2.1, e2.2.1]; decide
-          have hmem := h theOneBlockSplitRequest s ids ['t','2'] ['t','1'] e f hs hk hp.1 hp.2 h2 h1
-            (by decide) hd hr
-          rw [hass] at hmem
-          exact absurd hmem (by decide)
-  | _ => rw [hk] at hp; exact absurd hp (by simp)
+      | SegKind.batch _ => false
+      | _ => true) = true := by
+  decide
+
+/-- …so the goal, as stage 6 wrote it, holds there VACUOUSLY: it is about a Batch row, and the day has none. -/
+theorem the_batch_goal_holds_at_the_split_day (s : WfSeg) (ids : BatchIds)
+    (hs : s ∈ (dayPlan theOneBlockSplitRequest).segments) (hk : s.val.kind = SegKind.batch ids)
+    (j : Id) : j ∈ assignedOf (dayPlan theOneBlockSplitRequest) := by
+  have := List.all_eq_true.1 the_split_day_has_no_batch_row s hs
+  rw [hk] at this
+  exact absurd this (by simp)
 
 set_option maxRecDepth 400000 in
-/-- **The battery at the split day**: the seven of `PlanCheck.planOkCore` hold, and the rank and
-batch checks FAIL on the planner's own output at `permissive` and at `slotFitRows` — a paying day,
-nothing planted (README gap 3546).  At `freeSlotRows` the rank check passes for want of a subject. -/
-theorem the_rank_and_batch_checks_fail_at_the_split_day :
+/-- **REFUTED at W-40 (D74): the rank and batch checks no longer fail at the split day.**  On the
+planner's own output `PlanCheck.monotoneInRank` and `PlanCheck.batchDoesNotReachPast` hold at
+`permissive` and at `slotFitRows`, and both still FAIL on a planted inversion of the same day
+(`the_rank_and_batch_checks_hold_at_the_split_day_and_fail_on_its_planted_inversion`). -/
+theorem the_rank_and_batch_checks_fail_at_the_split_day_is_refuted : ¬ (
     PlanCheck.planOkCore theOneBlockSplitRequest (dayPlan theOneBlockSplitRequest) = true ∧
     PlanCheck.monotoneInRank permissive theOneBlockSplitRequest (dayPlan theOneBlockSplitRequest) = false ∧
     PlanCheck.monotoneInRank slotFitRows theOneBlockSplitRequest (dayPlan theOneBlockSplitRequest) = false ∧
     PlanCheck.batchDoesNotReachPast permissive theOneBlockSplitRequest (dayPlan theOneBlockSplitRequest) = false ∧
     PlanCheck.batchDoesNotReachPast slotFitRows theOneBlockSplitRequest (dayPlan theOneBlockSplitRequest) = false ∧
-    PlanCheck.monotoneInRank freeSlotRows theOneBlockSplitRequest (dayPlan theOneBlockSplitRequest) = true := by
-  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide⟩
+    PlanCheck.monotoneInRank freeSlotRows theOneBlockSplitRequest (dayPlan theOneBlockSplitRequest) = true) := by
+  decide
 
 /-! ### The served-order laws fire (README gaps 3526, 3542, 3543) -/
 
@@ -11088,7 +11088,7 @@ theorem the_served_order_rank_law_has_a_subject :
               x.2 x.1.1 x.1.2 pg.1)))) = true := by
   decide
 
-/-- **…and `PlanFold.plan_is_monotone_in_rank` fires there.** -/
+/-- **…and `PlanFold.plan_is_monotone_in_rank_in_the_served_group_order` fires there.** -/
 theorem the_served_order_rank_law_fires_at_the_paying_batch_day :
     ['t','3'] ∈ assignedOf (dayPlan thePayingBatchRequest) := by
   obtain ⟨x, hx, h1⟩ := List.any_eq_true.1 the_served_order_rank_law_has_a_subject
@@ -11096,7 +11096,7 @@ theorem the_served_order_rank_law_fires_at_the_paying_batch_day :
   obtain ⟨ph, hph, h3⟩ := List.any_eq_true.1 h2
   simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at h3
   obtain ⟨⟨⟨hi, hkey⟩, htook⟩, hfit⟩ := h3
-  exact PlanFold.plan_is_monotone_in_rank _ _ pg.2 ph.2 pg.1 ph.1
+  exact PlanFold.plan_is_monotone_in_rank_in_the_served_group_order _ _ pg.2 ph.2 pg.1 ph.1
     (List.mem_zipIdx_iff_getElem?.1 hpg) (List.mem_zipIdx_iff_getElem?.1 hph) hi hkey x hx htook hfit
 
 set_option maxRecDepth 400000 in
@@ -11119,7 +11119,7 @@ theorem the_served_order_hot_law_has_a_subject :
       = false := by
   refine ⟨by decide, by decide, by decide, by decide⟩
 
-/-- **…and `PlanFold.plan_puts_hot_before_the_queue` fires there**: a work row holding `^m1` starts
+/-- **…and `PlanFold.plan_puts_hot_before_the_queue_in_the_served_group_order` fires there**: `^m1`'s row starts
 no later than the row the queued group took. -/
 theorem the_served_order_hot_law_fires :
     ∃ si ∈ (dayPlan theTwoPayingRequest).segments, ∃ sj ∈ (dayPlan theTwoPayingRequest).segments,
@@ -11147,7 +11147,7 @@ theorem the_served_order_hot_law_fires :
   simp only [Option.map_some, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq,
     Option.some.injEq] at hxp
   obtain ⟨si, hsi, sj, hsj, hwi, hwj, hmi, hmj, -, hle⟩ :=
-    PlanFold.plan_puts_hot_before_the_queue theTwoPayingRequest ['m','1'] 0 1 g h h0 h1
+    PlanFold.plan_puts_hot_before_the_queue_in_the_served_group_order theTwoPayingRequest ['m','1'] 0 1 g h h0 h1
       (by rw [hg0.1]; simp) hg0.2 (by rw [hh1.2]; decide) x hx hxp.1 hxp.2
   exact ⟨si, hsi, sj, hsj, hwi, hwj, hmi, hmj ['m','2'] (by rw [hh1.1]; simp), hle⟩
 
@@ -11592,6 +11592,879 @@ theorem the_conference_is_clipped_to_the_day_for_the_window_and_the_walls :
     ((wallsToday theConferenceRequest).map fun w => (w.lo, w.hi)).contains
       ((Cal.instantOf Cal.chicago 739867 0).sec, (Cal.instantOf Cal.chicago 739868 0).sec) = true := by
   refine ⟨by decide, by decide⟩
+
+
+/-! ############################################################################
+## W-40, track K: the owner's D74 (parity P64) — §7.5's batches are split into RUNS — and the
+## rank, HOT and batch laws over what a user can observe (D77; README gaps 3546, 3714, 3548)
+############################################################################
+
+**D74 at the split day** is the section W-39 wrote (`the_split_day_serves_the_siblings_in_the_candidate_order`,
+above): the runs `{^t3}`, `{^t1}`, `{^t2}` are served in the candidate order.  What is here is the
+other half of AGENTS §5.8 — the rank and batch checks still FAIL on a planted inversion of that day
+— and, for each restated law of `PlanCheck` (`plan_is_monotone_in_rank`,
+`plan_puts_hot_before_the_queue`, `plan_never_batches_past_an_equal_ci_candidate`), a day where it
+FIRES and a day where the one hypothesis it adds to the goal BITES.
+
+**The riding day** (`theRidingRequest`) is where both hypotheses bite, on a request that pays
+`PlanCheck.candsAgree`: `^l1` (HOT, `ci 1`, small) leads §7.5's gather, which passes over `^i1`
+(HOT, `ci 2`) — another `ci` is not comparable, the fork's `continue`, unchanged by D74 — and takes
+`^j1` (queue, `ci 1`, small); `{^l1, ^j1}` is keyed by `^l1` and takes the day's one block, and
+`^i1`, ranked ahead of `^j1` and admitted by step 5's filter at that very slot, gets nothing.  That
+is shipped behaviour of fork 4748911 (`tm/tests/planner_w40_runs.rs` plans the same world with the
+fork and with the kernel), not a kernel defect. -/
+
+/-- `^t3`'s row of the split day handed to the pair `[^t3, ^t2]` as a Batch row: the planted
+inversion — the fork's group-by answer, which D74 retired from the planner. -/
+def plantSplitBatch (s : WfSeg) : WfSeg :=
+  if s.val.item = some (['t','3'] : Id) then
+    Planner.segOf { s.val with kind := SegKind.batch ⟨[['t','3'], ['t','2']], by decide⟩, item := none }
+  else s
+
+/-- The split day with that one row planted. -/
+def theSplitInvertedDay : DayPlan :=
+  { dayPlan theOneBlockSplitRequest with
+    segments := (dayPlan theOneBlockSplitRequest).segments.map plantSplitBatch }
+
+set_option maxRecDepth 400000 in
+/-- **The rank and batch checks hold at the split day and FAIL on its planted inversion** (D74;
+AGENTS §5.8, both directions): on the planner's own output both hold at `permissive` and at
+`slotFitRows`; plant the group-by's `[^t3, ^t2]` and both fail at both, nothing else changed. -/
+theorem the_rank_and_batch_checks_hold_at_the_split_day_and_fail_on_its_planted_inversion :
+    PlanCheck.monotoneInRank permissive theOneBlockSplitRequest (dayPlan theOneBlockSplitRequest) = true ∧
+    PlanCheck.monotoneInRank slotFitRows theOneBlockSplitRequest (dayPlan theOneBlockSplitRequest) = true ∧
+    PlanCheck.batchDoesNotReachPast permissive theOneBlockSplitRequest (dayPlan theOneBlockSplitRequest) = true ∧
+    PlanCheck.batchDoesNotReachPast slotFitRows theOneBlockSplitRequest (dayPlan theOneBlockSplitRequest) = true ∧
+    assignedOf theSplitInvertedDay = [['t','3'], ['t','2']] ∧
+    PlanCheck.monotoneInRank permissive theOneBlockSplitRequest theSplitInvertedDay = false ∧
+    PlanCheck.monotoneInRank slotFitRows theOneBlockSplitRequest theSplitInvertedDay = false ∧
+    PlanCheck.batchDoesNotReachPast permissive theOneBlockSplitRequest theSplitInvertedDay = false ∧
+    PlanCheck.batchDoesNotReachPast slotFitRows theOneBlockSplitRequest theSplitInvertedDay = false := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide,
+    by decide⟩
+
+/-! ### The riding day: §7.5 gathers across a `ci`, and the two hypotheses bite -/
+
+/-- The census documents with `^l1` (HOT, `ci:1`), `^i1` (HOT, `ci:2`) and `^j1` (`ci:1`), written in
+that order. -/
+def ridingWitness : List ReqDoc :=
+  [⟨"calendar/2026-W37.md", none,
+     ["- [ ] 3 Meeting w/ host      at:2026-09-09T12:50/13:50 loc:zoom ^g1".toList]⟩,
+   ⟨"week/2026-W37.md", some ⟨week, 35⟩,
+      ["# Tasks".toList, "- [ ] 1 6b Lead the batch ^l1 hot".toList,
+       "- [ ] 2 6b Another level ^i1 hot".toList,
+       "- [ ] 1 6b Ride along ^j1".toList]⟩,
+   ⟨"month/2026-09.md", some ⟨month, 8⟩, ["# Outcomes".toList]⟩]
+
+set_option maxRecDepth 400000 in
+theorem the_riding_witness_loads : loadsOk ridingWitness = true := by decide
+
+def ridingPlan : WfPlan :=
+  match h : loadPlan ridingWitness with
+  | .ok p => p
+  | .error _ => absurd the_riding_witness_loads (by simp [loadsOk, h])
+
+/-- **The riding day**: the split day's one block over `ridingPlan`, each candidate the store's own
+`ci` and `hot`, ten minutes left (small enough to share a block). -/
+def theRidingRequest : PlanReq :=
+  { theOneBlockSplitRequest with
+    plan := ridingPlan,
+    cands := ⟨[oneCand ['l','1'] 1 none 10 none true ⟨planFacts 10 .any, by decide⟩,
+               oneCand ['i','1'] 2 none 10 none true ⟨planFacts 10 .any, by decide⟩,
+               oneCand ['j','1'] 1 none 10 none false ⟨planFacts 10 .any, by decide⟩], by decide⟩ }
+
+set_option maxRecDepth 400000 in
+/-- **What the riding day computes**: step 4 ranks `^l1` (`p 0`), `^i1` (`p 0`), `^j1` (`p 5`); §7.5
+gathers `{^l1, ^j1}` past `^i1`; that batch takes the one block, as a Batch row at the day's first
+slot; `^i1` is admitted by step 5's filter at every slot before the walk and is not placed — on a
+request that pays `candsAgree`. -/
+theorem the_riding_day_batches_across_a_ci :
+    PlanCheck.candsAgree theRidingRequest = true ∧
+    theRidingRequest.rankedCands.map (fun x => (x.cand.id, x.key.p, x.cand.ci.val))
+      = [(['l','1'], 0, 1), (['i','1'], 0, 2), (['j','1'], 5, 1)] ∧
+    batchIds theRidingRequest = [[['l','1'], ['j','1']], [['i','1']]] ∧
+    theRidingRequest.assignFold.slotOf = [some 0, none, none, none] ∧
+    assignedOf (dayPlan theRidingRequest) = [['l','1'], ['j','1']] ∧
+    theRidingRequest.energisedSlots.zipIdx.all (fitsBefore theRidingRequest ['i','1']) = true := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- The riding day's facts each refutation below reads: `^i1` strictly ahead of `^j1` in step 4's
+order, every instance HOT; the Batch row at the first slot holds `^j1` (queue) beside `^l1`; `^i1`
+fits that slot before the walk; and `^i1` is in no work row of the day. -/
+theorem the_riding_day_refutes_both_weakenings :
+    theRidingRequest.rankedCands.all (fun a => !(a.cand.id == ['i','1']) ||
+      theRidingRequest.rankedCands.all (fun b => !(b.cand.id == ['j','1']) || !rankedLe b a)) = true ∧
+    theRidingRequest.rankedCands.all (fun a => !(a.cand.id == ['i','1']) || a.key.p == 0) = true ∧
+    theRidingRequest.rankedCands.all (fun b => !(b.cand.id == ['j','1']) || decide (0 < b.key.p)) = true ∧
+    theRidingRequest.energisedSlots.zipIdx.any (fun x => decide (x.1.2.stop < LogStamp.yearEnd) &&
+      fitsBefore theRidingRequest ['i','1'] x &&
+      (dayPlan theRidingRequest).segments.any (fun s => s.val.kind.isWork && s.val.energy.isSome &&
+        decide (s.val.start = clampSec x.1.2.start) && decide (['j','1'] ∈ s.val.items))) = true ∧
+    (dayPlan theRidingRequest).segments.all (fun s => !s.val.kind.isWork ||
+      !decide (['i','1'] ∈ s.val.items)) = true := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide⟩
+
+/-- **§8.3's rank law in the CANDIDATE order is FALSE without the one-`ci` hypothesis** — the
+reason `PlanCheck.plan_is_monotone_in_rank` carries it.  §7.5 gathers past an entry of another
+`ci`, so `^j1` rides with its leader into the slot `^i1` — ranked ahead, admitted there before the
+walk — never gets.  Shipped behaviour (fork `priority::batches`' `continue`), unchanged by D74. -/
+theorem monotone_rank_in_the_candidate_order_needs_one_ci :
+    ¬ ∀ (r : PlanReq) (i j : Id),
+        (∀ a ∈ r.rankedCands, a.cand.id = i → ∀ b ∈ r.rankedCands, b.cand.id = j →
+          rankedLe b a = false) →
+        ∀ x ∈ r.energisedSlots.zipIdx, x.1.2.stop < LogStamp.yearEnd → fitsBefore r i x = true →
+        ∀ sj ∈ (dayPlan r).segments, sj.val.kind.isWork = true → sj.val.energy.isSome = true →
+          sj.val.start = clampSec x.1.2.start → j ∈ sj.val.items →
+          ∃ si ∈ (dayPlan r).segments, si.val.kind.isWork = true ∧ i ∈ si.val.items ∧
+            si.val.start ≤ sj.val.start := by
+  intro h
+  obtain ⟨hahead, -, -, hany, hnone⟩ := the_riding_day_refutes_both_weakenings
+  obtain ⟨x, hx, hxp⟩ := List.any_eq_true.1 hany
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hxp
+  obtain ⟨⟨hcal, hfit⟩, hrow⟩ := hxp
+  obtain ⟨sj, hsj, hsjp⟩ := List.any_eq_true.1 hrow
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hsjp
+  obtain ⟨⟨⟨hw, he⟩, hst⟩, hj⟩ := hsjp
+  have ha : ∀ a ∈ theRidingRequest.rankedCands, a.cand.id = ['i','1'] →
+      ∀ b ∈ theRidingRequest.rankedCands, b.cand.id = ['j','1'] → rankedLe b a = false := by
+    intro a ha hai b hb hbj
+    have h1 := List.all_eq_true.1 hahead a ha
+    rw [hai] at h1
+    simp only [beq_self_eq_true, Bool.not_true, Bool.false_or] at h1
+    have h2 := List.all_eq_true.1 h1 b hb
+    rw [hbj] at h2
+    simpa using h2
+  obtain ⟨si, hsi, hwi, hii, -⟩ := h theRidingRequest ['i','1'] ['j','1'] ha x hx hcal hfit sj hsj hw he hst hj
+  have := List.all_eq_true.1 hnone si hsi
+  rw [hwi] at this
+  simp [hii] at this
+
+/-- **§8.3's HOT law is FALSE for a row holding a queue item beside a HOT one** — the reason
+`PlanCheck.plan_puts_hot_before_the_queue` asks that the row hold ONLY queue items.  `^j1` (`p 5`)
+rides in `^l1`'s HOT batch into the slot the HOT `^i1` fits before the walk, and `^i1` holds no row:
+the slot went to HOT work, `^l1`'s, which is what the hypothesis says. -/
+theorem plan_puts_hot_before_the_queue_needs_a_row_of_queue_items :
+    ¬ ∀ (r : PlanReq) (i j : Id), (∀ a ∈ r.rankedCands, a.cand.id = i → a.key.p = 0) →
+        ∀ x ∈ r.energisedSlots.zipIdx, x.1.2.stop < LogStamp.yearEnd → fitsBefore r i x = true →
+        ∀ sj ∈ (dayPlan r).segments, sj.val.kind.isWork = true → sj.val.energy.isSome = true →
+          sj.val.start = clampSec x.1.2.start → j ∈ sj.val.items →
+          (∀ b ∈ r.rankedCands, b.cand.id = j → 0 < b.key.p) →
+          ∃ si ∈ (dayPlan r).segments, si.val.kind.isWork = true ∧ i ∈ si.val.items ∧
+            si.val.start < sj.val.start := by
+  intro h
+  obtain ⟨-, hhot, hq, hany, hnone⟩ := the_riding_day_refutes_both_weakenings
+  obtain ⟨x, hx, hxp⟩ := List.any_eq_true.1 hany
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hxp
+  obtain ⟨⟨hcal, hfit⟩, hrow⟩ := hxp
+  obtain ⟨sj, hsj, hsjp⟩ := List.any_eq_true.1 hrow
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hsjp
+  obtain ⟨⟨⟨hw, he⟩, hst⟩, hj⟩ := hsjp
+  have hi : ∀ a ∈ theRidingRequest.rankedCands, a.cand.id = ['i','1'] → a.key.p = 0 := by
+    intro a ha hai
+    have := List.all_eq_true.1 hhot a ha
+    rw [hai] at this
+    simpa using this
+  have hjq : ∀ b ∈ theRidingRequest.rankedCands, b.cand.id = ['j','1'] → 0 < b.key.p := by
+    intro b hb hbj
+    have := List.all_eq_true.1 hq b hb
+    rw [hbj] at this
+    simpa using this
+  obtain ⟨si, hsi, hwi, hii, -⟩ :=
+    h theRidingRequest ['i','1'] ['j','1'] hi x hx hcal hfit sj hsj hw he hst hj hjq
+  have := List.all_eq_true.1 hnone si hsi
+  rw [hwi] at this
+  simp [hii] at this
+
+/-- **The rank law in the candidate order at the taken slot, with no `ci` hypothesis, is refuted**
+— until W-40 at the split day (README gap 3542), since D74 at the riding day, where §7.5 batches
+across a `ci`, on a request that pays `candsAgree`. -/
+theorem monotone_rank_in_the_candidate_order_at_the_taken_slot_is_refuted :
+    ¬ ∀ (r : PlanReq) (i j : Id) (x : (Fin 6 × Look.Slot) × Nat) (gj : Nat) (h : Group),
+        PlanCheck.candsAgree r = true → x ∈ r.energisedSlots.zipIdx →
+        r.assignFold.slotOf[x.2]? = some (some gj) → r.startGroups[gj]? = some h → j ∈ h.ids →
+        PlanCheck.rankedBefore r i j = true → fitsBefore r i x = true →
+        i ∈ assignedOf (dayPlan r) := by
+  intro h
+  obtain ⟨hca, -, -, -, hass, -⟩ := the_riding_day_batches_across_a_ci
+  have hany : (theRidingRequest.energisedSlots.zipIdx.any (fun x =>
+      theRidingRequest.startGroups.zipIdx.any (fun p =>
+        decide (theRidingRequest.assignFold.slotOf[x.2]? = some (some p.2)) &&
+          decide (['j','1'] ∈ p.1.ids) && fitsBefore theRidingRequest ['i','1'] x))) = true := by
+    decide
+  have hrb : PlanCheck.rankedBefore theRidingRequest ['i','1'] ['j','1'] = true := by decide
+  obtain ⟨x, hx, hp⟩ := List.any_eq_true.1 hany
+  obtain ⟨p, hpm, hpp⟩ := List.any_eq_true.1 hp
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hpp
+  have hmem := h theRidingRequest ['i','1'] ['j','1'] x p.2 p.1 hca hx hpp.1.1
+    (List.mem_zipIdx_iff_getElem?.1 hpm) hpp.1.2 hrb hpp.2
+  rw [hass] at hmem
+  exact absurd hmem (by decide)
+
+/-! ### The three laws fire -/
+
+set_option maxRecDepth 400000 in
+/-- The two-block split day's subject for the rank law: `^t3` ahead of `^t1` (one `ci`), `^t1`'s
+row at the second slot, which `^t3` fits before the walk. -/
+theorem the_candidate_order_rank_law_has_a_subject_at_the_two_block_split_day :
+    theTwoBlockSplitRequest.rankedCands.all (fun a => !(a.cand.id == ['t','3']) ||
+      theTwoBlockSplitRequest.rankedCands.all (fun b => !(b.cand.id == ['t','1']) ||
+        (!rankedLe b a && decide (a.cand.ci = b.cand.ci)))) = true ∧
+    theTwoBlockSplitRequest.energisedSlots.zipIdx.any (fun x =>
+      decide (x.1.2.stop < LogStamp.yearEnd) && fitsBefore theTwoBlockSplitRequest ['t','3'] x &&
+      (dayPlan theTwoBlockSplitRequest).segments.any (fun s => s.val.kind.isWork &&
+        s.val.energy.isSome && decide (s.val.start = clampSec x.1.2.start) &&
+        decide (['t','1'] ∈ s.val.items))) = true := by
+  refine ⟨by decide, by decide⟩
+
+/-- **…and `PlanCheck.plan_is_monotone_in_rank` fires there**: `^t3` holds a work row no later
+than `^t1`'s — derived from the law, not decided. -/
+theorem the_candidate_order_rank_law_fires_at_the_two_block_split_day :
+    ∃ sj ∈ (dayPlan theTwoBlockSplitRequest).segments, ['t','1'] ∈ sj.val.items ∧
+      ∃ si ∈ (dayPlan theTwoBlockSplitRequest).segments, si.val.kind.isWork = true ∧
+        ['t','3'] ∈ si.val.items ∧ si.val.start ≤ sj.val.start := by
+  obtain ⟨hahead, hany⟩ := the_candidate_order_rank_law_has_a_subject_at_the_two_block_split_day
+  obtain ⟨x, hx, hxp⟩ := List.any_eq_true.1 hany
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hxp
+  obtain ⟨⟨hcal, hfit⟩, hrow⟩ := hxp
+  obtain ⟨sj, hsj, hsjp⟩ := List.any_eq_true.1 hrow
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hsjp
+  obtain ⟨⟨⟨hw, he⟩, hst⟩, hj⟩ := hsjp
+  have ha : ∀ a ∈ theTwoBlockSplitRequest.rankedCands, a.cand.id = ['t','3'] →
+      ∀ b ∈ theTwoBlockSplitRequest.rankedCands, b.cand.id = ['t','1'] →
+        rankedLe b a = false ∧ a.cand.ci = b.cand.ci := by
+    intro a ha hai b hb hbj
+    have h1 := List.all_eq_true.1 hahead a ha
+    rw [hai] at h1
+    simp only [beq_self_eq_true, Bool.not_true, Bool.false_or] at h1
+    have h2 := List.all_eq_true.1 h1 b hb
+    rw [hbj] at h2
+    simpa using h2
+  exact ⟨sj, hsj, hj, PlanCheck.plan_is_monotone_in_rank theTwoBlockSplitRequest ['t','3'] ['t','1']
+    ha x hx hcal hfit sj hsj hw he hst hj⟩
+
+set_option maxRecDepth 400000 in
+/-- `theTwoPayingRequest`'s subject for the HOT law: `^m1` is HOT, `^m2`'s row at the second slot
+holds only queue items, and `^m1` fits that slot before the walk. -/
+theorem the_candidate_order_hot_law_has_a_subject :
+    theTwoPayingRequest.rankedCands.all (fun a => !(a.cand.id == ['m','1']) || a.key.p == 0) = true ∧
+    theTwoPayingRequest.energisedSlots.zipIdx.any (fun x =>
+      decide (x.1.2.stop < LogStamp.yearEnd) && fitsBefore theTwoPayingRequest ['m','1'] x &&
+      (dayPlan theTwoPayingRequest).segments.any (fun s => s.val.kind.isWork &&
+        s.val.energy.isSome && decide (s.val.start = clampSec x.1.2.start) &&
+        s.val.items.all (fun k => theTwoPayingRequest.rankedCands.all (fun b =>
+          !(b.cand.id == k) || decide (0 < b.key.p))) &&
+        decide (['m','2'] ∈ s.val.items))) = true := by
+  refine ⟨by decide, by decide⟩
+
+/-- **…and `PlanCheck.plan_puts_hot_before_the_queue` fires there**: `^m1` holds a work row
+strictly earlier than the queue row — derived from the law, not decided. -/
+theorem the_candidate_order_hot_law_fires :
+    ∃ sj ∈ (dayPlan theTwoPayingRequest).segments, ['m','2'] ∈ sj.val.items ∧
+      ∃ si ∈ (dayPlan theTwoPayingRequest).segments, si.val.kind.isWork = true ∧
+        ['m','1'] ∈ si.val.items ∧ si.val.start < sj.val.start := by
+  obtain ⟨hhot, hany⟩ := the_candidate_order_hot_law_has_a_subject
+  obtain ⟨x, hx, hxp⟩ := List.any_eq_true.1 hany
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hxp
+  obtain ⟨⟨hcal, hfit⟩, hrow⟩ := hxp
+  obtain ⟨sj, hsj, hsjp⟩ := List.any_eq_true.1 hrow
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hsjp
+  obtain ⟨⟨⟨⟨hw, he⟩, hst⟩, hq⟩, hj⟩ := hsjp
+  have hi : ∀ a ∈ theTwoPayingRequest.rankedCands, a.cand.id = ['m','1'] → a.key.p = 0 := by
+    intro a ha hai
+    have := List.all_eq_true.1 hhot a ha
+    rw [hai] at this
+    simpa using this
+  have hqueue : ∀ k ∈ sj.val.items, ∀ b ∈ theTwoPayingRequest.rankedCands, b.cand.id = k →
+      0 < b.key.p := by
+    intro k hk b hb hbk
+    have h1 := List.all_eq_true.1 hq k hk
+    have h2 := List.all_eq_true.1 h1 b hb
+    rw [hbk] at h2
+    simpa using h2
+  exact ⟨sj, hsj, hj, PlanCheck.plan_puts_hot_before_the_queue theTwoPayingRequest ['m','1'] hi
+    x hx hcal hfit sj hsj hw he hst hqueue⟩
+
+set_option maxRecDepth 400000 in
+/-- `thePayingBatchRequest`'s subject for the batch law: the Batch row `[^t1, ^t2]` at the second
+slot, `^t3` — ranked ahead of `^t1` at one `ci` — fitting that slot before the walk; and the row's
+items are a run of the `ci 2` entries step 5 serves (`[^t3, ^t1, ^t2]`). -/
+theorem the_candidate_order_batch_law_has_a_subject :
+    ((dayPlan thePayingBatchRequest).segments.filterMap (fun s =>
+      match s.val.kind with | SegKind.batch ids => some ids.val | _ => none)) = [[['t','1'], ['t','2']]] ∧
+    (batchMembers (thePayingBatchRequest.rankedCands.filter (fun y => decide (y.cand.ci = 2)))).map
+      (·.cand.id) = [['t','3'], ['t','1'], ['t','2']] ∧
+    thePayingBatchRequest.rankedCands.all (fun a => !(a.cand.id == ['t','3']) ||
+      thePayingBatchRequest.rankedCands.all (fun b => !(b.cand.id == ['t','1']) ||
+        (!rankedLe b a && decide (a.cand.ci = b.cand.ci)))) = true ∧
+    thePayingBatchRequest.energisedSlots.zipIdx.any (fun x =>
+      decide (x.1.2.stop < LogStamp.yearEnd) && fitsBefore thePayingBatchRequest ['t','3'] x &&
+      (dayPlan thePayingBatchRequest).segments.any (fun s =>
+        (match s.val.kind with | SegKind.batch ids => decide (['t','1'] ∈ ids.val) | _ => false) &&
+        decide (s.val.start = clampSec x.1.2.start))) = true := by
+  refine ⟨by decide, by decide, by decide, by decide⟩
+
+/-- **…and `PlanCheck.plan_never_batches_past_an_equal_ci_candidate` fires there**: `^t3`, ranked
+ahead of the batched `^t1`, holds a work row no later than the Batch row — derived from the law. -/
+theorem the_candidate_order_batch_law_fires :
+    ∃ s ∈ (dayPlan thePayingBatchRequest).segments, ['t','1'] ∈ s.val.items ∧
+      ∃ sj ∈ (dayPlan thePayingBatchRequest).segments, sj.val.kind.isWork = true ∧
+        ['t','3'] ∈ sj.val.items ∧ sj.val.start ≤ s.val.start := by
+  obtain ⟨-, -, hahead, hany⟩ := the_candidate_order_batch_law_has_a_subject
+  obtain ⟨x, hx, hxp⟩ := List.any_eq_true.1 hany
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hxp
+  obtain ⟨⟨hcal, hfit⟩, hrow⟩ := hxp
+  obtain ⟨s, hs, hsp⟩ := List.any_eq_true.1 hrow
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hsp
+  obtain ⟨hk, hst⟩ := hsp
+  have ha : ∀ a ∈ thePayingBatchRequest.rankedCands, a.cand.id = ['t','3'] →
+      ∀ b ∈ thePayingBatchRequest.rankedCands, b.cand.id = ['t','1'] →
+        rankedLe b a = false ∧ a.cand.ci = b.cand.ci := by
+    intro a ha hai b hb hbj
+    have h1 := List.all_eq_true.1 hahead a ha
+    rw [hai] at h1
+    simp only [beq_self_eq_true, Bool.not_true, Bool.false_or] at h1
+    have h2 := List.all_eq_true.1 h1 b hb
+    rw [hbj] at h2
+    simpa using h2
+  cases hks : s.val.kind with
+  | batch ids =>
+    rw [hks] at hk
+    simp only [decide_eq_true_eq] at hk
+    have hitems : ['t','1'] ∈ s.val.items := by
+      show ['t','1'] ∈ (match s.val.kind with | .batch ids => ids.val | _ => s.val.item.toList)
+      rw [hks]; exact hk
+    exact ⟨s, hs, hitems, PlanCheck.plan_never_batches_past_an_equal_ci_candidate thePayingBatchRequest
+      s ids hs hks ['t','1'] ['t','3'] hk ha x hx hcal hst hfit⟩
+  | _ => rw [hks] at hk; exact absurd hk (by simp)
+/-! ############################################################################
+## W-40 (track P): a running break read once, the night, and L25 after a logged verb
+############################################################################
+
+Three computed families for `PlanStable`'s three laws, each on a request this module already builds.
+(1) **D77** (README gaps 3480 and 3666; parity **P67**): the busy Wednesday at 14:00 with a ten-minute sit
+running since 13:45, and the same day after `tm break` has ended it and logged it — one day from `now`, and
+the cut W-35's reading made (the sit a REST of the cut, shorter than `break_min`, the counter blind to it) is
+computed beside it with the Break it cut and the logged twin does not.  (2) **The night** (README gaps 2326,
+3544, 3713 and 3782): the calendar's last evening, where the rows' clock merges a running block's
+reservation with the wind-down and the wind-down check FAILS with the wire agreeing — the kernel's clamp, which
+fork 4748911 does not have; the Saturday before the 2026 fall-back, where a stored window crossing
+midnight read as the next day's clock ran past the night and the fork's 24 hours do not; and the same Saturday
+with an arrival logged after midnight, where the window runs past the night on a request the decoder accepts, as
+the fork's does, and the wind-down law meets its first subject since W-39's repair.  (3) **L25 after a
+logged verb** (README gap 3714): the Wednesday morning replanned after `tm done`, where the law fires, and a
+`tm done` after `now` of an item an earlier block stopped, where the exact law over an extending record is
+refuted by the fork's own `done` flag. -/
+
+/-! ### (1) The running break and its logged twin -/
+
+/-- **`witLines` with the `break` line `tm break` appends when it ends a ten-minute sit at 14:00**: stamped at the
+sit's START, 13:45, fifteen minutes taken (`day::end_break`), its place as the state named it.  The six lines are
+reused, not respelled. -/
+def shortBreakLines : List Log.Line :=
+  witLines ++ [⟨7, some ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','9','T','1','3',':','4','5',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','b','r','e','a','k','"',',','"','p','l','a','n','n','e','d','_','m','i','n','"',':','1','0',',','"','a','c','t','u','a','l','_','m','i','n','"',':','1','5',',','"','w','h','e','r','e','"',':','"','s','e','a','t','"','}']⟩]
+
+set_option maxRecDepth 400000 in
+theorem shortBreakRun_resumes_ok : runOk Cal.chicago 739867 shortBreakLines = true := by decide
+
+def shortBreakRun : Seal.Run :=
+  match h : Seal.resumeRun Cal.chicago 739867 (Seal.Ckpt.empty Cal.chicago) shortBreakLines with
+  | .ok run => run
+  | .error _ => absurd shortBreakRun_resumes_ok (by simp [runOk, h])
+
+/-- **The busy Wednesday at 14:00 with a ten-minute sit running since 13:45** — overrun since 13:55, and
+shorter than `break_min` (twenty minutes), so W-35's reading did not count it as a break. -/
+def theShortBreakRequest : PlanReq :=
+  { theBusyRequest with state := { RuntimeIn.empty with
+      brk := some ⟨some ⟨(Cal.instantOf Cal.chicago 739867 825).sec, 0⟩, 10, some .seat⟩ } }
+
+/-- **The same day after `tm break` has ended the sit at 14:00**: its line in the log, nothing running. -/
+def theShortBreakLoggedRequest : PlanReq := { theBusyRequest with run := shortBreakRun }
+
+set_option maxRecDepth 400000 in
+/-- **D77 computed: the day from `now` is the same whether the sit is running or logged** — `^c1` at 14:00,
+`^c4` at 15:00, the warm-up at 16:00, `^c4` at 17:00 and 18:00, the evening — row for row: start, stop, kind,
+item and slot energy. -/
+theorem the_short_break_running_and_logged_plan_one_day_from_now :
+    ((dayPlan theShortBreakRequest).segments.filter (fun s =>
+        decide (theShortBreakRequest.now.sec ≤ s.val.start))).map
+        (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.item))
+      = ((dayPlan theShortBreakLoggedRequest).segments.filter (fun s =>
+        decide (theShortBreakRequest.now.sec ≤ s.val.start))).map
+        (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.item)) ∧
+    ((dayPlan theShortBreakRequest).segments.filter (fun s =>
+        decide (theShortBreakRequest.now.sec ≤ s.val.start))).map (fun s => s.val.energy)
+      = ((dayPlan theShortBreakLoggedRequest).segments.filter (fun s =>
+        decide (theShortBreakRequest.now.sec ≤ s.val.start))).map (fun s => s.val.energy) ∧
+    ((dayPlan theShortBreakRequest).segments.filter (fun s =>
+        decide (theShortBreakRequest.now.sec ≤ s.val.start))).head?.map (fun s => (s.val.start, s.val.item))
+      = some ((Cal.instantOf Cal.chicago 739867 840).sec, some ['c','1']) := by
+  refine ⟨by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **README gap 3480's length half, computed: W-35's reading cut a Break the logged twin does not.**  The cut
+W-35 made — the sit a REST of the cut (`Look.restfulEnd` asks a rest of at least `break_min`, and this one is
+fifteen minutes) and the counter reading the log's breaks alone (none, so both of the morning's starts count)
+— puts a Break at 14:00-14:20 and the first slot at 14:20.  The running sit and its logged twin cut no break,
+and the first slot at 14:00: the counter reads the sit's start, 13:45, from the state in the one and from the
+`break` line the log stamped at it in the other. -/
+theorem the_rest_reading_cut_a_break_the_logged_twin_does_not :
+    (Look.cutSlots theShortBreakRequest.look.day.cut theShortBreakRequest.cutFrom theShortBreakRequest.window.2
+        theShortBreakRequest.slotBlocked
+        (theShortBreakRequest.restsToday ++ (breakRows theShortBreakRequest).map (fun s => (s.start, s.stop)))
+        ((theShortBreakRequest.todayRecord.map (·.starts)).getD []).length).breaks
+      = [((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 860).sec)] ∧
+    theShortBreakRequest.todayCut.breaks = [] ∧
+    theShortBreakLoggedRequest.todayCut.breaks = [] ∧
+    theShortBreakLoggedRequest.todayCut.slots.map (fun s => (s.start, s.stop))
+      = theShortBreakRequest.todayCut.slots.map (fun s => (s.start, s.stop)) ∧
+    theShortBreakRequest.sinceBreak = 0 ∧ theShortBreakLoggedRequest.sinceBreak = 0 ∧
+    (theShortBreakRequest.state.brk.bind (·.started)).map (·.sec) = some (Cal.instantOf Cal.chicago 739867 825).sec ∧
+    ((theShortBreakLoggedRequest.todayRecord.map (·.breaks)).getD []).map (·.t.1.sec)
+      = [(Cal.instantOf Cal.chicago 739867 825).sec] := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **The counter reads the sit as a break, running or logged, and counts the morning's two starts without it**:
+the busy Wednesday itself, no break taken, is two `start`s since the last break; the sit at 13:45 comes after both,
+so the counter is zero whether the sit is still running (its start read off the state) or ended and logged (its
+`break` line read off the record). -/
+theorem the_counter_reads_the_sit_as_a_break_running_or_logged :
+    theBusyRequest.sinceBreak = 2 ∧ theShortBreakRequest.sinceBreak = 0 ∧
+    theShortBreakLoggedRequest.sinceBreak = 0 := by
+  refine ⟨by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **`PlanStable.the_cut_does_not_change_when_an_overrun_break_is_logged` fires here** (AGENTS §7.4 item 2):
+every one of its hypotheses holds of the sit and its log, and the request it builds is the logged twin. -/
+theorem the_cut_law_fires_at_the_short_break :
+    ({ theShortBreakRequest with
+        state := { theShortBreakRequest.state with brk := none },
+        run := shortBreakRun } : PlanReq) = theShortBreakLoggedRequest ∧
+    ({ theShortBreakRequest with
+        state := { theShortBreakRequest.state with brk := none },
+        run := shortBreakRun } : PlanReq).todayCut = theShortBreakRequest.todayCut :=
+  ⟨rfl, PlanStable.the_cut_does_not_change_when_an_overrun_break_is_logged theShortBreakRequest shortBreakRun
+    ⟨some ⟨(Cal.instantOf Cal.chicago 739867 825).sec, 0⟩, 10, some .seat⟩
+    ⟨(Cal.instantOf Cal.chicago 739867 825).sec, 0⟩ rfl rfl (by decide)
+    (fun a ha => by have h : (none : Option ActiveBlock) = some a := ha; cases h) (by decide) (by decide) (by decide)⟩
+
+/-! ### (2) The night -/
+
+/-- **The calendar's last evening, 17:59:59 in Chicago on 9999-12-31** — the last second the calendar holds
+(`LogStamp.yearEnd`), with `^m2` (the conference's `ci:5`) running since 17:29:59 and no candidate. -/
+def theLastEveningRequest : PlanReq :=
+  { theConferenceRequest with
+    cands := Capped.nil,
+    look := { theConferenceRequest.look with
+      today := 3652058,
+      today0 := { theConferenceRequest.look.today0 with now := (⟨LogStamp.yearEnd - 1, 0⟩ : Cal.Instant) } },
+    state := { RuntimeIn.empty with
+      active := some (⟨['m','2'], (⟨LogStamp.yearEnd - 1801, 0⟩ : Cal.Instant), 60, false⟩ : ActiveBlock) } }
+
+set_option maxRecDepth 400000 in
+/-- **README gap 3544 cleared: the calendar hypothesis is NEEDED.**  At the last evening the wire agrees with the
+plan (no candidate), the wind-down (21:30, which is past the calendar's last UTC second) is OUTSIDE the
+calendar, and the wind-down check meets a subject and FAILS: the reservation of `^m2` (it starts at `now`, 18:00
+less a second) and the WindDown row are both forced to the calendar's last second by the rows' clock
+(`Planner.clampSec`), so the Block is "at or after" the wind-down, and `^m2` is `ci:5`.  Fork 4748911 draws the
+reservation at 17:59:59 and the wind-down at 21:30 and has no such row — this is the kernel's clamp, README gap
+3780. -/
+theorem the_wind_down_law_needs_the_wind_down_inside_the_calendar :
+    PlanCheck.candsAgree theLastEveningRequest = true ∧
+    ¬ theLastEveningRequest.windDownSec < LogStamp.yearEnd ∧
+    Cal.localDate theLastEveningRequest.tz theLastEveningRequest.now = theLastEveningRequest.today ∧
+    PlanCheck.subjectOf permissive PlanCheck.CheckName.windDown theLastEveningRequest
+      (dayPlan theLastEveningRequest) = true ∧
+    PlanCheck.noDemandingAfterWindDown theLastEveningRequest (dayPlan theLastEveningRequest) = false := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide⟩
+
+/-- **So `Goals.plan_places_no_demanding_block_after_wind_down`, as written, fails at the last evening** — and
+the failure is the kernel's clamp, a bound fork 4748911 does not have, so by W-39's rule it is not a discharge:
+the goal stays (README gap 3780). -/
+theorem the_wind_down_goal_fails_where_the_kernels_clock_merges_the_last_evening :
+    ¬ ∀ (b w : WfSeg) (i : Id),
+        b ∈ (dayPlan theLastEveningRequest).segments → w ∈ (dayPlan theLastEveningRequest).segments →
+        b.val.kind = SegKind.block → w.val.kind = SegKind.windDown →
+        b.val.item = some i → w.val.start ≤ b.val.start →
+        (effectiveCi theLastEveningRequest.plan.val i).val < 4 := fun h => by
+  have hf := the_wind_down_law_needs_the_wind_down_inside_the_calendar.2.2.2.2
+  have ht : PlanCheck.noDemandingAfterWindDown theLastEveningRequest (dayPlan theLastEveningRequest) = true :=
+    (PlanCheck.noDemandingAfterWindDown_iff _ _).2 (fun b hb w hw i hi hbk hwk hle => h b w i hb hw hbk hwk hi hle)
+  rw [hf] at ht
+  exact absurd ht (by decide)
+
+/-- **The Saturday before the 2026 fall-back** (Chicago, 2026-10-31; Sunday is 25 hours long) at 14:00, with the
+window `23:50-23:40` stored for it — a window that crosses midnight — and the agreeing conference's one
+candidate. -/
+def theFallBackRequest : PlanReq :=
+  { theAgreeingConferenceRequest with
+    look := { theAgreeingConferenceRequest.look with
+      today := 739919,
+      today0 := { theAgreeingConferenceRequest.look.today0 with
+        now := (⟨(Cal.instantOf Cal.chicago 739919 840).sec, 0⟩ : Cal.Instant),
+        date := some 739919,
+        window := some (⟨1430, by decide⟩, ⟨1420, by decide⟩),
+        budget := some 6 } } }
+
+set_option maxRecDepth 400000 in
+/-- **README gap 3782: the kernel's stored window crossing midnight ended at the NEXT day's clock, an hour past
+the fork's on a fall-back night.**  `Planner.PlanReq.window_crosses_midnight_as_the_forks_planner_reads_it` as
+W-39 stated it — the end at `(Cal.instantOf tz (today + 1) end).sec` — is REFUTED here: fork
+`Planner::window_and_budget` adds `Duration::days(1)`, 24 hours, so the window ends at 22:40 on the 25-hour
+Sunday, while Sunday's 23:40 is an hour later — and past `day_end + 24 h` (23:00 Sunday), where the night §8.2
+step 3 flows around ends, so the old reading cut a forty-minute slot there that the fork never had. -/
+theorem the_window_crossing_midnight_ends_on_the_next_days_clock_is_refuted :
+    ¬ theFallBackRequest.window = ((Cal.instantOf Cal.chicago 739919 1430).sec,
+      (Cal.instantOf Cal.chicago 739920 1420).sec) ∧
+    theFallBackRequest.dayEnd + 86400 < (Cal.instantOf Cal.chicago 739920 1420).sec := by
+  refine ⟨by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **The window the fork reads ends inside the night, and the day places no Block after the wind-down**:
+22:40 Sunday, `PlanStable.the_stored_window_ends_by_the_night`'s bound, met here with its hypothesis decided;
+the day is the wind-down, sleep and nothing else. -/
+theorem the_fall_back_window_ends_inside_the_night_as_the_forks_does :
+    theFallBackRequest.window = ((Cal.instantOf Cal.chicago 739919 1430).sec,
+      (Cal.instantOf Cal.chicago 739919 1420).sec + 86400) ∧
+    theFallBackRequest.window.2 ≤ theFallBackRequest.dayEnd + 86400 ∧
+    (dayPlan theFallBackRequest).segments.all (fun s => s.val.kind != SegKind.block) = true := by
+  refine ⟨by decide,
+    PlanStable.the_stored_window_ends_by_the_night theFallBackRequest
+      (⟨1430, by decide⟩, ⟨1420, by decide⟩) (by decide) (by decide), by decide⟩
+
+/-- **The two restated laws as one** (README gaps 3544 and 3713): the wind-down inside the calendar, and
+either the wire agreeing with the plan (`PlanCheck.candsAgree`, W-39's form) or the window ending by the
+night's end (this run's).  The conference Wednesday is a request only the second answers (its wire calls
+`^m2` `ci 0` and its plan `ci 5`, `PlannerWit.the_wind_down_goal_holds_at_the_conference_wednesday`); one only
+the first answers needs a window past the night, which `PlanStable.the_window_ends_by_the_night` confines to an
+arrival past the day's end — the eve below (`the_eves_window_runs_past_the_night`). -/
+theorem plan_places_no_demanding_block_after_wind_down_where_the_wire_agrees_or_the_window_ends_by_the_night
+    (r : PlanReq) (hwdcal : r.windDownSec < LogStamp.yearEnd)
+    (hor : PlanCheck.candsAgree r = true ∨ r.window.2 ≤ r.dayEnd + 86400)
+    (b w : WfSeg) (i : Id)
+    (hb : b ∈ (dayPlan r).segments) (hw : w ∈ (dayPlan r).segments)
+    (hbk : b.val.kind = SegKind.block) (hwk : w.val.kind = SegKind.windDown)
+    (hi : b.val.item = some i) (hafter : w.val.start ≤ b.val.start) :
+    (effectiveCi r.plan.val i).val < 4 :=
+  hor.elim
+    (fun hca => PlanCheck.plan_places_no_demanding_block_after_wind_down r hca hwdcal b w i hb hw hbk hwk hi
+      hafter)
+    (fun hwin => PlanStable.plan_places_no_demanding_block_after_wind_down_when_the_window_ends_by_the_night r hwdcal hwin
+      b w i hb hw hbk hwk hi hafter)
+
+set_option maxRecDepth 400000 in
+/-- **README gap 2326's bound for a planned window, met** (AGENTS §7.4 item 2): the witness Wednesday stores no
+window, plans from the logged 07:00 arrival, and its `[day]` is the shipped one. -/
+theorem the_planned_window_bound_fires_at_the_witness_wednesday :
+    theRequest.window.2 ≤ theRequest.dayEnd + 86400 :=
+  PlanStable.the_window_ends_by_the_night_without_a_stored_window theRequest (by decide) (by decide) (by decide)
+
+/-- **The eve of the 2026 fall-back with an arrival logged after midnight** (README gaps 3713 and 3790): the
+Saturday's log holds the wake at 06:05 and an `arrive` stamped 01:00 on the 25-hour Sunday, with no wake between, so
+the replay files it in Saturday's record — a line written after `now` (a `--now` earlier than the log, or a clock
+that ran ahead), within the two days D18 reads silently. -/
+def eveLines : List Log.Line :=
+  [⟨1, some ['{','"','t','"',':','"','2','0','2','6','-','1','0','-','3','1','T','0','6',':','0','5',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','w','a','k','e','"',',','"','s','l','e','p','t','_','m','i','n','"',':','4','9','0','}']⟩,
+   ⟨2, some ['{','"','t','"',':','"','2','0','2','6','-','1','1','-','0','1','T','0','1',':','0','0',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','a','r','r','i','v','e','"',',','"','l','o','c','"',':','"','l','o','u','n','g','e','"',',','"','w','i','n','d','o','w','"',':','[','"','0','1',':','0','0','"',',','"','2','3',':','5','9','"',']',',','"','b','u','d','g','e','t','"',':','1','8','}']⟩]
+
+set_option maxRecDepth 400000 in
+theorem eveRun_resumes_ok : runOk Cal.chicago 739919 eveLines = true := by decide
+
+def eveRun : Seal.Run :=
+  match h : Seal.resumeRun Cal.chicago 739919 (Seal.Ckpt.empty Cal.chicago) eveLines with
+  | .ok run => run
+  | .error _ => absurd eveRun_resumes_ok (by simp [runOk, h])
+
+/-- **The agreeing conference's `^t1` (`ci:2` on the wire and in the store) planned on that Saturday at 14:00**, no
+state stored for the day, so the planner arrives at the logged 01:00 Sunday (fork `Planner::new`), and a `[day]`
+the decoder accepts: a 24-hour window capped at 23:59, the cap read on the ARRIVAL's day (`Look.windowFrom`). -/
+def theEveRequest : PlanReq :=
+  { theAgreeingConferenceRequest with
+    run := eveRun,
+    look := { theAgreeingConferenceRequest.look with
+      walls := [],
+      today := 739919,
+      today0 := { theAgreeingConferenceRequest.look.today0 with
+        now := (⟨(Cal.instantOf Cal.chicago 739919 840).sec, 0⟩ : Cal.Instant), date := none, window := none,
+        arrival := none, budget := none },
+      day := { theAgreeingConferenceRequest.look.day with
+        windowHours := Arith.mkPos 24 1 (by decide), windowCap := ⟨1439, by decide⟩ } } }
+
+set_option maxRecDepth 400000 in
+/-- **The eve pays everything the wind-down law asks, and the decoder accepts its `[day]`** — the wire agrees with
+the plan, the wind-down is inside the calendar, no window is stored — **and its window runs past the night**: from
+01:00 to 23:59 on the 25-hour Sunday, an hour past `day_end + 24 h` (23:00 Sunday), because the arrival is past the
+day's end (`PlanStable.the_window_ends_by_the_night`'s `harr` fails here). -/
+theorem the_eves_window_runs_past_the_night :
+    PlanCheck.candsAgree theEveRequest = true ∧ theEveRequest.look.day.wf = true ∧
+    theEveRequest.windDownSec < LogStamp.yearEnd ∧
+    theEveRequest.look.today0.planWindow theEveRequest.look.today = none ∧
+    theEveRequest.dayEnd < theEveRequest.look.today0.planArrivalSec theEveRequest.look.today theEveRequest.look.tz
+      theEveRequest.loggedArrival ∧
+    theEveRequest.window = ((Cal.instantOf Cal.chicago 739920 60).sec, (Cal.instantOf Cal.chicago 739920 1439).sec) ∧
+    theEveRequest.dayEnd + 86400 < theEveRequest.window.2 := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **So step 3 cuts the hour after the night, and step 5 puts `^t1` there — a Block AFTER the WindDown row** (README gaps
+3713 and 3790): the day is the 21:30 wind-down, the sleep to midnight, and `^t1` at 23:00 Sunday.  Fork 4748911, driven on
+the same configuration (`tm arrive` stamped 01:00 Sunday, then `tm --now 2026-10-31T14:00 plan`), cuts the same
+23:00-23:59 Sunday slot after its own 21:30 wind-down and draws Rest there, its example tree having no candidate that
+low.  `PlanCheck.noDemandingAfterWindDown` meets a subject here and holds: `^t1` is `ci:2`. -/
+theorem the_eve_places_a_block_after_the_wind_down :
+    ((dayPlan theEveRequest).segments.map (fun s => (s.val.start, s.val.kind, s.val.item)))
+      = [((Cal.instantOf Cal.chicago 739919 1290).sec, SegKind.windDown, none),
+         ((Cal.instantOf Cal.chicago 739919 1320).sec, SegKind.sleep, none),
+         ((Cal.instantOf Cal.chicago 739920 1380).sec, SegKind.block, some ['t','1'])] ∧
+    PlanCheck.subjectOf permissive PlanCheck.CheckName.windDown theEveRequest (dayPlan theEveRequest) = true ∧
+    PlanCheck.noDemandingAfterWindDown theEveRequest (dayPlan theEveRequest) = true := by
+  refine ⟨by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **`PlanCheck.plan_places_no_demanding_block_after_wind_down` has a SUBJECT** (AGENTS §7.4 item 2; README gap 3713):
+every hypothesis holds of the eve, and its antecedent is met — a Block row of the day starting at or after a WindDown
+row — so the law's conclusion is asserted of a row, `^t1`'s, and not of nothing. -/
+theorem the_wind_down_law_has_a_subject_on_the_eve :
+    ∃ b ∈ (dayPlan theEveRequest).segments, ∃ w ∈ (dayPlan theEveRequest).segments,
+      b.val.kind = SegKind.block ∧ w.val.kind = SegKind.windDown ∧ b.val.item = some ['t','1'] ∧
+      w.val.start ≤ b.val.start ∧ (effectiveCi theEveRequest.plan.val ['t','1']).val < 4 := by
+  have hx : ∃ b ∈ (dayPlan theEveRequest).segments, ∃ w ∈ (dayPlan theEveRequest).segments,
+      b.val.kind = SegKind.block ∧ w.val.kind = SegKind.windDown ∧ b.val.item = some ['t','1'] ∧
+      w.val.start ≤ b.val.start := by decide
+  obtain ⟨b, hb, w, hw, hbk, hwk, hi, hle⟩ := hx
+  exact ⟨b, hb, w, hw, hbk, hwk, hi, hle,
+    PlanCheck.plan_places_no_demanding_block_after_wind_down theEveRequest
+      the_eves_window_runs_past_the_night.1 the_eves_window_runs_past_the_night.2.2.1 b w ['t','1']
+      hb hw hbk hwk hi hle⟩
+
+/-- **README gap 2326's bound needs the arrival inside the day** — `PlanStable.the_window_ends_by_the_night` without
+`harr` is false at the eve, on a `[day]` the decoder accepts and with no window stored. -/
+theorem the_window_bound_needs_the_arrival_inside_the_day :
+    ¬ ∀ r : PlanReq, r.look.day.wf = true →
+      (∀ w, r.look.today0.planWindow r.look.today = some w →
+        (Cal.instantOf r.look.tz r.look.today w.2).sec ≤ r.dayEnd) →
+      r.window.2 ≤ r.dayEnd + 86400 := fun h => by
+  have hw := h theEveRequest the_eves_window_runs_past_the_night.2.1
+    (fun w hw => by rw [the_eves_window_runs_past_the_night.2.2.2.1] at hw; cases hw)
+  exact absurd hw (Nat.not_le.2 the_eves_window_runs_past_the_night.2.2.2.2.2.2)
+
+/-- **And "no Block after the wind-down at all" needs the window inside the night** — the eve pays every other
+hypothesis of `PlanStable.no_block_row_starts_at_or_after_a_wind_down_row_when_the_window_ends_by_the_night` and holds
+a Block row starting after its WindDown row. -/
+theorem no_block_after_the_wind_down_needs_the_window_inside_the_night :
+    ¬ ∀ (b w : WfSeg), b ∈ (dayPlan theEveRequest).segments → w ∈ (dayPlan theEveRequest).segments →
+      b.val.kind = SegKind.block → w.val.kind = SegKind.windDown → b.val.start < w.val.start := fun h => by
+  obtain ⟨b, hb, w, hw, hbk, hwk, -, hle, -⟩ := the_wind_down_law_has_a_subject_on_the_eve
+  exact absurd (h b w hb hw hbk hwk) (Nat.not_lt.2 hle)
+
+/-! ### (3) L25 after a logged verb -/
+
+/-- **The extension `PlanStable`'s L25 takes, as a check this module can decide**: the later record holds every
+segment and every closed id of the earlier one (and anything at all when the earlier day had no record). -/
+def recordExtends (r r' : PlanReq) : Bool :=
+  match r.todayRecord, r'.todayRecord with
+  | some d, some d' =>
+    d.segments.all (fun g => decide (g ∈ d'.segments)) && d.done.all (fun i => decide (i ∈ d'.done))
+  | none, _ => true
+  | some _, none => false
+
+theorem recordExtends_spec {r r' : PlanReq} (h : recordExtends r r' = true) :
+    ∀ d, r.todayRecord = some d → ∃ d', r'.todayRecord = some d' ∧
+      (∀ g ∈ d.segments, g ∈ d'.segments) ∧ (∀ i ∈ d.done, i ∈ d'.done) := by
+  intro d hd
+  unfold recordExtends at h
+  rw [hd] at h
+  cases hd' : r'.todayRecord with
+  | none => rw [hd'] at h; exact absurd h (by simp)
+  | some d' =>
+    rw [hd'] at h
+    simp only [Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at h
+    exact ⟨d', rfl, h.1, h.2⟩
+
+set_option maxRecDepth 400000 in
+theorem morningRun_resumes_ok : runOk Cal.chicago 739867 (witLines.take 5) = true := by decide
+
+/-- **The Wednesday morning's log at 09:30**: its first five lines — `^m1` done at 08:05, `^m2` started at 09:05
+and still running. -/
+def morningRun : Seal.Run :=
+  match h : Seal.resumeRun Cal.chicago 739867 (Seal.Ckpt.empty Cal.chicago) (witLines.take 5) with
+  | .ok run => run
+  | .error _ => absurd morningRun_resumes_ok (by simp [runOk, h])
+
+/-- `r` planned at minute `m` of the witness Wednesday. -/
+def atNow (r : PlanReq) (m : Fin 1440) : PlanReq :=
+  { r with
+    look := { r.look with
+      today0 := { r.look.today0 with now := (⟨(Cal.instantOf Cal.chicago 739867 m).sec, 0⟩ : Cal.Instant) } } }
+
+/-- The morning at 09:30, `^m2` running. -/
+def theMorningRequest : PlanReq := atNow { theRequest with run := morningRun } 570
+
+/-- **The same day replanned at 10:30, after `tm done ^m2` logged at 10:05** — the six lines. -/
+def theDoneRequest : PlanReq := atNow theRequest 630
+
+set_option maxRecDepth 400000 in
+/-- **The extension holds over a real `tm done`, and L25 fires** (AGENTS §7.4 item 2): the later record holds every
+segment and every closed id of the earlier one; `^m1`'s 07:05-08:05 block, closed before 09:30, is a row of both
+days, done in both; and `^m2`'s row is OPEN at 09:30 (the running block, 09:05 to `now`), outside the law. -/
+theorem the_morning_is_extended_by_tm_done :
+    recordExtends theMorningRequest theDoneRequest = true ∧
+    ((dayPlan theMorningRequest).segments.filter (fun s => s.val.flags.isOpen)).map
+        (fun s => (s.val.start, s.val.stop, s.val.item))
+      = [((Cal.instantOf Cal.chicago 739867 545).sec, (Cal.instantOf Cal.chicago 739867 570).sec,
+          some ['m','2'])] ∧
+    ((dayPlan theMorningRequest).segments.filter (fun s => decide (s.val.stop < theMorningRequest.now.sec) &&
+        !s.val.flags.isOpen)).map (fun s => (s.val.start, s.val.stop, s.val.item, s.val.flags.done))
+      = [((Cal.instantOf Cal.chicago 739867 425).sec, (Cal.instantOf Cal.chicago 739867 485).sec,
+          some ['m','1'], true)] ∧
+    ((dayPlan theMorningRequest).segments.filter (fun s => decide (s.val.stop < theMorningRequest.now.sec) &&
+        !s.val.flags.isOpen)).all (fun s => decide (s ∈ (dayPlan theDoneRequest).segments)) = true := by
+  refine ⟨by decide, by decide, by decide, by decide⟩
+
+/-- **A stop and, after `now`, a done**: `^m1` started at 07:05 and STOPPED at 08:05 with thirty minutes left; then,
+after the 08:30 plan, `tm done ^m1` at 09:00. -/
+def flipLines : List Log.Line :=
+  witLines.take 3 ++ [⟨4, some ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','9','T','0','8',':','0','5',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','s','t','o','p','"',',','"','i','d','"',':','"','m','1','"',',','"','r','e','m','a','i','n','i','n','g','_','m','i','n','"',':','3','0','}']⟩, ⟨5, some ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','9','T','0','9',':','0','0',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','d','o','n','e','"',',','"','i','d','"',':','"','m','1','"',',','"','e','s','t','_','m','i','n','"',':','6','0',',','"','a','c','t','u','a','l','_','m','i','n','"',':','6','0',',','"','w','e','n','t','"',':','3',',','"','t','a','g','s','"',':','[',']',',','"','c','i','"',':','5','}']⟩]
+
+set_option maxRecDepth 400000 in
+theorem flipEarlyRun_resumes_ok : runOk Cal.chicago 739867 (flipLines.take 4) = true := by decide
+
+set_option maxRecDepth 400000 in
+theorem flipLateRun_resumes_ok : runOk Cal.chicago 739867 flipLines = true := by decide
+
+def flipEarlyRun : Seal.Run :=
+  match h : Seal.resumeRun Cal.chicago 739867 (Seal.Ckpt.empty Cal.chicago) (flipLines.take 4) with
+  | .ok run => run
+  | .error _ => absurd flipEarlyRun_resumes_ok (by simp [runOk, h])
+
+def flipLateRun : Seal.Run :=
+  match h : Seal.resumeRun Cal.chicago 739867 (Seal.Ckpt.empty Cal.chicago) flipLines with
+  | .ok run => run
+  | .error _ => absurd flipLateRun_resumes_ok (by simp [runOk, h])
+
+/-- The day at 08:30, `^m1` stopped. -/
+def theStoppedRequest : PlanReq := atNow { theRequest with run := flipEarlyRun } 510
+
+/-- The day at 09:30, after `tm done ^m1` at 09:00. -/
+def theClosedRequest : PlanReq := atNow { theRequest with run := flipLateRun } 570
+
+set_option maxRecDepth 400000 in
+/-- **`tm done` after `now` raises an EARLIER block's `done` flag** — fork `past_segments`' own rule ("a block
+segment is done when the log closed the item today"): the later record extends the earlier one, `^m1`'s
+07:05-08:05 block is a row of the 08:30 day NOT done, and the 09:30 day holds it done and not undone. -/
+theorem tm_done_after_now_raises_an_earlier_blocks_done_flag :
+    recordExtends theStoppedRequest theClosedRequest = true ∧
+    ((dayPlan theStoppedRequest).segments.filter (fun s => decide (s.val.stop < theStoppedRequest.now.sec) &&
+        !s.val.flags.isOpen)).map (fun s => (s.val.start, s.val.stop, s.val.item, s.val.flags.done))
+      = [((Cal.instantOf Cal.chicago 739867 425).sec, (Cal.instantOf Cal.chicago 739867 485).sec,
+          some ['m','1'], false)] ∧
+    ((dayPlan theClosedRequest).segments.filter (fun s => decide (s.val.stop < theStoppedRequest.now.sec) &&
+        !s.val.flags.isOpen)).map (fun s => (s.val.start, s.val.stop, s.val.item, s.val.flags.done))
+      = [((Cal.instantOf Cal.chicago 739867 425).sec, (Cal.instantOf Cal.chicago 739867 485).sec,
+          some ['m','1'], true)] := by
+  refine ⟨by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **L25 over an extending record, EXACTLY, is refuted** (README gap 3714; AGENTS §3.1 item 3): every hypothesis of
+`PlanStable.plan_is_stable_across_a_replan_after_a_logged_verb` holds of the stopped morning and its replan after
+`tm done ^m1`, and `^m1`'s closed block is not a row of the later day as it stands — its `done` flag rose, which
+is shipped behaviour (fork `past_segments`).  The law is true up to that flag, and exact where the later record
+closes nothing new (`PlanStable.plan_is_stable_across_a_replan_after_a_verb_that_closes_nothing`). -/
+theorem plan_is_stable_across_a_replan_over_an_extending_record_exactly_is_refuted :
+    ¬ ∀ (r r' : PlanReq),
+      (∀ d, r.todayRecord = some d → ∃ d', r'.todayRecord = some d' ∧
+        (∀ g ∈ d.segments, g ∈ d'.segments) ∧ (∀ i ∈ d.done, i ∈ d'.done)) →
+      r'.dayStart = r.dayStart → wallsToday r' = wallsToday r → (∀ i, r'.isTravelDay i = r.isTravelDay i) →
+      r.now.sec ≤ r'.now.sec → r.now.sec < LogStamp.yearEnd →
+      ∀ s ∈ (dayPlan r).segments, s.val.stop < r.now.sec → s.val.flags.isOpen = false →
+        s ∈ (dayPlan r').segments := by
+  intro h
+  have hx : ∃ s ∈ (dayPlan theStoppedRequest).segments, s.val.stop < theStoppedRequest.now.sec ∧
+      s.val.flags.isOpen = false ∧ s ∉ (dayPlan theClosedRequest).segments := by decide
+  obtain ⟨s, hs, hend, hopen, hnot⟩ := hx
+  exact hnot (h theStoppedRequest theClosedRequest
+    (recordExtends_spec tm_done_after_now_raises_an_earlier_blocks_done_flag.1) rfl rfl (fun _ => rfl)
+    (by decide) (by decide) s hs hend hopen)
+
+set_option maxRecDepth 400000 in
+/-- **And L25 as restated fires there** (AGENTS §7.4 item 2): the same pair meets every hypothesis of
+`PlanStable.plan_is_stable_across_a_replan_after_a_logged_verb`, and its conclusion is the `^m1` row above with
+its flag raised. -/
+theorem the_l25_law_fires_after_tm_done_with_the_flag_raised :
+    ∀ s ∈ (dayPlan theStoppedRequest).segments, s.val.stop < theStoppedRequest.now.sec →
+      s.val.flags.isOpen = false →
+      ∃ s' ∈ (dayPlan theClosedRequest).segments,
+        { s'.val with flags := { s'.val.flags with done := s.val.flags.done } } = s.val ∧
+        (s.val.flags.done = true → s'.val.flags.done = true) :=
+  fun s hs hend hopen => PlanStable.plan_is_stable_across_a_replan_after_a_logged_verb theStoppedRequest
+    theClosedRequest (recordExtends_spec tm_done_after_now_raises_an_earlier_blocks_done_flag.1) rfl rfl
+    (fun _ => rfl) (by decide) (by decide) s hs hend hopen
+
+/-- **The morning's first four lines and, after the 08:30 plan, `tm undo` of `^m1`'s done at 08:45.** -/
+def undoLines : List Log.Line := witLines.take 4 ++ [⟨5, some ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','9','T','0','8',':','4','5',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','u','n','d','o','"',',','"','o','f','"',':','"','d','o','n','e','"',',','"','i','d','"',':','"','m','1','"','}']⟩]
+
+set_option maxRecDepth 400000 in
+theorem undoEarlyRun_resumes_ok : runOk Cal.chicago 739867 (undoLines.take 4) = true := by decide
+
+set_option maxRecDepth 400000 in
+theorem undoLateRun_resumes_ok : runOk Cal.chicago 739867 undoLines = true := by decide
+
+def undoEarlyRun : Seal.Run :=
+  match h : Seal.resumeRun Cal.chicago 739867 (Seal.Ckpt.empty Cal.chicago) (undoLines.take 4) with
+  | .ok run => run
+  | .error _ => absurd undoEarlyRun_resumes_ok (by simp [runOk, h])
+
+def undoLateRun : Seal.Run :=
+  match h : Seal.resumeRun Cal.chicago 739867 (Seal.Ckpt.empty Cal.chicago) undoLines with
+  | .ok run => run
+  | .error _ => absurd undoLateRun_resumes_ok (by simp [runOk, h])
+
+/-- The day at 08:30, `^m1` done at 08:05. -/
+def theDoneMorningRequest : PlanReq := atNow { theRequest with run := undoEarlyRun } 510
+
+/-- The day at 09:00, after `tm undo` took the done back at 08:45. -/
+def theUndoneRequest : PlanReq := atNow { theRequest with run := undoLateRun } 540
+
+set_option maxRecDepth 400000 in
+/-- **An `undo` after `now` is not an extension, and it moves the past** (README gap 3781): the log grew by one line
+stamped after the 08:30 plan, the later record does not hold `^m1`'s 07:05-08:05 block, and that closed row is not a
+row of the 09:00 day in any flag — the done taken back reopens the block, as fork 4748911's undo mask does.  So L25
+over a log that grows after `now` is false unless the growth takes nothing back, which is what
+`PlanStable.plan_is_stable_across_a_replan_after_a_logged_verb`'s extension says. -/
+theorem an_undo_after_now_is_not_an_extension :
+    recordExtends theDoneMorningRequest theUndoneRequest = false ∧
+    ((dayPlan theDoneMorningRequest).segments.filter (fun s =>
+        decide (s.val.stop < theDoneMorningRequest.now.sec) && !s.val.flags.isOpen)).map
+        (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.item))
+      = [((Cal.instantOf Cal.chicago 739867 425).sec, (Cal.instantOf Cal.chicago 739867 485).sec,
+          SegKind.block, some ['m','1'])] ∧
+    ((dayPlan theUndoneRequest).segments.filter (fun s =>
+        s.val.start == (Cal.instantOf Cal.chicago 739867 425).sec &&
+        s.val.stop == (Cal.instantOf Cal.chicago 739867 485).sec)).isEmpty = true := by
+  refine ⟨by decide, by decide, by decide⟩
+
+/-! ### (4) D77 over the whole day from `now` -/
+
+set_option maxRecDepth 400000 in
+/-- **`PlanStable.the_day_from_now_does_not_change_when_an_overrun_break_is_logged` fires at the sit** (AGENTS §7.4
+item 2; README gap 3784): no block runs on the busy Wednesday at 14:00, the sit has run past its ten minutes, and the
+log's `break` line adds the sit at its start to today's record and nothing else — so every row of the day from `now`
+is the same, field for field, running or logged; `the_short_break_running_and_logged_plan_one_day_from_now` is the
+same day read row by row. -/
+theorem the_day_law_fires_at_the_short_break :
+    ({ theShortBreakRequest with
+        state := { theShortBreakRequest.state with brk := none },
+        run := shortBreakRun } : PlanReq) = theShortBreakLoggedRequest ∧
+    ((dayPlan theShortBreakLoggedRequest).segments.filter
+        (fun s => decide (theShortBreakRequest.now.sec ≤ s.val.start))) =
+      ((dayPlan theShortBreakRequest).segments.filter
+        (fun s => decide (theShortBreakRequest.now.sec ≤ s.val.start))) :=
+  ⟨rfl, PlanStable.the_day_from_now_does_not_change_when_an_overrun_break_is_logged theShortBreakRequest shortBreakRun
+    ⟨some ⟨(Cal.instantOf Cal.chicago 739867 825).sec, 0⟩, 10, some .seat⟩
+    ⟨(Cal.instantOf Cal.chicago 739867 825).sec, 0⟩ rfl rfl (by decide)
+    (fun a ha => by have h : (none : Option ActiveBlock) = some a := ha; cases h) (by decide) (by decide) (by decide)
+    (by decide)⟩
 
 end PlannerWit
 end Tm
