@@ -170,41 +170,11 @@ impl InputKind {
     }
 }
 
-/// Where a break was taken (§12.6's `b` + `w`/`s`/`b`/`p`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BreakPlace {
-    /// `w` — a walk.
-    Walk,
-    /// `s` — stayed in the seat.
-    Seat,
-    /// `b` — lay down.
-    Bed,
-    /// `p` — the phone.
-    Phone,
-}
-
-impl BreakPlace {
-    /// The `--where` value (§13 `tm break --where walk`).
-    pub fn as_str(self) -> &'static str {
-        match self {
-            BreakPlace::Walk => "walk",
-            BreakPlace::Seat => "seat",
-            BreakPlace::Bed => "bed",
-            BreakPlace::Phone => "phone",
-        }
-    }
-
-    /// The key that picks it.
-    pub fn from_key(c: char) -> Option<BreakPlace> {
-        match c {
-            'w' => Some(BreakPlace::Walk),
-            's' => Some(BreakPlace::Seat),
-            'b' => Some(BreakPlace::Bed),
-            'p' => Some(BreakPlace::Phone),
-            _ => None,
-        }
-    }
-}
+/// Where a break was taken (§12.6's `b` + `w`/`s`/`b`/`p`) — the ONE host
+/// table of places in `tm-core` (the campaign's D81 call on README gap 3903,
+/// parity P75), which `tm break --where` reads too; until W-41 this module
+/// spelled the four words and keys a second time.
+pub use tm_core::store::BreakPlace;
 
 /// An answer to the pending prompt (§9.1, §9.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1190,12 +1160,7 @@ impl App {
     /// running.
     pub fn active_elapsed_min(&self) -> Option<u32> {
         let active = self.state.active.as_ref()?;
-        let running_break = self
-            .state
-            .break_
-            .as_ref()
-            .and_then(|br| br.started)
-            .map(|s| self.local(s).fixed_offset());
+        let running_break = self.running_break().map(|t| t.fixed_offset());
         Some(self.replay.shown_worked_min(
             active.id.as_str(),
             self.today,
@@ -1357,8 +1322,20 @@ impl App {
     /// planned minutes.
     pub fn break_overrun_since(&self) -> Option<DateTime<Tz>> {
         let br = self.state.break_.as_ref()?;
-        let end = self.local(br.started?) + Duration::minutes(i64::from(br.planned_min));
+        let end = self.running_break()? + Duration::minutes(i64::from(br.planned_min));
         (self.now > end).then_some(end)
+    }
+
+    /// **When the break `.tm/state.json` holds running began** — the ONE
+    /// reading the CLI takes too ([`tm_core::store::BreakState::started_at`]:
+    /// the latest instant at or before `now` with the cached clock; the
+    /// campaign's D81 call on README gap 3820, parity P73), read by the timer
+    /// and §9's break-overrun prompt. Never [`App::local`]: `state.date` rolls
+    /// at the first verb after local midnight, so a break begun before it read
+    /// as begun tonight — the timer netted none of it out and the overrun
+    /// prompt waited a day.
+    fn running_break(&self) -> Option<DateTime<Tz>> {
+        self.state.break_.as_ref().and_then(|b| b.started_at(self.cfg.tz, self.now))
     }
 
     /// When the gap started: the last event logged today, else the window

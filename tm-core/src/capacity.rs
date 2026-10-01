@@ -222,6 +222,43 @@ pub fn local_dt(tz: Tz, date: NaiveDate, time: NaiveTime) -> DateTime<Tz> {
     }
 }
 
+/// **The latest instant at or before `now` whose local clock in `tz` is
+/// `clock`** — the owner's D75 clock where the log holds no instant (W-41
+/// track T). A bare `HH:MM` names the LAST time that clock was read, never a
+/// time still to come: `tm stop --at 23:40` typed at 07:05 ends the block last
+/// night (the owner's **D79**, README gap 3823), and `.tm/state.json`'s
+/// `break.started` of a break begun at 23:50 is still the evening's after
+/// midnight (the campaign's **D81** call on README gap 3820, parity **P73** —
+/// the log holds no line for a running break, so its cache's clock is all
+/// there is). [`local_dt`] is the other rule, a clock on a GIVEN date, and
+/// what fork 4748911 read both on (today's).
+///
+/// Today's instants with that clock, then the day before's, then the day
+/// before that's, each latest first — an ambiguous local time (a fall-back
+/// hour) is two instants and the later is tried first, and a date on which the
+/// clock does not exist (a spring-forward gap, Apia's missing 2011-12-30)
+/// holds none and is passed over — and the first that is not after `now`.
+/// Yesterday's or the day before's always is: both are wholly before today's
+/// local midnight, and no zone of the tz database lacks one clock on two
+/// consecutive dates. So the fallback `now` is unreachable; it is written so
+/// the function is total, and it too is at or before `now`
+/// (`the_latest_clock_at_or_before_now`).
+pub fn latest_at_or_before(tz: Tz, now: DateTime<Tz>, clock: NaiveTime) -> DateTime<Tz> {
+    let today = now.date_naive();
+    let dates = [Some(today), today.pred_opt(), today.pred_opt().and_then(|d| d.pred_opt())];
+    for date in dates.into_iter().flatten() {
+        let latest_first = match tz.from_local_datetime(&date.and_time(clock)) {
+            LocalResult::Single(t) => [Some(t), None],
+            LocalResult::Ambiguous(early, late) => [Some(late), Some(early)],
+            LocalResult::None => [None, None],
+        };
+        if let Some(t) = latest_first.into_iter().flatten().find(|t| *t <= now) {
+            return t;
+        }
+    }
+    now
+}
+
 // ---------------------------------------------------------------------------
 // §8.1 window and budget
 // ---------------------------------------------------------------------------
@@ -959,6 +996,56 @@ mod tests {
             .with_ymd_and_hms(2026, 9, 7, h, m, 0)
             .single()
             .expect("valid local time")
+    }
+
+    /// **`latest_at_or_before` is the latest instant at or before `now` with
+    /// that clock** (W-41 track T; D79, D81/P73): never after `now`; its local
+    /// clock IS the clock; and no instant between it and `now` reads that clock
+    /// — swept minute by minute over Chicago's two DST changes, Santiago's
+    /// midnight gap, Lord Howe's half hour and Apia's missing 2011-12-30.
+    #[test]
+    fn the_latest_clock_at_or_before_now() {
+        let hm = |h, m| NaiveTime::from_hms_opt(h, m, 0).expect("t");
+        // The drive's own world: `--at 23:40` typed at Wednesday 07:05.
+        let now = Chicago.with_ymd_and_hms(2026, 9, 9, 7, 5, 0).single().expect("now");
+        let last_night = Chicago.with_ymd_and_hms(2026, 9, 8, 23, 40, 0).single().expect("t");
+        assert_eq!(latest_at_or_before(Chicago, now, hm(23, 40)), last_night);
+        assert_eq!(latest_at_or_before(Chicago, now, hm(7, 5)), now, "now's own minute is today's");
+        let yesterday = Chicago.with_ymd_and_hms(2026, 9, 8, 7, 6, 0).single().expect("t");
+        assert_eq!(latest_at_or_before(Chicago, now, hm(7, 6)), yesterday, "a minute ahead is yesterday's");
+
+        let zones: [(Tz, (i32, u32, u32)); 5] = [
+            (chrono_tz::America::Chicago, (2026, 3, 7)),
+            (chrono_tz::America::Chicago, (2026, 10, 31)),
+            (chrono_tz::America::Santiago, (2026, 9, 5)),
+            (chrono_tz::Australia::Lord_Howe, (2026, 10, 3)),
+            (chrono_tz::Pacific::Apia, (2011, 12, 28)),
+        ];
+        let clocks = [hm(0, 0), hm(0, 30), hm(1, 30), hm(2, 0), hm(2, 30), hm(12, 0), hm(23, 40), hm(23, 59)];
+        let mut checked = 0;
+        for (tz, (y, mo, d)) in zones {
+            let start = tz.from_utc_datetime(
+                &NaiveDate::from_ymd_opt(y, mo, d).expect("date").and_hms_opt(0, 0, 0).expect("t"),
+            );
+            for step in 0..96 {
+                let now = start + Duration::minutes(step * 53);
+                for clock in clocks {
+                    let r = latest_at_or_before(tz, now, clock);
+                    assert!(r <= now, "{tz} {now} {clock}: {r} is after now");
+                    assert_eq!(r.time(), clock, "{tz} {now} {clock}: {r} does not read the clock");
+                    let mut t = r + Duration::minutes(1);
+                    while t <= now {
+                        assert!(
+                            t.time() != clock,
+                            "{tz} {now} {clock}: {t} reads the clock and is later than {r}"
+                        );
+                        t += Duration::minutes(1);
+                    }
+                    checked += 1;
+                }
+            }
+        }
+        assert_eq!(checked, 5 * 96 * 8);
     }
 
     #[test]

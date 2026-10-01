@@ -132,16 +132,12 @@ pub fn resolve_dir(explicit: Option<&Path>) -> Result<PathBuf, CliError> {
 /// `active`, `break` and `interrupt` are deliberately left alone: a block
 /// started before midnight is still running, and it is `tm wake` that ends
 /// the night (§10.1). `tm done`/`tm stop` close them as usual.
+///
+/// The rule is [`RuntimeState::roll_to`], in `tm-core` since W-41 so a test can
+/// name it (README gap 4041; parity P77 reads the TUI's stale state as this
+/// roll leaves it).
 fn roll_day(state: &mut RuntimeState, today: NaiveDate) -> bool {
-    if !matches!(state.date, Some(d) if d != today) {
-        return false;
-    }
-    state.date = Some(today);
-    state.arrival = None;
-    state.window = None;
-    state.budget = None;
-    state.last_plan_hash = None;
-    true
+    state.roll_to(today)
 }
 
 /// **The fields of `.tm/state.json` no replay of `.tm/log.jsonl` can supply**
@@ -754,7 +750,28 @@ impl Ctx {
     /// The replay is asked for in [`ReplayScope::Hot`]; a verb that reads
     /// older history loads through [`Ctx::load_scoped`].
     pub fn load(g: &Globals, housekeeping: bool) -> Result<Ctx, CliError> {
-        Ctx::load_with(g, housekeeping, housekeeping, false, |_, _| ReplayScope::Hot)
+        Ctx::load_with(g, housekeeping, housekeeping, false, housekeeping, |_, _| ReplayScope::Hot)
+    }
+
+    /// **[`Ctx::load`] without D61's wall marks** — the housekeeping of every
+    /// verb (the day's roll, §6.3's automatic close, §5.1's timeouts) but the
+    /// pause a calendar wall writes into a running block's timer
+    /// (`day::stop_the_timer_at_walls`), for the two kinds of verb that must not
+    /// write it at `now` (W-41 track T):
+    ///
+    /// * **a verb that ENDS the running block at a stated time** — `tm stop
+    ///   --at`, `tm done --at` (the owner's D79): it runs the marks itself at
+    ///   the end it states, once it has checked it
+    ///   (`day::stop_the_timer_at_walls`). Run at `now` here, they would
+    ///   log a meeting after that end as pausing a block the user says had
+    ///   already ended, and the verb would then refuse the end it was asked
+    ///   for because of a line its own load wrote;
+    /// * **`tm wake`**, which never runs while a block does (D76 refuses it), so
+    ///   the marks have nothing to do when it succeeds — and when it is refused
+    ///   they would log the morning's meetings into the block D76's own message
+    ///   tells the user to end with `--at`, before they can.
+    pub fn load_without_wall_marks(g: &Globals) -> Result<Ctx, CliError> {
+        Ctx::load_with(g, true, true, false, false, |_, _| ReplayScope::Hot)
     }
 
     /// **[`Ctx::load`] for the one verb that must survive a log no rebuild can
@@ -772,7 +789,7 @@ impl Ctx {
     /// over a log it could not read would be the exact defect D18 exists to
     /// prevent.
     pub fn load_tolerant(g: &Globals) -> Result<Ctx, CliError> {
-        Ctx::load_with(g, false, false, true, |_, _| ReplayScope::Hot)
+        Ctx::load_with(g, false, false, true, false, |_, _| ReplayScope::Hot)
     }
 
     /// [`Ctx::load`] with the replay asked for in the scope `scope` returns,
@@ -782,7 +799,7 @@ impl Ctx {
         housekeeping: bool,
         scope: impl FnOnce(&RuntimeState, NaiveDate) -> ReplayScope,
     ) -> Result<Ctx, CliError> {
-        Ctx::load_with(g, housekeeping, housekeeping, false, scope)
+        Ctx::load_with(g, housekeeping, housekeeping, false, housekeeping, scope)
     }
 
     /// [`Ctx::load`] with housekeeping but without the automatic close — for
@@ -793,7 +810,7 @@ impl Ctx {
         g: &Globals,
         scope: impl FnOnce(&RuntimeState, NaiveDate) -> ReplayScope,
     ) -> Result<Ctx, CliError> {
-        Ctx::load_with(g, true, false, false, scope)
+        Ctx::load_with(g, true, false, false, true, scope)
     }
 
     fn load_with(
@@ -801,6 +818,7 @@ impl Ctx {
         housekeeping: bool,
         auto_close: bool,
         tolerate: bool,
+        walls: bool,
         scope: impl FnOnce(&RuntimeState, NaiveDate) -> ReplayScope,
     ) -> Result<Ctx, CliError> {
         let dir = resolve_dir(g.dir.as_deref())?;
@@ -891,7 +909,8 @@ impl Ctx {
             // gate because it needs none: the kernel decides it (README gap 3139)
             // over the tree it loads, and a tree the kernel refuses gets no mark
             // and no journal line.
-            if super::day::stop_the_timer_at_walls(&mut cx)? {
+            let now = cx.now_tz;
+            if walls && super::day::stop_the_timer_at_walls(&mut cx, now)? {
                 cx.reload()?;
             }
         }
@@ -1585,6 +1604,16 @@ impl Ctx {
     /// A local time on today's date, in `cfg.tz`.
     pub fn at(&self, t: NaiveTime) -> DateTime<Tz> {
         capacity::local_dt(self.cfg.tz, self.today, t)
+    }
+
+    /// **When the break `.tm/state.json` holds running began** — the ONE
+    /// reading every verb takes ([`tm_core::store::BreakState::started_at`]:
+    /// the latest instant at or before `now` with the cached clock; the
+    /// campaign's D81 call on README gap 3820, parity P73). Never [`Ctx::at`]:
+    /// a break begun before local midnight is the evening's after it. `None`
+    /// with no break running, or one with no `started`.
+    pub fn running_break(&self) -> Option<DateTime<Tz>> {
+        self.state.break_.as_ref().and_then(|b| b.started_at(self.cfg.tz, self.now_tz))
     }
 
     /// **§8.1's working window and block budget from one arrival** — the ONE

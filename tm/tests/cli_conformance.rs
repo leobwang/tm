@@ -238,3 +238,26 @@ fn the_help_parser_reads_clap_output() {
     assert!(subs.iter().any(|s| s == "tui"), "{subs:?}");
     assert!(!subs.iter().any(|s| s == "help"), "clap's help is not a verb");
 }
+
+/// **§13's synopsis, `--help` and the runtime agree on W-41's flags**: D79's
+/// `--at HH:MM` on `tm stop` and `tm done`, and `tm break --where`'s four places
+/// (D81, README gap 3903). The spec writes them, each help page advertises
+/// them with a value, and the walk above has the runtime take them.
+#[test]
+fn section_13_and_the_help_agree_on_the_end_time_and_the_places() {
+    let dir = TempDir::new().expect("temp dir");
+    for verb in ["stop", "done"] {
+        let fs = flags(&help_of(&dir, &[verb.to_string()]));
+        assert!(fs.contains(&Flag { name: "at".into(), takes_value: true }), "`tm {verb}`: {fs:?}");
+    }
+    let fs = flags(&help_of(&dir, &["break".to_string()]));
+    assert!(fs.contains(&Flag { name: "where".into(), takes_value: true }), "{fs:?}");
+    let spec = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tm-spec-v1.md"),
+    )
+    .expect("the spec");
+    let section = spec.split("## 13. CLI").nth(1).and_then(|s| s.split("\n## 14.").next()).expect("§13");
+    for synopsis in ["tm done [--partial] [--at HH:MM]", "tm stop [--at HH:MM]", "tm break [20m] [--where walk|seat|bed|phone]"] {
+        assert!(section.contains(synopsis), "§13 does not write {synopsis:?}");
+    }
+}

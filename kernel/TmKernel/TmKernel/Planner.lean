@@ -83,7 +83,7 @@ and G3's, over the `dayPlan` P5 will have built.
 Bounded here, each with its constructor **and** its rejection theorem:
 `BatchIds` (`mkBatch?`), `Seg` (`mkSeg?`), `Capped` and its `IdList` instance
 (`Capped.ofList?`, `Capped.cons?`), `PlanHash` (`mkHash?`), `Budget` (`mkBudget?`),
-`ActiveBlock` (`mkActive?`), `BreakState` (`mkBreak?`), `InterruptState` (`mkInterrupt?`),
+`ActiveBlock` (`mkActive?`), `BreakState` (`mkBreak?`) — `InterruptState` has none since W-41 (D78) —
 yesterday's priorities (`mkYesterday?`) and `PlanOverrides` (`mkOverrides?`).
 
 **Reused rather than re-bounded** (design §9's own "reuse" column): `Look.WakeClock.wf` and
@@ -579,25 +579,26 @@ structure ActiveBlock where
   paused  : Bool
 deriving DecidableEq, Repr
 
-/-- A running block started at or before `now` and planned for at most a day.  `Look.maxDayMin`
-is the day's own bound — this module does not write a second one. -/
-def ActiveBlock.wf (now : Cal.Instant) (a : ActiveBlock) : Bool :=
-  decide (a.started.sec ≤ now.sec) && decide (a.estMin ≤ Look.maxDayMin)
+/-- A running block planned within the host's width, `Look.maxPlanMinutes` — the fork's `u32` (D81, README gap 3902).
+Its START is not bounded by `now` since W-41: D78 plans a start after `now` FROM `now`, as fork 4748911 plans it. -/
+def ActiveBlock.wf (a : ActiveBlock) : Bool :=
+  decide (a.estMin ≤ Look.maxPlanMinutes)
 
-abbrev WfActive (now : Cal.Instant) := { a : ActiveBlock // ActiveBlock.wf now a = true }
+abbrev WfActive : Type := { a : ActiveBlock // ActiveBlock.wf a = true }
 
-def mkActive? (now : Cal.Instant) (a : ActiveBlock) : Option (WfActive now) :=
-  if h : ActiveBlock.wf now a = true then some ⟨a, h⟩ else none
+def mkActive? (a : ActiveBlock) : Option WfActive :=
+  if h : ActiveBlock.wf a = true then some ⟨a, h⟩ else none
 
-theorem mkActive?_refuses_a_start_after_now (now : Cal.Instant) (a : ActiveBlock)
-    (h : now.sec < a.started.sec) : mkActive? now a = none := by
+theorem mkActive?_refuses_an_estimate_past_the_width (a : ActiveBlock)
+    (h : Look.maxPlanMinutes < a.estMin) : mkActive? a = none := by
   unfold mkActive? ActiveBlock.wf
   rw [dif_neg (by simp; omega)]
 
-theorem mkActive?_refuses_an_estimate_past_the_day (now : Cal.Instant) (a : ActiveBlock)
-    (h : Look.maxDayMin < a.estMin) : mkActive? now a = none := by
-  unfold mkActive? ActiveBlock.wf
-  rw [dif_neg (by simp; omega)]
+/-- **D81 (gap 3902): a running estimate past the day is read** — `tm extend 24h` stores 1,500 minutes and the fork
+plans them.  mkActive?_refuses_an_estimate_past_the_day said the day's 1,440 refused it until W-41; this refutes it. -/
+theorem mkActive?_reads_an_estimate_past_the_day :
+    (mkActive? ⟨['m','1'], ⟨0, 0⟩, Look.maxDayMin + 60, false⟩).map Subtype.val
+      = some ⟨['m','1'], ⟨0, 0⟩, 1500, false⟩ := by decide
 
 /-- Fork `state.break.where`, named (AGENTS §5.7) rather than left a free `String`. -/
 inductive BreakPlace | walk | seat | bed | phone
@@ -614,9 +615,9 @@ structure BreakState where
   place      : Option BreakPlace
 deriving DecidableEq, Repr
 
-/-- A break started at or before `now`, planned for at most a day. -/
+/-- A break started at or before `now`, planned within the host's width (`Look.maxPlanMinutes`, D81 gap 3902). -/
 def BreakState.wf (now : Cal.Instant) (b : BreakState) : Bool :=
-  b.started.all (fun t => decide (t.sec ≤ now.sec)) && decide (b.plannedMin ≤ Look.maxDayMin)
+  b.started.all (fun t => decide (t.sec ≤ now.sec)) && decide (b.plannedMin ≤ Look.maxPlanMinutes)
 
 abbrev WfBreak (now : Cal.Instant) := { b : BreakState // BreakState.wf now b = true }
 
@@ -626,12 +627,21 @@ def mkBreak? (now : Cal.Instant) (b : BreakState) : Option (WfBreak now) :=
 /-- The design's name for this row is `refuses_a_negative_break`, which **cannot be stated**:
 the fork's field is a `u32` and this one is a `Nat`, so there is no negative break to refuse
 and a theorem of that name would be a precondition nothing can satisfy (AGENTS §5.2, §9.2's
-disguised-gap list).  The real bound is the day. -/
-theorem mkBreak?_refuses_a_break_longer_than_a_day (now : Cal.Instant) (b : BreakState)
-    (h : Look.maxDayMin < b.plannedMin) : mkBreak? now b = none := by
+disguised-gap list).  The real bound is the host's width, the fork's `u32` (D81, gap 3902). -/
+theorem mkBreak?_refuses_a_break_past_the_width (now : Cal.Instant) (b : BreakState)
+    (h : Look.maxPlanMinutes < b.plannedMin) : mkBreak? now b = none := by
   unfold mkBreak? BreakState.wf
   rw [dif_neg (by simp; omega)]
 
+/-- **D81 (gap 3902): a break planned past the day is read** — `tm break 25h` stores 1,500 minutes and the fork plans
+it.  mkBreak?_refuses_a_break_longer_than_a_day said the day refused it until W-41; this refutes it. -/
+theorem mkBreak?_reads_a_break_past_the_day :
+    (mkBreak? ⟨0, 0⟩ ⟨none, Look.maxDayMin + 60, none⟩).map Subtype.val = some ⟨none, 1500, none⟩ := by decide
+
+/-- **A running break's start after `now` stays REFUSED by name** (`badBreak wf`), and D78 does not reach it: the log
+holds no line for a running break, so the host reads its start off `.tm/state.json`'s `HH:MM` as the LATEST instant at
+or before `now` with that clock (D81, README gap 3820) and no request the binary builds carries one after `now`.  One
+that arrives is a host that did not read it so, and the refusal says so rather than plan a break that has not begun. -/
 theorem mkBreak?_refuses_a_start_after_now (now : Cal.Instant) (b : BreakState)
     (t : Cal.Instant) (hs : b.started = some t) (h : now.sec < t.sec) :
     mkBreak? now b = none := by
@@ -644,32 +654,22 @@ theorem mkBreak?_accepts (now : Cal.Instant) (b : BreakState)
   rw [dif_pos h]
   rfl
 
-/-- **Fork `store::InterruptState`** — the running interruption, which §8.2 choice 1 places as
-an ad-hoc wall from `t_i` to `now` and which does **not** extend the window. -/
+/-- **Fork `store::InterruptState`** — the running interruption, which §8.2 choice 1 places as an ad-hoc wall from
+`t_i` to `now` and which does **not** extend the window.  **No smart constructor since W-41**: its `wf` bounded the
+start by `now` and nothing else, and the owner's D78 reads a start after `now` as fork 4748911 does — `collect_walls`
+pushes the wall only `if self.now > start`, which `interruptRows` already is — so it draws and pauses nothing, and the
+bound went with its refusal.  Both fields keep their readers' bounds (`PlanWire.instantWithin`, `EmitWire.idWithin`). -/
 structure InterruptState where
   started : Option Cal.Instant
   id      : Option Id
 deriving DecidableEq, Repr
 
-def InterruptState.wf (now : Cal.Instant) (x : InterruptState) : Bool :=
-  x.started.all (fun t => decide (t.sec ≤ now.sec))
-
-abbrev WfInterrupt (now : Cal.Instant) := { x : InterruptState // InterruptState.wf now x = true }
-
-def mkInterrupt? (now : Cal.Instant) (x : InterruptState) : Option (WfInterrupt now) :=
-  if h : InterruptState.wf now x = true then some ⟨x, h⟩ else none
-
-theorem mkInterrupt?_refuses_a_start_after_now (now : Cal.Instant) (x : InterruptState)
-    (t : Cal.Instant) (hs : x.started = some t) (h : now.sec < t.sec) :
-    mkInterrupt? now x = none := by
-  unfold mkInterrupt? InterruptState.wf
-  rw [dif_neg (by rw [hs]; simp; omega)]
-
-theorem mkInterrupt?_accepts (now : Cal.Instant) (x : InterruptState)
-    (h : InterruptState.wf now x = true) : (mkInterrupt? now x).map Subtype.val = some x := by
-  unfold mkInterrupt?
-  rw [dif_pos h]
-  rfl
+/-- **mkActive?_refuses_a_start_after_now is REFUTED** (D78, README gap 2874's input 1): the constructor builds a block
+whose start is after a `now`, so a running block's logged start ahead of the clock is no longer refused. -/
+theorem mkActive?_refuses_a_start_after_now_is_refuted :
+    ¬ ∀ (now : Cal.Instant) (a : ActiveBlock), now.sec < a.started.sec → mkActive? a = none :=
+  fun h => absurd (h ⟨0, 0⟩ ⟨['m','1'], ⟨10, 0⟩, 60, false⟩ (by decide))
+    (by decide)
 
 /-- `state.priorities_yesterday`, decoded (§7.4).  Each stored `p` goes through
 `yesterdayOf?` — the kernel's one reader of a stored priority — and the length is refused
@@ -709,7 +709,7 @@ structure RuntimeIn where
   interrupt : Option InterruptState
   lastHash  : Option PlanHash
   yesterday : Capped (Id × Fin 8)
-  worked    : Option (Fin (Look.maxDayMin + 1))  -- the host's worked minutes (W-36, gap 2920; `workedOf`)
+  worked    : Option (Fin (Look.maxPlanMinutes + 1))  -- the host's worked minutes (W-36, gap 2920; W-41's width)
 /-- Nothing running, nothing planned yet. -/
 def RuntimeIn.empty : RuntimeIn := ⟨none, none, none, none, Capped.nil, none⟩
 
@@ -2183,15 +2183,15 @@ structure ActiveRes where
 deriving DecidableEq, Repr
 
 /-- **The request agrees with `mkActive?`.**  `RuntimeIn.active` is a plain `Option
-ActiveBlock`, so nothing in the type stops a decoder handing in a block that started *after*
-`now`; `ActiveBlock.wf` is the bound and `mkActive?` is its smart constructor (R10, step P0).
-This is the request-level statement of "the decoder used it", in exactly the shape
-`PlanReq.wallsAgree` has, and it is the hypothesis `plan_reserves_one_block_at_a_time` carries
-for the same reason `plan_never_moves_a_wall` carries `hagree` (README gap **346**). -/
+ActiveBlock`, so nothing in the type stops a decoder handing in an estimate past the host's
+width; `ActiveBlock.wf` is the bound and `mkActive?` is its smart constructor (R10, step P0),
+in exactly the shape `PlanReq.wallsAgree` has (README gap **346**).  Until W-41 it also bounded
+the START by `now`, and E1 carried it for that; D78 plans a start after `now` as the fork does,
+so E1 reads the block's lead past `now` instead and no lift needs this clause any more. -/
 def PlanReq.activeAgrees (r : PlanReq) : Bool :=
   match r.state.active with
   | none => true
-  | some a => ActiveBlock.wf r.now a
+  | some a => ActiveBlock.wf a
 
 /-- **The `[day]` the request carries is one `mkDayCfg?` would have built** (R10;
 `Look.mkDayCfg?_wf` is what establishes it).  The one clause this step needs of it is
@@ -2262,8 +2262,8 @@ def PlanReq.currentBlockEnd (r : PlanReq) (startedSec : Nat) : Nat :=
 
 /-- **A block boundary is at most one block past `now`** — the arithmetic choice 5b's half of
 `plan_reserves_one_block_at_a_time` turns on.  It needs the block to have *started*: for
-`now < startedSec` the fork's own formula answers `startedSec + block_min`, which is further
-than a block from `now`, and `PlanReq.activeAgrees` is the hypothesis that rules it out. -/
+`now < startedSec` the fork's own formula answers `startedSec + block_min`, further than a block
+from `now` — since W-41 (D78) the fork's reading, kept: the reservation carries that lead. -/
 theorem PlanReq.currentBlockEnd_within_a_block (r : PlanReq) (startedSec : Nat)
     (hst : startedSec ≤ r.now.sec) (hb : r.blockMin ≠ 0) :
     r.currentBlockEnd startedSec ≤ r.now.sec + 60 * r.blockMin := by
@@ -2358,22 +2358,22 @@ theorem PlanReq.activeRun_spec (r : PlanReq) (q : ActiveRes) (h : r.activeRun = 
           · have := (Look.freeIntervals_inside_the_window hiv).2.2
             show r.activeStop a iv.2 ≤ _; unfold PlanReq.activeStop; split <;> omega
 
-/-- **The reservation is at most one block long** (§8.3's E1, over the row choice 5b places).
-This is the law the step exists for, and both hypotheses are R10's: a running block that has not
-started yet, and a `[day]` with no block length, are neither of them what the smart constructors
-build. -/
-theorem PlanReq.the_reservation_is_at_most_one_block (r : PlanReq) (q : ActiveRes)
-    (hok : r.activeAgrees = true) (hb : r.blockMin ≠ 0) (h : r.activeRun = some q) :
-    q.stop - q.start ≤ r.blockMin * 60 := by
+/-- **The reservation reaches at most one block past the later of `now` and its block's start** (§8.3's E1 over the row
+choice 5b places, restated at W-41 for D78: a start after `now` is planned from `now`, its block ending `block_min` after
+the START as fork `current_block_end` ends it, so the row is a block plus the (r.state.active.map (fun a => a.started.sec - r.now.sec)).getD 0 — the running block's logged start
+less `now`, zero unless the clock is behind the log; written out, because a definition only proofs read would be code
+the export never reaches, check 12's class).  `hb` is R10's: a `[day]` with a block length. -/
+theorem PlanReq.the_reservation_reaches_at_most_one_block_past_its_start (r : PlanReq) (q : ActiveRes)
+    (hb : r.blockMin ≠ 0) (h : r.activeRun = some q) : q.stop - q.start ≤ r.blockMin * 60 + (r.state.active.map (fun a => a.started.sec - r.now.sec)).getD 0 := by
   obtain ⟨a, iv, ha, -, hs, -, hcbe, -⟩ := r.activeRun_spec q h
-  have hst : a.started.sec ≤ r.now.sec := by
-    unfold PlanReq.activeAgrees at hok
-    rw [ha] at hok
-    unfold ActiveBlock.wf at hok
-    simp only [Bool.and_eq_true, decide_eq_true_eq] at hok
-    exact hok.1
-  have hcb := r.currentBlockEnd_within_a_block a.started.sec hst hb
-  omega
+  have hl : (r.state.active.map (fun a => a.started.sec - r.now.sec)).getD 0 = a.started.sec - r.now.sec := by rw [ha]; rfl
+  by_cases hst : a.started.sec ≤ r.now.sec
+  · have hcb := r.currentBlockEnd_within_a_block a.started.sec hst hb
+    omega
+  · have hz : Look.spanMinutes a.started.sec r.now.sec = 0 := by unfold Look.spanMinutes; rw [Nat.sub_eq_zero_of_le (by omega)]
+    have hcb : r.currentBlockEnd a.started.sec = a.started.sec + 60 * r.blockMin := by
+      unfold PlanReq.currentBlockEnd blockBoundary; rw [if_neg hb, hz, Nat.zero_div, Nat.zero_add, Nat.one_mul]
+    omega
 
 /-- **The reservation is free of every wall** — it is placed inside the *first* free stretch
 `Look.freeIntervals` reports, and the fork refuses outright when that stretch does not start at
@@ -8200,19 +8200,19 @@ request the builder accepts.
 **Restated** the way the fork's own proptest restricts §8.3 (`planner_invariants.rs:470`:
 `assigned_set(day, w.now)`, *"the planner's doing"*): over the Block rows that start **at or
 after `now`**, which is exactly `Planner.assignedFrom`'s restriction and exactly the set
-`the_day_assigns_after_now_the_running_block_and_what_step_five_chose` describes.  Two R10 hypotheses come
-with it and both are decoder obligations, in `PlanReq.wallsAgree`'s shape: the running block is
-one `mkActive?` would have built, and the `[day]` is one `mkDayCfg?` would have built.
+`the_day_assigns_after_now_the_running_block_and_what_step_five_chose` describes.  One R10 hypothesis comes with
+it — the `[day]` is one `mkDayCfg?` would have built — and since W-41 (D78) a running block whose logged start is
+after `now` adds its lead (its logged start less `now`) to the bound, where until then a hypothesis excluded it.
 
 **It is not vacuous.**  §8.2 choice 5b's reservation is a Block row starting exactly at `now`,
 and `PlannerWit.the_reserved_day_assigns_the_running_block` exhibits one. -/
 
 /-- **§8.3's E1, over the rows §8.3 is about** — the goal `Goals.plan_reserves_one_block_at_a
-_time` leaves this file for (AGENTS §3.2's burn-down protocol). -/
-theorem plan_reserves_one_block_at_a_time (r : PlanReq) (hact : r.activeAgrees = true)
+_time` leaves this file for; since W-41 a block's lead past `now` (D78) rides on the reservation. -/
+theorem plan_reserves_one_block_at_a_time (r : PlanReq)
     (hday : r.dayAgrees = true) (s : WfSeg) (hs : s ∈ (dayPlan r).segments)
     (hk : s.val.kind = SegKind.block) (hnow : r.now.sec ≤ s.val.start) :
-    s.val.stop - s.val.start ≤ (dayPlan r).blockMin * 60 := by
+    s.val.stop - s.val.start ≤ (dayPlan r).blockMin * 60 + (r.state.active.map (fun a => a.started.sec - r.now.sec)).getD 0 := by
   rw [dayPlan_segments] at hs
   rcases a_block_row_is_replayed_reserved_or_assigned r s hs hk with
     ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩
@@ -8223,7 +8223,7 @@ theorem plan_reserves_one_block_at_a_time (r : PlanReq) (hact : r.activeAgrees =
     omega
   · obtain ⟨q, hq, hst, hsp, -, -, -, -⟩ := r.mem_activeRow t ht
     obtain ⟨-, -, -, hs0, hlt0, -⟩ := r.activeRun_spec q hq
-    have hone := r.the_reservation_is_at_most_one_block q hact (r.blockMin_pos hday) hq
+    have hone := r.the_reservation_reaches_at_most_one_block_past_its_start q (r.blockMin_pos hday) hq
     have hbm : (dayPlan r).blockMin = r.blockMin := rfl
     have hstart : (segOf t).val.start = clampSec q.start := by
       show clampSec t.start = _; rw [hst]
@@ -8535,8 +8535,8 @@ theorem the_open_row_is_not_current_under_a_wall_on_now (r : PlanReq) (t : Seg)
 Nothing in the package cites these three, and moving them here is what paid, line for line, for
 `BreakPlace.word`, `breakRows` and `PlanReq.pauseRows` above the first check-9 pin site. -/
 
-theorem mkActive?_accepts (now : Cal.Instant) (a : ActiveBlock)
-    (h : ActiveBlock.wf now a = true) : (mkActive? now a).map Subtype.val = some a := by
+theorem mkActive?_accepts (a : ActiveBlock)
+    (h : ActiveBlock.wf a = true) : (mkActive? a).map Subtype.val = some a := by
   unfold mkActive?
   rw [dif_pos h]
   rfl
@@ -8547,8 +8547,8 @@ theorem PlanReq.activeAgrees_of_none (r : PlanReq) (h : r.state.active = none) :
 
 /-- **A block the smart constructor accepted agrees** — the R10 obligation "a smart constructor
 its decoder actually uses", stated so a decoder can discharge it. -/
-theorem PlanReq.activeAgrees_of_mkActive? (r : PlanReq) (a : ActiveBlock) (w : WfActive r.now)
-    (h : r.state.active = some a) (hw : mkActive? r.now a = some w) : r.activeAgrees = true := by
+theorem PlanReq.activeAgrees_of_mkActive? (r : PlanReq) (a : ActiveBlock) (w : WfActive)
+    (h : r.state.active = some a) (hw : mkActive? a = some w) : r.activeAgrees = true := by
   unfold PlanReq.activeAgrees
   rw [h]
   unfold mkActive? at hw
@@ -8930,35 +8930,35 @@ reading, the past half (`pastRows`: a Block row to the pause, and since D65 noth
 and the open row (from the unpause, `mem_openBlockRows`) all exclude the meeting.
 ############################################################################ -/
 
-/-- **R10's smart constructor for `RuntimeIn.worked`**: at most a day's minutes.  `Look.maxDayMin`
-is REUSED — `ActiveBlock.estMin` carries the same bound — and it is exact for the host's reading:
-`active.started` is a clock time of the plan's date, so no block has run longer. -/
-def workedOf? (n : Nat) : Option (Fin (Look.maxDayMin + 1)) :=
-  if h : n ≤ Look.maxDayMin then some ⟨n, by omega⟩ else none
+/-- **R10's smart constructor for `RuntimeIn.worked`**: at most the host's width, `Look.maxPlanMinutes` (the fork's `u32`;
+W-41).  It was the day's 1,440, called exact while `active.started` was a clock of the plan's date; since P69 it is the
+log's instant, so a block forgotten overnight has run longer than a day (D79) — `ActiveBlock.estMin`'s width is reused. -/
+def workedOf? (n : Nat) : Option (Fin (Look.maxPlanMinutes + 1)) :=
+  if h : n ≤ Look.maxPlanMinutes then some ⟨n, by omega⟩ else none
 
-/-- **A reading past a day is refused** — nothing is clamped. -/
-theorem a_worked_reading_past_a_day_is_refused (n : Nat) (h : Look.maxDayMin < n) :
+/-- **A reading past the width is refused** — nothing is clamped. -/
+theorem a_worked_reading_past_the_width_is_refused (n : Nat) (h : Look.maxPlanMinutes < n) :
     workedOf? n = none := by
   unfold workedOf?
   rw [dif_neg (by omega)]
 
-/-- …and every reading within a day is read as itself. -/
+/-- …and every reading within a day is read as itself (so is every one within the width: the bound, run, below). -/
 theorem a_worked_reading_within_a_day_is_read (n : Nat) (h : n ≤ Look.maxDayMin) :
     (workedOf? n).map Fin.val = some n := by
   unfold workedOf?
-  rw [dif_pos h]
+  rw [dif_pos (Nat.le_trans h (by decide))]
   rfl
 
-/-- The bound, run (AGENTS §5.2): ninety minutes are read, a day's 1,440 are, 1,441 are not. -/
-theorem the_worked_minutes_bound_is_run :
+/-- The bound, run (AGENTS §5.2): 90 and a day's 1,440 are read, and since W-41 so is 1,441 — the day's bound, refuted. -/
+theorem the_worked_minutes_bound_is_run_at_the_width :
     (workedOf? 90).map Fin.val = some 90 ∧ (workedOf? 1440).map Fin.val = some 1440 ∧
-      workedOf? 1441 = none := by
+      (workedOf? 1441).map Fin.val = some 1441 ∧ workedOf? (Look.maxPlanMinutes + 1) = none := by
   decide
 
 /-- **The reservation reads the host's worked minutes** whenever the request carries them for the
 running block — its `left` is the estimate less the minutes `tm done` would log. -/
 theorem PlanReq.activeWorked_is_the_hosts (r : PlanReq) (a : ActiveBlock)
-    (w : Fin (Look.maxDayMin + 1)) (ha : r.state.active = some a) (hw : r.state.worked = some w) :
+    (w : Fin (Look.maxPlanMinutes + 1)) (ha : r.state.active = some a) (hw : r.state.worked = some w) :
     r.activeWorked a = w.val := by
   unfold PlanReq.activeWorked PlanReq.workedOf
   rw [ha, hw]
@@ -8992,7 +8992,7 @@ theorem the_open_row_reads_the_running_blocks_worked_minutes (r : PlanReq) (t : 
 
 /-- **The open row's `so far` is the host's worked minutes** when the request carries them. -/
 theorem the_open_row_reads_the_hosts_worked_minutes (r : PlanReq) (t : Seg)
-    (h : t ∈ openBlockRows r) (a : ActiveBlock) (w : Fin (Look.maxDayMin + 1))
+    (h : t ∈ openBlockRows r) (a : ActiveBlock) (w : Fin (Look.maxPlanMinutes + 1))
     (ha : r.state.active = some a) (hw : r.state.worked = some w) (hid : t.item = some a.id) :
     t.note = some (.soFar w.val) := by
   rw [the_open_row_reads_the_running_blocks_worked_minutes r t h a ha hid,
@@ -9485,6 +9485,153 @@ ends by midnight. -/
 theorem PlanReq.the_windows_walls_end_by_the_days_end (r : PlanReq) (w : Nat × Nat)
     (hw : w ∈ Look.wallsClippedOn r.dayStart r.dayEnd r.look.walls r.look.today) : w.2 ≤ r.dayEnd :=
   Look.wallsClippedOn_ends_by _ _ _ _ w hw
+
+/-! ############################################################################
+## W-41 (track K): a start after `now` is planned from `now` (D78), the request's two refusals
+## (D80), and the running record's widths (D81, README gap 3902)
+
+**D78.**  Fork `Planner::active_run` plans a running block whose logged start is after `now` FROM `now`: its
+reservation starts at `now`, its worked minutes are the log's banked minutes plus `(now - since).max(0)` — none for
+a block that has not begun — and `current_block_end(started)` ends it `block_min` after the START, `started + bm`,
+because `elapsed` is clamped to zero; `open_block_segment` draws no open row (`since >= now`), and `collect_walls`
+pushes no interruption wall whose start is not before `now`.  The kernel computed every one of those already
+(`PlanReq.activeWorked` through `Look.spanMinutes`' truncation, `blockBoundary`, `openBlockRows`, `interruptRows`);
+what refused the request was the decoder (`ActiveBlock.wf`'s and `InterruptState.wf`'s start clause), and the
+clause is gone.  §8.3's E1 is restated over the lead (`PlanReq.the_reservation_reaches_at_most_one_block_past_its_start`,
+`plan_reserves_one_block_at_a_time`); the form below is E1 as it stood, where the block started by `now`.
+
+**D80.**  The two requests fork 4748911 can never produce are refused by name where the request is assembled
+(`PlanWire.planReqOf`): a day whose evening runs past the calendar's last second, and a candidate whose `ci` on the
+wire is not the `ci` the plan file gives its item.  Both clauses are defined here, on the request, so the proof
+module and the decoder read ONE definition of each (AGENTS §5.3).
+############################################################################ -/
+
+/-- **E1's reservation half where the running block started by `now`** — `the_reservation_is_at_most_one_block` as it
+stood until W-41, relocated here with `hlead` for the `hok` it carried: `hok` gave it `started ≤ now` until D78 let a
+start after `now` through the decoder, and `PlanReq.the_reservation_reaches_at_most_one_block_past_its_start` is the
+law over every start, which this is the zero-lead instance of. -/
+theorem PlanReq.the_reservation_is_at_most_one_block (r : PlanReq) (q : ActiveRes)
+    (hlead : (r.state.active.map (fun a => a.started.sec - r.now.sec)).getD 0 = 0) (hb : r.blockMin ≠ 0) (h : r.activeRun = some q) :
+    q.stop - q.start ≤ r.blockMin * 60 := by
+  have := r.the_reservation_reaches_at_most_one_block_past_its_start q hb h
+  omega
+
+/-- **E1 as it stood until W-41**, on every request whose running block started by `now` (and every request with
+nothing running): the restated `plan_reserves_one_block_at_a_time` at a zero lead. -/
+theorem plan_reserves_one_block_at_a_time_when_the_block_started_by_now (r : PlanReq)
+    (hlead : (r.state.active.map (fun a => a.started.sec - r.now.sec)).getD 0 = 0)
+    (hday : r.dayAgrees = true) (s : WfSeg) (hs : s ∈ (dayPlan r).segments)
+    (hk : s.val.kind = SegKind.block) (hnow : r.now.sec ≤ s.val.start) :
+    s.val.stop - s.val.start ≤ (dayPlan r).blockMin * 60 := by
+  have := plan_reserves_one_block_at_a_time r hday s hs hk hnow
+  omega
+
+/-- **Nothing running, no lead.** -/
+theorem PlanReq.no_lead_without_a_running_block (r : PlanReq) (h : r.state.active = none) :
+    (r.state.active.map (fun a => a.started.sec - r.now.sec)).getD 0 = 0 := by rw [h]; rfl
+
+/-- **A block started by `now` has no lead** — every request a clock not behind the log builds. -/
+theorem PlanReq.no_lead_for_a_start_by_now (r : PlanReq) (a : ActiveBlock) (h : r.state.active = some a)
+    (hst : a.started.sec ≤ r.now.sec) : (r.state.active.map (fun a => a.started.sec - r.now.sec)).getD 0 = 0 := by
+  rw [h]; show a.started.sec - r.now.sec = 0; omega
+
+/-- …and every reading within the host's width is read as itself (W-41, D81 gap 3902's width on the worked minutes). -/
+theorem a_worked_reading_within_the_width_is_read (n : Nat) (h : n ≤ Look.maxPlanMinutes) :
+    (workedOf? n).map Fin.val = some n := by
+  unfold workedOf?
+  rw [dif_pos h]
+  rfl
+
+/-! ### D80 (a): the day's evening inside the calendar (README gaps 3785 and 3780; parity P71) -/
+
+/-- **The last instant the day can place a row at** — the latest of its wind-down, its end (the next local midnight)
+and §8.1's window's end, which runs past midnight when the planner arrives after it (the eve, README gap 3790). -/
+def PlanReq.eveningEnd (r : PlanReq) : Nat := max r.windDownSec (max r.dayEnd r.window.2)
+
+/-- **D80 (a), the decoder's clause**: the day's evening ends inside the calendar (`LogStamp.yearEnd`, `Cal.Instant.wf`'s
+own bound), so the rows' clock (`clampSec`) never squeezes the wind-down, the day's end or the window onto the
+calendar's last second.  `PlanWire.planReqOf` refuses a request without it by name (`eveningPastTheCalendar`). -/
+def PlanReq.eveningInsideTheCalendar (r : PlanReq) : Bool := decide (r.eveningEnd < LogStamp.yearEnd)
+
+/-- **The wind-down is inside the calendar** on a request the clause accepts — the `hwdcal` every wind-down law reads. -/
+theorem PlanReq.windDown_inside_the_calendar (r : PlanReq) (h : r.eveningInsideTheCalendar = true) :
+    r.windDownSec < LogStamp.yearEnd := by
+  unfold PlanReq.eveningInsideTheCalendar PlanReq.eveningEnd at h
+  simp only [decide_eq_true_eq] at h
+  omega
+
+/-- **So is the day's end, and the window's.** -/
+theorem PlanReq.dayEnd_and_window_inside_the_calendar (r : PlanReq) (h : r.eveningInsideTheCalendar = true) :
+    r.dayEnd < LogStamp.yearEnd ∧ r.window.2 < LogStamp.yearEnd := by
+  unfold PlanReq.eveningInsideTheCalendar PlanReq.eveningEnd at h
+  simp only [decide_eq_true_eq] at h
+  omega
+
+/-- **And a WindDown row of such a day is not clamped**: it starts at the wind-down itself, where until D80 a day
+past the calendar had it start at the calendar's last second (`PlannerWit`'s W-40 last evening). -/
+theorem PlanReq.the_wind_down_row_is_not_clamped (r : PlanReq) (h : r.eveningInsideTheCalendar = true)
+    (w : WfSeg) (hw : w ∈ (dayPlan r).segments) (hk : w.val.kind = SegKind.windDown) :
+    w.val.start = r.windDownSec := by
+  rw [(a_wind_down_row_of_the_day r w (dayPlan_segments r ▸ hw) hk).2,
+    clampSec_id _ (r.windDown_inside_the_calendar h)]
+
+/-- **The clause bites** (AGENTS §5.8): a wind-down at or past the calendar's last second fails it. -/
+theorem PlanReq.an_evening_past_the_calendar_fails_the_clause (r : PlanReq)
+    (h : LogStamp.yearEnd ≤ r.windDownSec) : r.eveningInsideTheCalendar = false := by
+  unfold PlanReq.eveningInsideTheCalendar PlanReq.eveningEnd
+  simp only [decide_eq_false_iff_not]
+  omega
+
+/-! ### D80 (b): the candidate's `ci` on the wire is the plan's (README gap 1984; parity P72) -/
+
+/-- **The `ci` the kernel reads in the plan file for an item**: `effectiveCi` (§3.2 — its own `ci:`, else its
+parent's, else its file kind's default), or `none` when the plan does not hold the id at all, so a candidate the plan
+does not hold agrees with nothing (`PlanCheck.candPlanView`'s first component, as `PlanCheck` proves). -/
+def PlanReq.planCi (r : PlanReq) (i : Id) : Option (Fin 6) :=
+  (r.plan.val.store.get i).map (fun _ => effectiveCi r.plan.val i)
+
+/-- **D80 (b), the decoder's clause**: the FIRST candidate, in the request's order, whose `ci` on the wire is not the
+plan's — named, with the wire's value and the plan's.  A COMPARISON of two readings of one fact and never a
+replacement of one by the other (D34: a candidate's facts stay the host's until D27). -/
+def PlanReq.ciDisagreement (r : PlanReq) : Option (Id × Fin 6 × Option (Fin 6)) :=
+  (r.cands.val.find? (fun p => r.planCi p.1.id != some p.1.ci)).map (fun p => (p.1.id, p.1.ci, r.planCi p.1.id))
+
+/-- **No disagreement is every candidate agreeing.** -/
+theorem PlanReq.ciDisagreement_eq_none_iff (r : PlanReq) :
+    r.ciDisagreement = none ↔ ∀ p ∈ r.cands.val, r.planCi p.1.id = some p.1.ci := by
+  unfold PlanReq.ciDisagreement
+  rw [Option.map_eq_none_iff, List.find?_eq_none]
+  constructor
+  · intro h p hp
+    have := h p hp
+    simpa using this
+  · intro h p hp
+    simp [h p hp]
+
+/-- **Where the wire agrees, a candidate's wire `ci` is its item's `ci` in the plan** — what every law over §8.2
+step 5's energy filter and the wind-down needs of the wire, and all it needs. -/
+theorem PlanReq.a_candidates_ci_is_its_items_where_the_wire_agrees (r : PlanReq) (h : r.ciDisagreement = none)
+    (c : Look.Cand) (f : Option Look.Floor) (hc : (c, f) ∈ r.cands.val) : effectiveCi r.plan.val c.id = c.ci := by
+  have hv := (r.ciDisagreement_eq_none_iff.1 h) (c, f) hc
+  unfold PlanReq.planCi at hv
+  cases hs : r.plan.val.store.get c.id with
+  | none => rw [hs] at hv; exact absurd hv (by simp)
+  | some e => rw [hs] at hv; simpa using hv
+
+/-- **A disagreement names a candidate the request carries, its wire value and the plan's, and they differ** — the
+refusal's text is about a real candidate and a real difference (AGENTS §5.7). -/
+theorem PlanReq.a_ci_disagreement_names_a_candidate (r : PlanReq) (i : Id) (w : Fin 6) (p : Option (Fin 6))
+    (h : r.ciDisagreement = some (i, w, p)) :
+    ∃ c f, (c, f) ∈ r.cands.val ∧ c.id = i ∧ c.ci = w ∧ r.planCi i = p ∧ p ≠ some w := by
+  unfold PlanReq.ciDisagreement at h
+  obtain ⟨q, hq, he⟩ := Option.map_eq_some_iff.1 h
+  have hmem := List.mem_of_find?_eq_some hq
+  have hne := List.find?_some hq
+  simp only [Prod.mk.injEq] at he
+  obtain ⟨h1, h2, h3⟩ := he
+  refine ⟨q.1, q.2, hmem, h1, h2, h1 ▸ h3, ?_⟩
+  rw [← h3, ← h2]
+  simpa using hne
 
 end Planner
 end Tm

@@ -114,7 +114,7 @@ pub enum Command {
     /// Extend the running block.
     Extend(ExtendArgs),
     /// Stop the running block; the remainder re-competes.
-    Stop,
+    Stop(StopArgs),
     /// Take a break.
     Break(BreakArgs),
     /// An interruption began.
@@ -237,7 +237,7 @@ pub struct StartArgs {
     pub energy: Option<u8>,
 }
 
-/// `tm done [--partial] [^id]`.
+/// `tm done [--partial] [--at HH:MM] [^id]`.
 #[derive(Debug, Args)]
 pub struct DoneArgs {
     /// The item (default: the running block; with an id and no block this is
@@ -249,6 +249,19 @@ pub struct DoneArgs {
     /// How it went: 1 fine, 2 hard, 3 collapsed (§8.5).
     #[arg(long)]
     pub went: Option<u8>,
+    /// When the running block ended — the latest such time at or before now,
+    /// so `--at 23:40` typed in the morning is last night (default: now).
+    #[arg(long, value_name = "HH:MM")]
+    pub at: Option<String>,
+}
+
+/// `tm stop [--at HH:MM]`.
+#[derive(Debug, Args)]
+pub struct StopArgs {
+    /// When the running block ended — the latest such time at or before now,
+    /// so `--at 23:40` typed in the morning is last night (default: now).
+    #[arg(long, value_name = "HH:MM")]
+    pub at: Option<String>,
 }
 
 /// `tm extend [1b]`.
@@ -635,7 +648,7 @@ pub(crate) fn run(g: &Globals, cmd: Command) -> Result<i32, CliError> {
         Command::Start(a) => day::start(g, &a),
         Command::Done(a) => day::done(g, &a),
         Command::Extend(a) => day::extend(g, &a),
-        Command::Stop => day::stop(g),
+        Command::Stop(a) => day::stop(g, &a),
         Command::Break(a) => day::take_break(g, &a),
         Command::Interrupt => day::interrupt(g),
         Command::Resume => day::resume(g),

@@ -4751,14 +4751,9 @@ open Tm
 #print axioms Tm.Planner.mkHash?_accepts
 #print axioms Tm.Planner.mkBudget?_refuses_an_impossible_budget
 #print axioms Tm.Planner.mkBudget?_accepts
-#print axioms Tm.Planner.mkActive?_refuses_a_start_after_now
-#print axioms Tm.Planner.mkActive?_refuses_an_estimate_past_the_day
 #print axioms Tm.Planner.mkActive?_accepts
-#print axioms Tm.Planner.mkBreak?_refuses_a_break_longer_than_a_day
 #print axioms Tm.Planner.mkBreak?_refuses_a_start_after_now
 #print axioms Tm.Planner.mkBreak?_accepts
-#print axioms Tm.Planner.mkInterrupt?_refuses_a_start_after_now
-#print axioms Tm.Planner.mkInterrupt?_accepts
 #print axioms Tm.Planner.mkYesterday?_refuses_a_priority_past_seven
 #print axioms Tm.Planner.mkYesterday?_refuses_too_many
 #print axioms Tm.Planner.RuntimeIn.activeId_empty
@@ -6508,15 +6503,11 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanWire.the_two_refusal_families_do_not_share_a_key
 #print axioms Tm.PlanWire.readActive_refuses_a_long_id
 #print axioms Tm.PlanWire.readActive_refuses_a_start_past_the_calendar
-#print axioms Tm.PlanWire.readActive_refuses_a_start_after_now
-#print axioms Tm.PlanWire.readActive_refuses_an_estimate_past_the_day
 #print axioms Tm.PlanWire.readActive_accepts_a_running_block
-#print axioms Tm.PlanWire.readBreak_refuses_a_break_longer_than_a_day
 #print axioms Tm.PlanWire.readBreak_refuses_an_unknown_place
 #print axioms Tm.PlanWire.the_four_break_places_read
 #print axioms Tm.PlanWire.readBreak_refuses_a_start_after_now
 #print axioms Tm.PlanWire.readBreak_accepts_a_running_break
-#print axioms Tm.PlanWire.readInterrupt_refuses_a_start_after_now
 #print axioms Tm.PlanWire.readInterrupt_refuses_a_long_id
 #print axioms Tm.PlanWire.readInterrupt_accepts_an_open_interruption
 #print axioms Tm.PlanWire.readHash_refuses_a_short_digest
@@ -7122,8 +7113,6 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 
 -- APPENDED 2026-09-26 (stage 6, run W-34, repair step; README gaps 2730-2769): the what-if's
 -- domain, both directions (gap 2737), and the refutation of `planJson`'s pre-W-34 form (gap 2739).
-#print axioms Tm.Planner.the_extension_agrees_when_the_estimate_fits_a_day
-#print axioms Tm.Planner.the_extension_disagrees_past_a_day
 #print axioms Tm.PlannerWit.planJson_of_a_planned_day_emits_the_zero_hash_is_refuted
 
 -- APPENDED 2026-09-26 (stage 6, run W-35, track K; README gaps 2800-2839): D55 -- an impossible
@@ -7281,9 +7270,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- READS the host's worked minutes, `RuntimeIn.worked`, parity P55) and the owner's D61 (a logged
 -- wall pause is no worked time, parity P53).
 -- =====================================================================
-#print axioms Tm.Planner.a_worked_reading_past_a_day_is_refused
 #print axioms Tm.Planner.a_worked_reading_within_a_day_is_read
-#print axioms Tm.Planner.the_worked_minutes_bound_is_run
 #print axioms Tm.Planner.PlanReq.activeWorked_is_the_hosts
 #print axioms Tm.Planner.PlanReq.activeWorked_without_the_hosts
 #print axioms Tm.Planner.the_open_row_reads_the_running_blocks_worked_minutes
@@ -7291,7 +7278,6 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Planner.a_logged_wall_pause_is_no_worked_time
 #print axioms Tm.Planner.an_unlogged_wall_is_worked_time
 #print axioms Tm.PlanWire.readState_reads_the_hosts_worked_minutes
-#print axioms Tm.PlanWire.readOptWorked_refuses_a_reading_past_the_day
 #print axioms Tm.PlanWire.planKey_workedMin_is_the_wire_key
 #print axioms Tm.PlannerWit.openWallRun_resumes_ok
 #print axioms Tm.PlannerWit.a_logged_wall_pause_keeps_the_open_row_off_the_meeting
@@ -7986,3 +7972,78 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.GridCut.the_cut_inside_its_day_is_unchanged
 #print axioms Tm.GridCut.the_call_past_midnight_is_its_days_wall_in_chicago
 #print axioms Tm.GridCut.the_day_by_day_cut_is_run
+-- =====================================================================
+-- APPENDED W-41 TRACK K (stage 6): D78 (a running record's start after `now` is planned from
+-- `now`, as fork 4748911 plans it), D80 (the planner request refuses by name a day whose
+-- evening runs past the calendar and a candidate whose wire `ci` is not the plan's, P71/P72)
+-- and D81 gap 3902 (the running estimate, break and worked minutes widen to the host's width).
+-- Fourteen audit lines LEFT with the names they audited, each refuted, renamed or deleted:
+--   Planner.mkActive?_refuses_a_start_after_now      -> mkActive?_refuses_a_start_after_now_is_refuted
+--   Planner.mkActive?_refuses_an_estimate_past_the_day -> mkActive?_reads_an_estimate_past_the_day
+--                                                        (+ mkActive?_refuses_an_estimate_past_the_width)
+--   Planner.mkBreak?_refuses_a_break_longer_than_a_day -> mkBreak?_reads_a_break_past_the_day
+--                                                        (+ mkBreak?_refuses_a_break_past_the_width)
+--   Planner.mkInterrupt?_refuses_a_start_after_now, Planner.mkInterrupt?_accepts -> DELETED with
+--     the constructor (D78 left it no bound); PlanWire.readInterrupt_accepts_a_start_after_now
+--   PlanWire.readActive_refuses_a_start_after_now   -> PlanWire.readActive_accepts_a_start_after_now
+--   PlanWire.readActive_refuses_an_estimate_past_the_day -> readActive_reads_an_estimate_past_the_day
+--                                                        (+ readActive_refuses_an_estimate_past_the_width)
+--   PlanWire.readBreak_refuses_a_break_longer_than_a_day -> readBreak_refuses_a_break_past_the_width
+--   PlanWire.readInterrupt_refuses_a_start_after_now -> PlanWire.readInterrupt_accepts_a_start_after_now
+--   Planner.the_extension_agrees_when_the_estimate_fits_a_day -> ..._fits_the_width (implies it)
+--   Planner.the_extension_disagrees_past_a_day      -> ..._past_the_width (refuted at the day)
+--   Planner.a_worked_reading_past_a_day_is_refused  -> a_worked_reading_past_the_width_is_refused
+--   Planner.the_worked_minutes_bound_is_run         -> the_worked_minutes_bound_is_run_at_the_width
+--   PlanWire.readOptWorked_refuses_a_reading_past_the_day -> ..._past_the_width
+-- And Goals.plan_places_no_demanding_block_after_wind_down LEFT Goals.lean: discharged as
+-- written over every request PlanWire.planReqOf accepts (PlannerWit's W-41 block), on
+-- PlanCheck.plan_places_no_demanding_block_after_wind_down restated over D80 (b)'s clause.
+-- =====================================================================
+#print axioms Tm.Planner.mkActive?_refuses_an_estimate_past_the_width
+#print axioms Tm.Planner.mkActive?_reads_an_estimate_past_the_day
+#print axioms Tm.Planner.mkBreak?_refuses_a_break_past_the_width
+#print axioms Tm.Planner.mkBreak?_reads_a_break_past_the_day
+#print axioms Tm.Planner.mkActive?_refuses_a_start_after_now_is_refuted
+#print axioms Tm.Planner.a_worked_reading_past_the_width_is_refused
+#print axioms Tm.Planner.the_worked_minutes_bound_is_run_at_the_width
+#print axioms Tm.Planner.PlanReq.the_reservation_reaches_at_most_one_block_past_its_start
+#print axioms Tm.Planner.plan_reserves_one_block_at_a_time_when_the_block_started_by_now
+#print axioms Tm.Planner.PlanReq.no_lead_without_a_running_block
+#print axioms Tm.Planner.PlanReq.no_lead_for_a_start_by_now
+#print axioms Tm.Planner.a_worked_reading_within_the_width_is_read
+#print axioms Tm.Planner.PlanReq.windDown_inside_the_calendar
+#print axioms Tm.Planner.PlanReq.dayEnd_and_window_inside_the_calendar
+#print axioms Tm.Planner.PlanReq.the_wind_down_row_is_not_clamped
+#print axioms Tm.Planner.PlanReq.an_evening_past_the_calendar_fails_the_clause
+#print axioms Tm.Planner.PlanReq.ciDisagreement_eq_none_iff
+#print axioms Tm.Planner.PlanReq.a_candidates_ci_is_its_items_where_the_wire_agrees
+#print axioms Tm.Planner.PlanReq.a_ci_disagreement_names_a_candidate
+#print axioms Tm.Planner.the_extension_agrees_when_the_estimate_fits_the_width
+#print axioms Tm.Planner.the_extension_disagrees_past_the_width
+#print axioms Tm.PlanWire.readActive_accepts_a_start_after_now
+#print axioms Tm.PlanWire.readActive_refuses_an_estimate_past_the_width
+#print axioms Tm.PlanWire.readActive_reads_an_estimate_past_the_day
+#print axioms Tm.PlanWire.readBreak_refuses_a_break_past_the_width
+#print axioms Tm.PlanWire.readInterrupt_accepts_a_start_after_now
+#print axioms Tm.PlanWire.readOptWorked_refuses_a_reading_past_the_width
+#print axioms Tm.PlanWire.planReqRefusal_names_an_evening_past_the_calendar
+#print axioms Tm.PlanWire.planReqRefusal_names_a_candidate_whose_ci_disagrees
+#print axioms Tm.PlanWire.planReqRefusal_of_a_request_paying_both
+#print axioms Tm.PlanWire.planReqRefusal_eq_none_pays_both
+#print axioms Tm.PlanWire.planReqOf_pays_the_evening_and_the_ci
+#print axioms Tm.PlanWire.the_d80_refusals_spell_themselves
+#print axioms Tm.PlanWire.readOptInterrupt_reads_the_interruption
+#print axioms Tm.PlanCheck.candPlanView_ci_is_planCi
+#print axioms Tm.PlanCheck.ciDisagreement_eq_none_of_candsAgree
+#print axioms Tm.PlanCheck.plan_places_no_demanding_block_after_wind_down_on_a_request_paying_d80
+#print axioms Tm.PlannerWit.startAfterNowRun_resumes_ok
+#print axioms Tm.PlannerWit.a_start_after_now_is_planned_from_now_as_the_fork_plans_it
+#print axioms Tm.PlannerWit.plan_reserves_one_block_at_a_time_without_the_lead_is_refuted_by_d78
+#print axioms Tm.PlannerWit.an_interruption_after_now_is_drawn_as_the_fork_draws_it
+#print axioms Tm.PlannerWit.the_last_evening_is_refused_by_name
+#print axioms Tm.PlannerWit.the_conference_wire_is_refused_by_name
+#print axioms Tm.PlannerWit.the_eve_pays_both_of_d80s_clauses
+#print axioms Tm.PlannerWit.plan_places_no_demanding_block_after_wind_down_on_every_request_the_decoder_accepts
+#print axioms Tm.PlannerWit.an_extension_past_the_day_agrees
+#print axioms Tm.PlannerWit.aBlockPastTheWidth_is_past_the_width
+#print axioms Tm.PlannerWit.the_start_after_now_log_holds_the_open_block

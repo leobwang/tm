@@ -5,8 +5,9 @@
 //! `routines`, `overrides` and `prio.batchMaxMin` (§16's `[priority]
 //! batch_max_min`, README gap 801). Every bound it puts on them is one this
 //! wire already carried — `CapWire.maxCandId`, `CapWire.maxRemaining` (the fork
-//! `u32`), `Cal.Instant.wf`, `Look.maxDayMin` and `Planner.maxCands` — reached
-//! through the constructor that already owns it.
+//! `u32`, which is `Look.maxPlanMinutes`: the running estimate's and break's
+//! width since W-41), `Cal.Instant.wf` and `Planner.maxCands` — reached through
+//! the constructor that already owns it.
 //!
 //! **This file is what makes those bounds more than definitions.** The Lean
 //! side proves each refusal; this side shows a host reaches it: the same bytes
@@ -147,6 +148,24 @@ fn routine_docs() -> Value {
 /// A `state` section wrapped as the whole planner section.
 fn state(v: Value) -> Option<Value> {
     Some(json!({"state": v}))
+}
+
+/// The everyday request on another day: the request's `now` (a date) and the
+/// capacity section's `at` (the instant) moved together, as the binary moves them.
+fn request_on(today: &str, at: &str, planner: Option<Value>) -> String {
+    let mut cap = capacity(Some(json!(20)), true);
+    cap["at"] = json!(at);
+    cap["state"]["date"] = json!(today);
+    cap["days"] = json!(1);
+    let mut body = json!({
+        "docs": json!([]), "now": today, "blockMin": 60,
+        "tz": tz_table::probe(chrono_tz::UTC).to_wire()});
+    body["capacity"] = cap;
+    if let Some(p) = planner {
+        body["planner"] = p;
+    }
+    let body = body.to_string();
+    format!(r#"{{"log":{LOG_SECTION},{}"#, &body[1..])
 }
 
 // ---------------------------------------------------------------------------
@@ -329,31 +348,104 @@ fn a_long_active_id_is_refused_at_the_wires_own_id_bound() {
     assert_eq!(planner_err(&at), None, "an id at the bound was refused: {at}");
 }
 
-/// **A running block that started after `now`** is not one the planner could
-/// hold — `Planner.ActiveBlock.wf`, through `Planner.mkActive?`.
-#[test]
-fn a_running_block_that_started_after_now_is_refused() {
-    let resp = call(&request(state(
-        json!({"active": {"id": "m2", "started": NOW + 60, "estMin": 60}}),
-    )));
-    assert_eq!(planner_err(&resp).as_deref(), Some("badActive wf"), "{resp}");
+/// The day's one current (`▶`) Block row, off the answered `plan` object.
+fn running_row(resp: &Value) -> Value {
+    let segs = resp["ok"]["plan"]["segments"].as_array().unwrap_or_else(|| panic!("no segments: {resp}"));
+    let rows: Vec<&Value> = segs.iter().filter(|s| s["kind"] == "block" && s["flags"]["current"] == true).collect();
+    assert_eq!(rows.len(), 1, "exactly one running row: {resp}");
+    rows[0].clone()
 }
 
-/// **An estimate past the day** is refused by the same constructor —
-/// `Look.maxDayMin` is the day's own bound and `PlanWire` writes no second one.
+/// **A running block whose logged start is ten seconds after `now` is PLANNED
+/// from `now`, as fork 4748911 plans it** (the owner's D78; README gap 2874's
+/// input 1; parity P68 restated at W-41). Until W-41 `Planner.ActiveBlock.wf`
+/// bounded the start by `now` and this request was refused `badActive wf`. Fork
+/// `active_run` reserves from `now` to `current_block_end(started)` — `block_min`
+/// after the START, because its `elapsed` is clamped to zero — so a two-hour
+/// block reserves one block plus the ten seconds, with no minute worked (the
+/// open block's `so far` is never drawn: there is no open row before its start).
 #[test]
-fn an_active_estimate_past_the_day_is_refused() {
+fn a_running_block_that_started_after_now_is_planned_from_now() {
+    let resp = call(&request(state(
+        json!({"active": {"id": "m2", "started": NOW + 10, "estMin": 120}}),
+    )));
+    assert_eq!(planner_err(&resp), None, "{resp}");
+    let row = running_row(&resp);
+    assert_eq!(row["item"], "m2", "{row}");
+    assert_eq!((row["start"].as_i64(), row["stop"].as_i64()), (Some(NOW), Some(NOW + 10 + 3600)), "{row}");
+    assert_eq!(row["note"]["note"], "runningLeft", "{row}");
+    // And a start before `now` keeps the one-block reservation it always had.
+    let before = call(&request(state(
+        json!({"active": {"id": "m2", "started": NOW - 600, "estMin": 120}}),
+    )));
+    let row = running_row(&before);
+    assert_eq!((row["start"].as_i64(), row["stop"].as_i64()), (Some(NOW), Some(NOW - 600 + 3600)), "{row}");
+}
+
+/// **An open interruption whose start is after `now` is read, and draws and pauses
+/// nothing** (D78, the same argument): fork `collect_walls` pushes the ad-hoc wall
+/// only `if self.now > start`. Until W-41 it was refused `badInterrupt wf`.
+#[test]
+fn an_interruption_that_started_after_now_draws_nothing() {
+    let resp = call(&request(state(json!({
+        "active": {"id": "m2", "started": NOW - 600, "estMin": 120},
+        "interrupt": {"started": NOW + 10, "id": "m2"}}))));
+    assert_eq!(planner_err(&resp), None, "{resp}");
+    let segs = resp["ok"]["plan"]["segments"].as_array().expect("segments");
+    assert!(segs.iter().all(|s| s["note"]["note"] != "interruption"), "no interruption row: {resp}");
+    assert_eq!(running_row(&resp)["item"], "m2", "the block is not paused");
+}
+
+/// **An estimate past the day is READ since W-41** (D81, README gap 3902): `tm
+/// extend 24h` stores 1,500 minutes and the fork plans them. The bound is the
+/// host's width, `Look.maxPlanMinutes` — the fork's `u32` — reused, and one past
+/// it is still refused by the same constructor.
+#[test]
+fn an_active_estimate_past_the_day_is_planned_and_past_the_width_refused() {
     let resp = call(&request(state(
         json!({"active": {"id": "m2", "started": NOW - 60, "estMin": 1441}}),
     )));
+    assert_eq!(planner_err(&resp), None, "{resp}");
+    let resp = call(&request(state(
+        json!({"active": {"id": "m2", "started": NOW - 60, "estMin": 4_294_967_296_u64}}),
+    )));
     assert_eq!(planner_err(&resp).as_deref(), Some("badActive wf"), "{resp}");
 }
 
-/// **A break longer than a day**, through `Planner.mkBreak?`.
+/// **A break past the day is READ since W-41** (D81, gap 3902: `tm break 25h`
+/// stores 1,500 minutes), and one past the host's width is refused.
 #[test]
-fn a_break_longer_than_a_day_is_refused() {
+fn a_break_past_the_day_is_planned_and_past_the_width_refused() {
     let resp = call(&request(state(json!({"break": {"plannedMin": 1441}}))));
+    assert_eq!(planner_err(&resp), None, "{resp}");
+    let resp = call(&request(state(json!({"break": {"plannedMin": 4_294_967_296_u64}}))));
     assert_eq!(planner_err(&resp).as_deref(), Some("badBreak wf"), "{resp}");
+}
+
+/// **A running break's start after `now` stays refused** (`badBreak wf`): D81
+/// reads a running break's start as the latest instant at or before `now` with
+/// its stored clock, so no request the binary builds carries one, and D78 does
+/// not reach it.
+#[test]
+fn a_running_break_that_started_after_now_is_refused() {
+    let resp = call(&request(state(json!({"break": {"started": NOW + 10, "plannedMin": 20}}))));
+    assert_eq!(planner_err(&resp).as_deref(), Some("badBreak wf"), "{resp}");
+}
+
+/// **The host's worked minutes past a day are READ since W-41** (D81, gap 3902's
+/// width, which this track also gives the worked minutes — README gap 3975): a block
+/// that has run past a day — overrun, or extended past a day as D81 now plans — has
+/// worked past a day, and the request is not refused on its own running block's worked
+/// minutes. One past the host's width is still refused by name, `badActive workedMin`.
+/// The estimate here is an hour, inside every bound, so the reading alone is asked.
+#[test]
+fn the_worked_minutes_past_a_day_are_read_and_past_the_width_refused() {
+    let resp = call(&request(state(json!({
+        "active": {"id": "m2", "started": NOW - 60, "estMin": 60, "workedMin": 1441}}))));
+    assert_eq!(planner_err(&resp), None, "{resp}");
+    let resp = call(&request(state(json!({
+        "active": {"id": "m2", "started": NOW - 60, "estMin": 60, "workedMin": 4_294_967_296_u64}}))));
+    assert_eq!(planner_err(&resp).as_deref(), Some("badActive workedMin"), "{resp}");
 }
 
 /// **An unknown `place` word**, never defaulted to a seat (AGENTS §5.7).
@@ -591,4 +683,18 @@ fn a_malformed_overtime_is_refused_by_name() {
     assert_eq!(planner_err(&past).as_deref(), Some("badOvertime blocks"), "{past}");
     let no_id = call(&request(Some(json!({"overtime": {"blocks": 1}}))));
     assert_eq!(planner_err(&no_id).as_deref(), Some("badOvertime id"), "{no_id}");
+}
+
+/// **D80 (a): a day whose evening runs past the calendar's last second is refused by
+/// name** (parity P71; README gaps 3785 and 3780). 9999-12-31 in UTC ends at the
+/// first second the calendar does not hold, so its Sleep row would have been squeezed
+/// onto the last one by the rows' clock (`Planner.clampSec`) — a request fork 4748911
+/// can never produce. The day before ends inside the calendar and is planned.
+#[test]
+fn a_day_whose_evening_runs_past_the_calendar_is_refused_by_name() {
+    let resp = call(&request_on("9999-12-31", "9999-12-31T07:00:00+00:00", Some(json!({}))));
+    assert_eq!(planner_err(&resp).as_deref(), Some("eveningPastTheCalendar"), "{resp}");
+    let resp = call(&request_on("9999-12-30", "9999-12-30T07:00:00+00:00", Some(json!({}))));
+    assert_eq!(planner_err(&resp), None, "{resp}");
+    assert!(resp["ok"]["plan"]["day"].is_string(), "{resp}");
 }

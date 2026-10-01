@@ -1661,7 +1661,11 @@ impl Replay {
     /// `actual_min: 0`; and it read `day`'s marks alone, so a pause stamped
     /// before midnight was never netted out. Both are this function's to get
     /// right, because both are what "worked" means.
-    pub fn active_worked_min(
+    ///
+    /// **Private since W-41's land step** (README gaps 3825 and 4047): its
+    /// callers outside this file are gone, so no caller can hand it the cache's
+    /// clock again — the two in-file readers pass the log's instant.
+    fn active_worked_min(
         &self,
         day: NaiveDate,
         started: DateTime<FixedOffset>,

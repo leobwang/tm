@@ -515,6 +515,10 @@ written and proved each law beside it, and every stage's section of the file is 
 *It is **1** again since the W-39 repair (2026-09-30): `plan_places_no_demanding_block_after_wind_down`'s
 refutation stood on the kernel's window running past the night over a multi-day wall, which the repair made
 the fork planner's (README gaps 3556 and 3713), so the refutation fell and the goal came back, unproved.*
+*It is **0** since W-41 (2026-10-01): with the owner's D80 the decoder refuses the two requests fork 4748911
+cannot produce, and the goal is proved as written over the requests it accepts
+(`PlannerWit.plan_places_no_demanding_block_after_wind_down_on_every_request_the_decoder_accepts`; README
+"Stage 6 — W-41 track K", gaps 3713, 3780, 3785 and 3977).*
 
 Three properties make it safe, and all three are checked:
 
@@ -2962,6 +2966,8 @@ proptest: each was refuted as written and proved in a restated form beside it
 single-run goals that remained; the proptest still runs beside them (D5).*
 *Since the W-39 repair check 7 reads **1**: the wind-down goal is back, its refutation fallen with gap 3556
 (README gap 3713).*
+*Since W-41 check 7 reads **0** again: the wind-down goal is proved as written over the requests the decoder
+accepts, D80 refusing the two the fork cannot produce (README gap 3977).*
 
 **Depends on.** All of stage 5 and stage 4, plus runtime state that lives in
 Rust: `active`, `window`, `budget`, `break`, `interrupt`, `last_plan_hash`.

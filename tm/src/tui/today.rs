@@ -450,7 +450,14 @@ pub fn hint_line(app: &App, width: usize) -> Line<'static> {
     let left = match (&app.mode, &app.message) {
         (Mode::Command, _) => format!(":{}█", app.input),
         (Mode::Input(kind), _) => format!("{}: {}█", kind.label(), app.input),
-        (Mode::BreakWhere, _) => "break where? w walk · s seat · b bed · p phone".to_string(),
+        // The prompt reads the ONE table of places (D81, gap 3903).
+        (Mode::BreakWhere, _) => format!(
+            "break where? {}",
+            tm_core::store::BreakPlace::all()
+                .map(|p| format!("{} {}", p.key(), p.as_str()))
+                .collect::<Vec<_>>()
+                .join(" · ")
+        ),
         (Mode::Energy, _) => "energy now? 0–5".to_string(),
         (_, Some(msg)) => msg.clone(),
         _ => ":".to_string(),

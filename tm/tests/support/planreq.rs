@@ -46,7 +46,7 @@ use serde_json::{json, Value};
 use tm_core::config::Config;
 use tm_core::energy::Model;
 use tm_core::log::Replay;
-use tm_core::model::{Id, Loc};
+use tm_core::model::Id;
 use tm_core::planwire::{self, CapacityAnswer, CapacityIn, DayCtx, KernelDay, Ranked, RoutineInst, Written};
 use tm_core::priority::{self, Candidate};
 use tm_core::store::{MemStore, RuntimeState, Store};
@@ -81,7 +81,7 @@ pub use tm_core::planwire::send_order;
 /// **The capacity section** — the binary's own encoder, `planwire::capacity_json`
 /// (README gap 2875), over this world: the tree's `Config`, an empty model, no
 /// file literals, `now`'s own date as the request's today (`Ctx::today`), the
-/// stored location read as `Ctx::loc` reads it, and the lookahead
+/// world's replay for the location the encoder reads (`planwire::planned_loc`), and the lookahead
 /// `kernel_capacity::rank` asks for (`planwire::horizon` over
 /// `priority::lookahead_days`).
 fn capacity(w: &World<'_>, order: &[usize]) -> Value {
@@ -94,8 +94,10 @@ fn capacity(w: &World<'_>, order: &[usize]) -> Value {
         tree: w.tree,
         state: w.state,
         now: w.now,
-        // `Ctx::loc`'s reading: the stored location, else the lounge (README gap 3083).
-        loc: w.state.loc.as_deref().and_then(|s| Loc::parse(s).ok()).unwrap_or(Loc::Lounge),
+        // The location is the encoder's own reading, `planwire::planned_loc` over the
+        // state and this replay's day record — the binary's (D81, parity P76; until W-41
+        // this file read `Ctx::loc`'s lounge itself, README gap 3083).
+        replay: w.replay,
         allow_home: false,
         days: planwire::horizon(today, priority::lookahead_days(w.cands, today)).0,
     };

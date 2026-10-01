@@ -207,7 +207,9 @@ pub fn request(ctx: &Ctx, allow_home: bool, days: u32, ranked: Option<&Ranked<'_
         tree: &ctx.tree,
         state: &ctx.state,
         now: ctx.now_tz,
-        loc: ctx.loc(),
+        // The day record `planwire::planned_loc` falls back to: the location is the
+        // planner's reading, not `Ctx::loc`'s lounge (D81, parity P76).
+        replay: &ctx.replay,
         allow_home,
         days,
     };

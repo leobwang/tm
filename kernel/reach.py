@@ -51,7 +51,14 @@ the antecedent is the compiler's, the exemptions are NAMED, and the reason each
 one carries is readable and dated instead of inferred.
 
 THE EXEMPTION FILE IS W-27'S SHAPE: AN ENUMERATION YOU JOIN TO BE EXEMPT, NOT
-TO BE COVERED.  `reach-exempt.txt` grandfathers the definitions that were
+TO BE COVERED -- AND SINCE W-41 NOBODY JOINS IT (the campaign's D81 call on README
+gap 3953; gap 4043): it is STRICTLY SHRINK-ONLY, as D51 says, so an entry or a
+`CLASS` line the file did not hold at HEAD FAILS whatever section or heading it sits
+under.  Until W-41 a new entry passed under a NEW section whose reason carried an
+ISO date and an EXIT (gap 2259's rule, refined at W-32), the one exemption file of
+seven that could grow without the owner; check 13's `fields.ratchet_file` was made
+strict at W-40's repair and this is the same rule.  Growth is the owner's to grant,
+in the commit that changes this script, never a heading.  `reach-exempt.txt` grandfathers the definitions that were
 unreachable on 2026-09-25 -- 952 when the gate landed, 1,459 after the same
 day's repair widened the population by the 524 `def`s and `abbrev`s the
 compiler emits as a GLOBAL and not as a function (gaps 2257/2258), 1,748 after
@@ -59,8 +66,9 @@ W-32 rooted the walk where the binary enters (gap 2229), and 1,756 after W-32
 track G's eight witness entries -- each under
 a section naming its module, its reason and, where the section GREW the file,
 its date; and it may only SHRINK: an entry that becomes reachable, stops being
-emitted or stops existing FAILS this check and must be deleted, and a
-definition that becomes unreachable and is not in the file FAILS it too.  A
+emitted or stops existing FAILS this check and must be deleted, a
+definition that becomes unreachable and is not in the file FAILS it too, and so
+does an entry the committed file did not hold.  A
 bare threshold -- "no more than N unreachable" -- would have been the
 list-shaped answer this campaign has now got wrong eleven counted times, and
 gap 2130 says so itself.
@@ -71,9 +79,9 @@ audit trail of 1,756 definitions -- and three halves of it are checkable.  Its
 CENSUS ("N of its M emitted definitions are reached") is re-derived against the
 table `--audit` prints, which found twenty-three of twenty-seven false at
 `9d7fad2`.  A REWRITE of a reason an existing entry already inherits costs an
-ISO date, exactly what growth costs, because the ratchet compared entry KEYS
-and a wholesale replacement of an existing section's reason was free.  And a
-NEW section names an EXIT as well as a date.
+ISO date, because the ratchet compared entry KEYS and a wholesale replacement
+of an existing section's reason was free.  (A NEW section named an EXIT as well
+as a date until W-41, when a new section became a place no new entry may stand.)
 
 WHAT THE FILE'S OWN SIZE IS FOR.  It is also the floor under the C symbol
 computation.  `callgraph.symbol` is the pinned toolchain's mangling
@@ -179,17 +187,14 @@ def library_defs(roots):
     return out, files
 
 
-# An ISO date in a section's reason.  Growth must be DATED (gap 2259).
+# An ISO date in a section's reason.  A REWRITE must be DATED (gap 2411); until
+# W-41 growth had to be too (gap 2259), and there is no growth now.
 SECTION_DATE = re.compile(r"\b20\d\d-[01]\d-[0-3]\d\b")
-# The EXIT a NEW section must name (W-32 repair, README gap 2412).  A reason
-# says why the entries below it are unreachable; an EXIT says what would make
-# them reachable again, which is the only thing that turns a grandfathered set
-# into a set someone can finish.  Fourteen of this file's sections named one
-# before this rule and seventy-three did not, and nothing asked -- a brand-new
-# dated section with no exit was accepted by the ratchet, driven.  It is asked
-# of GROWTH only, exactly where the date is asked for, because demanding one of
-# the seventy-three would buy seventy-three sentences written to satisfy a gate.
-SECTION_EXIT = re.compile(r"\bEXIT\b")
+# THE EXIT A NEW SECTION HAD TO NAME (W-32 repair, README gap 2412) IS GONE WITH
+# THE NEW SECTION ITSELF (W-41, gap 4043).  It was asked of GROWTH only -- a new
+# dated section, and a new `CLASS` line -- and the strict ratchet below refuses
+# both whatever they carry, so a rule about what they must say would be a rule
+# nothing can reach.  The sections that name one keep it as prose.
 # THE NUMERIC HALF OF A REASON IS RE-DERIVED, NOT READ (W-32 repair, README gap
 # 2410).  A section's reason is what every entry under it inherits, and
 # twenty-seven of them state a census of their module -- "N of its M emitted
@@ -406,16 +411,19 @@ def committed_exemptions(path):
     -> 953 in the run that landed it and every gate stayed green.
 
     So the comparand is the COMMITTED file, which is the only thing in this tree
-    that a working copy cannot edit.  `main` holds the new entry set against it:
-    an entry that is not in the committed file must sit under a section heading
-    that is not in the committed file EITHER, and that heading's reason must
-    carry an ISO DATE.  Adding a line to an existing section -- which is exactly
-    what W-31 track G did -- FAILS.  Growth is then a dated section in the diff
-    rather than a digit in it.
+    that a working copy cannot edit.  `main` holds the new entry set against it,
+    and SINCE W-41 STRICTLY (the campaign's D81 call on README gap 3953; gap
+    4043): an entry or a `CLASS` line the committed file did not hold FAILS,
+    whatever section or heading it sits under.  From the W-31 repair until W-41 a
+    new entry passed under a section heading new at HEAD whose reason carried an
+    ISO DATE (and, from W-32, an EXIT) -- growth as a dated section in the diff
+    rather than a digit in it -- and D51 says this file only SHRINKS.
 
-    WHAT IT STILL CANNOT SEE, declared: whether a new section's reason is TRUE.
-    No gate can read a sentence.  What it can do is make growth cost a heading
-    and a date instead of a character, and make the diff say so."""
+    WHAT IT STILL CANNOT SEE, declared: whether a REWRITTEN reason is TRUE (it
+    costs an ISO date, gap 2411).  No gate can read a sentence.  And it reads the
+    file at HEAD, so a commit that grows the file and changes nothing else passes
+    the NEXT run's comparand -- the gate holds the working copy, and the owner's
+    grant is the commit, which is the review's to read."""
     import subprocess
     try:
         out = subprocess.run(["git", "-C", str(path.parent), "show",
@@ -592,8 +600,13 @@ def main(argv):
                        % (EXEMPT_FILE.name, lineno, module, m.group(1), m.group(2),
                           reach, emit))
     # THE RATCHET, against the file as COMMITTED and not against itself
-    # (gap 2259).  A new entry must sit under a section heading that is new too,
-    # and a new heading must carry a date.
+    # (gap 2259), and STRICT since W-41 (the campaign's D81 call on README gap
+    # 3953; gap 4043): a line the committed file did not hold -- an entry, or a
+    # `CLASS` line -- FAILS, whatever section or heading it stands under.  Until
+    # W-41 a new entry passed under a NEW section whose reason carried an ISO date
+    # and an EXIT, and a new `CLASS` line with a date and an EXIT: the escape
+    # check 13's `fields.ratchet_file` closed at W-40's repair (gap 3953), the
+    # same rule here.  A heading groups lines and licenses nothing.
     prev = committed_exemptions(EXEMPT_FILE)
     if prev is None:
         bad.append("RATCHET UNCHECKED: `git show HEAD:./%s` gave nothing, so the "
@@ -601,42 +614,23 @@ def main(argv):
                    "D51's ratchet was in before W-31's repair" % EXEMPT_FILE.name)
     else:
         prev_entries, prev_sections, _, prev_classes = read_exemptions(EXEMPT_FILE, prev)
-        prev_heads = {(m, r) for m, r, _ in prev_sections}
-        # A class line is ratcheted exactly as a section is: new at HEAD needs a
-        # date and an EXIT, and a rewrite needs a date (gap 2560).
         for k, (reason, lineno) in sorted(classes.items()):
+            spelled = k.replace("proof:", "proof ") if k.startswith("proof:") else "unsent " + k
             if k not in prev_classes:
-                if not SECTION_DATE.search(reason) or not SECTION_EXIT.search(reason):
-                    bad.append("RATCHET: %s:%d  the new `CLASS %s` line "
-                               "must carry an ISO date and name its EXIT -- a "
-                               "class answers every definition behind a section, "
-                               "so it costs at least what a section costs"
-                               % (EXEMPT_FILE.name, lineno, k.replace("proof:", "proof ")
-                                  if k.startswith("proof:") else "unsent " + k))
+                bad.append("RATCHET: %s:%d  `CLASS %s` is a NEW class line, held by no "
+                           "line at HEAD -- this file may only SHRINK (D51), and a class "
+                           "answers every definition behind it (README gaps 3953 and "
+                           "4043)" % (EXEMPT_FILE.name, lineno, spelled))
             elif reason != prev_classes[k][0] and not SECTION_DATE.search(reason):
                 bad.append("RATCHET: %s:%d  `CLASS %s`'s reason has been "
                            "REWRITTEN and carries no ISO date (gap 2411's rule)"
-                           % (EXEMPT_FILE.name, lineno, k.replace("proof:", "proof ")
-                              if k.startswith("proof:") else "unsent " + k))
+                           % (EXEMPT_FILE.name, lineno, spelled))
         for key in sorted(set(entries) - set(prev_entries)):
-            module, reason, lineno = sections[entries[key][1]]
-            if (module, reason) in prev_heads:
-                bad.append("RATCHET: %s (%s) is a NEW exemption under a section "
-                           "that already existed at HEAD -- this file may only "
-                           "SHRINK (D51), and growth is a NEW DATED SECTION or it "
-                           "is not growth, it is a line in a diff" % (key[1], module))
-            elif not SECTION_DATE.search(reason):
-                bad.append("RATCHET: %s:%d  the new `## %s` section grandfathers "
-                           "%s and its reason carries no ISO date -- growth is "
-                           "dated here or it is not made"
-                           % (EXEMPT_FILE.name, lineno, module, key[1]))
-            elif not SECTION_EXIT.search(reason):
-                bad.append("RATCHET: %s:%d  the new `## %s` section grandfathers "
-                           "%s and names no EXIT -- say what would make these "
-                           "definitions reachable again and what must happen to "
-                           "this section when it does, or the entry joins a set "
-                           "nobody can ever finish (gap 2412)"
-                           % (EXEMPT_FILE.name, lineno, module, key[1]))
+            module, _, lineno = sections[entries[key][1]]
+            bad.append("RATCHET: %s (%s) is a NEW exemption, held by no entry at HEAD -- "
+                       "this file may only SHRINK (D51), whatever section it stands under "
+                       "(README gaps 3953 and 4043; the section at line %d)"
+                       % (key[1], module, lineno))
         # AND THE REASON AN ALREADY-GRANDFATHERED ENTRY CARRIES IS PINNED TOO
         # (W-32 repair, gap 2411).  The loop above examines only entries whose
         # KEY is new, so the reason above 1,756 entries that already existed was
@@ -645,8 +639,8 @@ def main(argv):
         # replaced with an invented sentence and this gate printed the unchanged
         # summary at rc=0, silently re-parenting all 58 of its entries onto the
         # fabrication.  That is gap 2259's own class one layer out, in the file
-        # W-31 repaired it in.  A rewrite now costs exactly what growth costs:
-        # an ISO DATE in the reason it is rewritten to.  What it still cannot
+        # W-31 repaired it in.  A rewrite now costs what growth cost until
+        # W-41: an ISO DATE in the reason it is rewritten to.  What it still cannot
         # read is whether the new sentence is TRUE -- but the numeric half is
         # re-derived above, and an undated rewrite fails by name.
         for key in sorted(set(entries) & set(prev_entries)):
@@ -657,7 +651,7 @@ def main(argv):
                            "REWRITTEN and carries no ISO date, and %s inherits it "
                            "-- the reason is the only thing that makes a "
                            "grandfathered entry auditable, so changing one costs "
-                           "a date exactly as adding one does (gap 2411)"
+                           "a date (gap 2411)"
                            % (EXEMPT_FILE.name, lineno, module, key[1]))
 
     if audit:
@@ -680,11 +674,12 @@ def main(argv):
     # thing to do and has two correct answers; printing neither is how a gate
     # becomes something to route around.
     if any(b.startswith("NOT EXEMPT") for b in bad):
-        print("  -- either give it a caller the export reaches, or add it to %s "
-              "under a NEW `## <Module.lean> -- <reason carrying an ISO "
-              "date>` section AND raise the EXEMPT count in the same edit -- an "
-              "entry added under a section that already exists at HEAD fails "
-              "the ratchet" % EXEMPT_FILE.name)
+        print("  -- give it a caller the export reaches, or a property a class "
+              "already answers (a witness module, a declared proof-only module, "
+              "a declared unsent section).  %s is STRICTLY SHRINK-ONLY since "
+              "W-41 (D51; README gaps 3953 and 4043): an entry it did not hold at "
+              "HEAD fails under any section, and growth is the owner's to grant "
+              "in the commit that changes reach.py" % EXEMPT_FILE.name)
     print("%d def/abbrev(s) in %d library module(s), %d emitted (%d as a global), "
           "%d reachable from %s over the %d section(s) tm/src sends (%d cut), "
           "%d exempt in %d section(s) (%d of them run at load), "

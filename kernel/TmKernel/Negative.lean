@@ -2725,4 +2725,46 @@ theorem theMarkColumnTakesTheWallGlyph (s : Planner.Seg) :
    a fact about every request the planner reads rather than about the decoder alone. -/
 def aWorkedReadingPastTheDay : Fin (Look.maxDayMin + 1) := ⟨1441, by decide⟩
 
+/- ====================================================================
+   W-41 TRACK K (stage 6): D78, D80 and D81's gap 3902.  Cheats 241-245, the first numbers above
+   the file's highest (240).  CHEAT 240's sentence — "the host's worked minutes cross the planner
+   wire as `Fin (Look.maxDayMin + 1)`" — is HISTORY since this step: `RuntimeIn.worked` is
+   `Fin (Look.maxPlanMinutes + 1)` now (D81 gap 3902's width, reused), and CHEAT 240 still fails
+   for its stated reason because it builds the TYPE it names, which still refuses 1441.
+   ==================================================================== -/
+
+/- CHEAT 241 — D81 gap 3902: the worked minutes' new bound bites at the width, as CHEAT 240's did
+   at the day: one past `Look.maxPlanMinutes` is not a `Fin (Look.maxPlanMinutes + 1)`, and
+   `decide` refuses the bound. -/
+def aWorkedReadingPastTheWidth : Fin (Look.maxPlanMinutes + 1) := ⟨Look.maxPlanMinutes + 1, by decide⟩
+
+/- CHEAT 242 — D80 (b): the conference's wire calls `^m2` `ci 0` and its plan file `ci 5`.  This
+   block claims the two readings agree; `decide` computes `Planner.PlanReq.ciDisagreement` and
+   refuses, which is the clause `PlanWire.planReqRefusal` refuses the request on, by name. -/
+set_option maxRecDepth 400000 in
+theorem theConferenceWireAgrees : PlannerWit.theConferenceRequest.ciDisagreement = none := by decide
+
+/- CHEAT 243 — D80 (a): the last evening of 9999 runs past the calendar's last second.  This block
+   claims its evening is inside the calendar; `decide` refuses, which is the clause the decoder
+   refuses the request on (`eveningPastTheCalendar`). -/
+set_option maxRecDepth 400000 in
+theorem theLastEveningIsInsideTheCalendar :
+    PlannerWit.theLastEveningRequest.eveningInsideTheCalendar = true := by decide
+
+/- CHEAT 244 — D78: E1 as W-40 stated it — every Block row from `now` at most one block — at a
+   running block logged ten seconds after `now`.  The fork's reservation (and the kernel's) runs a
+   block plus the lead, 3,610 seconds; `decide` refuses the claim on the day itself. -/
+set_option maxRecDepth 400000 in
+theorem theOldE1HoldsAtAStartAfterNow :
+    ∀ s ∈ (Planner.dayPlan PlannerWit.theStartAfterNowRequest).segments, s.val.kind = Planner.SegKind.block →
+      PlannerWit.theStartAfterNowRequest.now.sec ≤ s.val.start →
+      s.val.stop - s.val.start ≤ (Planner.dayPlan PlannerWit.theStartAfterNowRequest).blockMin * 60 := by
+  decide
+
+/- CHEAT 245 — D81 keeps a RUNNING BREAK's start bounded by `now` (the host reads it as the latest
+   instant at or before `now`; D78 does not reach it).  This block claims `Planner.mkBreak?` builds a
+   break that begins a second after `now`; `decide` refuses. -/
+theorem aBreakAfterNowIsBuilt : (Planner.mkBreak? ⟨1000, 0⟩ ⟨some ⟨1001, 0⟩, 10, none⟩).isSome = true := by
+  decide
+
 end Tm

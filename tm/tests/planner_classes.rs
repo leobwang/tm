@@ -120,6 +120,9 @@ fn the_kernel_plans_every_generated_class_the_fork_planned() {
     assert!(t.p45_host > 0, "on no break day did the host's minutes differ from the log's (P55): {t:?}");
     // README gap 3207: the kept breaks after a running break, against P45's comparand.
     assert!(t.p45_after > 0 && t.p45_kept > 0, "no kept break after a running break was compared: {t:?}");
+    // README gap 3958: every line carrying P67's own answer was held to it, and no other.
+    let p67_lines = frozen_lines().iter().filter(|l| !l["p67"].is_null()).count();
+    assert!(p67_lines > 0 && t.p67 == p67_lines, "P67's answer held on {} line(s) of the {p67_lines} carrying it: {t:?}", t.p67);
     // README gap 3320: a meeting's CLOSED pause, drawn as the wall alone against fork 4748911.
     assert!(t.p56 > 0, "no P56 line: a meeting's closed pause is compared on no frozen day: {t:?}");
     // README gap 3200: a scheduled window task's Routine row marked `⚠` (gap 435), by value.
@@ -209,6 +212,8 @@ fn the_kernel_plans_every_frozen_batch_day_the_fork_planned() {
     assert_eq!(t.day.days + t.p45, lines.len(), "every batch line was compared: {t:?}");
     assert!(lines.len() >= forkclass::BATCH_DRAWS / 2, "the batch holds {} of {} draws", lines.len(), forkclass::BATCH_DRAWS);
     assert!(t.p45 > 0 && t.p45_after > 0, "no running break was compared in the batch: {t:?}");
+    let p67_lines = lines.iter().filter(|l| !l["p67"].is_null()).count();
+    assert!(p67_lines > 0 && t.p67 == p67_lines, "P67's answer held on {} batch line(s) of the {p67_lines} carrying it: {t:?}", t.p67);
     assert!(t.p46 > 0 && t.p47 > 0 && t.p51 > 0, "a D57/D60 departure is compared on no batch day: {t:?}");
     assert!(t.whatifs > 0 && t.whatif_ids > 0, "no what-if with an id in it was compared in the batch: {t:?}");
     assert!(t.day.hashes_equal == t.day.days, "a batch day hashes otherwise than the fork's: {t:?}");
@@ -1185,7 +1190,9 @@ fn the_frozen_window_worlds_are_every_one_the_task_derives() {
     let mut runs_marked = BTreeSet::new();
     let mut marks = 0usize;
     for l in frozen_lines().iter().filter(|l| l["secondary"] == "window") {
-        let day = if l["p45"].is_null() { &l["day"]["day"] } else { &l["p45"] };
+        // The rows the kernel is held to after a running break: P67's where it departs, else
+        // P45's, else the day (README gap 3958).
+        let day = [&l["p67"], &l["p45"]].into_iter().find(|v| !v.is_null()).unwrap_or(&l["day"]["day"]);
         let rows = day.get("segments").or_else(|| day.get("rows")).and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
         let n = rows.iter().filter(|s| s["kind"] == "routine" && s["flags"]["hot"] == true && s["item"] == "xaa").count();
         if n > 0 {
@@ -1486,11 +1493,17 @@ fn every_w38_comparison_bites_a_bent_answer() {
         let rows = x["day"]["day"]["segments"].as_array_mut().expect("rows");
         rows.iter_mut().find(|r| r["kind"] == "block" && r["flags"]["open"] == true).map(|r| r["start"] = Value::String("2026-09-07T00:00:00-05:00".into())).is_some()
     }, "the open row on a break day");
-    // P45's comparand after the break.
-    let l = first(&|l| !l["p45"].is_null());
+    // P45's comparand after the break, on a line where P67 does not depart (README gap 3958).
+    let l = first(&|l| !l["p45"].is_null() && l["p67"].is_null());
     check(&l, "a row after the running break", |x| {
         x["p45"]["rows"].as_array_mut().and_then(|r| r.first_mut()).map(|r| r["kind"] = Value::String("rest".into())).is_some()
-    }, "after the running break");
+    }, "after the running break (P45");
+    // P67's comparand after the break, where it departs from P45's (W-41, README gap 3958):
+    // the kernel is held to `p67`, so bending it bites and bending `p45` there does not.
+    let l = first(&|l| !l["p67"].is_null());
+    check(&l, "a row after the running break, P67's", |x| {
+        x["p67"]["rows"].as_array_mut().and_then(|r| r.first_mut()).map(|r| r["kind"] = Value::String("rest".into())).is_some()
+    }, "after the running break (P67");
     // The shipped TUI's what-if (held since W-38, the grown facts sent).
     let l = first(&|l| !l["whatif"].is_null() && l["whatif"]["grown"].is_null() && l["whatif"]["full"]["drift_min"].as_u64().is_some());
     check(&l, "the shipped TUI's what-if", |x| {
@@ -1674,6 +1687,92 @@ fn the_d64_rule_bites_and_does_not_over_bite() {
     assert!(
         forkclass::d64_allows(&old, &intro, &departed, &[45], &registered).is_err(),
         "an introduction passed while the shipped fork's day moved"
+    );
+}
+
+/// **P67's answer is its own, and it departs only where its rule does** (W-41 track H, README
+/// gap 3958). From W-40 track P until W-41 six frozen lines held P67's change under P45's flag:
+/// the comparand's P45 transformation had been edited to P67's rule, which the D64 gate cannot
+/// see (README gap 3331's residue). Now `forkplan::p45_after` is P45's rest reading again and
+/// `forkplan::p67_after` is P67's, present only where the two plan different rows, so:
+///
+/// * every line carrying `p67` (the classes and the batch) also carries `p45`, from the same
+///   instant, with DIFFERENT rows — and its running break had run LESS than `break_min` by
+///   then, the one case P67's register row says the two readings part (P45 reset the fork's
+///   counter only at a rest of `break_min`; P67 at any length);
+/// * no line whose running break had run `break_min` carries `p67`;
+/// * the gate attributes each answer to its own number: a change to `p67` is refused under P45
+///   and allowed under P67, and moving P67's rows back under P45's flag — the shape gap 3958
+///   named — is refused when only P45 is named;
+/// * and the floors: a line of each kind is held, so neither half is vacuous.
+#[test]
+fn p67s_answer_is_its_own_and_departs_only_where_its_rule_does() {
+    let tz = tz();
+    let registered = forkclass::registered_parity();
+    assert!(registered.contains(&45) && registered.contains(&67), "P45 and P67 are registered");
+    let lines: Vec<&Value> = frozen_lines().iter().chain(forkclass::batch_lines().iter()).collect();
+    let (mut departs, mut agrees) = (0usize, 0usize);
+    let mut bad = Vec::new();
+    for l in &lines {
+        let who = l["name"].as_str().map_or_else(
+            || format!("{}{}", l["class"].as_str().unwrap_or("?"), l["secondary"].as_str().map(|s| format!(" ({s})")).unwrap_or_default()),
+            str::to_string,
+        );
+        if l["p45"].is_null() {
+            if !l["p67"].is_null() {
+                bad.push(format!("{who}: carries `p67` and no `p45`"));
+            }
+            continue;
+        }
+        let b = Built::of(ClassWorld::of_json(&l["world"], tz).expect("a stored world"));
+        let brk = b.world.state.break_.as_ref().and_then(|x| x.started).expect("a P45 line has a running break");
+        let t = tm_core::capacity::local_dt(tz, b.date(), brk);
+        let from = |v: &Value| DateTime::parse_from_rfc3339(v["from"].as_str().unwrap_or_default()).expect("from").with_timezone(&tz);
+        let taken = (from(&l["p45"]) - t).num_minutes();
+        let short = taken < i64::from(b.cfg.day.break_min);
+        if l["p67"].is_null() {
+            agrees += 1;
+            continue;
+        }
+        departs += 1;
+        assert_eq!(l["p67"]["p67"], true, "{who}: P67's flag is set in its home");
+        if l["p67"]["from"] != l["p45"]["from"] {
+            bad.push(format!("{who}: `p67` from {} and `p45` from {}", l["p67"]["from"], l["p45"]["from"]));
+        }
+        if l["p67"]["rows"] == l["p45"]["rows"] {
+            bad.push(format!("{who}: `p67` plans P45's rows — it departs nowhere"));
+        }
+        if !short {
+            bad.push(format!("{who}: `p67` on a break that had run {taken} of `break_min` {} minutes", b.cfg.day.break_min));
+        }
+    }
+    // Every parity answer a line carries is one of `forkclass::ANSWERS`: the D64 gate reads what
+    // changed off that list, so an answer outside it could move under no gate at all.
+    for l in &lines {
+        for k in l.as_object().into_iter().flatten().map(|(k, _)| k) {
+            let parity = k.strip_prefix('p').is_some_and(|d| !d.is_empty() && d.bytes().all(|c| c.is_ascii_digit()));
+            if parity && !forkclass::ANSWERS.contains(&k.as_str()) {
+                bad.push(format!("{}: carries `{k}`, an answer `forkclass::ANSWERS` does not list", l["class"]));
+            }
+        }
+    }
+    println!("lines after a running break: {departs} carry P67's own answer, {agrees} where P45's is P67's too");
+    assert!(bad.is_empty(), "{}", bad.join("\n  "));
+    assert!(departs > 0, "no frozen line holds P67's departure");
+    assert!(agrees > 0, "no frozen line holds a break where P45 and P67 agree");
+    // The gate, on a P67 line (README gap 3958's attribution, as a test).
+    let l = (*lines.iter().find(|l| !l["p67"].is_null()).expect("a P67 line")).clone();
+    let shipped = if l["shipped"].is_null() { l["day"]["day"].clone() } else { l["shipped"]["day"].clone() };
+    let mut bent = l.clone();
+    bent["p67"]["rows"][0]["kind"] = Value::String("rest".into());
+    assert!(forkclass::d64_allows(&l, &bent, &shipped, &[45], &registered).is_err(), "P45 licensed a change to P67's answer");
+    assert_eq!(forkclass::d64_allows(&l, &bent, &shipped, &[67], &registered), Ok(vec!["p67".to_string()]), "P67 may move its own answer");
+    let mut merged = l.clone();
+    merged["p45"]["rows"] = l["p67"]["rows"].clone();
+    merged.as_object_mut().expect("a line").remove("p67");
+    assert!(
+        forkclass::d64_allows(&l, &merged, &shipped, &[45], &registered).is_err(),
+        "P67's rows moved back under P45's flag with only P45 named (README gap 3958)"
     );
 }
 
@@ -2117,7 +2216,7 @@ fn the_frozen_class_worlds_are_redrawn() {
     };
     let listed: BTreeSet<String> = listed.split(',').map(str::trim).filter(|c| !c.is_empty()).map(str::to_string).collect();
     let because = std::env::var("TM_PLANNER_DRAW_BECAUSE").unwrap_or_default();
-    let reasoned = because.starts_with("20") && because.contains("D64(b)");
+    let reasoned = forkclass::is_d64b_reason(&because);
     let tz = tz();
     let path = forkclass::frozen_path();
     let out_path = std::env::var_os("TM_PLANNER_DRAW_OUT").map(std::path::PathBuf::from).unwrap_or_else(|| path.clone());

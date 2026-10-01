@@ -298,10 +298,11 @@ fn worlds() -> Vec<World> {
     ]
 }
 
-/// **The world whose stored start is after `now`**: the one world of [`worlds`] the
-/// kernel refuses by name (`badActive wf`, README gap 2874's input 1), where the fork
-/// plans it from `now`. From W-40 track E until the repair the codec sent its start AS
-/// `now` and the kernel planned it (gap 3952).
+/// **The world whose stored start is after `now`**: since W-41 (the owner's D78) the
+/// kernel plans it from `now`, as the fork does — it was the one world of [`worlds`]
+/// the kernel refused by name (`badActive wf`, README gap 2874's input 1) from the
+/// W-40 repair until then, and from W-40 track E until the repair the codec sent its
+/// start AS `now` (gap 3952). It is planned and read back like every other world.
 const AFTER_NOW: &str = "plan-basic, ^t4 started after now";
 
 /// **A block running across local midnight** (README gaps 3943 and 3829): `tm start ^t4`
@@ -360,7 +361,7 @@ fn harness_request(r: &Read) -> Value {
 /// **The `planner` section the swap will send** beside the binary's capacity
 /// request: `planwire::planner_json` over the world (the encoder R3 calls), with
 /// [`SWAP`]'s additions — the running block's worked minutes as
-/// `Replay::active_worked_min` reads them, the reading `day::worked_min` is.
+/// `Replay::running_worked_min` reads them, the reading `day::worked_min` is.
 fn swap_planner(r: &Read) -> Value {
     let today = r.now.date_naive();
     let tz = r.cfg.tz;
@@ -376,9 +377,11 @@ fn swap_planner(r: &Read) -> Value {
             // the plan's date, which after midnight is tonight's and reads 0).
             "planner.state.active.workedMin" => {
                 if let Some(a) = &r.state.active {
-                    if let Some(worked) =
-                        r.replay.running_worked_min(a.id.as_str(), today, r.now.fixed_offset(), None)
-                    {
+                    // The running break, where every host site places it (P73; README gap
+                    // 4121: until W-41's land step this passed none, so a block with a break
+                    // running counted the break as worked).
+                    let brk = r.state.break_.as_ref().and_then(|b| b.started_at(tz, r.now)).map(|t| t.fixed_offset());
+                    if let Some(worked) = r.replay.running_worked_min(a.id.as_str(), today, r.now.fixed_offset(), brk) {
                         planwire::add_worked_min(&mut planner, worked);
                     }
                 }
@@ -464,10 +467,10 @@ fn the_binarys_request_with_the_swaps_planner_section_is_planned() {
         let req = with_planner(&w.request, &swap_planner(&r));
         let raw = tm_kernel_ffi::call(&req).expect("the kernel call returns");
         let resp: Value = serde_json::from_str(&raw).expect("the response is JSON");
-        if w.name == AFTER_NOW {
-            assert_eq!(planwire::planner_refusal(&resp), Some("badActive wf"), "{}: {}", w.name, &raw[..raw.len().min(300)]);
-            continue;
-        }
+        assert!(
+            w.name != AFTER_NOW || planwire::planner_refusal(&resp).is_none(),
+            "{}: a start after `now` is planned since D78: {}", w.name, &raw[..raw.len().min(300)]
+        );
         assert!(
             planwire::planner_refusal(&resp).is_none() && resp["ok"]["plan"]["day"].is_string(),
             "{}: the kernel did not plan the binary's request with the swap's planner section: {}",
@@ -492,23 +495,29 @@ fn the_binarys_request_with_the_swaps_planner_section_is_planned() {
 }
 
 /// **What R3's request is REFUSED on, today, on worlds the binary's own verbs build**
-/// (README gaps 3902 and 3903, the remainder of gap 2874). The shipped `tm plan` — the
-/// fork until R3 — plans each; the swap's request, as the codec builds it, is refused by
-/// name. This pins the refusals so R3 cannot swap past them unseen: when the kernel's
-/// bound or the verb's validation changes, this test fails and is rewritten to the new
-/// answer, with its behaviour row.
+/// (README gaps 3902 and 3903, the remainder of gap 2874) — and, since W-41, what it
+/// PLANS. The shipped `tm plan` — the fork until R3 — plans each; the swap's request,
+/// as the codec builds it, is answered or refused as the kernel's bounds say. This
+/// pins each answer so R3 cannot swap past a change unseen: when the kernel's bound or
+/// the verb's validation changes, this test fails and is rewritten to the new answer,
+/// with its behaviour row.
 ///
-/// * `tm start` then `tm extend 24h`: the running block's estimate passes the day
-///   (`Look.maxDayMin`), and `Planner.ActiveBlock.wf` refuses it — `badActive wf`.
-///   The fork's width is `u32` (gap 3902).
-/// * `tm break 25h`: a break planned past the day — `Planner.BreakState.wf` bounds
-///   `plannedMin` by the same `Look.maxDayMin` — `badBreak wf` (gap 3902; gap 2874
-///   listed four inputs and this is a fifth).
-/// * `tm break 20m --where hammock`: the verb stores any word, and `PlanWire.placeOf?`
-///   knows four — `badBreak place` (gap 3903).
+/// * `tm start` then `tm extend 24h`: the running block's estimate passes the day. Until
+///   W-41 `Planner.ActiveBlock.wf` bounded it by `Look.maxDayMin` and refused it
+///   `badActive wf`; since D81 (gap 3902) its bound is the host's width,
+///   `Look.maxPlanMinutes` (the fork's `u32`), and the kernel PLANS it.
+/// * `tm break 25h`: a break planned past the day — likewise `Planner.BreakState.wf`'s
+///   `plannedMin`: `badBreak wf` until W-41, PLANNED since.
+///
+/// A third world stood here until W-41 track T: `tm break 20m --where hammock`, which
+/// the verb stored and `PlanWire.placeOf?` refused `badBreak place` (gap 3903). The verb
+/// now refuses an unknown place by name from the one host table of places (the
+/// campaign's D81 call, parity P75), so the binary no longer builds that world — which
+/// `cli_break_place.rs` pins — and only a hand-edited `.tm/state.json` still reaches the
+/// kernel's refusal (README gap 4005).
 #[test]
-fn the_swaps_request_is_refused_on_three_worlds_the_binary_builds() {
-    let cases: [(World, &str); 3] = [
+fn the_swaps_request_on_two_worlds_the_binary_builds() {
+    let cases: [(World, Option<&str>); 2] = [
         (
             drive(
                 "plan-basic, ^t4 extended past a day",
@@ -519,7 +528,7 @@ fn the_swaps_request_is_refused_on_three_worlds_the_binary_builds() {
                 ],
                 "2026-09-07T09:20:00-05:00",
             ),
-            "badActive wf",
+            None,
         ),
         (
             drive(
@@ -528,16 +537,7 @@ fn the_swaps_request_is_refused_on_three_worlds_the_binary_builds() {
                 &[("2026-09-07T09:00:00-05:00", &["break", "25h"])],
                 "2026-09-07T09:05:00-05:00",
             ),
-            "badBreak wf",
-        ),
-        (
-            drive(
-                "plan-basic, a break --where hammock",
-                Tm::new(),
-                &[("2026-09-07T09:00:00-05:00", &["break", "20m", "--where", "hammock"])],
-                "2026-09-07T09:05:00-05:00",
-            ),
-            "badBreak place",
+            None,
         ),
     ];
     for (w, want) in cases {
@@ -547,26 +547,29 @@ fn the_swaps_request_is_refused_on_three_worlds_the_binary_builds() {
         let resp: Value = serde_json::from_str(&raw).expect("the response is JSON");
         assert_eq!(
             planwire::planner_refusal(&resp),
-            Some(want),
+            want,
             "{}: R3's request on this world (README gaps 3902-3903): {}",
             w.name,
             &raw[..raw.len().min(300)]
         );
+        if want.is_none() {
+            assert!(resp["ok"]["plan"]["day"].is_string(), "{}: planned: {}", w.name, &raw[..raw.len().min(300)]);
+        }
     }
 }
 
-/// **A stored start after `now` is refused by name, where the fork plans it from `now`**
-/// (README gaps 2874 and 3952; parity P68 as restated at the W-40 repair). `tm start ^m1`
+/// **A stored start after `now` is planned from `now`, as the fork plans it** (the
+/// owner's D78; README gaps 2874 and 3952; parity P68 restated at W-41). `tm start ^m1`
 /// at 10:00 (a six-block item) and `tm plan` at 09:55 — a `--now` before the stored
 /// start, which is what a synced machine's clock ahead of this one leaves. The codec
-/// sends the start as it reads it (the log's 10:00) and the kernel refuses the request
-/// `badActive wf`; the shipped binary, which plans with the fork until R3, plans the row
-/// 09:55–11:00. From W-40 track E until the repair the codec sent the start AS `now`, a
-/// reading no owner decision named, and the kernel planned 09:55–10:55. At the swap the
-/// fork's half of this test is gone and the refusal is held by gap 2874's behaviour row,
-/// owed the owner before R3.
+/// sends the start as it reads it (the log's 10:00) and the kernel PLANS it: the
+/// running row from 09:55, `now`, to 11:00, `block_min` after the start — fork
+/// `active_run`'s `current_block_end(started)` — which is the shipped binary's own
+/// row, 09:55–11:00. From the W-40 repair until W-41 the kernel refused it `badActive
+/// wf`; from W-40 track E until the repair the codec sent the start AS `now` and the
+/// kernel drew 09:55–10:55.
 #[test]
-fn a_running_block_started_after_now_is_refused_by_name_where_the_fork_plans_it() {
+fn a_running_block_started_after_now_is_planned_from_now_as_the_fork_plans_it() {
     let w = drive(
         "plan-basic, ^m1 started after now",
         Tm::new(),
@@ -574,14 +577,30 @@ fn a_running_block_started_after_now_is_refused_by_name_where_the_fork_plans_it(
         "2026-09-07T09:55:00-05:00",
     );
     let r = read(&w);
+    let tz = r.cfg.tz;
     let planner = swap_planner(&r);
-    let ten = DateTime::parse_from_rfc3339("2026-09-07T10:00:00-05:00").expect("instant").with_timezone(&r.cfg.tz);
+    let ten = DateTime::parse_from_rfc3339("2026-09-07T10:00:00-05:00").expect("instant").with_timezone(&tz);
     assert_eq!(planner["state"]["active"]["started"], serde_json::json!(planwire::kernel_sec(ten)), "sent as read");
     let req = with_planner(&w.request, &planner);
     let raw = tm_kernel_ffi::call(&req).expect("the kernel call returns");
     let resp: Value = serde_json::from_str(&raw).expect("the response is JSON");
-    assert_eq!(planwire::planner_refusal(&resp), Some("badActive wf"), "{}", &raw[..raw.len().min(300)]);
-    // The fork's, today: the shipped binary.
+    assert!(planwire::planner_refusal(&resp).is_none(), "planned from now (D78): {}", &raw[..raw.len().min(300)]);
+    let cands = priority::collect_candidates(&r.tree, &r.replay, &r.cfg, &Model::default(), r.now.date_naive(), r.now);
+    let order = planwire::send_order(&cands);
+    let ans = planwire::read_capacity_answer(&resp, &order, true).expect("the grants read back");
+    let ctx = planwire::DayCtx { tz, cands: &cands, prios: &ans.prios };
+    let day = planwire::read_plan(&resp["ok"]["plan"], &ctx).expect("the day reads back");
+    let running = day.day.segments.iter().find(|s| s.flags.current).expect("a running row");
+    assert_eq!(running.item.as_ref().map(|i| i.as_str()), Some("m1"), "{running:?}");
+    let hhmm = |t: DateTime<Tz>| t.format("%H:%M").to_string();
+    let kernel = (hhmm(running.start), hhmm(running.end));
+    assert_eq!(kernel, ("09:55".to_string(), "11:00".to_string()), "the kernel's row: {running:?}");
+    // No open row: nothing of the block has run before `now`.
+    assert!(
+        !day.day.segments.iter().any(|s| s.flags.open && s.item.as_ref().map(|i| i.as_str()) == Some("m1")),
+        "no open row before the block's start"
+    );
+    // The fork's, today: the shipped binary — the same row.
     let fork = w._tm.json_at(w.now, &["plan"]);
     let row = fork["segments"].as_array().expect("segments").iter()
         .find(|s| s["item"] == "m1" && s["kind"] == "block").expect("the fork's running row");
@@ -619,4 +638,39 @@ fn a_block_begun_before_midnight_is_planned_from_the_logs_start_after_it() {
     let running = day.day.segments.iter().find(|s| s.flags.current).expect("a running row");
     assert_eq!(running.item.as_ref().map(|i| i.as_str()), Some("t4"), "{running:?}");
     assert!(running.start <= r.now, "the running row does not begin after now: {running:?}");
+}
+
+/// **A break running across local midnight is sent from its own start, and planned**
+/// (README gap 4001, closed at W-41's land step beside track T's parity P73 and track K's
+/// D78). `tm break 30m` at 23:50, `tm plan` at 00:10 the next day: the log holds no line
+/// for a running break, so its start is `.tm/state.json`'s bare `23:50`, and every host site
+/// now reads it as the latest 23:50 at or before `now` — yesterday's
+/// (`BreakState::started_at`). Until the land step the swap's encoder, `planwire::state_json`,
+/// put it on the plan's date — TONIGHT's 23:50, after `now` — and the kernel, which still
+/// refuses a break begun after `now` (`Planner.BreakState.wf`), refused the whole request
+/// `badBreak wf`: R3 would have shipped a plan that stops across midnight on every break
+/// left running over it.
+#[test]
+fn a_break_begun_before_midnight_is_sent_from_its_start_and_planned() {
+    let w = drive(
+        "plan-basic, a break running across midnight",
+        Tm::new(),
+        &[("2026-09-07T23:50:00-05:00", &["break", "30m"])],
+        "2026-09-08T00:10:00-05:00",
+    );
+    let r = read(&w);
+    let tz = r.cfg.tz;
+    assert!(r.state.break_.as_ref().is_some_and(|b| b.started.is_some()), "a break runs: {:?}", r.state.break_);
+    let planner = swap_planner(&r);
+    let started = DateTime::parse_from_rfc3339("2026-09-07T23:50:00-05:00").expect("instant").with_timezone(&tz);
+    assert_eq!(
+        planner["state"]["break"]["started"],
+        serde_json::json!(planwire::kernel_sec(started)),
+        "the latest 23:50 at or before now, yesterday's (P73)"
+    );
+    let req = with_planner(&w.request, &planner);
+    let raw = tm_kernel_ffi::call(&req).expect("the kernel call returns");
+    let resp: Value = serde_json::from_str(&raw).expect("the response is JSON");
+    assert_eq!(planwire::planner_refusal(&resp), None, "planned: {}", &raw[..raw.len().min(300)]);
+    assert_eq!(resp["ok"]["plan"]["day"].as_str(), Some("2026-09-08"), "the day after");
 }

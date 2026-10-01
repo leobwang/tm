@@ -188,17 +188,17 @@ theorem noOverbook_iff (r : PlanReq) (d : DayPlan) :
 
 /-! ## 2. `oneBlock` — no block is longer than one block -/
 
-/-- **In seconds** (W-14 repair, gap 392): `s.val.minutes ≤ d.blockMin` floors, and so admits
-a Block of `blockMin` minutes **and 59 seconds**.  `pastRows` clips a replayed row at
-`min stop now`, an arbitrary second, so such a row is reachable rather than hypothetical. -/
-def oneBlockAtATime (_r : PlanReq) (d : DayPlan) : Bool :=
+/-- **In seconds** (W-14 repair, gap 392): `s.val.minutes ≤ d.blockMin` floors, and so admits a Block of `blockMin`
+minutes **and 59 seconds**.  **Plus the running block's lead** since W-41 (D78): a block logged as begun after `now` is
+reserved from `now` to `block_min` after its start, as the fork reserves it: the block's logged start less `now`. -/
+def oneBlockAtATime (r : PlanReq) (d : DayPlan) : Bool :=
   d.segments.all
-    (fun s => decide (s.val.kind = SegKind.block → s.val.stop - s.val.start ≤ d.blockMin * 60))
+    (fun s => decide (s.val.kind = SegKind.block → s.val.stop - s.val.start ≤ d.blockMin * 60 + (r.state.active.map (fun a => a.started.sec - r.now.sec)).getD 0))
 
 theorem oneBlockAtATime_iff (r : PlanReq) (d : DayPlan) :
     oneBlockAtATime r d = true ↔
       ∀ s ∈ d.segments, s.val.kind = SegKind.block →
-        s.val.stop - s.val.start ≤ d.blockMin * 60 := by
+        s.val.stop - s.val.start ≤ d.blockMin * 60 + (r.state.active.map (fun a => a.started.sec - r.now.sec)).getD 0 := by
   simp only [oneBlockAtATime, List.all_eq_true, decide_eq_true_eq]
 
 /-! ## 3. `energyFilter` — every block has `item.ci ≤ slot.energy`
@@ -586,7 +586,7 @@ theorem overbook_from_the_battery (r : PlanReq) (d : DayPlan) (h : planOkCore r 
 
 theorem one_block_from_the_battery (r : PlanReq) (d : DayPlan) (h : planOkCore r d = true) :
     ∀ s ∈ d.segments, s.val.kind = SegKind.block →
-      s.val.stop - s.val.start ≤ d.blockMin * 60 :=
+      s.val.stop - s.val.start ≤ d.blockMin * 60 + (r.state.active.map (fun a => a.started.sec - r.now.sec)).getD 0 :=
   (oneBlockAtATime_iff r d).mp
     (checksCore_all r d h ⟨.oneBlock, oneBlockAtATime⟩ (by simp [checksCore]))
 
@@ -1010,12 +1010,12 @@ README gap **2020**. -/
 /-- **E1 over the whole day** — `Planner.plan_reserves_one_block_at_a_time` at every Block row
 of a day whose log holds none, because every such row starts at or after `now`.  The fold's
 rows cost this check **nothing**: `Look.cutSlots` cuts no slot longer than `block_min`. -/
-theorem oneBlockAtATime_of_a_logless_day (r : PlanReq) (hactive : r.activeAgrees = true)
+theorem oneBlockAtATime_of_a_logless_day (r : PlanReq)
     (hday : r.dayAgrees = true) (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
     (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block) :
     oneBlockAtATime r (dayPlan r) = true :=
   (oneBlockAtATime_iff r _).mpr (fun s hs hk =>
-    plan_reserves_one_block_at_a_time r hactive hday s hs hk
+    plan_reserves_one_block_at_a_time r hday s hs hk
       (a_block_row_of_a_logless_day_starts_at_or_after_now r hnowcal hnopast s hs hk))
 
 /-- **The wall check over the whole day.**  The fold's rows cost it **nothing** either: L3 cuts
@@ -1159,10 +1159,10 @@ carries is the findings, named:
   gap 346, the decoder's to establish) and every dated item it holds is written without a
   `buffer:` and inside the day being planned.  These are exactly the hypotheses P1's own
   `Planner.plan_never_moves_a_wall` carries, and for exactly the same reason.
-* **`hactive` and `hday` are step P3's, and both are R10 obligations in the same shape**: the
-  running block is one `mkActive?` would have built (it started at or before `now`), and the
-  `[day]` is one `mkDayCfg?` would have built (it has a block length).  `oneBlockAtATime` is
-  false without either — see `Planner.PlanReq.currentBlockEnd_within_a_block`.
+* **`hday` is step P3's, an R10 obligation**: the `[day]` is one `mkDayCfg?` would have built (it has a block
+  length), and `oneBlockAtATime` is false without it.  P3 also carried `hactive` — the running block started by `now`
+  — until W-41: D78 plans a later start from `now` as the fork does and `oneBlockAtATime` reads the lead, so no lift
+  needs it (`Planner.PlanReq.the_reservation_reaches_at_most_one_block_past_its_start`).
 * **`hnowcal` is step P3's too**: the instant being planned is inside the calendar, so
   `Planner.segOf`'s forcing is the identity on the reservation's start.  Without it a request
   whose `now` sits on the horizon produces a zero-length reservation row and the interval
@@ -1220,9 +1220,9 @@ two.
 
 This is **not** a discharge of any `Goals.lean` entry beyond E1, which left the file at step P3
 over its own restatement (`Planner.plan_reserves_one_block_at_a_time`). -/
-theorem dayPlan_ok_core_given_the_budget (r : PlanReq)
+theorem dayPlan_ok_core_given_the_budget
+    (r : PlanReq)
     (hagree : r.wallsAgree = true)
-    (hactive : r.activeAgrees = true)
     (hday : r.dayAgrees = true)
     (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
     (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block)
@@ -1241,7 +1241,7 @@ theorem dayPlan_ok_core_given_the_budget (r : PlanReq)
     obtain ⟨hnbuf, hin, hout, hfwd, hcal⟩ := hplain i e a b hget hsh
     exact plan_never_moves_a_wall r s i e a b hagree hs hk hi hget hsh hnbuf hin hout hfwd hcal
   simp only [planOkCore, checksCore, List.all_cons, List.all_nil, Bool.and_true, hbudget,
-    oneBlockAtATime_of_a_logless_day r hactive hday hnowcal hnopast,
+    oneBlockAtATime_of_a_logless_day r hday hnowcal hnopast,
     energyFilterOk_of_a_day_that_pays r (fun t ht => hnopast t (mem_replayedRows.2 (Or.inl ht))) hpay,
     noBlockOverAWall_of_a_logless_day r hnowcal hnopast,
     noBlockOverABreak_of_a_logless_day r hnowcal hnopast,
@@ -1381,9 +1381,9 @@ theorem noOverbook_can_fail (r : PlanReq) : noOverbook r theOverbookedDay = fals
 
 def theOverlongBlockDay : DayPlan := wDay [aBlockOfAnHour] 30 4 Capped.nil
 
-theorem oneBlockAtATime_can_fail (r : PlanReq) :
+theorem oneBlockAtATime_can_fail (r : PlanReq) (hlead : (r.state.active.map (fun a => a.started.sec - r.now.sec)).getD 0 = 0) :
     oneBlockAtATime r theOverlongBlockDay = false := by
-  simp [oneBlockAtATime, theOverlongBlockDay, wDay, aBlockOfAnHour, wSeg]
+  simp [oneBlockAtATime, theOverlongBlockDay, wDay, aBlockOfAnHour, wSeg, hlead]
 
 /-! ### 3. `energyFilter` — a `ci = 3` item in a level-0 slot -/
 
@@ -1761,9 +1761,9 @@ survives `withoutPast` (`SegKind.isWork` is false of a Break), so a request whos
 rows rather than a step: `PlannerWit.the_paying_request_assigns_and_the_battery_passes` is a
 request whose cursor fills slots, whose rows carry a slot energy, and whose decoder pays the
 fifth clause. -/
-theorem dayPlan_ok_core_from_now_given_the_budget (r : PlanReq)
+theorem dayPlan_ok_core_from_now_given_the_budget
+    (r : PlanReq)
     (hagree : r.wallsAgree = true)
-    (hactive : r.activeAgrees = true)
     (hday : r.dayAgrees = true)
     (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
     (hpay : AssignedRowsPay r)
@@ -1790,7 +1790,7 @@ theorem dayPlan_ok_core_from_now_given_the_budget (r : PlanReq)
     refine (oneBlockAtATime_iff r _).mpr (fun s hs hk => ?_)
     obtain ⟨hsd, hnow, -⟩ := hblk s hs hk
     rw [hbm]
-    exact plan_reserves_one_block_at_a_time r hactive hday s hsd hk hnow
+    exact plan_reserves_one_block_at_a_time r hday s hsd hk hnow
   have h3 : energyFilterOk r (withoutPast r (dayPlan r)) = true := by
     refine (energyFilterOk_iff r _).mpr (fun s hs i lvl _ hk hi he => ?_)
     obtain ⟨-, -, hsrc⟩ := hblk s hs hk
@@ -1859,9 +1859,9 @@ the whole of `Emit.lean`'s roster; README gap **2024** is that cost, measured.
 
 **It is NOT the old theorem restored.**  The old one was the only form; this one is one
 instance of `dayPlan_ok_core_from_now_given_the_budget`, which holds of days that assign. -/
-theorem dayPlan_ok_core_from_now_on_an_unassigned_day (r : PlanReq)
+theorem dayPlan_ok_core_from_now_on_an_unassigned_day
+    (r : PlanReq)
     (hagree : r.wallsAgree = true)
-    (hactive : r.activeAgrees = true)
     (hday : r.dayAgrees = true)
     (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
     (hnoassign : r.assignedRows = [])
@@ -1873,7 +1873,7 @@ theorem dayPlan_ok_core_from_now_on_an_unassigned_day (r : PlanReq)
         (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
         (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd) :
     planOkCore r (withoutPast r (dayPlan r)) = true :=
-  dayPlan_ok_core_from_now_given_the_budget r hagree hactive hday hnowcal
+  dayPlan_ok_core_from_now_given_the_budget r hagree hday hnowcal
     (an_unassigned_day_pays_the_lift r hnoassign _
       (withoutPast_block_rows_are_reserved_or_assigned r)).1
     (an_unassigned_day_pays_the_lift r hnoassign _
@@ -2169,7 +2169,7 @@ theorem the_reservation_is_a_budget_row_from_now (r : PlanReq)
 proved without `hnoimp` at W-37 (it carried one from W-33 to W-36). -/
 theorem dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day
     (el : Eligible) (r : PlanReq)
-    (hagree : r.wallsAgree = true) (hactive : r.activeAgrees = true)
+    (hagree : r.wallsAgree = true)
     (hday : r.dayAgrees = true) (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
     (hnoassign : r.assignedRows = [])
     (hplain : ∀ (i : Id) (e : Entity) (a b : Field.DT),
@@ -2182,7 +2182,7 @@ theorem dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day
     planOkCore r (withoutPast r (dayPlan r)) = true ∧
       impossibleKept r (withoutPast r (dayPlan r)) = true ∧
       batchDoesNotReachPast el r (withoutPast r (dayPlan r)) = true :=
-  ⟨dayPlan_ok_core_from_now_on_an_unassigned_day r hagree hactive hday hnowcal
+  ⟨dayPlan_ok_core_from_now_on_an_unassigned_day r hagree hday hnowcal
      hnoassign hplain,
    impossibleKept_on_an_unassigned_day r _ hnoassign (the_reservation_is_a_budget_row_from_now r hnowcal),
    batchDoesNotReachPast_of_no_batch_row el r _ (fun s hs ids =>
@@ -2194,7 +2194,7 @@ theorem dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day
 cannot be dropped: `PlannerWit.dayPlan_ok_from_now_at_every_eligibility_is_refuted`. -/
 theorem dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day
     (el : Eligible) (r : PlanReq)
-    (hagree : r.wallsAgree = true) (hactive : r.activeAgrees = true)
+    (hagree : r.wallsAgree = true)
     (hday : r.dayAgrees = true) (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
     (hplain : ∀ (i : Id) (e : Entity) (a b : Field.DT),
       r.plan.val.store.get i = some e → e.val.shape = Shape.interval a b →
@@ -2209,7 +2209,7 @@ theorem dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day
     planOk el r (withoutPast r (dayPlan r)) = true := by
   obtain ⟨hcore, himp, hbat⟩ :=
     dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day
-      el r hagree hactive hday hnowcal hnoassign hplain
+      el r hagree hday hnowcal hnoassign hplain
   simp only [planOk, checksOf, List.all_append, checksEligible, List.all_cons,
     List.all_nil, Bool.and_true, hrank, hhot, himp, hbat]
   exact hcore
@@ -2300,7 +2300,7 @@ and the tenth is `monotoneInRank`.  The eleventh, `hotBeforeQueue`, is refuted o
 (`PlannerWit.hotBeforeQueue_is_false_on_a_quiet_day`).  See the section header. -/
 theorem dayPlan_ok_on_a_quiet_unassigned_day_except_hot (el : Eligible) (r : PlanReq)
     (hnoassign : r.assignedRows = [])
-    (hagree : r.wallsAgree = true) (hactive : r.activeAgrees = true)
+    (hagree : r.wallsAgree = true)
     (hday : r.dayAgrees = true) (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
     (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block)
     (hnorun : r.activeRun = none)
@@ -2315,7 +2315,7 @@ theorem dayPlan_ok_on_a_quiet_unassigned_day_except_hot (el : Eligible) (r : Pla
       monotoneInRank el r (dayPlan r) = true ∧
       impossibleKept r (dayPlan r) = true ∧
       batchDoesNotReachPast el r (dayPlan r) = true :=
-  ⟨dayPlan_ok_core_given_the_budget r hagree hactive hday hnowcal hnopast
+  ⟨dayPlan_ok_core_given_the_budget r hagree hday hnowcal hnopast
      (an_unassigned_day_pays_the_lift r hnoassign _
        (dayPlan_block_rows_are_reserved_or_assigned r hnopast)).1
      (an_unassigned_day_pays_the_lift r hnoassign _
@@ -2333,7 +2333,7 @@ without `hnoimp` at W-37.  It assumes `hhot`, and cannot drop it:
 is an instance where it holds. -/
 theorem dayPlan_ok_on_a_quiet_unassigned_day_given_hot (el : Eligible) (r : PlanReq)
     (hnoassign : r.assignedRows = [])
-    (hagree : r.wallsAgree = true) (hactive : r.activeAgrees = true)
+    (hagree : r.wallsAgree = true)
     (hday : r.dayAgrees = true) (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
     (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block)
     (hnorun : r.activeRun = none)
@@ -2348,7 +2348,7 @@ theorem dayPlan_ok_on_a_quiet_unassigned_day_given_hot (el : Eligible) (r : Plan
     planOk el r (dayPlan r) = true := by
   obtain ⟨hcore, hrank, himp, hbat⟩ :=
     dayPlan_ok_on_a_quiet_unassigned_day_except_hot el r
-      hnoassign hagree hactive hday hnowcal hnopast hnorun hplain
+      hnoassign hagree hday hnowcal hnopast hnorun hplain
   simp only [planOk, checksOf, List.all_append, checksEligible, List.all_cons,
     List.all_nil, Bool.and_true, hrank, hhot, himp, hbat]
   exact hcore
@@ -2719,10 +2719,10 @@ weakening of any checker.
 **The four eligibility-dependent conjuncts are all vacuous here** and
 `PlannerWit.the_quiet_eleven_is_one_checker_biting` computes that; see the section
 header before quoting "eleven of eleven" as eleven checkers biting. -/
-theorem dayPlan_ok_on_a_quiet_unassigned_day (el : Eligible) (r : PlanReq)
+theorem dayPlan_ok_on_a_quiet_unassigned_day (el : Eligible)
+    (r : PlanReq)
     (hnoassign : r.assignedRows = [])
     (hagree : r.wallsAgree = true)
-    (hactive : r.activeAgrees = true)
     (hday : r.dayAgrees = true)
     (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
     (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block)
@@ -2740,7 +2740,7 @@ theorem dayPlan_ok_on_a_quiet_unassigned_day (el : Eligible) (r : PlanReq)
     eligibleSomewhere_of_no_work_row hwork r _
       (dayPlan_has_no_work_row_on_an_unassigned_day r hnopast hnorun hnoassign)
   refine dayPlan_ok_on_a_quiet_unassigned_day_given_hot el r
-    hnoassign hagree hactive hday hnowcal hnopast hnorun hplain ?_
+    hnoassign hagree hday hnowcal hnopast hnorun hplain ?_
   exact hotBeforeQueue_of_nothing_eligible el r _ hnone
 
 /-! ############################################################################
@@ -3301,7 +3301,7 @@ theorem eligibleSomewhere_of_only_the_reservation {el : Eligible} (hsl : SlotAnc
 request.**
 
 Five hypotheses, and **not one of them is about the log, the runtime or the shape of the day**:
-`hagree` is the decoder's (gap 346), `hactive`, `hday` and `hnowcal` are R10 obligations, and
+`hagree` is the decoder's (gap 346), `hday` and `hnowcal` are R10 obligations (and `hactive` until W-41), and
 `hplain` is the same hypothesis `Planner.plan_never_moves_a_wall` has carried since P1.  W-19
 left this day at nine of eleven with the two comparisons **refuted** at the permissive
 eligibility; the sixth hypothesis is what repairs them, and it is a property of step 5's own
@@ -3312,10 +3312,10 @@ weakened by this.**  It computes both comparisons `false` at `PlannerWit.permiss
 very day at `PlannerWit.theQueuedRequest`, and `PlannerWit.the_whole_battery_passes_from_now_at_the_queued_request`
 fires this theorem at the same request.  The pair is the statement: what separates a refuted
 ∀-`el` claim from a proved one is exactly one clause about where step 5 may assign. -/
-theorem dayPlan_ok_from_now_on_an_unassigned_day (el : Eligible) (r : PlanReq)
+theorem dayPlan_ok_from_now_on_an_unassigned_day (el : Eligible)
+    (r : PlanReq)
     (hnoassign : r.assignedRows = [])
     (hagree : r.wallsAgree = true)
-    (hactive : r.activeAgrees = true)
     (hday : r.dayAgrees = true)
     (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
     (hplain : ∀ (i : Id) (e : Entity) (a b : Field.DT),
@@ -3332,7 +3332,7 @@ theorem dayPlan_ok_from_now_on_an_unassigned_day (el : Eligible) (r : PlanReq)
       (fun s hs hw =>
         withoutPast_work_rows_are_the_reservation_on_an_unassigned_day r hnoassign s hs hw)
   exact dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day
-    el r hagree hactive hday hnowcal hplain hnoassign
+    el r hagree hday hnowcal hplain hnoassign
     (monotoneInRank_of_nothing_eligible el r _ hnone)
     (hotBeforeQueue_of_nothing_eligible el r _ hnone)
 
@@ -3344,10 +3344,10 @@ hypothesis on the request and pays for it with `SlotAnchored` in place of `WorkA
 It is the weaker of this section's two lifts in one respect a reader should see: `hnopast` is
 *"false of every real day after the first block is worked"* (`dayPlan_ok_core_from_now_given_the_budget`'s own
 doc comment), and `dayPlan_ok_from_now_on_an_unassigned_day` above is the one with no such hypothesis at all. -/
-theorem dayPlan_ok_on_a_day_with_no_replayed_block_on_an_unassigned_day (el : Eligible) (r : PlanReq)
+theorem dayPlan_ok_on_a_day_with_no_replayed_block_on_an_unassigned_day (el : Eligible)
+    (r : PlanReq)
     (hnoassign : r.assignedRows = [])
     (hagree : r.wallsAgree = true)
-    (hactive : r.activeAgrees = true)
     (hday : r.dayAgrees = true)
     (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
     (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block)
@@ -3365,7 +3365,7 @@ theorem dayPlan_ok_on_a_day_with_no_replayed_block_on_an_unassigned_day (el : El
       (fun s hs hw =>
         dayPlan_work_rows_are_the_reservation_on_an_unassigned_day r hnopast hnoassign s hs hw)
   have hcore :=
-    dayPlan_ok_core_given_the_budget r hagree hactive hday hnowcal hnopast
+    dayPlan_ok_core_given_the_budget r hagree hday hnowcal hnopast
       (an_unassigned_day_pays_the_lift r hnoassign _
         (dayPlan_block_rows_are_reserved_or_assigned r hnopast)).1
       (an_unassigned_day_pays_the_lift r hnoassign _
@@ -3969,10 +3969,10 @@ morning worked something, which is every real day.  It is **not** a step towards
 induction: every clause below is discharged by a row that is either replayed or is §8.2
 choice 5b's reservation, and §8.2 step 5's own Block rows are still absent from
 `Planner.dayRows`. -/
-theorem dayPlan_ok_core_of_plain_walls_on_an_unassigned_day (r : PlanReq)
+theorem dayPlan_ok_core_of_plain_walls_on_an_unassigned_day
+    (r : PlanReq)
     (hnoassign : r.assignedRows = [])
     (hagree : r.wallsAgree = true)
-    (hactive : r.activeAgrees = true)
     (hday : r.dayAgrees = true)
     (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
     (hwalls : WallsArePlain r (dayPlan r))
@@ -4002,8 +4002,8 @@ theorem dayPlan_ok_core_of_plain_walls_on_an_unassigned_day (r : PlanReq)
     · have hkt : t.kind = SegKind.block := by rw [← hst]; exact hk
       have := hpast.oneBlock t ht hkt
       rw [hbm, hst]
-      exact this
-    · have hone := r.the_reservation_is_at_most_one_block q hactive (r.blockMin_pos hday) hq
+      exact Nat.le_trans this (Nat.le_add_right _ _)
+    · have hone := r.the_reservation_reaches_at_most_one_block_past_its_start q (r.blockMin_pos hday) hq
       obtain ⟨-, -, -, -, hs0, -⟩ := r.activeRun_spec q hq
       rw [hbm]
       omega
@@ -4070,16 +4070,16 @@ one.
 
 **`PlannerWit.the_off_day_request_has_plain_walls` is the other half of the strictness claim**:
 a request where `PlainStore` is false, `WallsArePlain` holds, and the seven hold with it. -/
-theorem dayPlan_ok_core_of_a_paying_past_on_an_unassigned_day (r : PlanReq)
+theorem dayPlan_ok_core_of_a_paying_past_on_an_unassigned_day
+    (r : PlanReq)
     (hnoassign : r.assignedRows = [])
     (hagree : r.wallsAgree = true)
-    (hactive : r.activeAgrees = true)
     (hday : r.dayAgrees = true)
     (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
     (hplain : PlainStore r)
     (hpast : PastPays r) :
     planOkCore r (dayPlan r) = true :=
-  dayPlan_ok_core_of_plain_walls_on_an_unassigned_day r hnoassign hagree hactive hday hnowcal
+  dayPlan_ok_core_of_plain_walls_on_an_unassigned_day r hnoassign hagree hday hnowcal
     (WallsArePlain_of_a_plain_store r _ hplain) hpast
 
 
@@ -4091,12 +4091,12 @@ Both bounds W-23 left are now named rather than assumed: the eligibility one by
 `FromNowAnchored`, the log one by `PastPays`. -/
 theorem dayPlan_ok_on_the_whole_day_on_an_unassigned_day {el : Eligible} (hfn : FromNowAnchored el) (r : PlanReq)
     (hnoassign : r.assignedRows = [])
-    (hagree : r.wallsAgree = true) (hactive : r.activeAgrees = true) (hday : r.dayAgrees = true)
+    (hagree : r.wallsAgree = true) (hday : r.dayAgrees = true)
     (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
     (hplain : PlainStore r)
     (hpast : PastPays r) : planOk el r (dayPlan r) = true :=
   dayPlan_ok_of_the_core_seven_on_an_unassigned_day hfn r hnoassign
-    (dayPlan_ok_core_of_a_paying_past_on_an_unassigned_day r hnoassign hagree hactive hday
+    (dayPlan_ok_core_of_a_paying_past_on_an_unassigned_day r hnoassign hagree hday
       hnowcal hplain hpast)
 
 
@@ -4105,20 +4105,20 @@ form of §6.1's lift in this tree, and the one a later step should call.
 
 Three bounds, three names: the eligibility one by `FromNowAnchored` (W-23), the log one by
 `PastPays` (W-24), the wall one by `WallsArePlain` (here).  Nothing else in the hypotheses is
-a `∀` over the request: `wallsAgree`, `activeAgrees` and `dayAgrees` are decidable `Bool`s the
-decoder owes (gap 346) and `hnowcal` is one `Nat` comparison.
+a `∀` over the request: `wallsAgree` and `dayAgrees` are decidable `Bool`s the decoder owes (gap
+346; `activeAgrees` too until W-41's D78) and `hnowcal` is one `Nat` comparison.
 
 `dayPlan_ok_on_the_whole_day_on_an_unassigned_day` is the same statement with the blanket `PlainStore` in place of
 `WallsArePlain`, kept because every existing caller has the blanket. -/
 theorem dayPlan_ok_on_the_whole_day_of_plain_walls_on_an_unassigned_day {el : Eligible} (hfn : FromNowAnchored el)
     (r : PlanReq)
     (hnoassign : r.assignedRows = [])
-    (hagree : r.wallsAgree = true) (hactive : r.activeAgrees = true) (hday : r.dayAgrees = true)
+    (hagree : r.wallsAgree = true) (hday : r.dayAgrees = true)
     (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
     (hwalls : WallsArePlain r (dayPlan r))
     (hpast : PastPays r) : planOk el r (dayPlan r) = true :=
   dayPlan_ok_of_the_core_seven_on_an_unassigned_day hfn r hnoassign
-    (dayPlan_ok_core_of_plain_walls_on_an_unassigned_day r hnoassign hagree hactive hday
+    (dayPlan_ok_core_of_plain_walls_on_an_unassigned_day r hnoassign hagree hday
       hnowcal hwalls hpast)
 
 
@@ -4750,6 +4750,13 @@ theorem a_candidate_whose_two_readings_differ_breaks_the_clause (r : PlanReq)
   | false => rfl
   | true => exact absurd (a_candidates_ci_is_its_items_ci r h c f hc) hne
 
+/-- **D80 (b)'s clause is `candsAgree`'s `ci` half**: `Planner.PlanReq.planCi` is `candPlanView`'s first value. -/
+theorem candPlanView_ci_is_planCi (r : PlanReq) (i : Id) : (candPlanView r i).map (·.1) = r.planCi i := by
+  unfold candPlanView PlanReq.planCi; cases r.plan.val.store.get i <;> rfl
+/-- **So a request `candsAgree` accepts pays D80 (b)** (not conversely: `rootPrio` and `hot` are not D80's). -/
+theorem ciDisagreement_eq_none_of_candsAgree (r : PlanReq) (h : candsAgree r = true) : r.ciDisagreement = none :=
+  r.ciDisagreement_eq_none_iff.2 (fun p hp => by rw [← candPlanView_ci_is_planCi, (candsAgree_iff r).1 h p hp]; rfl)
+
 /-- **§8.2 step 5's energy filter, at the `ci` the battery reads** — the content of
 `plan_respects_the_energy_filter`, proved at the assignment before any row exists.
 
@@ -4758,44 +4765,37 @@ Three facts compose: `finalAssign_ok` (step 6 keeps the filter),
 fifth decoder clause (the member's wire `ci` is its item's).  **The last is the only one that
 is not a theorem about this kernel**, which is exactly why it belongs beside `DecoderPays`'
 other four and not inside the planner. -/
-theorem an_assigned_member_is_under_its_slots_energy (r : PlanReq) (hca : candsAgree r = true)
+theorem an_assigned_member_is_under_its_slots_energy (r : PlanReq) (hci : r.ciDisagreement = none)
     (i gi : Nat) (h : r.finalAssign.slotOf[i]? = some (some gi)) (e : Fin 6) (s : Look.Slot)
     (hes : r.energisedSlots[i]? = some (e, s)) (g : Planner.Group)
     (hg : r.finalAssign.groups[gi]? = some g) (m : Ranked) (hm : m ∈ g.members)
     (f : Option Look.Floor) (hmc : (m.cand, f) ∈ r.cands.val) :
     (effectiveCi r.plan.val m.cand.id).val ≤ e.val := by
-  rw [a_candidates_ci_is_its_items_ci r hca m.cand f hmc,
+  rw [r.a_candidates_ci_is_its_items_where_the_wire_agrees hci m.cand f hmc,
     a_member_of_an_assigned_group_carries_its_ci r gi g hg m hm]
   exact (an_assigned_slot_is_under_its_slots_energy r i gi h e s hes g hg).1
 
 /-- **And §8.2 step 5's wind-down rule at the same `ci`** — the content of
 `plan_places_no_demanding_block_after_wind_down`, on the same three facts. -/
 theorem an_assigned_member_after_the_wind_down_is_not_demanding (r : PlanReq)
-    (hca : candsAgree r = true) (i gi : Nat)
+    (hci : r.ciDisagreement = none) (i gi : Nat)
     (h : r.finalAssign.slotOf[i]? = some (some gi)) (e : Fin 6) (s : Look.Slot)
     (hes : r.energisedSlots[i]? = some (e, s)) (hwd : r.windDownSec ≤ s.start)
     (g : Planner.Group) (hg : r.finalAssign.groups[gi]? = some g) (m : Ranked)
     (hm : m ∈ g.members) (f : Option Look.Floor) (hmc : (m.cand, f) ∈ r.cands.val) :
     (effectiveCi r.plan.val m.cand.id).val < 4 := by
-  rw [a_candidates_ci_is_its_items_ci r hca m.cand f hmc,
+  rw [r.a_candidates_ci_is_its_items_where_the_wire_agrees hci m.cand f hmc,
     a_member_of_an_assigned_group_carries_its_ci r gi g hg m hm]
   have h3 := (an_assigned_slot_is_under_its_slots_energy r i gi h e s hes g hg).2
   omega
 
 /-! ### What the fifth clause buys a ROW, and not only an assignment (W-30)
 
-`an_assigned_member_is_under_its_slots_energy` above is stated at a *member* of a group at a
-*slot index*.  The battery reads neither: it reads a `Seg` of the day, and asks about that
-row's `item` and its `energy`.  The four theorems below are the join, and each is a bound this
-tree did not have:
-
-* the row's own **slot index**, which `Planner.PlanReq.mem_assignedRows` discarded;
-* the row's `item` as a **member** of the group that took the slot;
-* a member of a group as a **candidate of the request**, which is what `candsAgree` quantifies
-  over — nothing said a group's members were in `Planner.PlanReq.cands` at all, and without it
-  the fifth clause reaches no row;
-* and therefore `AssignedRowsPay`, which is what §6.1's lift asks for.
--/
+`an_assigned_member_is_under_its_slots_energy` above is stated at a *member* of a group at a *slot index*.  The battery
+reads neither: it reads a `Seg` of the day.  The four theorems below are the join, each a bound this tree did not have:
+the row's own **slot index** (`Planner.PlanReq.mem_assignedRows` discarded it); its `item` as a **member** of the group
+that took the slot; a member as a **candidate of the request** — what D80 (b)'s clause quantifies over since W-41, and
+`candsAgree` before — and therefore `AssignedRowsPay`, which is what §6.1's lift asks for. -/
 
 /-- **A row §8.2 step 5 placed, at the slot index that placed it** —
 `Planner.PlanReq.mem_assignedRows` with the zip's position kept instead of discarded.  Every
@@ -4892,22 +4892,22 @@ theorem a_member_of_an_assigned_group_is_a_candidate (r : PlanReq) (gi : Nat)
 rather than supplied** — `an_assigned_member_is_under_its_slots_energy` with its last two
 arguments discharged. -/
 theorem an_assigned_members_ci_is_under_its_slots_energy (r : PlanReq)
-    (hca : candsAgree r = true) (i gi : Nat) (h : r.finalAssign.slotOf[i]? = some (some gi))
+    (hci : r.ciDisagreement = none) (i gi : Nat) (h : r.finalAssign.slotOf[i]? = some (some gi))
     (e : Fin 6) (s : Look.Slot) (hes : r.energisedSlots[i]? = some (e, s))
     (g : Planner.Group) (hg : r.finalAssign.groups[gi]? = some g) (m : Ranked)
     (hm : m ∈ g.members) : (effectiveCi r.plan.val m.cand.id).val ≤ e.val := by
   obtain ⟨f, hf⟩ := a_member_of_an_assigned_group_is_a_candidate r gi g hg m hm
-  exact an_assigned_member_is_under_its_slots_energy r hca i gi h e s hes g hg m hm f hf
+  exact an_assigned_member_is_under_its_slots_energy r hci i gi h e s hes g hg m hm f hf
 
 /-- **And the wind-down rule at the same `ci`**, the same two arguments discharged. -/
 theorem an_assigned_members_ci_after_the_wind_down (r : PlanReq)
-    (hca : candsAgree r = true) (i gi : Nat) (h : r.finalAssign.slotOf[i]? = some (some gi))
+    (hci : r.ciDisagreement = none) (i gi : Nat) (h : r.finalAssign.slotOf[i]? = some (some gi))
     (e : Fin 6) (s : Look.Slot) (hes : r.energisedSlots[i]? = some (e, s))
     (hwd : r.windDownSec ≤ s.start) (g : Planner.Group)
     (hg : r.finalAssign.groups[gi]? = some g) (m : Ranked) (hm : m ∈ g.members) :
     (effectiveCi r.plan.val m.cand.id).val < 4 := by
   obtain ⟨f, hf⟩ := a_member_of_an_assigned_group_is_a_candidate r gi g hg m hm
-  exact an_assigned_member_after_the_wind_down_is_not_demanding r hca i gi h e s hes hwd g hg
+  exact an_assigned_member_after_the_wind_down_is_not_demanding r hci i gi h e s hes hwd g hg
     m hm f hf
 
 /-- **And a request whose decoder pays the fifth clause pays it at every row it placed.**  The
@@ -4919,7 +4919,7 @@ what makes that member's *plan* `ci` the `ci` §8.2 step 5's filter compared.
 lift because it is `Planner.segOf`'s forcing that needs it: without it a wind-down past the
 horizon and a slot past the horizon are clamped to the same second and the comparison stops
 being about anything. -/
-theorem AssignedRowsPay_of_a_paying_decoder (r : PlanReq) (hca : candsAgree r = true)
+theorem AssignedRowsPay_of_a_paying_decoder (r : PlanReq) (hci : r.ciDisagreement = none)
     (hwdcal : r.windDownSec < LogStamp.yearEnd) : AssignedRowsPay r := by
   intro t ht i hi
   obtain ⟨vi, gi, e, sl, g, hes, hsl, hg, rfl⟩ := mem_assignedRows_at_a_slot ht
@@ -4927,7 +4927,7 @@ theorem AssignedRowsPay_of_a_paying_decoder (r : PlanReq) (hca : candsAgree r = 
   constructor
   · intro lvl he
     have hee : e = lvl := Option.some.inj ((assignedSeg_energy e sl g).symm.trans he)
-    have hb := an_assigned_members_ci_is_under_its_slots_energy r hca vi gi hsl e sl hes g hg m hm
+    have hb := an_assigned_members_ci_is_under_its_slots_energy r hci vi gi hsl e sl hes g hg m hm
     rw [hmid] at hb
     rw [← hee]
     exact hb
@@ -4937,7 +4937,7 @@ theorem AssignedRowsPay_of_a_paying_decoder (r : PlanReq) (hca : candsAgree r = 
     rw [hst] at hle
     have hwd : r.windDownSec ≤ sl.start := by
       simp only [clampSec, LogStamp.yearEnd] at hle; omega
-    have hb := an_assigned_members_ci_after_the_wind_down r hca vi gi hsl e sl hes hwd g hg m hm
+    have hb := an_assigned_members_ci_after_the_wind_down r hci vi gi hsl e sl hes hwd g hg m hm
     rw [hmid] at hb
     exact hb
 
@@ -5001,7 +5001,7 @@ theorem dayPlan_ok_on_the_whole_day_of_a_paying_decoder_on_an_unassigned_day {el
     (hwalls : WallsArePlain r (dayPlan r)) (hpast : PastPays r) :
     planOk el r (dayPlan r) = true :=
   dayPlan_ok_on_the_whole_day_of_plain_walls_on_an_unassigned_day hfn r hnoassign hdec.walls
-    hdec.active hdec.day
+    hdec.day
     hdec.nowCal hwalls hpast
 
 /-- **§6.1's SEVEN on the whole day, from the decoder alone, on a day that ASSIGNS.**
@@ -5014,16 +5014,16 @@ theorem dayPlan_ok_core_of_a_paying_decoder (r : PlanReq) (hdec : DecoderPays r)
     (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block)
     (hbudget : noOverbook r (dayPlan r) = true) (hplain : PlainStore r) :
     planOkCore r (dayPlan r) = true :=
-  dayPlan_ok_core_given_the_budget r hdec.walls hdec.active hdec.day hdec.nowCal hnopast
-    (AssignedRowsPay_of_a_paying_decoder r hdec.cands hdec.windDownCal) hbudget hplain
+  dayPlan_ok_core_given_the_budget r hdec.walls hdec.day hdec.nowCal hnopast
+    (AssignedRowsPay_of_a_paying_decoder r (ciDisagreement_eq_none_of_candsAgree r hdec.cands) hdec.windDownCal) hbudget hplain
 
 /-- **The same, from `now`** — `dayPlan_ok_core_from_now_given_the_budget`'s domain, which needs
 no `hnopast` at all, with `hpay` discharged from the decoder. -/
 theorem dayPlan_ok_core_from_now_of_a_paying_decoder (r : PlanReq) (hdec : DecoderPays r)
     (hbudget : noOverbook r (withoutPast r (dayPlan r)) = true) (hplain : PlainStore r) :
     planOkCore r (withoutPast r (dayPlan r)) = true :=
-  dayPlan_ok_core_from_now_given_the_budget r hdec.walls hdec.active hdec.day hdec.nowCal
-    (AssignedRowsPay_of_a_paying_decoder r hdec.cands hdec.windDownCal) hbudget hplain
+  dayPlan_ok_core_from_now_given_the_budget r hdec.walls hdec.day hdec.nowCal
+    (AssignedRowsPay_of_a_paying_decoder r (ciDisagreement_eq_none_of_candsAgree r hdec.cands) hdec.windDownCal) hbudget hplain
 
 /-! ############################################################################
 ## W-31: §6.1's ELEVEN on a day that ASSIGNS — `hnoassign` replaced by a PROPERTY
@@ -6072,22 +6072,22 @@ theorem an_item_is_in_one_start_group_at_most (r : PlanReq)
   subst hxy
   exact PlanFold.a_ranked_entry_is_in_one_start_group_at_most r ha hb hx hy
 
-/-- **§8.3's "no `ci ≥ 4` Block after wind-down", over the WHOLE day, where the wire and the plan
-agree** (W-39, README gaps 3353 and 3544).  `Goals.plan_places_no_demanding_block_after_wind_down`
-left `Goals.lean` for this at W-39 track K, beside a refutation that stood on the kernel's window past the
-night (a three-day wall read whole, README gaps 3545 and 3556).  The W-39 repair clipped the planner's walls to the
-day as fork `collect_walls` does, that refutation fell, and the goal as written is back in `Goals.lean` (README gap
-3713); this law stays proved beside it.  The conference Wednesday, whose candidate the wire calls `ci 0` and the
-plan `ci 5`, now places no Block at all (`PlannerWit.the_wind_down_goal_holds_at_the_conference_wednesday`).
+/-- **§8.3's "no `ci ≥ 4` Block after wind-down", over the WHOLE day, where the wire's `ci` is the plan's** — the law
+`Goals.plan_places_no_demanding_block_after_wind_down` left `Goals.lean` for at W-41 (the owner's D80, README gaps
+3780, 3785 and 1984), restated in this module under its own name: the W-39 form read `candsAgree`, of which only the
+`ci` half is used, so it now reads D80 (b)'s clause, `Planner.PlanReq.ciDisagreement = none` — weaker, and implied by
+`candsAgree` (`ciDisagreement_eq_none_of_candsAgree`), so this implies the W-39 form.  The goal as written is the
+statement with NO hypothesis, which is false at a day past the calendar and at a wire below its plan's `ci` — the two
+requests fork 4748911 never produces — and `PlannerWit`'s W-41 block proves it, as written, over every request
+`PlanWire.planReqOf` accepts, where both clauses hold (`PlanWire.planReqOf_pays_the_evening_and_the_ci`).
 
-**Two hypotheses, and no restriction to the rows from `now`.**  `hca` is the decoder's fifth clause
-(`candsAgree`, README gap 1984): E8's seam, the one the refutation walks through.  `hwdcal` is the
-R10 obligation `AssignedRowsPay_of_a_paying_decoder` already carries: the wind-down inside the
-calendar, below which the rows' clock (`Planner.clampSec`) separates it from a slot.  The replayed
-past needs NO hypothesis: a WindDown row exists only while `now` is before it
-(`Planner.a_wind_down_row_of_the_day`), every replayed row ends at `now`
-(`Planner.replayedRows_end_at_now`), and §8.2 choice 5b's reservation starts there. -/
-theorem plan_places_no_demanding_block_after_wind_down (r : PlanReq) (hca : candsAgree r = true)
+**Two hypotheses, and no restriction to the rows from `now`.**  `hci` is D80 (b) (E8's seam, the one W-39's
+refutation walked through).  `hwdcal` is the wind-down inside the calendar, below which the rows' clock
+(`Planner.clampSec`) separates it from a slot; D80 (a)'s clause implies it (`Planner.PlanReq.windDown_inside_the_calendar`).
+The replayed past needs NO hypothesis: a WindDown row exists only while `now` is before it
+(`Planner.a_wind_down_row_of_the_day`), every replayed row ends at `now` (`Planner.replayedRows_end_at_now`), and §8.2
+choice 5b's reservation starts there — at `now` even when the running block's logged start is after it (D78). -/
+theorem plan_places_no_demanding_block_after_wind_down (r : PlanReq) (hci : r.ciDisagreement = none)
     (hwdcal : r.windDownSec < LogStamp.yearEnd) (b w : WfSeg) (i : Id)
     (hb : b ∈ (dayPlan r).segments) (hw : w ∈ (dayPlan r).segments)
     (hbk : b.val.kind = SegKind.block) (hwk : w.val.kind = SegKind.windDown)
@@ -6109,8 +6109,19 @@ theorem plan_places_no_demanding_block_after_wind_down (r : PlanReq) (hca : cand
     rw [e1, hst] at hafter
     unfold clampSec at hafter
     omega
-  · exact ((AssignedRowsPay_of_a_paying_decoder r hca hwdcal) t ht i
+  · exact ((AssignedRowsPay_of_a_paying_decoder r hci hwdcal) t ht i
       (by rw [← segOf_item]; exact hi)).2 (by rw [clampSec_id _ hwdcal]; exact hafter)
+
+/-- **The same law over D80's two clauses**, the form the decoder's requests carry: the evening inside the calendar
+(which puts the wind-down there) and every candidate's wire `ci` the plan's. -/
+theorem plan_places_no_demanding_block_after_wind_down_on_a_request_paying_d80 (r : PlanReq)
+    (hev : r.eveningInsideTheCalendar = true) (hci : r.ciDisagreement = none) (b w : WfSeg) (i : Id)
+    (hb : b ∈ (dayPlan r).segments) (hw : w ∈ (dayPlan r).segments)
+    (hbk : b.val.kind = SegKind.block) (hwk : w.val.kind = SegKind.windDown)
+    (hi : b.val.item = some i) (hafter : w.val.start ≤ b.val.start) :
+    (effectiveCi r.plan.val i).val < 4 :=
+  plan_places_no_demanding_block_after_wind_down r hci (r.windDown_inside_the_calendar hev) b w i hb hw hbk hwk hi
+    hafter
 
 /-- **Every Batch row of the day holds members of ONE of §7.5's batches, and that batch is a run of
 consecutive equal-`ci` entries of step 4's order** (W-39, README gaps 3547 and 3548;

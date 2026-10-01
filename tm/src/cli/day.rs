@@ -184,11 +184,11 @@ fn ask_energy(pred: u8) -> Option<u8> {
 fn since_break_min(ctx: &Ctx) -> u32 {
     let since = ctx.replay.seam(ctx.today).and_then(|s| s.since_break);
     // A break that is still running (started, not yet ended) is itself the
-    // most recent boundary: nothing has been worked since it began.
-    if let Some(br) = &ctx.state.break_ {
-        if let Some(started) = br.started {
-            return (ctx.now_tz - ctx.at(started)).num_minutes().clamp(0, 24 * 60) as u32;
-        }
+    // most recent boundary: nothing has been worked since it began — at the
+    // ONE reading of its start (`Ctx::running_break`, P73: the evening's after
+    // midnight, never tonight's).
+    if let Some(began) = ctx.running_break() {
+        return (ctx.now_tz - began).num_minutes().clamp(0, 24 * 60) as u32;
     }
     match since {
         Some(t) => (ctx.now - t).num_minutes().clamp(0, 24 * 60) as u32,
@@ -215,18 +215,14 @@ fn is_stateless(item: &tm_core::model::Item) -> bool {
     matches!(item.horizon, Horizon::Routine | Horizon::Optional)
 }
 
-/// Today's instance key for a stateless line, for §10.1's `routine{inst}`.
-fn instance_key(ctx: &Ctx, item: &tm_core::model::Item) -> String {
-    recur::today_instances(
-        [item],
-        ctx.today,
-        ctx.now_tz.naive_local(),
-        &ctx.replay,
-        &ctx.cfg,
-    )
-    .first()
-    .map(|(i, _)| i.key.to_string())
-    .unwrap_or_else(|| ctx.today.to_string())
+/// The instance key of a stateless line at `at`, for §10.1's
+/// `routine{inst}`: `now`'s instance, or — for a block a `tm done --at` ends
+/// earlier (D79) — the instance of the day it ended on.
+fn instance_key(ctx: &Ctx, item: &tm_core::model::Item, at: DateTime<chrono_tz::Tz>) -> String {
+    recur::today_instances([item], at.date_naive(), at.naive_local(), &ctx.replay, &ctx.cfg)
+        .first()
+        .map(|(i, _)| i.key.to_string())
+        .unwrap_or_else(|| at.date_naive().to_string())
 }
 
 /// The features of the current instant (§8.5).
@@ -236,16 +232,27 @@ fn features(ctx: &Ctx, at: DateTime<chrono_tz::Tz>) -> Features {
         .with_progress(ctx.replay.blocks_done(ctx.today), since_break_min(ctx))
 }
 
-/// End the running break, appending its §10.1 `break` event with the actual
-/// length and un-pausing the block the break paused (§10.2's
+/// End the running break NOW, appending its §10.1 `break` event with the
+/// actual length and un-pausing the block the break paused (§10.2's
 /// `active.paused`). Returns the minutes it lasted.
 fn end_break(ctx: &mut Ctx) -> Result<Option<u32>, CliError> {
+    let now = ctx.now_tz;
+    end_break_at(ctx, now)
+}
+
+/// [`end_break`] at `end` — `now`, or the end a `tm stop --at`/`tm done --at`
+/// states for the block (D79: the stop is at `end` in every respect, so a
+/// break running then is over then too). The break began at the ONE reading
+/// of its start (`Ctx::running_break`, P73) — the evening's after midnight,
+/// where fork 4748911 read the cache's clock on today's date and logged a
+/// break begun before midnight TONIGHT with `actual_min: 0` (README gap 3820);
+/// a break with no `started` began at `end`.
+fn end_break_at(ctx: &mut Ctx, end: DateTime<chrono_tz::Tz>) -> Result<Option<u32>, CliError> {
+    let start_dt = ctx.running_break().unwrap_or(end);
     let Some(br) = ctx.state.break_.take() else {
         return Ok(None);
     };
-    let started = br.started.unwrap_or_else(|| ctx.now_tz.time());
-    let start_dt = ctx.at(started);
-    let actual = (ctx.now_tz - start_dt).num_minutes().max(0) as u32;
+    let actual = (end - start_dt).num_minutes().max(0) as u32;
     // The break paused the block (§9); ending it un-pauses, unless an
     // interruption is also running and owns the pause.
     if ctx.state.interrupt.is_none() {
@@ -265,16 +272,15 @@ fn end_break(ctx: &mut Ctx) -> Result<Option<u32>, CliError> {
     Ok(Some(actual))
 }
 
-/// The break `.tm/state.json` holds running, as the instant its clock names on
-/// TODAY's date — the reading README gap 3820 records as wrong after local
-/// midnight (the log has no line for a running break, so D75's instant does
-/// not exist for it).
+/// The break `.tm/state.json` holds running, as the instant it began — the ONE
+/// reading, `Ctx::running_break` (the latest instant at or before `now` with
+/// the cached clock: the campaign's D81 call on README gap 3820, parity P73),
+/// with its offset, for the readers that take one: the worked minutes, D61's
+/// walls request, the week cut's and `tm pause`'s. Until W-41 it was the clock
+/// on TODAY's date, so after local midnight a break begun before it began in
+/// the future and none of it was netted out of the block.
 fn running_break_at(ctx: &Ctx) -> Option<DateTime<FixedOffset>> {
-    ctx.state
-        .break_
-        .as_ref()
-        .and_then(|br| br.started)
-        .map(|s| ctx.at(s).fixed_offset())
+    ctx.running_break().map(|t| t.fixed_offset())
 }
 
 /// **Minutes actually worked on the running block, as a verb LOGS them** — the
@@ -299,9 +305,17 @@ fn running_break_at(ctx: &Ctx) -> Option<DateTime<FixedOffset>> {
 /// makes `.tm/state.json`'s running block the log's — when the log holds no
 /// open block for it; never a number then.
 pub(crate) fn worked_min(ctx: &Ctx) -> Option<u32> {
+    worked_min_at(ctx, ctx.now)
+}
+
+/// [`worked_min`] as of `end`: the minutes worked up to the end a `tm stop
+/// --at`/`tm done --at` states (the owner's D79) — the same one reading, every
+/// span clipped to `[start, end]`, so the night after a forgotten block's end
+/// is not counted as worked.
+fn worked_min_at(ctx: &Ctx, end: DateTime<FixedOffset>) -> Option<u32> {
     let active = ctx.state.active.as_ref()?;
     ctx.replay
-        .running_worked_min(active.id.as_str(), ctx.today, ctx.now, running_break_at(ctx))
+        .running_worked_min(active.id.as_str(), ctx.today, end, running_break_at(ctx))
 }
 
 /// **What `tm now` shows for the running block** — [`log::Replay::shown_worked_min`],
@@ -347,6 +361,110 @@ fn no_logged_start(id: &Id) -> CliError {
          worked minutes cannot be read (D75)",
         id.token()
     ))
+}
+
+/// An instant as a verb names it: `HH:MM` on today's date, with the date on
+/// any other (`2026-09-08 23:40`) — D76's refusal's spelling, shared.
+fn when(ctx: &Ctx, t: DateTime<chrono_tz::Tz>) -> String {
+    if t.date_naive() == ctx.today {
+        hhmm(t)
+    } else {
+        format!("{} {}", t.date_naive(), hhmm(t))
+    }
+}
+
+/// **The end a `tm stop --at HH:MM` or `tm done --at HH:MM` states for the
+/// running block** — the owner's **D79** (README gap 3823), W-41 track T.
+///
+/// The clock is read by the ONE time parser, `tm energy --at`'s and `tm arrive
+/// --at`'s ([`parse_time`]), and placed at the LATEST instant at or before
+/// `now` with that clock ([`tm_core::capacity::latest_at_or_before`]) — D75's
+/// rule where the user, and not the log, supplies the instant — so `--at 23:40`
+/// typed at 07:05 is last night's. An end is a time the block ran through, so
+/// it is never after `now` (by that construction), and three ends are refused
+/// by name, before anything is written:
+///
+/// * one **before the block's start** — the log's own instant (D75's
+///   `running_start`), so `--at 17:00` typed at 16:30 names yesterday's 17:00
+///   and is refused when the block began today;
+/// * one **before a timer mark the log already holds for the block** — a
+///   `pause`, `unpause`, `interrupt` or `resume` stamped after it says the
+///   block was still running (or paused) then, and a `stop` stamped before
+///   such a mark would make the replay's machine bank the stretch up to the
+///   mark (it reads the log in file order, `Replay.lean` C3) while the minutes
+///   this verb logs stop at the end: two readings of one block;
+/// * one **before the start of a break `.tm/state.json` holds running** —
+///   `tm break` paused the block after the end, by the cache's account.
+///
+/// D61's meeting marks are not among them by construction: the verb loads
+/// without them (`Ctx::load_without_wall_marks`) and runs them at this end.
+fn stated_end(ctx: &Ctx, active: &ActiveBlock, at: &str) -> Result<DateTime<chrono_tz::Tz>, CliError> {
+    let clock = parse_time(at)?;
+    let end = tm_core::capacity::latest_at_or_before(ctx.cfg.tz, ctx.now_tz, clock);
+    let start = running_start(ctx).ok_or_else(|| no_logged_start(&active.id))?;
+    if end < start {
+        return Err(CliError::msg(format!(
+            "`--at {at}` names {}, the latest {at} at or before now, which is before {} began \
+             ({}) — the end of a block falls between its start and now; nothing was written",
+            when(ctx, end),
+            active.id.token(),
+            when(ctx, start)
+        )));
+    }
+    if let Some((tag, t)) = timer_mark_after(ctx, active, start, end) {
+        let t = t.with_timezone(&ctx.cfg.tz);
+        return Err(CliError::msg(format!(
+            "the log already holds `{tag}` for {} at {}, after the end you gave ({}) — by the \
+             log's account the block was still running then (a calendar wall's pause is logged \
+             by the first verb after the wall begins); give an end at or after {}; nothing was \
+             written",
+            active.id.token(),
+            when(ctx, t),
+            when(ctx, end),
+            hhmm(t)
+        )));
+    }
+    if let Some(began) = ctx.running_break().filter(|b| *b > end) {
+        return Err(CliError::msg(format!(
+            "a break has been running since {}, after the end you gave ({}) — it paused {} \
+             then; end the break first (`tm break`), or give an end at or after {}; nothing \
+             was written",
+            when(ctx, began),
+            when(ctx, end),
+            active.id.token(),
+            hhmm(began)
+        )));
+    }
+    Ok(end)
+}
+
+/// The first timer mark the log holds for the running block that is stamped
+/// after `end`: a surviving `pause` or `unpause` of it, or an `interrupt` or
+/// `resume` (the marks the replay's machine reads for the open block), at or
+/// after its own `start` row ([`log::Replay::start_row`]; every row in scope
+/// when the scope does not reach it). Each tag is asked of [`Event`] rather
+/// than spelled a second time (AGENTS §5.3).
+fn timer_mark_after(
+    ctx: &Ctx,
+    active: &ActiveBlock,
+    start: DateTime<chrono_tz::Tz>,
+    end: DateTime<chrono_tz::Tz>,
+) -> Option<(String, DateTime<FixedOffset>)> {
+    let tag = |e: Event| e.name().to_string();
+    let own = [tag(Event::Pause { id: String::new() }), tag(Event::Unpause { id: String::new() })];
+    let any = [tag(Event::Interrupt { id: None }), tag(Event::Resume { lost_min: 0, dropped: Vec::new() })];
+    let rows = ctx.replay.view();
+    let from = ctx
+        .replay
+        .start_row(Some(active.id.as_str()), start.fixed_offset())
+        .unwrap_or(0);
+    rows[from..]
+        .iter()
+        .filter(|r| !r.cancelled && r.t > end)
+        .find(|r| {
+            any.contains(&r.tag) || (own.contains(&r.tag) && r.id.as_deref() == Some(active.id.as_str()))
+        })
+        .map(|r| (r.tag.clone(), r.t))
 }
 
 /// **A calendar wall that starts while a block is running STOPS THE TIMER** —
@@ -397,18 +515,20 @@ fn no_logged_start(id: &Id) -> CliError {
 /// refusal is printed by name and nothing is written — the automatic close's
 /// rule — and the verb goes on. A kernel fault fails the verb.
 ///
+/// **As of `at`** (W-41 track T) — the walls form's `at`, so a wall that begins
+/// after it is not the block's and an unpause is written only for a wall that
+/// ended by then: `now` for the housekeeping of every verb (`Ctx::load`), and
+/// the end a `tm stop --at`/`tm done --at` states for the verb that ends the
+/// block earlier (the owner's D79), which loads without this housekeeping
+/// (`Ctx::load_without_wall_marks`) and runs it at that end, so its own load
+/// never logs a meeting the block it is ending never ran through.
+///
 /// Returns whether it wrote anything, so the caller reloads the replay.
-pub(crate) fn stop_the_timer_at_walls(ctx: &mut Ctx) -> Result<bool, CliError> {
+pub(crate) fn stop_the_timer_at_walls(ctx: &mut Ctx, at: DateTime<chrono_tz::Tz>) -> Result<bool, CliError> {
     let Some(active) = ctx.state.active.clone() else {
         return Ok(false);
     };
-    let running_break = ctx
-        .state
-        .break_
-        .as_ref()
-        .and_then(|b| b.started)
-        .map(|s| ctx.at(s).fixed_offset());
-    let marks = match ask_the_walls(ctx, running_break) {
+    let marks = match ask_the_walls(ctx, running_break_at(ctx), at) {
         Ok(answer) => answer.marks,
         Err(CliError::Kernel(issue)) if !issue.is_fault() => {
             if !super::kernel_bridge::capturing_kernel_stderr() {
@@ -483,8 +603,9 @@ struct WallsAnswer {
 fn ask_the_walls(
     ctx: &Ctx,
     running_break: Option<DateTime<FixedOffset>>,
+    at: DateTime<chrono_tz::Tz>,
 ) -> Result<WallsAnswer, CliError> {
-    let (resp, stderr) = call_the_walls(ctx, running_break, None)?;
+    let (resp, stderr) = call_the_walls(ctx, running_break, at, None)?;
     let fault = |what: &str| {
         CliError::Kernel(super::kernel_bridge::fault_issue(
             &format!("walls response: {what}"),
@@ -553,6 +674,7 @@ fn ask_the_walls(
 fn call_the_walls(
     ctx: &Ctx,
     running_break: Option<DateTime<FixedOffset>>,
+    at: DateTime<chrono_tz::Tz>,
     week: Option<tm_core::model::IsoWeek>,
 ) -> Result<(serde_json::Value, String), CliError> {
     let docs = super::kernel_bridge::text_docs(&ctx.store)?;
@@ -575,7 +697,7 @@ fn call_the_walls(
     .map_err(super::ctx::genesis_error)?;
     // The one encoder of the walls object (README gap 3955).
     let walls = tm_core::planwire::walls_json(
-        ctx.now_tz.fixed_offset(),
+        at.fixed_offset(),
         running_break,
         dates.as_ref().and_then(|d| d.first()).copied(),
     );
@@ -607,13 +729,7 @@ pub(crate) fn week_cut(
     ctx: &Ctx,
     week: tm_core::model::IsoWeek,
 ) -> Result<tm_core::review::PauseCut, CliError> {
-    let running_break = ctx
-        .state
-        .break_
-        .as_ref()
-        .and_then(|b| b.started)
-        .map(|s| ctx.at(s).fixed_offset());
-    let (resp, stderr) = call_the_walls(ctx, running_break, Some(week))?;
+    let (resp, stderr) = call_the_walls(ctx, running_break_at(ctx), ctx.now_tz, Some(week))?;
     let days: Vec<(chrono::NaiveDate, &[log::LogSegment])> = week
         .dates()
         .into_iter()
@@ -724,7 +840,11 @@ pub struct WakeOut {
 
 /// `tm wake [HH:MM] [--slept 8h10m] [--onset 25m]`.
 pub fn wake(g: &Globals, args: &super::WakeArgs) -> Result<i32, CliError> {
-    let mut ctx = Ctx::load(g, true)?;
+    // Without D61's wall marks (W-41 track T): a wake never runs beside a block
+    // (D76, below), so they have nothing to write when it succeeds, and when it
+    // is refused they would log the morning's meetings into the block its own
+    // message says to end with `--at` — refusing that `--at` in turn.
+    let mut ctx = Ctx::load_without_wall_marks(g)?;
     // **The owner's D76 (README gap 3725, parity P66): `tm wake` while a block
     // is still running is REFUSED BY NAME**, before the gate, the undo recorder
     // and every write. The wake cleared `active` in `.tm/state.json` while the
@@ -738,6 +858,26 @@ pub fn wake(g: &Globals, args: &super::WakeArgs) -> Result<i32, CliError> {
     // is the log's own (`running_start`, D75).
     if let Some(active) = ctx.state.active.as_ref() {
         return Err(CliError::msg(wake_over_a_running_block(&ctx, active)));
+    }
+    // **And over every other running state a wake would clear** — the
+    // campaign's D81 call on README gap 3824 (parity P74): an interruption the
+    // log holds open (the one reading `tm start` and the rebuild take,
+    // `ctx::open_interruption`; the cache's is D42's copy of it) and a break
+    // `.tm/state.json` holds running (`Ctx::running_break`, P73). The wake
+    // cleared both while the log held the interruption open, so the next verb's
+    // reconcile read it back (the cache still `null`) and a later `tm resume`
+    // logged the night as lost; the running break, being host-only, was lost
+    // with no line. The user says how each ended, as D76 has them say how a
+    // block did.
+    if let Some(open) = super::ctx::open_interruption(&ctx.replay) {
+        return Err(CliError::msg(wake_over_an_open_interruption(&ctx, open)));
+    }
+    if let Some(began) = ctx.running_break() {
+        return Err(CliError::msg(format!(
+            "a break is still running since {} — end it (`tm break`) before `tm wake`; the wake \
+             was not recorded",
+            when(&ctx, began)
+        )));
     }
     super::kernel_bridge::gate(&ctx, "wake")?;
     let rec = Recorder::start(&ctx, "wake")?;
@@ -822,16 +962,32 @@ pub fn wake(g: &Globals, args: &super::WakeArgs) -> Result<i32, CliError> {
 /// began — the log's own instant, with its date when that is not today's — and
 /// the two verbs that end it. Paused or not, it is running until one of them
 /// says how it ended.
+///
+/// **It names `--at`** (the owner's D79): a block forgotten overnight ends when
+/// it ended — `tm stop --at 23:40` — and the night is not counted as worked.
 fn wake_over_a_running_block(ctx: &Ctx, active: &ActiveBlock) -> String {
     let since = match running_start(ctx) {
-        Some(t) if t.date_naive() == ctx.today => format!(" since {}", hhmm(t)),
-        Some(t) => format!(" since {} {}", t.date_naive(), hhmm(t)),
+        Some(t) => format!(" since {}", when(ctx, t)),
         None => format!(" since {}", active.started.format("%H:%M")),
     };
     format!(
         "{} is still running{since} — stop it (`tm stop`) or finish it (`tm done`) before \
-         `tm wake`; the wake was not recorded",
+         `tm wake`, with `--at HH:MM` for when it ended if that was earlier; the wake was not \
+         recorded",
         active.id.token()
+    )
+}
+
+/// **Gap 3824's refusal over an open interruption, in words**: when it began
+/// (the log's own instant, dated when not today's) and the verb that ends it.
+fn wake_over_an_open_interruption(ctx: &Ctx, open: &tm_core::log::Interruption) -> String {
+    let since = open
+        .start
+        .map(|t| format!(" since {}", when(ctx, t.with_timezone(&ctx.cfg.tz))))
+        .unwrap_or_default();
+    format!(
+        "an interruption is still open{since} — end it (`tm resume`) before `tm wake`; the wake \
+         was not recorded"
     )
 }
 
@@ -1191,9 +1347,13 @@ pub struct DoneOut {
     /// (a tabbed line, D66's call on README gap 3047). Absent otherwise.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub estimate_not_written: Option<String>,
+    /// The end `--at` stated (D79), `HH:MM`, dated when not today's. Absent
+    /// otherwise: the block ended now.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ended: Option<String>,
 }
 
-/// `tm done [--partial] [^id]`.
+/// `tm done [--partial] [--at HH:MM] [^id]`.
 pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
     // §10.1's `went` is 1, 2 or 3 (§8.5). Filtering anything else away left
     // the two records of one `done` disagreeing: the `## Log` note in the day
@@ -1204,7 +1364,12 @@ pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
             "--went is 1 fine, 2 hard or 3 collapsed (§8.5), not {went}"
         )));
     }
-    let mut ctx = Ctx::load(g, true)?;
+    // D79: a stated end loads without D61's wall marks, which run at that end
+    // once it is checked (`stated_end`).
+    let mut ctx = match args.at {
+        Some(_) => Ctx::load_without_wall_marks(g)?,
+        None => Ctx::load(g, true)?,
+    };
     let active = ctx.state.active.clone();
     let (id, retro) = match (&args.id, &active) {
         (Some(arg), Some(a)) => {
@@ -1216,6 +1381,16 @@ pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
         (None, Some(a)) => (a.id.clone(), false),
         (None, None) => return Err(CliError::msg("nothing is running (`tm done ^id` for a retro done)")),
     };
+    // `--at` ends the RUNNING block (D79); a retro done has no timing (§13).
+    if let (Some(at), true) = (&args.at, retro) {
+        return Err(CliError::msg(format!(
+            "`--at {at}` says when the running block ended, and {} is not running — `tm done {}` \
+             with no block of its own is a retro done, which takes no time (§13); nothing was \
+             written",
+            id.token(),
+            id.token()
+        )));
+    }
     // An ambiguous title is refused before anything is logged (W-16 repair,
     // gap 576): this verb looks the argument up in the tree directly rather
     // than through `Ctx::item`, so it needs the refusal by name.
@@ -1228,6 +1403,19 @@ pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
         None if retro => return Err(missing(&id)),
         None => None,
     };
+    // **D79**: the stated end, checked, and D61's marks up to it; `None`
+    // without `--at`, when the block ends now.
+    let stated = match (&args.at, &active) {
+        (Some(at), Some(a)) => {
+            let end = stated_end(&ctx, a, at)?;
+            if stop_the_timer_at_walls(&mut ctx, end)? {
+                ctx.reload()?;
+            }
+            Some(end)
+        }
+        _ => None,
+    };
+    let end = stated.unwrap_or(ctx.now_tz);
     super::kernel_bridge::gate(&ctx, "done")?;
     let rec = Recorder::start(&ctx, "done")?;
 
@@ -1235,8 +1423,13 @@ pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
         (ctx.tree.remaining(&id).unwrap_or(0), 0)
     } else {
         let a = active.as_ref().expect("an active block");
-        // D75 (parity P65): the worked minutes count from the log's own `start`.
-        (a.est_min, worked_min(&ctx).ok_or_else(|| no_logged_start(&a.id))?)
+        // D75 (parity P65): the worked minutes count from the log's own
+        // `start` — and, with D79's `--at`, up to the end it states.
+        let worked = match stated {
+            Some(e) => worked_min_at(&ctx, e.fixed_offset()),
+            None => worked_min(&ctx),
+        };
+        (a.est_min, worked.ok_or_else(|| no_logged_start(&a.id))?)
     };
     let stateless = item.as_ref().is_some_and(is_stateless);
     // **D62**: a partial's remainder is written by the kernel's `est` op FIRST —
@@ -1256,7 +1449,7 @@ pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
         not_written = written.is_none().then(|| estimate_not_written(&id, u64::from(left)));
         remaining_min = Some(left);
     }
-    end_break(&mut ctx)?;
+    end_break_at(&mut ctx, end)?;
 
     if let Some(item) = item.as_ref().filter(|_| !stateless) {
         let mut line = match written {
@@ -1266,8 +1459,9 @@ pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
         if args.partial {
             line.set_state(State::Todo)?;
         } else if matches!(item.recur, Recur::OnEvent { .. }) {
-            // §5.1: an on-event item goes to `[?]` with `waiting:<today>`.
-            recur::on_done_waiting(item, ctx.today).apply(&mut line)?;
+            // §5.1: an on-event item goes to `[?]` with `waiting:<the day it
+            // was done>` — today's, or the day a stated end falls on.
+            recur::on_done_waiting(item, end.date_naive()).apply(&mut line)?;
         } else {
             line.set_state(State::Done)?;
         }
@@ -1281,14 +1475,17 @@ pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
 
     // §10.1: a routine or optional occurrence is a `routine` event, not a
     // `done` — a `done{id}` would mark the recurring item finished for good.
-    match item.as_ref().filter(|_| stateless) {
-        Some(item) => ctx.append_event(Event::Routine {
+    // **D79**: stamped at the stated end — the log holds that instant, so the
+    // replay, the day records, the durations §8.5 fits and `tm log` all read
+    // the block as ending there (`log_the_end`).
+    let event = match item.as_ref().filter(|_| stateless) {
+        Some(item) => Event::Routine {
             item: id.to_string(),
-            inst: instance_key(&ctx, item),
+            inst: instance_key(&ctx, item, end),
             status: "done".to_string(),
             actual_min: Some(actual_min),
-        })?,
-        None => ctx.append_event(Event::Done {
+        },
+        None => Event::Done {
             id: id.to_string(),
             est_min,
             actual_min,
@@ -1297,11 +1494,13 @@ pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
             // §3.1's default when the line itself is gone.
             ci: item.as_ref().map(|i| i.ci).unwrap_or(3),
             partial: args.partial,
-        })?,
-    }
+        },
+    };
+    log_the_end(&ctx, stated, event)?;
     ctx.reload()?;
-    day_note(
+    note_the_end(
         &ctx,
+        stated,
         format!(
             "done {} {}m/{}m{}",
             id.token(),
@@ -1326,24 +1525,53 @@ pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
         state,
         remaining_min,
         estimate_not_written: not_written,
+        ended: stated.map(|e| when(&ctx, e)),
     };
     emit(
         ctx.json,
         || {
             format!(
-                "✓ {} {} · {}m/{}m{}",
+                "✓ {} {} · {}m/{}m{}{}",
                 out.id.token(),
                 out.title,
                 out.actual_min,
                 out.est_min,
                 out.remaining_min
                     .map(|r| format!(" · {r}m left"))
-                    .unwrap_or_default()
+                    .unwrap_or_default(),
+                out.ended.as_ref().map(|e| format!(" · ended {e}")).unwrap_or_default()
             )
         },
         &out,
     )?;
     Ok(0)
+}
+
+/// **Log the event that ends the running block** — stamped at `now`, or at
+/// the end a `tm stop --at`/`tm done --at` states (the owner's **D79**: the
+/// log holds THAT instant, D75's clock). It is appended after any line logged
+/// since — the log is append-only — and every reader takes it so: the kernel's
+/// replay reads the log in file order and dates each entry by its own stamp
+/// (`Replay.lean` C2, C3), so the block's span, its minutes, its day record,
+/// the durations §8.5 fits and `tm log`'s rows (file order, each with its
+/// stamp) are the ones an in-time `stop` or `done` at that instant gives
+/// (`tm/tests/cli_end_at.rs`); `Log.linesIncreasing` is a law about LINE
+/// numbers, which still increase. `stated_end` refuses the ends a later line
+/// contradicts, so no timer mark of the block follows its end in time.
+fn log_the_end(ctx: &Ctx, stated: Option<DateTime<chrono_tz::Tz>>, event: Event) -> Result<(), CliError> {
+    match stated {
+        Some(end) => ctx.append_entry(&log::LogEntry::new(end.fixed_offset(), event)),
+        None => ctx.append_event(event),
+    }
+}
+
+/// The day file's `## Log` line of the verb that ends the block — at `now` in
+/// today's file, or at a stated end in the file of the day it falls on.
+fn note_the_end(ctx: &Ctx, stated: Option<DateTime<chrono_tz::Tz>>, text: String) -> Result<(), CliError> {
+    match stated {
+        Some(end) => super::dayfile::note(ctx, end.date_naive(), end.time(), &text),
+        None => day_note(ctx, text),
+    }
 }
 
 /// `tm extend --json`.
@@ -1418,19 +1646,46 @@ pub struct StopOut {
     /// tabbed line, D66's call on README gap 3047). Absent otherwise.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub estimate_not_written: Option<String>,
+    /// The end `--at` stated (D79), `HH:MM`, dated when not today's. Absent
+    /// otherwise: the block ended now.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ended: Option<String>,
 }
 
-/// `tm stop`.
-pub fn stop(g: &Globals) -> Result<i32, CliError> {
-    let mut ctx = Ctx::load(g, true)?;
+/// `tm stop [--at HH:MM]`.
+pub fn stop(g: &Globals, args: &super::StopArgs) -> Result<i32, CliError> {
+    // D79: a stated end loads without D61's wall marks, which run at that end
+    // once it is checked (`stated_end`).
+    let mut ctx = match args.at {
+        Some(_) => Ctx::load_without_wall_marks(g)?,
+        None => Ctx::load(g, true)?,
+    };
     let Some(active) = ctx.state.active.clone() else {
         return Err(CliError::msg("nothing is running"));
     };
+    // **D79**: the stated end, checked, and D61's marks up to it; `None`
+    // without `--at`, when the block ends now.
+    let stated = match &args.at {
+        Some(at) => {
+            let end = stated_end(&ctx, &active, at)?;
+            if stop_the_timer_at_walls(&mut ctx, end)? {
+                ctx.reload()?;
+            }
+            Some(end)
+        }
+        None => None,
+    };
+    let end = stated.unwrap_or(ctx.now_tz);
     super::kernel_bridge::gate(&ctx, "stop")?;
     let rec = Recorder::start(&ctx, "stop")?;
     let id = active.id.clone();
-    // D75 (parity P65): the worked minutes count from the log's own `start`.
-    let worked = worked_min(&ctx).ok_or_else(|| no_logged_start(&id))?;
+    // D75 (parity P65): the worked minutes count from the log's own `start` —
+    // and, with D79's `--at`, up to the end it states.
+    let worked = match stated {
+        Some(e) => worked_min_at(&ctx, e.fixed_offset()),
+        None => worked_min(&ctx),
+    }
+    .ok_or_else(|| no_logged_start(&id))?;
     let remaining = ctx
         .tree
         .remaining(&id)
@@ -1455,8 +1710,9 @@ pub fn stop(g: &Globals) -> Result<i32, CliError> {
         None => None,
     };
     // §11's break integrity: a break still running when the block stops is
-    // over too, and its `break` event has to reach the log.
-    end_break(&mut ctx)?;
+    // over too, and its `break` event has to reach the log — at the stop's
+    // instant, which D79's `--at` states.
+    end_break_at(&mut ctx, end)?;
     if let Some(mut line) = written {
         line.set_state(State::Todo)?;
         ctx.write_line(&id, &line)?;
@@ -1464,15 +1720,16 @@ pub fn stop(g: &Globals) -> Result<i32, CliError> {
 
     ctx.state.active = None;
     ctx.save_state()?;
-    ctx.append_event(Event::Stop {
-        id: id.to_string(),
-        remaining_min: remaining,
-    })?;
-    ctx.reload()?;
-    day_note(
+    log_the_end(
         &ctx,
-        format!("stop {} {worked}m · {remaining}m left", id.token()),
+        stated,
+        Event::Stop {
+            id: id.to_string(),
+            remaining_min: remaining,
+        },
     )?;
+    ctx.reload()?;
+    note_the_end(&ctx, stated, format!("stop {} {worked}m · {remaining}m left", id.token()))?;
     rec.finish(&ctx, format!("stop {}", id.token()))?;
 
     let out = StopOut {
@@ -1480,15 +1737,17 @@ pub fn stop(g: &Globals) -> Result<i32, CliError> {
         worked_min: worked,
         remaining_min: remaining,
         estimate_not_written: not_written,
+        ended: stated.map(|e| when(&ctx, e)),
     };
     emit(
         ctx.json,
         || {
             format!(
-                "stopped {} after {}m · {}m left",
+                "stopped {} after {}m · {}m left{}",
                 out.id.token(),
                 out.worked_min,
-                out.remaining_min
+                out.remaining_min,
+                out.ended.as_ref().map(|e| format!(" · ended {e}")).unwrap_or_default()
             )
         },
         &out,
@@ -1528,6 +1787,25 @@ pub fn take_break(g: &Globals, args: &super::BreakArgs) -> Result<i32, CliError>
         Some(s) => Some(dur(s, ctx.block_min())?.as_minutes()),
         None => None,
     };
+    // **`--where` names a place of the ONE table, in both arms** — the
+    // campaign's D81 call on README gap 3903 (parity P75), D20's shape: an
+    // unknown word was stored, and the planner's request refuses it by name
+    // (`PlanWire.placeOf?`, `badBreak place`), so a typo in `--where` would stop
+    // `tm plan` after R3. Read here, ahead of the branch, so the running arm
+    // refuses it too — and, as D20 settles for every valid argument, a valid
+    // place does nothing to a running break.
+    let place = match args.place.as_deref() {
+        Some(word) => match tm_core::store::BreakPlace::parse(word) {
+            Some(p) => Some(p.as_str().to_string()),
+            None => {
+                return Err(CliError::msg(format!(
+                    "unknown break place {word:?} — `--where` is one of {} (§12.6)",
+                    tm_core::store::BreakPlace::words()
+                )))
+            }
+        },
+        None => None,
+    };
     super::kernel_bridge::gate(&ctx, "break")?;
     let rec = Recorder::start(&ctx, "break")?;
     let running = ctx.state.break_.clone();
@@ -1545,7 +1823,7 @@ pub fn take_break(g: &Globals, args: &super::BreakArgs) -> Result<i32, CliError>
         ctx.state.break_ = Some(BreakState {
             started: Some(ctx.now_tz.time()),
             planned_min: planned,
-            place: args.place.clone(),
+            place: place.clone(),
         });
         if let Some(a) = ctx.state.active.as_mut() {
             a.paused = true;
@@ -1555,7 +1833,7 @@ pub fn take_break(g: &Globals, args: &super::BreakArgs) -> Result<i32, CliError>
             action: "started".to_string(),
             planned_min: planned,
             actual_min: None,
-            place: args.place.clone(),
+            place,
         }
     };
     ctx.reload()?;
@@ -1777,8 +2055,7 @@ pub fn pause(g: &Globals) -> Result<i32, CliError> {
     // which decided the wall's pause, names the meeting the block is paused for now
     // (`WallTimer.pausedFor`). Asked only when this press resumes; a pause needs no name.
     let meeting = if active.paused {
-        let running_break = ctx.state.break_.as_ref().and_then(|b| b.started).map(|s| ctx.at(s).fixed_offset());
-        ask_the_walls(&ctx, running_break)?.paused_for
+        ask_the_walls(&ctx, running_break_at(&ctx), ctx.now_tz)?.paused_for
     } else {
         None
     };

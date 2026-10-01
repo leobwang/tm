@@ -87,7 +87,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use std::time::SystemTime;
 
-use chrono::{NaiveDate, NaiveTime};
+use chrono::{DateTime, NaiveDate, NaiveTime};
+use chrono_tz::Tz;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -2067,9 +2068,103 @@ pub struct BreakState {
     pub started: Option<NaiveTime>,
     /// Planned minutes.
     pub planned_min: u32,
-    /// `walk` / `seat` / `bed` / `phone`.
+    /// `walk` / `seat` / `bed` / `phone` — one of [`BreakPlace`]'s words.
     #[serde(rename = "where")]
     pub place: Option<String>,
+}
+
+impl BreakState {
+    /// **When the running break began, as an instant** — the ONE reading of
+    /// `started` (the campaign's **D81** call on README gap 3820, parity
+    /// **P73**, W-41 track T): the latest instant at or before `now` whose
+    /// local clock in `tz` is that `HH:MM`
+    /// ([`crate::capacity::latest_at_or_before`]). The log holds no line for a
+    /// running break — its `break` entry is appended when it ENDS — so the
+    /// cache's clock is all there is, and D75's rule is the reading under which
+    /// the break can still be running: a break begun at 23:50 is still the
+    /// evening's at 00:10. Fork 4748911 put the clock on TODAY's date at every
+    /// site, so after local midnight the break began in the future: `tm done`
+    /// netted none of it out of the block's worked minutes and `tm break`
+    /// logged it tonight with `actual_min: 0`.
+    ///
+    /// Every host reader of a running break's start calls this — `day.rs`'
+    /// worked minutes, `end_break`, `since_break_min`, D61's walls request, the
+    /// week cut's and `tm pause`'s (all through `Ctx::running_break`), and the
+    /// TUI's timer and break-overrun prompt — so none keeps a clock of its own.
+    /// `None` when the cache holds no `started`.
+    pub fn started_at(&self, tz: Tz, now: DateTime<Tz>) -> Option<DateTime<Tz>> {
+        self.started
+            .map(|clock| crate::capacity::latest_at_or_before(tz, now, clock))
+    }
+}
+
+/// **The places a break is taken** — the ONE host table of them (the
+/// campaign's **D81** call on README gap 3903, parity **P75**, W-41 track T):
+/// §13's `tm break --where <place>` reads its word here and refuses any other
+/// by name (D20's shape), and the TUI's `b` then `w`/`s`/`b`/`p` (§12.6) reads
+/// its key and its word here (`tui::app::BreakPlace` is this type). The
+/// kernel's `PlanWire.placeOf?` reads the same four words off the planner
+/// request and refuses any other (`badBreak place`), so a word the verb wrote
+/// is a word the planner reads. Fork 4748911 kept the four in the TUI alone
+/// and `tm break --where` stored any word it was given.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BreakPlace {
+    /// `w` — a walk.
+    Walk,
+    /// `s` — stayed in the seat.
+    Seat,
+    /// `b` — lay down.
+    Bed,
+    /// `p` — the phone.
+    Phone,
+}
+
+/// [`BreakPlace`]'s table: each place, its `--where` word and its TUI key, in
+/// the order the TUI's prompt lists them.
+const BREAK_PLACES: [(BreakPlace, &str, char); 4] = [
+    (BreakPlace::Walk, "walk", 'w'),
+    (BreakPlace::Seat, "seat", 's'),
+    (BreakPlace::Bed, "bed", 'b'),
+    (BreakPlace::Phone, "phone", 'p'),
+];
+
+impl BreakPlace {
+    /// Every place, in the table's order.
+    pub fn all() -> impl Iterator<Item = BreakPlace> {
+        BREAK_PLACES.iter().map(|(p, _, _)| *p)
+    }
+
+    /// Its row of the table: the rows are in the variants' order
+    /// (`each_place_is_its_own_row_of_the_table`).
+    fn row(self) -> &'static (BreakPlace, &'static str, char) {
+        &BREAK_PLACES[self as usize]
+    }
+
+    /// The `--where` word (§13 `tm break --where walk`), and the `where` the
+    /// `break` log line and `.tm/state.json` carry.
+    pub fn as_str(self) -> &'static str {
+        self.row().1
+    }
+
+    /// The TUI key that picks it (§12.6).
+    pub fn key(self) -> char {
+        self.row().2
+    }
+
+    /// The place a TUI key picks.
+    pub fn from_key(c: char) -> Option<BreakPlace> {
+        BREAK_PLACES.iter().find(|(_, _, k)| *k == c).map(|(p, _, _)| *p)
+    }
+
+    /// The place a `--where` word names, exactly as the table spells it.
+    pub fn parse(word: &str) -> Option<BreakPlace> {
+        BREAK_PLACES.iter().find(|(_, w, _)| *w == word).map(|(p, _, _)| *p)
+    }
+
+    /// The table's words, `walk, seat, bed, phone`, for a message.
+    pub fn words() -> String {
+        BREAK_PLACES.iter().map(|(_, w, _)| *w).collect::<Vec<_>>().join(", ")
+    }
 }
 
 /// A running interruption (`state.interrupt`).
@@ -2156,12 +2251,78 @@ pub struct RuntimeState {
     pub closed: Closed,
 }
 
+impl RuntimeState {
+    /// **Roll the day-scoped fields to `today`** — what the binary's housekeeping does
+    /// at the first verb of a new local date (`tm/src/cli/ctx.rs`' `roll_day`, which
+    /// calls this): `date` becomes `today`, and `window`, `budget`, `arrival` and
+    /// `last_plan_hash` — the facts §10.2 says belong to `date` — are dropped. `wake`
+    /// and `loc` are kept (not day-scoped), and so are `active`, `break` and
+    /// `interrupt`: a block begun before midnight is still running, and `tm wake` ends
+    /// the night (§10.1). Returns whether anything changed: a state naming no date, or
+    /// naming `today`, is left as it is.
+    ///
+    /// In `tm-core` since W-41 (README gap 4041) so the one rule is also what a test
+    /// reads as "the state `tm plan` would plan at that instant": the TUI, left open
+    /// past midnight, never runs it (it writes nothing on a timer), and the kernel
+    /// reads its stale state as this roll leaves it (the campaign's D81 call on README
+    /// gap 3860, parity P77).
+    pub fn roll_to(&mut self, today: NaiveDate) -> bool {
+        if !matches!(self.date, Some(d) if d != today) {
+            return false;
+        }
+        self.date = Some(today);
+        self.arrival = None;
+        self.window = None;
+        self.budget = None;
+        self.last_plan_hash = None;
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn cfg() -> Config {
         Config::default()
+    }
+
+    /// **The break-place table is one table, read both ways** (D81, gap 3903):
+    /// each variant is its own row, every word and every key reads back to its
+    /// place, and nothing else reads as one.
+    #[test]
+    fn each_place_is_its_own_row_of_the_table() {
+        for (i, (p, word, key)) in BREAK_PLACES.iter().enumerate() {
+            assert_eq!(*p as usize, i, "{p:?} is row {i}");
+            assert_eq!(p.as_str(), *word);
+            assert_eq!(p.key(), *key);
+            assert_eq!(BreakPlace::parse(word), Some(*p));
+            assert_eq!(BreakPlace::from_key(*key), Some(*p));
+        }
+        assert_eq!(BreakPlace::all().count(), 4);
+        assert_eq!(BreakPlace::words(), "walk, seat, bed, phone");
+        for unknown in ["hammock", "Walk", " walk", "", "w"] {
+            assert_eq!(BreakPlace::parse(unknown), None, "{unknown:?}");
+        }
+        assert_eq!(BreakPlace::from_key('z'), None);
+    }
+
+    /// **A running break's start is the latest instant at or before `now` with
+    /// its clock** (D81, gap 3820, P73): begun at 23:50 and read at 00:10, it is
+    /// last night's, not tonight's; read the same evening it is that evening's.
+    #[test]
+    fn a_running_break_began_at_the_latest_instant_with_its_clock() {
+        use chrono::TimeZone;
+        let tz: Tz = "America/Chicago".parse().expect("zone");
+        let br = BreakState {
+            started: Some(NaiveTime::from_hms_opt(23, 50, 0).expect("t")),
+            planned_min: 20,
+            place: None,
+        };
+        let at = |d, h, m| tz.with_ymd_and_hms(2026, 9, d, h, m, 0).single().expect("t");
+        assert_eq!(br.started_at(tz, at(9, 0, 10)), Some(at(8, 23, 50)), "after midnight");
+        assert_eq!(br.started_at(tz, at(8, 23, 55)), Some(at(8, 23, 50)), "the same evening");
+        assert_eq!(BreakState::default().started_at(tz, at(8, 23, 55)), None);
     }
 
     #[test]

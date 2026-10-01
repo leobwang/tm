@@ -1086,6 +1086,17 @@ fi
 #     (iii) A NEW section must name an EXIT beside its date, which is what the
 #     two W-32 track-G sections did not.
 #
+#     AND SINCE W-41 THE FILE IS STRICTLY SHRINK-ONLY (the campaign's D81 call on
+#     README gap 3953; gap 4043), as D51 says and as check 13's three files have
+#     been since W-40's repair: an entry or a `CLASS` line `reach-exempt.txt` did
+#     not hold at HEAD FAILS whatever section or heading it stands under, so (iii)
+#     and gap 2259's dated-section route are gone with the growth they priced.
+#     DRIVEN in a clone (README, W-41 track E): an entry deleted in a commit and
+#     re-added under a NEW dated section naming an EXIT, and a `CLASS` line deleted
+#     and re-added with a date and an EXIT -- rc=0 on the old ratchet, rc=1 by name
+#     on this one.  Growth is the owner's to grant, in the commit that changes
+#     reach.py.
+#
 #     AND THE ROOT IS MEASURED BEFORE ANY VERDICT IS TAKEN FROM IT (W-32 repair,
 #     gaps 2413 and 2414).  `sections.py` DISCARDED a request region carrying a
 #     key it did not recognise, so the next dispatch arm would not fall out

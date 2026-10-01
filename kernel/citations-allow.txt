@@ -710,6 +710,30 @@ can_fail
 1 plan_is_monotone_in_rank_is_refuted_by_the_split
 1 plan_never_batches_past_an_equal_ci_candidate_is_refuted_by_the_split
 
+# W-41 track K (README gaps 3970-3999): the owner's D78 plans a running block -- and an open interruption --
+# whose start is after `now` from `now`, as fork 4748911 does, so the start-after-now refusals are refuted
+# (`Planner.mkActive?_refuses_a_start_after_now_is_refuted`, `PlanWire.readActive_accepts_a_start_after_now`,
+# `PlanWire.readInterrupt_accepts_a_start_after_now`) and the interruption's constructor is DELETED with the
+# only bound it checked; D81's gap 3902 widens the running estimate, the running break and the worked
+# minutes from the day to the host's width, so their day-bound refusals are refuted and renamed
+# (`..._past_the_width`, beside a `..._reads_..._past_the_day` witness each); the builder's unchecked
+# sibling is an estimate past the width now (`PlannerWit.aBlockPastTheWidth`); and the two Rust tests that
+# pinned the refusals are rewritten to the new answers.  Every citation counted here is an append-only
+# README block naming the thing as it stood, but one: CHEAT 240's sentence in `Negative.lean`, a block
+# AGENTS 6.2 says is never edited, which CHEAT 241's banner supersedes.
+1 Planner.the_extension_agrees_when_the_estimate_fits_a_day
+1 Planner.the_extension_disagrees_past_a_day
+1 PlannerWit.aBlockStartedAfterNow
+3 a_worked_reading_past_a_day_is_refused
+1 mkActive?_refuses_a_start_after_now
+1 mkActive?_refuses_an_estimate_past_the_day
+2 mkBreak?_refuses_a_break_longer_than_a_day
+4 mkInterrupt?
+1 mkInterrupt?_accepts
+1 mkInterrupt?_refuses_a_start_after_now
+1 readActive_refuses_a_start_after_now
+1 the_worked_minutes_bound_is_run
+
 # ====================== 4. GRANDFATHERED (README, unadjudicated) ======================
 #
 # 161 names, seeded from `README.md` at W-19 so check 8 could land as a RATCHET on new prose
@@ -1193,3 +1217,24 @@ with_minute
 1 a_running_block_started_after_now_is_planned_from_now_and_its_row_ends_a_block_later
 1 a_running_record_never_starts_after_now
 1 at_most_now
+
+# W-41 LAND STEP (README gaps 4120-4129).  Four tracks were built in parallel off `122e153`, and
+# each one's append-only README block names the tests and helpers as they stood on its own branch;
+# composing them renamed or deleted five of those names, and each citation counted here is one of
+# those blocks naming the thing as it stood:
+#   * track K renamed `planner_request_keys.rs`' refusal pin to its three worlds, planned (K's new
+#     name) and track T to its two worlds, refused (T's new name) -- K because D81 plans two of the
+#     worlds, T because P75 removes the third; the land step's composition is ONE test over the two
+#     worlds the binary still builds, both planned.  The old name was counted once by each track
+#     here (the same name twice, which check 8 reads as one entry): one entry, both citations.
+#   * track K renamed the D78 test `a_running_block_started_after_now_is_..._refused_by_name_...`
+#     to its planned form; track E's block cites the old name as it stood.
+#   * track H's `forkplan::d81_loc` pre-computed track E's P76 while E was being built (README gap
+#     4086); with E composed the encoder sends `any` itself, so the override and its test were
+#     DELETED (the test renamed to `d81s_location_is_the_requests_own`).
+4 a_running_block_started_after_now_is_refused_by_name_where_the_fork_plans_it
+2 the_swaps_request_is_refused_on_three_worlds_the_binary_builds
+1 the_swaps_request_on_three_worlds_the_binary_builds
+1 the_swaps_request_is_refused_on_two_worlds_the_binary_builds
+3 d81s_location_is_read_here_until_track_e_reads_it
+5 forkplan::d81_loc

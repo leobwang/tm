@@ -39,12 +39,14 @@ a third name for a bound is the defect this kernel is named after.
 | wire value | bound | constructor | rejection theorem |
 |---|---|---|---|
 | every id (`active.id`, `interrupt.id`, a routine's `id` and `inst`, an override's id, a `yesterday` id) | `CapWire.maxCandId` | `EmitWire.idWithin` | `readActive_refuses_a_long_id`, `readInterrupt_refuses_a_long_id`, `readRoutine_refuses_a_long_id`, `readOverrides_refuses_a_long_drop_id` |
-| `active.estMin` | `Look.maxDayMin`, through the wf predicate | `Planner.mkActive?` | `readActive_refuses_an_estimate_past_the_day` |
+| `active.estMin` | `Look.maxPlanMinutes` (the fork's `u32`, D81 gap 3902), through the wf predicate | `Planner.mkActive?` | `readActive_refuses_an_estimate_past_the_width` |
 | `active.started`, `brk.started`, `interrupt.started`, a routine's `winLo`/`winHi` | `Cal.Instant.wf` | `Cal.mkInstant?`, through `EmitWire.secWithin` | `instantWithin_refuses_past_the_calendar`, `readRoutine_refuses_a_window_past_the_calendar` |
-| `active.started ≤ now` | `Planner.ActiveBlock.wf` | `Planner.mkActive?` | `readActive_refuses_a_start_after_now` |
-| `brk.plannedMin` | `Look.maxDayMin`, through the wf predicate | `Planner.mkBreak?` | `readBreak_refuses_a_break_longer_than_a_day` |
-| `brk.started ≤ now` | `Planner.BreakState.wf` | `Planner.mkBreak?` | `readBreak_refuses_a_start_after_now` |
-| `interrupt.started ≤ now` | `Planner.InterruptState.wf` | `Planner.mkInterrupt?` | `readInterrupt_refuses_a_start_after_now` |
+| `active.started`, `interrupt.started` after `now` | NONE since W-41: D78 plans both as fork 4748911 does, from `now` | — | `readActive_accepts_a_start_after_now`, `readInterrupt_accepts_a_start_after_now` |
+| `brk.plannedMin` | `Look.maxPlanMinutes` (D81 gap 3902), through the wf predicate | `Planner.mkBreak?` | `readBreak_refuses_a_break_past_the_width` |
+| `brk.started ≤ now` | `Planner.BreakState.wf` (D81: the host never sends one after `now`) | `Planner.mkBreak?` | `readBreak_refuses_a_start_after_now` |
+| `active.workedMin` | `Look.maxPlanMinutes` (W-41, the width again) | `Planner.workedOf?` | `readOptWorked_refuses_a_reading_past_the_width` |
+| the day's evening (D80 (a), P71) | `LogStamp.yearEnd` | `Planner.PlanReq.eveningInsideTheCalendar`, in `planReqRefusal` | `planReqRefusal_names_an_evening_past_the_calendar` |
+| a candidate's wire `ci` (D80 (b), P72) | the plan's `ci` for the item | `Planner.PlanReq.ciDisagreement`, in `planReqRefusal` | `planReqRefusal_names_a_candidate_whose_ci_disagrees` |
 | `lastHash` | `Planner.hashBound`, exactly `hashHexLen` hex digits | `Planner.mkHash?` | `readHash_refuses_a_short_digest` |
 | a `yesterday` priority | `Fin 8`, through the one reader of a stored `p` | `Planner.mkYesterday?` | `readYesterday_refuses_a_priority_past_seven` |
 | the `yesterday` list | `Planner.maxCands` | `Planner.mkYesterday?` | `readYesterday_refuses_past_the_cap` |
@@ -53,37 +55,30 @@ a third name for a bound is the defect this kernel is named after.
 | `prio.batchMaxMin` | `CapWire.maxRemaining` (fork `u32`) | `EmitWire.u32Within` | `readBatchMaxMin_refuses_past_the_width` |
 | the routine list, and each instance's rule | `Planner.maxCands`, `Planner.mkRoutine?` | `Planner.mkRoutines?` | already proved — `mkRoutines?_refuses_too_many`, and `PlannerWit.mkPlanReq?_refuses_a_routine_the_rule_refuses` carries it out |
 
-**`batchMaxMin` takes the fork's `u32` and not the day's 1,440.**  `config.rs:361` declares
-`pub batch_max_min: u32`; a tighter bound here would be a *divergence from the comparand*
-(D21/D22/D23) and would owe a parity number, where the `u32` width is the value the fork can
-actually hold.  `EmitWire.u32Within` is the guard and `CapWire.maxRemaining` is
-`Look.maxPlanMinutes` is that width — one function, one number, no third name.
+**`batchMaxMin` takes the fork's `u32` and not the day's 1,440.**  `config.rs:361` declares `pub batch_max_min: u32`;
+a tighter bound would be a *divergence from the comparand* (D21/D22/D23) owing a parity number.  `EmitWire.u32Within`
+is the guard and `CapWire.maxRemaining` is `Look.maxPlanMinutes` — one function, one number, no third name.
 
 ## §10.3's family, and the two names that are deliberately NOT declared
 
-Design §10.3 reserves `planRefusal.*` for `badState`, badWindow, badBudget, `badActive`,
-`badBreak`, `badInterrupt`, `badHash`, `badOverride` and tooManyCands — the three spelled
-without backticks because nothing declares them and check 8 is right to ask.
+Design §10.3 reserves `planRefusal.*` for `badState`, badWindow, badBudget, `badActive`, `badBreak`, `badInterrupt`,
+`badHash`, `badOverride` and tooManyCands — three spelled without backticks because nothing declares them.
 
-**The type is `PlannerRefusal` and deliberately NOT PlanRefusal.**  Four ledger sentences and
-`Planner.dayPlan`'s own header cite PlanRefusal as a type that **does not exist**, because
-`dayPlan` is total (D28) and has no error type — `kernel/citations-allow.txt` carries the name
-under *"names D28 says do NOT exist"* with five counted citations.  Declaring a type of that
-name here would make five committed sentences false while `dayPlan`'s signature was unchanged,
-which is a ledger rot the checks would not catch: check 8 would go **quieter**, not louder, as
-the allow entry stopped being needed.  So the wire key is `planner`, the type is
-`PlannerRefusal`, and PlanRefusal still does not exist.
+**The type is `PlannerRefusal` and deliberately NOT PlanRefusal.**  Four ledger sentences and `Planner.dayPlan`'s own
+header cite PlanRefusal as a type that **does not exist**, because `dayPlan` is total (D28) and has no error type —
+`kernel/citations-allow.txt` carries the name under *"names D28 says do NOT exist"* with five counted citations.  A type
+of that name here would make five committed sentences false while `dayPlan`'s signature was unchanged, a ledger rot
+check 8 would answer by going **quieter**.  So the wire key is `planner`, the type is `PlannerRefusal`, and PlanRefusal
+still does not exist.
 
 Seven of §10.3's nine names are below.  **badWindow and badBudget are not, and their absence is
 the point**:
 `Planner.PlanReq` has no window field and no budget field — `PlanReq.window` is
 the stored window (crossing midnight as the fork's planner reads it, gap 3341) or `Look.day0Window r.look`, and `PlanReq.budgetBlocks` is the stored one
 or `Look.budgetOf`, both *views* (`PlanReq.window_crosses_midnight_as_the_forks_planner_reads_it`).  There is nothing
-on this wire for either name to be about, so declaring them would put two constructors in
-`PlannerRefusal` that **no input can reach** — AGENTS §9.2's disguised gap, in the one place R10
-is supposed to prevent it.  tooManyCands is likewise absent: the candidate cap is
-`capacity.candidates`', refused there as `Boundary.Refusal.tooManyCandidates` before this
-section is read at all.  README gap **1664**.
+on this wire for either name to be about, so declaring them would put two constructors in `PlannerRefusal` that **no
+input can reach** — AGENTS §9.2's disguised gap, where R10 is supposed to prevent it.  tooManyCands is likewise absent:
+the candidate cap is `capacity.candidates`', refused there as `Boundary.Refusal.tooManyCandidates`.  README gap **1664**.
 
 **`EmitWire.RowRefusal` is deliberately not this family** and this module does not rename it:
 the two live in one `plan` object with disjoint keys, exactly as `EmitWire.lean`'s header says
@@ -93,14 +88,13 @@ the planner.
 
 ## Reusing `EmitWire`'s readers rather than writing them again
 
-`EmitWire.asPlan` and the eight readers over it (`natAtP`, `strAtP`, `arrAtP`, `optAtP`,
-`flagAtP`, `optNatAtP`, `optStrAtP`) and the three guards (`idWithin`, `u32Within`,
-`secWithin`) were typed to `RowRefusal`.  They are now **polymorphic in the refusal**
-(`{ρ : Type}`), which is the smallest edit that lets this section reuse them by name instead of
-copying nine JSON shapes and three bounds one module along.  Every existing call site and every
-existing theorem is unchanged in meaning: `ρ` unifies with `RowRefusal` exactly where it did
-before, and `asPlan_keeps_the_value` / `asPlan_renames_a_refusal` are now *stronger*
-statements (∀ ρ) that imply the ones they replace (D5).
+`EmitWire.asPlan` and the eight readers over it (`natAtP`, `strAtP`, `arrAtP`, `optAtP`, `flagAtP`, `optNatAtP`,
+`optStrAtP`) and the three guards (`idWithin`, `u32Within`, `secWithin`) were typed to `RowRefusal`.  They are now
+**polymorphic in the refusal** (`{ρ : Type}`), which is the smallest edit that lets this section reuse them by name
+instead of copying nine JSON shapes and three bounds one module along.  Every existing call site and every
+existing theorem is unchanged in meaning: `ρ` unifies with `RowRefusal` exactly where it did before, and
+`asPlan_keeps_the_value` / `asPlan_renames_a_refusal` are now *stronger* statements (∀ ρ) that imply the ones they
+replace (D5).
 -/
 
 namespace Tm
@@ -119,10 +113,10 @@ inductive PlanKey
   | winLo | winHi | durMin | mandatory
   | est | extra | drop | min
   | overtime | blocks | grown | remaining | workedMin
-  /-- **The record's own well-formedness**, when `Planner.mkActive?`, `mkBreak?` or
-  `mkInterrupt?` answers `none`.  Those three answer `Option` and not a named error, so the wire
-  can say *which record* the planner could not hold and not *which clause* of its `wf` failed —
-  README gap **1665**, and the reason this key is not one of the field names above. -/
+  /-- **The record's own well-formedness**, when `Planner.mkActive?` or `mkBreak?` answers `none` (and the
+  interruption's, until D78 took its constructor away at W-41).  Those answer `Option` and not a named error, so the
+  wire can say *which record* the planner could not hold and not *which clause* of its `wf` failed — README gap
+  **1665**, and the reason this key is not one of the field names above. -/
   | wf
 deriving DecidableEq, Repr
 
@@ -194,6 +188,10 @@ inductive PlannerRefusal
   | routineRefused (e : Planner.RoutineErr)
   /-- **A key of the `overtime` object** (W-34): §9.1's "x extend +N block" what-if. -/
   | badOvertime (k : PlanKey)
+  /-- **D80 (a)** (P71): the day's evening runs past the calendar's last second (`Planner.PlanReq.eveningInsideTheCalendar`). -/
+  | eveningPastTheCalendar
+  /-- **D80 (b)** (P72): a candidate whose wire `ci` is not the plan's — the id, the wire's value, the plan's (or none). -/
+  | ciDisagrees (i : Id) (wire : Fin 6) (plan : Option (Fin 6))
 deriving DecidableEq, Repr
 
 /-- `Planner.RoutineErr`'s six names, spelled where the wire can read them, **each with the id
@@ -227,6 +225,8 @@ def PlannerRefusal.text : PlannerRefusal → String
   | .candsPastCap => "candsPastCap"
   | .routineRefused e => s!"routineRefused {routineErrName e}"
   | .badOvertime k => s!"badOvertime {k.name}"
+  | .eveningPastTheCalendar => "eveningPastTheCalendar"
+  | .ciDisagrees i w p => s!"ciDisagrees {String.ofList i} wire {w.val} plan {(p.map (fun c => toString c.val)).getD "none"}"
 
 /-- The refusal on the wire: `{"err": {"planner": "<name> <key>"}}` — `EmitWire`'s shape under
 this section's own key, so a host tells the two families apart by the key and not by the text. -/
@@ -273,23 +273,23 @@ theorem instantWithin_refuses_the_first_second_past_the_years {ρ : Type} (r : �
 
 /-- `state.active`, through `Planner.mkActive?` — the one constructor that knows what a running
 block may be.  `paused` is absent-is-`false`, which is the field's own default. -/
-def readActive (now : Cal.Instant) (v : JVal) : Except PlannerRefusal ActiveBlock := do
+def readActive (v : JVal) : Except PlannerRefusal ActiveBlock := do
   let idS ← EmitWire.strAtP v "id" (PlannerRefusal.badActive PlanKey.id)
   let id ← EmitWire.idWithin (PlannerRefusal.badActive PlanKey.id) idS
   let secN ← EmitWire.natAtP v "started" (PlannerRefusal.badActive PlanKey.started)
   let started ← instantWithin (PlannerRefusal.badActive PlanKey.started) secN
   let estMin ← EmitWire.natAtP v "estMin" (PlannerRefusal.badActive PlanKey.estMin)
   let paused ← EmitWire.flagAtP v "paused" (PlannerRefusal.badActive PlanKey.paused)
-  match Planner.mkActive? now ⟨id, started, estMin, paused⟩ with
+  match Planner.mkActive? ⟨id, started, estMin, paused⟩ with
   | some a => pure a.val
   | none => throw (PlannerRefusal.badActive PlanKey.wf)
 
 /-- An absent or `null` `active` is nothing running. -/
-def readOptActive (now : Cal.Instant) (v : JVal) : Except PlannerRefusal (Option ActiveBlock) :=
+def readOptActive (v : JVal) : Except PlannerRefusal (Option ActiveBlock) :=
   match EmitWire.optAtP v "active" (PlannerRefusal.badState PlanKey.active) with
   | .error e => .error e
   | .ok none => .ok none
-  | .ok (some w) => (readActive now w).map some
+  | .ok (some w) => (readActive w).map some
 
 /-- Fork `store::BreakPlace`'s four serde names.  An unknown word is refused by name, never
 defaulted (AGENTS §5.7). -/
@@ -323,9 +323,11 @@ def readOptBreak (now : Cal.Instant) (v : JVal) : Except PlannerRefusal (Option 
   | .ok none => .ok none
   | .ok (some w) => (readBreak now w).map some
 
-/-- `state.interrupt`, through `Planner.mkInterrupt?`.  §9's open interruption is an ad-hoc wall
-from `t_i` to `now` and both of its fields are optional. -/
-def readInterrupt (now : Cal.Instant) (v : JVal) : Except PlannerRefusal InterruptState := do
+/-- `state.interrupt`.  §9's open interruption is an ad-hoc wall from `t_i` to `now` and both of its fields are
+optional.  **No constructor since W-41**: Planner.mkInterrupt? bounded the start by `now` and nothing else, and D78
+reads a start after `now` as fork 4748911 does — no wall at all (`Planner.interruptRows`) — so each field keeps its own
+reader's bound (`instantWithin`, `EmitWire.idWithin`) and the record is what they read. -/
+def readInterrupt (v : JVal) : Except PlannerRefusal InterruptState := do
   let secO ← EmitWire.optNatAtP v "started" (PlannerRefusal.badInterrupt PlanKey.started)
   let started ← match secO with
     | none => pure none
@@ -334,14 +336,12 @@ def readInterrupt (now : Cal.Instant) (v : JVal) : Except PlannerRefusal Interru
   let id ← match idO with
     | none => pure none
     | some s => (EmitWire.idWithin (PlannerRefusal.badInterrupt PlanKey.id) s).map some
-  match Planner.mkInterrupt? now ⟨started, id⟩ with
-  | some x => pure x.val
-  | none => throw (PlannerRefusal.badInterrupt PlanKey.wf)
-def readOptInterrupt (now : Cal.Instant) (v : JVal) : Except PlannerRefusal (Option InterruptState) :=
+  pure ⟨started, id⟩
+def readOptInterrupt (v : JVal) : Except PlannerRefusal (Option InterruptState) :=
   match EmitWire.optAtP v "interrupt" (PlannerRefusal.badState PlanKey.interrupt) with
   | .error e => .error e
   | .ok none => .ok none
-  | .ok (some w) => (readInterrupt now w).map some
+  | .ok (some w) => (readInterrupt w).map some
 /-- `state.lastHash`, through `Planner.mkHash?` — the one hex reader (R10). -/
 def readHash (v : JVal) : Except PlannerRefusal (Option PlanHash) :=
   match EmitWire.optStrAtP v "lastHash" (PlannerRefusal.badState PlanKey.lastHash) with
@@ -366,7 +366,7 @@ def readYesterday (xs : List JVal) : Except PlannerRefusal (Capped (Id × Fin 8)
     | some c => .ok c
     | none => .error PlannerRefusal.badYesterdayList
 /-- `state.active.workedMin`, the host's worked minutes (W-36, gap 2920), through `Planner.workedOf?`; absent is `none`. -/
-def readOptWorked (sec : JVal) : Except PlannerRefusal (Option (Fin (Look.maxDayMin + 1))) :=
+def readOptWorked (sec : JVal) : Except PlannerRefusal (Option (Fin (Look.maxPlanMinutes + 1))) :=
   match EmitWire.optAtP sec "active" (PlannerRefusal.badState PlanKey.active) with
   | .ok (some a) => match EmitWire.optNatAtP a "workedMin" (PlannerRefusal.badActive PlanKey.workedMin) with
     | .ok (some n) => match Planner.workedOf? n with | some w => .ok (some w) | none => .error (PlannerRefusal.badActive PlanKey.workedMin)
@@ -374,9 +374,9 @@ def readOptWorked (sec : JVal) : Except PlannerRefusal (Option (Fin (Look.maxDay
   | .ok none => .ok none | .error e => .error e
 /-- **§9's five rows.**  Every one is optional and every absence is the field's own empty. -/
 def readState (now : Cal.Instant) (sec : JVal) : Except PlannerRefusal RuntimeIn := do
-  let active ← readOptActive now sec
+  let active ← readOptActive sec
   let brk ← readOptBreak now sec
-  let interrupt ← readOptInterrupt now sec
+  let interrupt ← readOptInterrupt sec
   let lastHash ← readHash sec
   let ys ← match ← EmitWire.optAtP sec "yesterday" (PlannerRefusal.badState PlanKey.yesterday) with
     | none => pure []
@@ -551,27 +551,35 @@ theorem the_two_refusal_families_do_not_share_a_key :
 
 /-- **An `active.id` past `CapWire.maxCandId` is refused**, through `EmitWire.idWithin` — the
 one guard, not a comparison written here. -/
-theorem readActive_refuses_a_long_id (now : Cal.Instant) (v : JVal) (id : Id)
+theorem readActive_refuses_a_long_id (v : JVal) (id : Id)
     (hs : EmitWire.strAtP v "id" (PlannerRefusal.badActive PlanKey.id) = .ok id)
     (h : CapWire.maxCandId < id.length) :
-    readActive now v = .error (PlannerRefusal.badActive PlanKey.id) := by
+    readActive v = .error (PlannerRefusal.badActive PlanKey.id) := by
   simp only [readActive, hs, bind, Except.bind,
     EmitWire.idWithin_refuses_a_long_id (PlannerRefusal.badActive PlanKey.id) id h]
 
 /-- **An `active.started` past the calendar is refused**, through `Cal.mkInstant?`. -/
-theorem readActive_refuses_a_start_past_the_calendar (now : Cal.Instant) (v : JVal) (id : Id)
+theorem readActive_refuses_a_start_past_the_calendar (v : JVal) (id : Id)
     (n : Nat) (hs : EmitWire.strAtP v "id" (PlannerRefusal.badActive PlanKey.id) = .ok id)
     (hlen : id.length ≤ CapWire.maxCandId)
     (hn : EmitWire.natAtP v "started" (PlannerRefusal.badActive PlanKey.started) = .ok n)
     (h : Cal.mkInstant? n 0 = none) :
-    readActive now v = .error (PlannerRefusal.badActive PlanKey.started) := by
+    readActive v = .error (PlannerRefusal.badActive PlanKey.started) := by
   simp only [readActive, hs, hn, bind, Except.bind,
     EmitWire.idWithin_accepts_at_the_bound (PlannerRefusal.badActive PlanKey.id) id hlen,
     instantWithin_refuses_past_the_calendar (PlannerRefusal.badActive PlanKey.started) n h]
 
-/-- **A running block that started after `now` is refused**, through `Planner.mkActive?` — the
-constructor whose `wf` says what a running block may be. -/
-theorem readActive_refuses_a_start_after_now (now : Cal.Instant) (v : JVal) (id : Id)
+/-- **A running block that started after `now` is READ since W-41** (the owner's D78; README gap 2874's input 1): the
+reader takes no `now` at all, so readActive_refuses_a_start_after_now — `badActive wf` for a start after `now` — is
+refuted, and §8.2 plans the block from `now` as fork 4748911 does (`PlannerWit`'s W-41 block computes the day).  A
+start of 1,010 reads whatever `now` the request carries; at a `now` of 1,000 it is the ten seconds ahead D78 names. -/
+theorem readActive_accepts_a_start_after_now :
+    readActive (.obj [("id".toList, .str "m2".toList), ("started".toList, .num 1010),
+      ("estMin".toList, .num 60)]) = .ok ⟨"m2".toList, ⟨1010, 0⟩, 60, false⟩ := by rfl
+
+/-- **An `estMin` past the host's width is refused**, through the same constructor — `Look.maxPlanMinutes`, the
+fork's `u32` (D81 gap 3902), is the bound, reused, and this module does not write a second one. -/
+theorem readActive_refuses_an_estimate_past_the_width (v : JVal) (id : Id)
     (n est : Nat) (paused : Bool) (i : Cal.VInstant)
     (hs : EmitWire.strAtP v "id" (PlannerRefusal.badActive PlanKey.id) = .ok id)
     (hlen : id.length ≤ CapWire.maxCandId)
@@ -579,43 +587,35 @@ theorem readActive_refuses_a_start_after_now (now : Cal.Instant) (v : JVal) (id 
     (hi : Cal.mkInstant? n 0 = some i)
     (he : EmitWire.natAtP v "estMin" (PlannerRefusal.badActive PlanKey.estMin) = .ok est)
     (hp : EmitWire.flagAtP v "paused" (PlannerRefusal.badActive PlanKey.paused) = .ok paused)
-    (h : now.sec < i.val.sec) :
-    readActive now v = .error (PlannerRefusal.badActive PlanKey.wf) := by
+    (h : Look.maxPlanMinutes < est) :
+    readActive v = .error (PlannerRefusal.badActive PlanKey.wf) := by
   simp only [readActive, hs, hn, he, hp, bind, Except.bind,
     EmitWire.idWithin_accepts_at_the_bound (PlannerRefusal.badActive PlanKey.id) id hlen,
     instantWithin_accepts_a_representable_second (PlannerRefusal.badActive PlanKey.started) n i hi,
-    Planner.mkActive?_refuses_a_start_after_now now ⟨id, ⟨i.val.sec, 0⟩, est, paused⟩ h]
+    Planner.mkActive?_refuses_an_estimate_past_the_width ⟨id, ⟨i.val.sec, 0⟩, est, paused⟩ h]
   rfl
 
-/-- **An `estMin` past the day is refused**, through the same constructor — `Look.maxDayMin` is
-the day's own bound and this module does not write a second one. -/
-theorem readActive_refuses_an_estimate_past_the_day (now : Cal.Instant) (v : JVal) (id : Id)
-    (n est : Nat) (paused : Bool) (i : Cal.VInstant)
-    (hs : EmitWire.strAtP v "id" (PlannerRefusal.badActive PlanKey.id) = .ok id)
-    (hlen : id.length ≤ CapWire.maxCandId)
-    (hn : EmitWire.natAtP v "started" (PlannerRefusal.badActive PlanKey.started) = .ok n)
-    (hi : Cal.mkInstant? n 0 = some i)
-    (he : EmitWire.natAtP v "estMin" (PlannerRefusal.badActive PlanKey.estMin) = .ok est)
-    (hp : EmitWire.flagAtP v "paused" (PlannerRefusal.badActive PlanKey.paused) = .ok paused)
-    (h : Look.maxDayMin < est) :
-    readActive now v = .error (PlannerRefusal.badActive PlanKey.wf) := by
-  simp only [readActive, hs, hn, he, hp, bind, Except.bind,
-    EmitWire.idWithin_accepts_at_the_bound (PlannerRefusal.badActive PlanKey.id) id hlen,
-    instantWithin_accepts_a_representable_second (PlannerRefusal.badActive PlanKey.started) n i hi,
-    Planner.mkActive?_refuses_an_estimate_past_the_day now ⟨id, ⟨i.val.sec, 0⟩, est, paused⟩ h]
-  rfl
+/-- **An `estMin` past the day is READ since W-41**: readActive_refuses_an_estimate_past_the_day is refuted at
+`tm extend 24h`'s 1,500 minutes, which fork 4748911 plans (D81 gap 3902). -/
+theorem readActive_reads_an_estimate_past_the_day :
+    readActive (.obj [("id".toList, .str "m2".toList), ("started".toList, .num 900),
+      ("estMin".toList, .num 1500)]) = .ok ⟨"m2".toList, ⟨900, 0⟩, 1500, false⟩ := by rfl
 
-/-- And a real running block reads, so none of the three refusals above is the only outcome
-(AGENTS §5.8), and the fields land where they say they do. -/
+/-- And a real running block reads, so none of the refusals above is the only outcome
+(AGENTS §5.8), and the fields land where they say they do — the start a second count, the
+estimate a minute count, `paused` absent-is-`false`. -/
 theorem readActive_accepts_a_running_block :
-    readActive ⟨1000, 0⟩ (.obj [("id".toList, .str "m2".toList),
+    readActive (.obj [("id".toList, .str "m2".toList),
       ("started".toList, .num 900), ("estMin".toList, .num 60)])
       = .ok ⟨"m2".toList, ⟨900, 0⟩, 60, false⟩ := by rfl
 
-/-- **A `break` longer than a day is refused**, through `Planner.mkBreak?`. -/
-theorem readBreak_refuses_a_break_longer_than_a_day :
-    readBreak ⟨1000, 0⟩ (.obj [("plannedMin".toList, .num 1441)])
-      = .error (PlannerRefusal.badBreak PlanKey.wf) := by rfl
+/-- **A `break` past the host's width is refused**, through `Planner.mkBreak?` (D81 gap 3902) — and the day's 1,441,
+which readBreak_refuses_a_break_longer_than_a_day refused until W-41, is read (that theorem, refuted). -/
+theorem readBreak_refuses_a_break_past_the_width :
+    readBreak ⟨1000, 0⟩ (.obj [("plannedMin".toList, .num 4294967296)])
+      = .error (PlannerRefusal.badBreak PlanKey.wf) ∧
+    readBreak ⟨1000, 0⟩ (.obj [("plannedMin".toList, .num 1441)]) = .ok ⟨none, 1441, none⟩ := by
+  constructor <;> rfl
 
 /-- **An unknown `place` word is refused by name**, never defaulted to a seat. -/
 theorem readBreak_refuses_an_unknown_place :
@@ -639,8 +639,8 @@ theorem the_four_break_places_read :
       = (some BreakPlace.walk, some BreakPlace.seat, some BreakPlace.bed,
          some BreakPlace.phone) := by decide
 
-/-- **A break that started after `now` is refused**, through `Planner.mkBreak?` — the other
-clause of the same `wf`, under the same name for the reason `PlanKey.wf` records. -/
+/-- **A break that started after `now` is refused**, through `Planner.mkBreak?` (the other clause of its `wf`, under
+`PlanKey.wf`).  D81 keeps it: the host reads a running break's start as the latest instant at or before `now`. -/
 theorem readBreak_refuses_a_start_after_now :
     readBreak ⟨1000, 0⟩ (.obj [("started".toList, .num 1001),
       ("plannedMin".toList, .num 10)])
@@ -652,24 +652,24 @@ theorem readBreak_accepts_a_running_break :
       ("plannedMin".toList, .num 10), ("place".toList, .str "walk".toList)])
       = .ok ⟨some ⟨900, 0⟩, 10, some BreakPlace.walk⟩ := by rfl
 
-/-- **An interruption that started after `now` is refused**, through `Planner.mkInterrupt?`. -/
-theorem readInterrupt_refuses_a_start_after_now :
-    readInterrupt ⟨1000, 0⟩ (.obj [("started".toList, .num 1001)])
-      = .error (PlannerRefusal.badInterrupt PlanKey.wf) := by rfl
+/-- **An interruption that started after `now` is READ since W-41** (D78): readInterrupt_refuses_a_start_after_now is
+refuted — the reader has no `now` to refuse it against, and §8.2 step 1 draws it as the fork does: not at all. -/
+theorem readInterrupt_accepts_a_start_after_now :
+    readInterrupt (.obj [("started".toList, .num 1001)]) = .ok ⟨some ⟨1001, 0⟩, none⟩ := by rfl
 
 /-- **An interruption's `id` past the bound is refused**, through `EmitWire.idWithin`. -/
-theorem readInterrupt_refuses_a_long_id (now : Cal.Instant) (v : JVal) (id : Id)
+theorem readInterrupt_refuses_a_long_id (v : JVal) (id : Id)
     (hs : EmitWire.optNatAtP v "started" (PlannerRefusal.badInterrupt PlanKey.started) = .ok none)
     (hi : EmitWire.optStrAtP v "id" (PlannerRefusal.badInterrupt PlanKey.id) = .ok (some id))
     (h : CapWire.maxCandId < id.length) :
-    readInterrupt now v = .error (PlannerRefusal.badInterrupt PlanKey.id) := by
+    readInterrupt v = .error (PlannerRefusal.badInterrupt PlanKey.id) := by
   simp only [readInterrupt, hs, hi, bind, Except.bind, Except.map,
     EmitWire.idWithin_refuses_a_long_id (PlannerRefusal.badInterrupt PlanKey.id) id h]
   rfl
 
 /-- A real interruption reads. -/
 theorem readInterrupt_accepts_an_open_interruption :
-    readInterrupt ⟨1000, 0⟩ (.obj [("started".toList, .num 900),
+    readInterrupt (.obj [("started".toList, .num 900),
       ("id".toList, .str "m1".toList)])
       = .ok ⟨some ⟨900, 0⟩, some "m1".toList⟩ := by rfl
 
@@ -1118,21 +1118,18 @@ def withPlanner (r : JVal) (xs : List (List Char × JVal)) : JVal :=
 
 /-! ## The request, assembled from what the call already decoded -/
 
-/-- **`Planner.PlanReq`, from the values this call's own readers produced** — README gaps 1667,
-1668 and 1669.
+/-- **D80's two refusals, by name, on the request the assembler built** (README gaps 3785, 3780 and 1984; parity P71
+and P72): the day's evening inside the calendar (`Planner.PlanReq.eveningInsideTheCalendar`), then every candidate's
+wire `ci` the plan's (`Planner.PlanReq.ciDisagreement` — the first that is not, named with both values); `none` when
+the request pays both.  An `Option`, so check 9 can fold it to a constant (`Except … PlanReq` has no inhabitant). -/
+def planReqRefusal (r : Planner.PlanReq) : Option PlannerRefusal :=
+  if !r.eveningInsideTheCalendar then some PlannerRefusal.eveningPastTheCalendar
+  else r.ciDisagreement.map (fun x => PlannerRefusal.ciDisagrees x.1 x.2.1 x.2.2)
 
-Gap **1668** said `PlannerWit.mkPlanReq?` is the only assembler and cannot be called from the
-wire, because `mutate.py`'s `WITNESS_MODULES` requires `PlannerWit.lean` to be a leaf and checks
-it.  **Nothing moves and nothing is re-implemented**: the eight fields are decoded values handed
-over, not decoded again.  `mkPlanReq?` runs `loadPlan`, `Look.mkInput?` and `Seal.resumeRun`
-because a *witness* starts from raw parts; a request that has already been through
-`Boundary.runCapP` starts from the answers, and calling those three a second time is the defect
-gap 1325 records.  What `mkPlanReq?` obliges and this must too is the **walls agreement** (gap
-346) — checked here by name, `wallsDisagree`.
-
-Gap **1669** said `runLoad` builds its `List ReqDoc` and hands out only the `WfPlan`.  It is
-answered from the other side: `Boundary.CapParts` hands out the `WfPlan` itself, so no document
-is read twice and nothing needs `ReqDoc` at all. -/
+/-- **`Planner.PlanReq`, from the values this call's own readers produced** — README gaps 1667-1669.  Gap **1668**:
+`PlannerWit.mkPlanReq?` is a witness leaf (`mutate.py`'s `WITNESS_MODULES`), so the eight fields are decoded values
+handed over, never decoded again (a second `loadPlan`, `Look.mkInput?` or `Seal.resumeRun` is gap 1325's defect).  It
+obliges the **walls agreement** (gap 346, `wallsDisagree`), and since W-41 D80's two (`planReqRefusal`). -/
 def planReqOf (parts : CapParts) (bm : Nat) (q : PlannerIn) :
     Except PlannerRefusal Planner.PlanReq :=
   match parts.lg.bind LogAnswer.run with
@@ -1148,10 +1145,13 @@ def planReqOf (parts : CapParts) (bm : Nat) (q : PlannerIn) :
             Look.wallIndex parts.cap.look.tz parts.cap.look.day.cut.blockMin parts.plan.val then
           .error PlannerRefusal.wallsDisagree
         else
-          .ok ⟨parts.plan, run, parts.cap.look, q.state, cs,
+          let req : Planner.PlanReq := ⟨parts.plan, run, parts.cap.look, q.state, cs,
             ⟨parts.cap.bins, parts.cap.safety, parts.cap.dflt,
               (match parts.cands with | none => false | some c => c.hysteresis), bm⟩,
             rs, q.overrides⟩
+          match planReqRefusal req with
+          | some x => .error x
+          | none => .ok req
 
 /-! ## `overtime` — §9.1's "x extend +N block", answered by the kernel (W-34, README gap 2682)
 
@@ -1994,41 +1994,41 @@ theorem mkGrown?_accepts_what_the_width_reads_pass (r m : Nat) (hr : r ≤ CapWi
 
 The planner's ONE reading of the running block's worked minutes is the host's —
 `Replay::active_worked_min`, what `tm now` prints and `tm done` logs — and it crosses here, in the
-active record where the host holds it, into `RuntimeIn.worked` through `Planner.workedOf?` (a day
-at most, `Look.maxDayMin` reused).  **Optional on the wire**: a record without it reads `none`,
+active record where the host holds it, into `RuntimeIn.worked` through `Planner.workedOf?` (the host's
+width since W-41, `Look.maxPlanMinutes` reused).  **Optional on the wire**: a record without it reads `none`,
 and the planner then falls back to the log's own reading (fork `active_run`'s), so every request
 the proptest arms built before W-36 means what it meant.  `tm_core::planwire::add_worked_min` is
 the one host encoder of the key.  `readOptWorked` reads it last, so an active record the other
 readers refuse is refused by their names first. -/
 
-/-- **The key is read as itself; absent it reads `none`; past a day it is refused** by the active
-record's name, never clamped (R10). -/
+/-- **The key is read as itself — past a day too, since W-41; absent it reads `none`; past the host's width it is
+refused** by the active record's name, never clamped (R10). -/
 theorem readState_reads_the_hosts_worked_minutes :
     (readState ⟨1000, 0⟩ (.obj [("active".toList, .obj [("id".toList, .str "m2".toList),
         ("started".toList, .num 900), ("estMin".toList, .num 60),
-        ("workedMin".toList, .num 25)])])).map (fun st => st.worked.map Fin.val) = .ok (some 25) ∧
+        ("workedMin".toList, .num 1441)])])).map (fun st => st.worked.map Fin.val) = .ok (some 1441) ∧
     (readState ⟨1000, 0⟩ (.obj [("active".toList, .obj [("id".toList, .str "m2".toList),
         ("started".toList, .num 900), ("estMin".toList, .num 60)])])).map
         (fun st => st.worked.map Fin.val) = .ok none ∧
     (readState ⟨1000, 0⟩ (.obj [("active".toList, .obj [("id".toList, .str "m2".toList),
         ("started".toList, .num 900), ("estMin".toList, .num 60),
-        ("workedMin".toList, .num 1441)])])).map (fun st => st.worked.map Fin.val)
+        ("workedMin".toList, .num 4294967296)])])).map (fun st => st.worked.map Fin.val)
       = .error (PlannerRefusal.badActive PlanKey.workedMin) :=
   ⟨rfl, rfl, rfl⟩
 
-/-- **R10's rejection theorem, general**: whatever the record, a `workedMin` past a day is the
+/-- **R10's rejection theorem, general**: whatever the record, a `workedMin` past the host's width is the
 active record's refusal. -/
-theorem readOptWorked_refuses_a_reading_past_the_day (sec a : JVal) (n : Nat)
+theorem readOptWorked_refuses_a_reading_past_the_width (sec a : JVal) (n : Nat)
     (ha : EmitWire.optAtP sec "active" (PlannerRefusal.badState PlanKey.active) = .ok (some a))
     (hn : EmitWire.optNatAtP a "workedMin" (PlannerRefusal.badActive PlanKey.workedMin)
       = .ok (some n))
-    (h : Look.maxDayMin < n) :
+    (h : Look.maxPlanMinutes < n) :
     readOptWorked sec = .error (PlannerRefusal.badActive PlanKey.workedMin) := by
   unfold readOptWorked
   rw [ha]
   simp only
   rw [hn]
-  simp only [Planner.a_worked_reading_past_a_day_is_refused n h]
+  simp only [Planner.a_worked_reading_past_the_width_is_refused n h]
 
 /-- **The key's name spells itself** — a refusal a host reads by text. -/
 theorem planKey_workedMin_is_the_wire_key : PlanKey.workedMin.name = "workedMin" := rfl
@@ -2129,6 +2129,72 @@ theorem the_served_key_is_the_walks_order (r : Planner.PlanReq) :
   show jget (diagJson (Planner.dayDiagnostics r)) "served" = _
   rw [hj, Planner.dayDiagnostics_served, Planner.PlanReq.dayServed, List.map_map]
   rfl
+
+/-! ## W-41 (track K): D80's two refusals, by name (README gaps 3785, 3780 and 1984; parity P71, P72)
+
+`planReqRefusal` is where the assembled request meets the two clauses `Planner.lean` defines on it — one definition of
+each, read by this decoder and by the wind-down law alike.  The day's evening first (a day past the calendar has no row
+to argue about), then the candidates, the first disagreeing one named with the wire's value and the plan's. -/
+
+/-- **D80 (a): a day whose evening runs past the calendar's last second is refused by name.** -/
+theorem planReqRefusal_names_an_evening_past_the_calendar (r : Planner.PlanReq)
+    (h : r.eveningInsideTheCalendar = false) :
+    planReqRefusal r = some PlannerRefusal.eveningPastTheCalendar := by
+  unfold planReqRefusal; rw [h]; rfl
+
+/-- **D80 (b): a candidate whose wire `ci` is not the plan's is refused, named with both values** — on a day whose
+evening the clause above accepts. -/
+theorem planReqRefusal_names_a_candidate_whose_ci_disagrees (r : Planner.PlanReq)
+    (hev : r.eveningInsideTheCalendar = true) (i : Id) (w : Fin 6) (p : Option (Fin 6))
+    (h : r.ciDisagreement = some (i, w, p)) :
+    planReqRefusal r = some (PlannerRefusal.ciDisagrees i w p) := by
+  unfold planReqRefusal; rw [hev, h]; rfl
+
+/-- **And a request paying both is refused by neither** (AGENTS §5.8: the checks do not bite a request that
+agrees). -/
+theorem planReqRefusal_of_a_request_paying_both (r : Planner.PlanReq) (hev : r.eveningInsideTheCalendar = true)
+    (hci : r.ciDisagreement = none) : planReqRefusal r = none := by
+  unfold planReqRefusal; rw [hev, hci]; rfl
+
+/-- **And no refusal is a request paying both** — the converse, which the decoder's law below reads. -/
+theorem planReqRefusal_eq_none_pays_both (r : Planner.PlanReq) (h : planReqRefusal r = none) :
+    r.eveningInsideTheCalendar = true ∧ r.ciDisagreement = none := by
+  unfold planReqRefusal at h
+  cases hev : r.eveningInsideTheCalendar
+  · rw [hev] at h; exact absurd h (by simp)
+  · rw [hev] at h
+    cases hci : r.ciDisagreement with
+    | some x => rw [hci] at h; exact absurd h (by simp)
+    | none =>
+      -- every other branch names a refusal; this one is the request paying both clauses,
+      -- which is the statement
+      exact ⟨rfl, rfl⟩
+
+/-- **Every request the decoder hands the planner pays D80's two clauses** — the hypothesis
+`plan_places_no_demanding_block_after_wind_down` is discharged over (`PlannerWit`'s W-41 block): the assembler's
+every successful path ends at `planReqRefusal` answering `none`. -/
+theorem planReqOf_pays_the_evening_and_the_ci (parts : CapParts) (bm : Nat) (q : PlannerIn) (r : Planner.PlanReq)
+    (h : planReqOf parts bm q = .ok r) : r.eveningInsideTheCalendar = true ∧ r.ciDisagreement = none := by
+  unfold planReqOf at h
+  repeat' split at h
+  all_goals first
+    | (simp at h; done)
+    | (dsimp only at h; split at h <;> first | (simp at h; done) | (have he := Except.ok.inj h; subst he; exact planReqRefusal_eq_none_pays_both _ (by assumption)))
+
+/-- **The two refusals spell themselves** — the texts a host reads (`tm_core::planwire::planner_refusal`). -/
+theorem the_d80_refusals_spell_themselves :
+    PlannerRefusal.eveningPastTheCalendar.text = "eveningPastTheCalendar" ∧
+    (PlannerRefusal.ciDisagrees "m2".toList 0 (some 5)).text = "ciDisagrees m2 wire 0 plan 5" ∧
+    (PlannerRefusal.ciDisagrees "x9".toList 3 none).text = "ciDisagrees x9 wire 3 plan none" := by
+  refine ⟨rfl, ?_, ?_⟩ <;> decide
+
+/-- **The optional reader hands the interruption on, decided** (check 9's second pass, W-41): a reader that answered a
+constant would be refused by `decide` here, where `readState_accepts_a_running_day`'s `rfl` alone could not say so —
+and the interruption's start after `now` (1,001 against `readState`'s 1,000) is read since D78. -/
+theorem readOptInterrupt_reads_the_interruption :
+    (match readOptInterrupt (.obj [("interrupt".toList, .obj [("started".toList, .num 1001),
+        ("id".toList, .str "m1".toList)])]) with
+      | .ok (some x) => decide (x = ⟨some ⟨1001, 0⟩, some "m1".toList⟩) | _ => false) = true := by decide
 
 end PlanWire
 end Tm

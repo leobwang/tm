@@ -534,6 +534,10 @@ the last call's answer with the records returned reads the replay by law 1.  The
 /-! ############################################################################
 # STAGE 6 — the planner; §8.3's invariants; L24 and L25
 
+**W-41 (2026-10-01): THIS SECTION HOLDS NO GOAL, and check 7 reads 0** — the owner's D80 refused by name the two
+requests its last goal's statement was false at, and track K proved it as written over every request the decoder
+accepts (the note where it stood, below; README "Stage 6 — W-41 track K").  The two paragraphs below are the W-39
+repair's and W-39's records, as they stood.
 **W-39 repair (2026-09-30): THIS SECTION HOLDS ONE GOAL AGAIN, and check 7 reads 1** —
 `plan_places_no_demanding_block_after_wind_down`, whose refutation fell when the kernel's window stopped running
 past the night (README gaps 3556 and 3713).  What follows was written when it held none.
@@ -1253,35 +1257,31 @@ two slots).  README gap **2020** is the residue: `noOverbook` itself on a day th
 needs the count of occupied `Planner.Assign.slotOf` entries against
 `Planner.PlanReq.finalAssign`'s `used`, and nothing in this tree relates the two. -/
 
-/-- **L26 / §8.3 "no ci ≥ 4 Block after wind-down" (P\*), stage 6 — BACK IN THIS FILE since the W-39 repair, and
-STILL HERE after W-40 track P, on purpose.**  It LEFT at W-39 track K, refuted at a Wednesday whose three-day wall
-carried the kernel's §8.1 window past the night; that refutation stood on a divergence from the fork's planner
-(README gap 3556), fell with the W-39 repair, and the goal came back (README gap 3713).
+/-! **plan_places_no_demanding_block_after_wind_down has LEFT this file** (stage 6, run **W-41**, track K; the owner's
+D80, README gaps 3780, 3785 and 1984).  It read
 
-**W-40 did the route gap 3545 named and found where it ends** (README gap 3780).  Gap 2326's bound holds for the
-kernel's planner window whenever the `[day]` is one the decoder accepts, the arrival is not past the day's end and a
-stored end clock reads inside the day (`PlanStable.the_window_ends_by_the_night`) — after a second divergence from
-the fork was fixed on the way (README gap 3782: a stored window crossing midnight ended at the NEXT day's clock, an
-hour past the fork's 24 hours on a fall-back night).  Where the window ends by the night, no Block row starts at or
-after a WindDown row at all, so this goal's conclusion holds there **whatever the wire calls the item's `ci`**
-(`PlanStable.plan_places_no_demanding_block_after_wind_down_inside_the_day`, which needs no `candsAgree`).
+    theorem plan_places_no_demanding_block_after_wind_down (r : PlanReq) (b w : WfSeg) (i : Id)
+      (hb : b ∈ (dayPlan r).segments) (hw : w ∈ (dayPlan r).segments)
+      (hbk : b.val.kind = SegKind.block) (hwk : w.val.kind = SegKind.windDown)
+      (hi : b.val.item = some i) (hafter : w.val.start ≤ b.val.start) :
+      (effectiveCi r.plan.val i).val < 4
 
-**As written it is FALSE, and no refutation of it is a discharge.**  At the calendar's last evening (9999-12-31,
-Chicago, a running `ci:5` block) the rows' clock (`Planner.clampSec`) forces the reservation and the WindDown row onto
-the calendar's last second, and the wind-down check FAILS with the wire agreeing
-(`PlannerWit.the_wind_down_goal_fails_where_the_kernels_clock_merges_the_last_evening`).  Fork 4748911, driven at
-that instant, draws the reservation at 17:59 and the wind-down at 21:30 — the witness stands on the kernel's clamp, a
-bound the fork does not have, so by W-39's rule it is not a discharge.  Every other request that falsifies the
-statement needs BOTH a window past the night — a `[day]` window over 24 hours, which the decoder refuses, or a logged
-arrival past the day's end on the eve of a 25-hour day — AND a wire `ci` below its plan's, which the decoder does not
-check (`PlanCheck.candsAgree`, README gap 1984) and the fork, reading one `ci`, cannot produce.  So the goal stays:
-discharging it needs the clamp gone (README gap 3785) and a statement over requests whose wire agrees — an owner
-question, not a proof. -/
-theorem plan_places_no_demanding_block_after_wind_down (r : PlanReq) (b w : WfSeg) (i : Id)
-    (hb : b ∈ (dayPlan r).segments) (hw : w ∈ (dayPlan r).segments)
-    (hbk : b.val.kind = SegKind.block) (hwk : w.val.kind = SegKind.windDown)
-    (hi : b.val.item = some i) (hafter : w.val.start ≤ b.val.start) :
-    (effectiveCi r.plan.val i).val < 4 := sorry
+— L26 / §8.3's "no `ci ≥ 4` Block after wind-down".  It came back at the W-39 repair (README gap 3713) and stayed
+through W-40 because its only falsifying requests were two the fork can never produce: a day whose evening runs past
+the calendar's last second, where the rows' clock (`Planner.clampSec`) squeezes the reservation and the WindDown row
+onto one second (`PlannerWit.the_wind_down_goal_fails_where_the_kernels_clock_merges_the_last_evening`), and a
+candidate whose `ci` on the wire is below its plan's on a window past the night.  **D80 refuses both by name**
+(`PlanWire.planReqRefusal`: `eveningPastTheCalendar`, `ciDisagrees`, parity P71 and P72), and the goal is **proved AS
+WRITTEN over every request the decoder accepts**:
+`PlannerWit.plan_places_no_demanding_block_after_wind_down_on_every_request_the_decoder_accepts` — its statement is
+this one with the single hypothesis `PlanWire.planReqOf parts bm q = .ok r`.  The law it stands on is
+`PlanCheck.plan_places_no_demanding_block_after_wind_down`, restated under the goal's own name over D80 (b)'s clause
+(`Planner.PlanReq.ciDisagreement = none`, weaker than W-39's `candsAgree`) and the wind-down inside the calendar, which
+D80 (a)'s clause implies; the decoder pays both (`PlanWire.planReqOf_pays_the_evening_and_the_ci`).  It has a subject on
+a request both clauses accept — the eve of the 2026 fall-back, a Block after its WindDown row
+(`PlannerWit.the_wind_down_law_has_a_subject_on_the_eve`, `PlannerWit.the_eve_pays_both_of_d80s_clauses`).  The
+statement with NO hypothesis stays false, at the last evening, and that is the request the decoder now refuses
+(`PlannerWit.the_last_evening_is_refused_by_name`).  **The burn-down is 0.** -/
 
 /-! **plan_is_monotone_in_rank has LEFT this file** (stage 6, run **W-39**, track K).  It read: two
 siblings of one document at equal `rootPrio` and equal `effectiveCi`, the first written first —

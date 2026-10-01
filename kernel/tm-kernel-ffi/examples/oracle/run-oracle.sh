@@ -121,3 +121,11 @@ echo "############ input set 6: the planner, through the plan mode"
     -- --ignored --exact --nocapture \
     the_frozen_p56_days_are_the_forks_oracle_answer_today \
     the_kernel_plans_every_fresh_p56_day_as_the_forks_oracle_plans_it )
+# The TUI's worlds and the two start worlds (W-41 track H, README gaps 3963 and 3964): every
+# frozen TUI day and every frozen start day still fork 4748911's answer.
+( cd "$repo" && TM_ORACLE="$oracle" cargo test --quiet -p tm --test tui_kernel_answers \
+    -- --ignored --exact --nocapture \
+    the_frozen_tui_days_are_the_forks_oracle_answer_today )
+( cd "$repo" && TM_ORACLE="$oracle" cargo test --quiet -p tm --test planner_w41_starts \
+    -- --ignored --exact --nocapture \
+    the_frozen_start_days_are_the_forks_oracle_answer_today )

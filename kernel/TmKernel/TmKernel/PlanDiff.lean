@@ -331,14 +331,15 @@ theorem overtimeDiff_of_an_unchanged_day (r : PlanReq) (i : Id) (blocks : Nat) (
   unfold overtimeDiff
   rw [h, diff_self]
 
-/-- **The what-if stays inside the reservation law's domain when the grown estimate fits a day**
-(W-34 repair, README gap 2737).  `PlanReq.extending` sets `estMin` directly rather than through
-`mkActive?`, so it can build a request `plan_reserves_one_block_at_a_time`'s `activeAgrees`
-excludes; this names the subdomain where it does not: a request that agreed still agrees after an
-extension that keeps the running estimate within `Look.maxDayMin` (the day's own bound, reused). -/
-theorem the_extension_agrees_when_the_estimate_fits_a_day (r : PlanReq) (i : Id) (m : Nat)
+/-- **The what-if stays inside the decoder's domain when the grown estimate fits the host's width** (W-34 repair,
+README gap 2737; restated at W-41 for D81's gap 3902).  `PlanReq.extending` sets `estMin` directly rather than through
+`mkActive?`, so it can build a request `mkActive?` would refuse; this names the subdomain where it does not: a request
+that agreed still agrees after an extension that keeps the running estimate within `Look.maxPlanMinutes` (the fork's
+`u32`, reused).  Until W-41 the bound was the day's and E1 read the clause; since D78 E1 reads the lead and no lift
+needs the clause, so this is now a statement about the decoder's domain alone.  It implies its W-34 form, the day's. -/
+theorem the_extension_agrees_when_the_estimate_fits_the_width (r : PlanReq) (i : Id) (m : Nat)
     (hok : r.activeAgrees = true)
-    (hm : ∀ a, r.state.active = some a → a.id = i → a.estMin + m ≤ Look.maxDayMin) :
+    (hm : ∀ a, r.state.active = some a → a.id = i → a.estMin + m ≤ Look.maxPlanMinutes) :
     (r.extending i m).activeAgrees = true := by
   unfold PlanReq.activeAgrees at hok ⊢
   unfold PlanReq.extending
@@ -350,22 +351,23 @@ theorem the_extension_agrees_when_the_estimate_fits_a_day (r : PlanReq) (i : Id)
     · simp only [Option.map, hi, if_true]
       have := hm a ha hi
       unfold ActiveBlock.wf at hok ⊢
-      simp only [Bool.and_eq_true, decide_eq_true_eq] at hok ⊢
-      exact ⟨hok.1, this⟩
+      simp only [decide_eq_true_eq] at hok ⊢
+      exact this
     · simp only [Option.map, hi, if_false]
       exact hok
 
-/-- **And it leaves the domain exactly when the grown estimate does not fit** — the other
-direction (AGENTS §5.8): the what-if day of an extension past `Look.maxDayMin` is still planned
-(D28), but the reservation law no longer covers it. -/
-theorem the_extension_disagrees_past_a_day (r : PlanReq) (i : Id) (m : Nat) (a : ActiveBlock)
-    (ha : r.state.active = some a) (hi : a.id = i) (hm : Look.maxDayMin < a.estMin + m) :
+/-- **And it leaves the domain exactly when the grown estimate passes the width** — the other direction (AGENTS §5.8):
+the what-if day of such an extension is still planned (D28), but `mkActive?` would not have built its block.  Its W-34
+form, the_extension_disagrees_past_a_day, is REFUTED since D81's gap 3902 (`PlannerWit`'s W-41 block extends a running
+block past the day and the request agrees). -/
+theorem the_extension_disagrees_past_the_width (r : PlanReq) (i : Id) (m : Nat) (a : ActiveBlock)
+    (ha : r.state.active = some a) (hi : a.id = i) (hm : Look.maxPlanMinutes < a.estMin + m) :
     (r.extending i m).activeAgrees = false := by
   unfold PlanReq.activeAgrees PlanReq.extending
   simp only [ha, Option.map, hi, if_true]
   unfold ActiveBlock.wf
-  simp only [Bool.and_eq_false_iff, decide_eq_false_iff_not]
-  exact Or.inr (by omega)
+  simp only [decide_eq_false_iff_not]
+  omega
 
 end Planner
 end Tm

@@ -132,6 +132,39 @@ const CASES: &[Case] = &[
     Case { verb: "tui", ok: &[], err: &["tui"], ..C },
 ];
 
+/// **The legs of the flags and refusals W-41 track T added**, beside the
+/// per-verb table (which keeps one row a verb and its size of 32): D79's `--at`
+/// on `tm stop` and `tm done` — taken at the block's own start, refused before
+/// it — D81/P75's `tm break --where` refused for a word outside the one table
+/// of places, and D81/P74's `tm wake` refused over an open interruption. Every
+/// leg is the same four shapes as the verbs'.
+const FLAG_CASES: &[Case] = &[
+    Case {
+        verb: "stop --at",
+        setup_ok: RUNNING,
+        ok: &["stop", "--at", "09:00"],
+        setup_err: RUNNING,
+        err: &["stop", "--at", "08:00"],
+        ..C
+    },
+    Case {
+        verb: "done --at",
+        setup_ok: RUNNING,
+        ok: &["done", "--at", "09:00"],
+        setup_err: RUNNING,
+        err: &["done", "--partial", "--at", "08:59"],
+        ..C
+    },
+    Case { verb: "break --where", ok: &["break", "20m", "--where", "walk"], err: &["break", "20m", "--where", "hammock"], ..C },
+    Case {
+        verb: "wake (interrupted)",
+        ok: &["wake", "06:05"],
+        setup_err: &[&["interrupt"]],
+        err: &["wake", "06:05"],
+        ..C
+    },
+];
+
 /// stderr parsed as the one JSON error document `out::ErrorOut` emits.
 fn err_doc(verb: &str, stderr: &str) -> Value {
     serde_json::from_str(stderr).unwrap_or_else(|e| {
@@ -147,7 +180,17 @@ fn run_setup(tm: &Tm, setup: &[&[&str]]) {
 
 #[test]
 fn every_verb_succeeds_plain_and_as_json() {
-    for case in CASES {
+    succeed(CASES);
+}
+
+#[test]
+fn every_flag_leg_succeeds_plain_and_as_json() {
+    succeed(FLAG_CASES);
+}
+
+/// Every case's success legs, plain and `--json`.
+fn succeed(cases: &[Case]) {
+    for case in cases {
         if case.ok.is_empty() {
             continue; // tui: named above
         }
@@ -189,7 +232,17 @@ fn every_verb_succeeds_plain_and_as_json() {
 
 #[test]
 fn every_verb_fails_plain_and_as_json() {
-    for case in CASES {
+    fail(CASES);
+}
+
+#[test]
+fn every_flag_leg_fails_plain_and_as_json() {
+    fail(FLAG_CASES);
+}
+
+/// Every case's error legs, plain and `--json`.
+fn fail(cases: &[Case]) {
+    for case in cases {
         let fixture = |setup: &[&[&str]]| {
             let tm = match case.err_where {
                 ErrWhere::Fixture => Tm::new(),
@@ -326,6 +379,8 @@ fn check_all_four_legs() {
 #[test]
 fn the_table_covers_every_section_13_verb() {
     assert_eq!(CASES.len(), 32, "the table lost a verb");
+    assert_eq!(FLAG_CASES.len(), 4, "the flag table lost a leg");
+    assert!(FLAG_CASES.iter().all(|c| !c.ok.is_empty()), "every flag leg has a success leg");
     let with_success = CASES.iter().filter(|c| !c.ok.is_empty()).count();
     assert_eq!(with_success, 31, "only tui may lack a success leg");
     let named: Vec<&str> = CASES.iter().map(|c| c.verb).collect();

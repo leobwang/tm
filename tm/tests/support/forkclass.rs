@@ -77,7 +77,10 @@
 //!   (`planner_invariants`' `w36_fork_plan`, on the grown what-if too); `p56` —
 //!   a meeting's closed pause is drawn as the wall alone and `shipped` is fork
 //!   4748911's drawing (`b3c29a3`'s `past_segments`; the in-tree fork was
-//!   changed to agree at W-37 track T).
+//!   changed to agree at W-37 track T). **And since W-41 (README gap 3958) a fifth,
+//!   `p67`** — on a break day where it departs from `p45`, the fork's day planned
+//!   there with the break logged at ANY length (the owner's D77, parity P67), which
+//!   the kernel is held to in `p45`'s place; `p45` is P45's rest reading again.
 //!
 //! A **P45** day (a running break) has no fork analogue at all — fork
 //! `planner::plan` reads no `runtime.break_` and plans over it — so the kernel
@@ -1340,7 +1343,7 @@ pub const INNER_BREAK: (i64, u32) = (5, 10);
 /// began and `tm break` again ten minutes later (`plangen::inner_break_line`), so the
 /// block runs unpaused, `.tm/state.json` is as it was, and the log gains one `break` line
 /// — which the log's reading of the block's worked minutes counts as worked and the host's
-/// (`Replay::active_worked_min`, what R3's request carries) nets out. Derived where that is
+/// (`Replay::running_worked_min`, [`host_worked`], what R3's request carries) nets out. Derived where that is
 /// the whole story: a block running unpaused with no break or interruption, whose `start`
 /// is the log's last line (so the break's line, written when it ended, is appended), and
 /// whose break ends a minute or more before `now`. Its class is the parent's: the class
@@ -1524,7 +1527,11 @@ pub fn order_worlds(parent: &ClassWorld) -> Vec<ClassWorld> {
 /// `shipped` is fork 4748911's drawing). A line no such rule departs on carries
 /// none of them, so the 41 lines frozen before W-38 did not change by carrying
 /// the new list.
-pub const ANSWERS: [&str; 10] = ["day", "shipped", "d57", "d60", "whatif", "p45", "p52", "p55", "p56", "p64"];
+///
+/// **W-41 track H adds `p67`** (README gap 3958): P67's comparand after a running break — the
+/// break logged at any length (the owner's D77) — present only where it departs from `p45`,
+/// P45's rest reading, which it had replaced under P45's flag from W-40 track P until W-41.
+pub const ANSWERS: [&str; 11] = ["day", "shipped", "d57", "d60", "whatif", "p45", "p52", "p55", "p56", "p64", "p67"];
 
 /// **The answers every line carries, `null` where there is none** — the five a
 /// line has carried since W-36. The rest of [`ANSWERS`] are present only where
@@ -1563,6 +1570,26 @@ pub fn registered_parity() -> BTreeSet<u32> {
         .filter_map(|w| w.strip_prefix('P'))
         .filter_map(|d| d.parse().ok())
         .collect()
+}
+
+/// **A re-bless's reasons, read strictly** (W-41 track H): the parity numbers the environment
+/// variable `var` names, comma-separated as `P<n>` — a token that is not one FAILS rather than
+/// being skipped, as `planner_classes.rs`' reading of `TM_PLANNER_BLESS_BECAUSE` does.
+pub fn because_of(var: &str) -> Vec<u32> {
+    std::env::var(var)
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(|t| t.strip_prefix('P').and_then(|d| d.parse().ok()).unwrap_or_else(|| panic!("{var}: `{t}` is not a parity number P<n>")))
+        .collect()
+}
+
+/// **A D64(b) re-draw's reason, as the owner's D64 demands it**: dated (`20…`) and naming
+/// `D64(b)` — a world the shipped binary cannot build, or (D81) a TUI world its test no longer
+/// builds. The class lines' re-draw reads `TM_PLANNER_DRAW_BECAUSE` by the same rule.
+pub fn is_d64b_reason(why: &str) -> bool {
+    why.starts_with("20") && why.contains("D64(b)")
 }
 
 /// **What one frozen line's re-bless changed, and whether D64 allows it** —
@@ -1878,9 +1905,11 @@ pub struct ClassTally {
     pub p45_open: usize,
     pub p45_host: usize,
     /// Rows compared after the running break against P45's comparand (`p45`),
-    /// of them kept Break rows (README gap 3207), since W-38.
+    /// of them kept Break rows (README gap 3207), since W-38 — and since W-41 (README gap 3958)
+    /// the lines whose rows were held to P67's comparand (`p67`) instead, where it departs.
     pub p45_after: usize,
     pub p45_kept: usize,
+    pub p67: usize,
     /// Lines whose comparand reads the host's worked minutes (P55) or draws a
     /// meeting's pause as the wall alone against fork 4748911's drawing (P56).
     pub p55: usize,
@@ -1896,7 +1925,7 @@ impl ClassTally {
              P47 {}, P51 {}; under-used notes the renderer derived as the fork wrote them {}; what-ifs {} ({} \
              parity-P44 days, {} ids; asked with the host's grown facts, {} parity-P52); break-day open rows \
              {} (the host's minutes departing from the log's on {}); rows after a running break against P45's \
-             comparand {} ({} kept breaks); P55 comparand days {}, P56 {}; {findings} difference(s) in all",
+             comparand {} ({} kept breaks; P67's on {} line(s)); P55 comparand days {}, P56 {}; {findings} difference(s) in all",
             self.classes.len(),
             self.day.line("the non-P45 days", findings),
             self.p45,
@@ -1916,6 +1945,7 @@ impl ClassTally {
             self.p45_host,
             self.p45_after,
             self.p45_kept,
+            self.p67,
             self.p55,
             self.p56,
         )
@@ -1931,23 +1961,40 @@ pub fn whatif_item(st: &RuntimeState) -> Option<&Id> {
 }
 
 /// **The running block's worked minutes as the binary reads them** — the host's
-/// ONE reading, `Replay::active_worked_min` (`tm/src/cli/day.rs`' `worked_min`,
-/// which `tm now` prints, `tm done` logs and the TUI's timer shows): the wall
-/// clock since `started` net of the day's pauses, interruptions and breaks, the
-/// break `.tm/state.json` still holds running included. It is what R3's
-/// `planner` section carries as `state.active.workedMin` (README gap 3043,
-/// parity P55) and what [`kernel_answer_with_grants`] sends since W-38.
+/// ONE reading, `day::worked_min` (`tm done` and `tm stop` log it; `tm now` and the
+/// TUI's timer show the same rule): `Replay::running_worked_min`, the wall clock
+/// since the INSTANT of the log's own `start` line, net of the pauses,
+/// interruptions and breaks of every day since, the break `.tm/state.json` still
+/// holds running included (at the latest instant at or before `now` whose clock
+/// is its `HH:MM`, `BreakState::started_at`, as `day.rs`' `running_break_at`
+/// places it since track T's P73 — composed here at W-41's land step, where
+/// until then it stood on `now`'s date). It is what R3's `planner` section
+/// carries as `state.active.workedMin` (README gap 3043, parity P55) and what
+/// [`kernel_answer_with_grants`] sends since W-38.
+///
+/// **`None` where the log holds no open block for the cache's running block** —
+/// a world built without a load (the TUI harness's: an empty log under a
+/// running `^t3`, or the log's `^t3` open under a cached `^m1`), which D42's
+/// reconcile makes unreachable in the binary, where `day::worked_min` answers no
+/// number either. The arms then send no `workedMin` and the kernel reads
+/// `Planner.PlanReq.activeWorked`'s own fallback, fork `active_run`'s clock since
+/// the cache's start — the reading the comparand reads ([`Built::worked`]) and
+/// the shipped TUI's planner runs, so each arm compares the kernel with the fork
+/// on the fork's own minutes there. Measured at W-41 over every call the six
+/// suites that reach this make (1,155): 1,139 equal to the old reading, 16 on
+/// those two worlds `None`, none moved (README gap 4042).
+///
+/// Until W-41 this read `Replay::active_worked_min` from the cache's `HH:MM` on
+/// the PLANNED date (README gaps 3825 and 3941) — after local midnight tonight's,
+/// after `now`, so it read 0 of a block worked across midnight where the binary
+/// reads the log's minutes (D75, parity P65).
 pub fn host_worked(b: &Built) -> Option<u32> {
     let st = &b.world.state;
     let a = st.active.as_ref()?;
     let tz = b.cfg.tz;
-    let started = local_dt(tz, b.date(), a.started);
-    let running_break = st
-        .break_
-        .as_ref()
-        .and_then(|x| x.started)
-        .map(|s| local_dt(tz, b.date(), s).fixed_offset());
-    Some(b.replay.active_worked_min(b.date(), started.fixed_offset(), b.world.now.fixed_offset(), running_break))
+    let today = b.world.now.date_naive();
+    let running_break = st.break_.as_ref().and_then(|x| x.started_at(tz, b.world.now)).map(|t| t.fixed_offset());
+    b.replay.running_worked_min(a.id.as_str(), today, b.world.now.fixed_offset(), running_break)
 }
 
 /// **§9.1's what-if as R3's host will ask it** (owner D58): one block on the
@@ -2086,8 +2133,13 @@ pub fn compare_line(line: &Value, t: &mut ClassTally) -> Vec<String> {
         // kernel draws from where P45 restarts the cut — its step-5 assignment, its rests and
         // its KEPT BREAKS — against the fork's own day planned there (`p45`: the fork's own
         // `kept_breaks` over its own assignment), with the one declared row class (an
-        // under-used row's note, left to the renderer) and nothing else.
-        if let Some(p) = line.get("p45").filter(|v| !v.is_null()) {
+        // under-used row's note, left to the renderer) and nothing else. **And P67's where it
+        // departs** (W-41 track H, README gap 3958): a line carrying `p67` — the fork planned
+        // with the break logged at any length (D77) — holds the kernel to THAT, since the kernel
+        // reads a running break as P67 reads it; a line without it is one where the two
+        // readings plan the same rows.
+        let after = line.get("p67").filter(|v| !v.is_null()).map(|p| ("P67", p)).or_else(|| line.get("p45").filter(|v| !v.is_null()).map(|p| ("P45", p)));
+        if let Some((n, p)) = after {
             let from = p["from"].as_str().and_then(|x| DateTime::parse_from_rfc3339(x).ok());
             let at = |v: &Value| DateTime::parse_from_rfc3339(v.as_str().unwrap_or_default()).ok();
             let krows: Vec<Value> = kv["segments"]
@@ -2107,10 +2159,11 @@ pub fn compare_line(line: &Value, t: &mut ClassTally) -> Vec<String> {
                 .collect();
             t.p45_after += want.len();
             t.p45_kept += want.iter().filter(|r| r["kind"] == "break").count();
+            t.p67 += usize::from(n == "P67");
             if krows != want {
                 let first = krows.iter().zip(&want).position(|(a, z)| a != z).unwrap_or(krows.len().min(want.len()));
                 findings.push(format!(
-                    "{key}: after the running break (P45, from {}) the rows differ at {first} (fork {} rows, kernel {}):\n      \
+                    "{key}: after the running break ({n}, from {}) the rows differ at {first} (fork {} rows, kernel {}):\n      \
                      fork   {}\n      kernel {}",
                     p["from"],
                     want.len(),

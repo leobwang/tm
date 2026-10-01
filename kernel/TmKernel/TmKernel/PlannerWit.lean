@@ -1664,7 +1664,7 @@ theorem the_lift_applies_at_the_running_request :
       (PlanCheck.withoutPast theRunningRequest (dayPlan theRunningRequest)) = true :=
   PlanCheck.dayPlan_ok_core_from_now_on_an_unassigned_day theRunningRequest
     theRunningRequest_wallsAgree
-    the_running_request_agrees.1 the_running_request_agrees.2
+    the_running_request_agrees.2
     the_running_request_is_inside_the_calendar (by decide) the_running_request_is_plain
 
 set_option maxRecDepth 400000 in
@@ -1695,7 +1695,7 @@ theorem the_two_comparison_lift_applies_at_the_reserved_day :
     PlanCheck.planOk permissive theRunningRequest
       (PlanCheck.withoutPast theRunningRequest (dayPlan theRunningRequest)) = true :=
   PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day permissive theRunningRequest
-    theRunningRequest_wallsAgree the_running_request_agrees.1 the_running_request_agrees.2
+    theRunningRequest_wallsAgree the_running_request_agrees.2
     the_running_request_is_inside_the_calendar the_running_request_is_plain (by decide)
     the_two_comparisons_hold_at_the_reserved_day.1
     the_two_comparisons_hold_at_the_reserved_day.2
@@ -2195,7 +2195,7 @@ theorem the_lift_applies_at_the_census_request :
       (PlanCheck.withoutPast theCensusRequest (dayPlan theCensusRequest)) = true :=
   PlanCheck.dayPlan_ok_core_from_now_on_an_unassigned_day theCensusRequest
     theCensusRequest_wallsAgree
-    the_census_request_agrees.1 the_census_request_agrees.2
+    the_census_request_agrees.2
     the_census_request_is_inside_the_calendar (by decide) the_census_request_is_plain
 
 /-! ### The refutation: a break the log holds **inside** a block the log holds
@@ -2988,7 +2988,7 @@ theorem the_lift_applies_at_the_queued_request :
         (PlanCheck.withoutPast theQueuedRequest (dayPlan theQueuedRequest)) = true :=
   PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day
     permissive theQueuedRequest
-    theQueuedRequest_wallsAgree the_queued_request_agrees.1 the_queued_request_agrees.2
+    theQueuedRequest_wallsAgree the_queued_request_agrees.2
     the_queued_request_is_inside_the_calendar (by decide) the_queued_request_is_plain
 
 /-! ### §6.1's lift at an arbitrary eligibility is REFUTED, both ways round
@@ -3951,7 +3951,7 @@ theorem the_quiet_lift_applies_at_the_quiet_request :
       PlanCheck.batchDoesNotReachPast permissive theQuietRequest
         (dayPlan theQuietRequest) = true :=
   PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_except_hot permissive theQuietRequest
-    (by decide) theQuietRequest_wallsAgree the_quiet_request_agrees.1 the_quiet_request_agrees.2.1
+    (by decide) theQuietRequest_wallsAgree the_quiet_request_agrees.2.1
     the_quiet_request_agrees.2.2.1
     (by decide)
     the_quiet_request_agrees.2.2.2.2 the_running_request_is_plain
@@ -3965,7 +3965,7 @@ not a discharge**: the conjunct that is vacuous here is the one refuted above. -
 theorem the_quiet_battery_passes_at_the_quiet_request :
     PlanCheck.planOk permissive theQuietRequest (dayPlan theQuietRequest) = true :=
   PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_given_hot permissive theQuietRequest
-    (by decide) theQuietRequest_wallsAgree the_quiet_request_agrees.1 the_quiet_request_agrees.2.1
+    (by decide) theQuietRequest_wallsAgree the_quiet_request_agrees.2.1
     the_quiet_request_agrees.2.2.1
     (by decide)
     the_quiet_request_agrees.2.2.2.2 the_running_request_is_plain
@@ -4001,7 +4001,7 @@ theorem the_quiet_lift_applies_at_the_quiet_census_request :
       PlanCheck.batchDoesNotReachPast permissive theQuietCensusRequest
         (dayPlan theQuietCensusRequest) = true :=
   PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_except_hot permissive theQuietCensusRequest
-    (by decide) theQuietCensusRequest_wallsAgree the_quiet_census_request_agrees.1
+    (by decide) theQuietCensusRequest_wallsAgree
     the_quiet_census_request_agrees.2.1 the_quiet_census_request_agrees.2.2
     (by decide)
     the_quiet_census_request_is_quiet.2 the_census_request_is_plain
@@ -4411,7 +4411,7 @@ theorem the_whole_battery_passes_on_the_quiet_census_day :
     PlanCheck.planOk onlyOnWorkRows theQuietCensusRequest (dayPlan theQuietCensusRequest)
       = true :=
   PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day onlyOnWorkRows theQuietCensusRequest
-    (by decide) theQuietCensusRequest_wallsAgree the_quiet_census_request_agrees.1
+    (by decide) theQuietCensusRequest_wallsAgree
     the_quiet_census_request_agrees.2.1 the_quiet_census_request_agrees.2.2
     (by decide)
     the_quiet_census_request_is_quiet.2 the_census_request_is_plain
@@ -4422,7 +4422,7 @@ set_option maxRecDepth 400000 in
 theorem the_whole_battery_passes_on_the_quiet_day :
     PlanCheck.planOk onlyOnWorkRows theQuietRequest (dayPlan theQuietRequest) = true :=
   PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day onlyOnWorkRows theQuietRequest
-    (by decide) theQuietRequest_wallsAgree the_quiet_request_agrees.1 the_quiet_request_agrees.2.1
+    (by decide) theQuietRequest_wallsAgree the_quiet_request_agrees.2.1
     the_quiet_request_agrees.2.2.1
     (by decide)
     the_quiet_request_agrees.2.2.2.2 the_running_request_is_plain
@@ -4717,7 +4717,7 @@ theorem the_whole_battery_passes_from_now_at_the_census_request :
     PlanCheck.planOk onlyOnFreeWorkRows theCensusRequest
       (PlanCheck.withoutPast theCensusRequest (dayPlan theCensusRequest)) = true :=
   PlanCheck.dayPlan_ok_from_now_on_an_unassigned_day onlyOnFreeWorkRows theCensusRequest
-    (by decide) theCensusRequest_wallsAgree the_census_request_agrees.1 the_census_request_agrees.2
+    (by decide) theCensusRequest_wallsAgree the_census_request_agrees.2
     the_census_request_is_inside_the_calendar the_census_request_is_plain
     onlyOnFreeWorkRows_is_slot_anchored
 
@@ -4732,7 +4732,7 @@ theorem the_whole_battery_passes_from_now_at_the_queued_request :
     PlanCheck.planOk onlyOnFreeWorkRows theQueuedRequest
       (PlanCheck.withoutPast theQueuedRequest (dayPlan theQueuedRequest)) = true :=
   PlanCheck.dayPlan_ok_from_now_on_an_unassigned_day onlyOnFreeWorkRows theQueuedRequest
-    (by decide) theQueuedRequest_wallsAgree the_queued_request_agrees.1 the_queued_request_agrees.2
+    (by decide) theQueuedRequest_wallsAgree the_queued_request_agrees.2
     the_queued_request_is_inside_the_calendar the_queued_request_is_plain
     onlyOnFreeWorkRows_is_slot_anchored
 
@@ -4742,7 +4742,7 @@ theorem the_whole_battery_passes_from_now_at_the_running_request :
     PlanCheck.planOk onlyOnFreeWorkRows theRunningRequest
       (PlanCheck.withoutPast theRunningRequest (dayPlan theRunningRequest)) = true :=
   PlanCheck.dayPlan_ok_from_now_on_an_unassigned_day onlyOnFreeWorkRows theRunningRequest
-    (by decide) theRunningRequest_wallsAgree the_running_request_agrees.1 the_running_request_agrees.2
+    (by decide) theRunningRequest_wallsAgree the_running_request_agrees.2
     the_running_request_is_inside_the_calendar the_running_request_is_plain
     onlyOnFreeWorkRows_is_slot_anchored
 
@@ -5181,7 +5181,7 @@ theorem the_core_seven_hold_on_the_whole_day_of_a_worked_morning :
     PlanCheck.planOkCore theCensusRequest (dayPlan theCensusRequest) = true :=
   PlanCheck.dayPlan_ok_core_of_a_paying_past_on_an_unassigned_day theCensusRequest (by decide)
     theCensusRequest_wallsAgree
-    the_census_request_agrees.1 the_census_request_agrees.2
+    the_census_request_agrees.2
     the_census_request_is_inside_the_calendar the_census_request_is_plain
     the_paying_past_at_the_census_request
 
@@ -5193,7 +5193,7 @@ battery: it is `PlanCheck.dayPlan_ok_on_the_whole_day_on_an_unassigned_day` fire
 theorem the_eleven_hold_on_the_whole_day_of_a_worked_morning :
     PlanCheck.planOk fromNowWorkRows theCensusRequest (dayPlan theCensusRequest) = true :=
   PlanCheck.dayPlan_ok_on_the_whole_day_on_an_unassigned_day fromNowWorkRows_is_from_now_anchored
-    theCensusRequest (by decide) theCensusRequest_wallsAgree the_census_request_agrees.1 the_census_request_agrees.2
+    theCensusRequest (by decide) theCensusRequest_wallsAgree the_census_request_agrees.2
     the_census_request_is_inside_the_calendar the_census_request_is_plain
     the_paying_past_at_the_census_request
 
@@ -5522,7 +5522,7 @@ theorem the_core_seven_hold_where_the_blanket_fails :
     PlanCheck.planOkCore theOffDayRequest (dayPlan theOffDayRequest) = true :=
   PlanCheck.dayPlan_ok_core_of_plain_walls_on_an_unassigned_day theOffDayRequest (by decide)
     the_off_day_request_agrees.1
-    the_off_day_request_agrees.2.1 the_off_day_request_agrees.2.2
+    the_off_day_request_agrees.2.2
     the_off_day_request_is_inside_the_calendar the_off_day_request_has_plain_walls
     the_off_day_past_pays
 
@@ -5534,7 +5534,7 @@ theorem the_eleven_hold_where_the_blanket_fails :
     PlanCheck.planOk fromNowWorkRows theOffDayRequest (dayPlan theOffDayRequest) = true :=
   PlanCheck.dayPlan_ok_on_the_whole_day_of_plain_walls_on_an_unassigned_day
     fromNowWorkRows_is_from_now_anchored
-    theOffDayRequest (by decide) the_off_day_request_agrees.1 the_off_day_request_agrees.2.1
+    theOffDayRequest (by decide) the_off_day_request_agrees.1
     the_off_day_request_agrees.2.2 the_off_day_request_is_inside_the_calendar
     the_off_day_request_has_plain_walls the_off_day_past_pays
 
@@ -5805,9 +5805,9 @@ theorem mkPlanReq?_ignores_state (x : PlanReqIn) (s : RuntimeIn) :
             · simp [hI, hw, hr, hc, hrs, Except.map]
             · simp [hI, hw, hr, hc, hrs, Except.map]
 
-/-- A running block that started one second after `now` — the shape `Planner.mkActive?` refuses
-by name (`Planner.mkActive?_refuses_a_start_after_now`). -/
-def aBlockStartedAfterNow (r : PlanReq) : ActiveBlock := ⟨[], ⟨r.now.sec + 1, 0⟩, 0, false⟩
+/-- A running block whose estimate passes the host's width — the shape `Planner.mkActive?` refuses since W-41
+(`Planner.mkActive?_refuses_an_estimate_past_the_width`; a start after `now` was this shape until D78). -/
+def aBlockPastTheWidth (r : PlanReq) : ActiveBlock := ⟨[], ⟨r.now.sec, 0⟩, Look.maxPlanMinutes + 1, false⟩
 
 /-- **Every request this builder accepts has a sibling it also accepts whose running block the
 lift refuses.**  Not at one witness — at *every* accepted request, because the builder does
@@ -5816,15 +5816,15 @@ not read the field.  So of `PlanCheck.DecoderPays`'s four clauses, `walls` has a
 `Planner.RuntimeIn`. -/
 theorem the_builder_accepts_a_running_block_it_never_checked (x : PlanReqIn) (r : PlanReq)
     (h : mkPlanReq? x = .ok r) :
-    mkPlanReq? { x with state := { r.state with active := some (aBlockStartedAfterNow r) } }
-        = .ok { r with state := { r.state with active := some (aBlockStartedAfterNow r) } }
-      ∧ ({ r with state := { r.state with active := some (aBlockStartedAfterNow r) } } :
+    mkPlanReq? { x with state := { r.state with active := some (aBlockPastTheWidth r) } }
+        = .ok { r with state := { r.state with active := some (aBlockPastTheWidth r) } }
+      ∧ ({ r with state := { r.state with active := some (aBlockPastTheWidth r) } } :
            PlanReq).activeAgrees = false := by
   constructor
   · rw [mkPlanReq?_ignores_state, h]; rfl
-  · simp only [PlanReq.activeAgrees, aBlockStartedAfterNow, ActiveBlock.wf, PlanReq.now,
-      Bool.and_eq_false_iff]
-    exact Or.inl (decide_eq_false (by omega))
+  · simp only [PlanReq.activeAgrees, aBlockPastTheWidth, ActiveBlock.wf]
+    -- a closed comparison: the width, and one past it
+    rfl
 
 /-- **`PlanCheck.DecoderPays`' fifth clause and its R10 bound, at the census request** (W-30
 repair, README gap 2133).  The census request carries no candidates at all, so `candsAgree`
@@ -5966,9 +5966,9 @@ claims, and importing one more module does not touch it. -/
 /-- **A block the wire accepts is one `Planner.mkActive?` built.**  Every successful path of
 `PlanWire.readActive` ends at that constructor, so its answer carries `Planner.ActiveBlock.wf`
 whether or not anyone checks it again. -/
-theorem readActive_answers_only_a_block_mkActive_built (now : Cal.Instant) (v : JVal)
-    (a : ActiveBlock) (h : PlanWire.readActive now v = .ok a) :
-    ActiveBlock.wf now a = true := by
+theorem readActive_answers_only_a_block_mkActive_built (v : JVal)
+    (a : ActiveBlock) (h : PlanWire.readActive v = .ok a) :
+    ActiveBlock.wf a = true := by
   unfold PlanWire.readActive at h
   simp only [bind, Except.bind, pure, Except.pure] at h
   repeat' split at h
@@ -5978,15 +5978,15 @@ theorem readActive_answers_only_a_block_mkActive_built (now : Cal.Instant) (v : 
 
 /-- The same through the optional reader: an absent `active` is nothing running, and a present
 one went through `PlanWire.readActive`. -/
-theorem readOptActive_answers_only_a_block_mkActive_built (now : Cal.Instant) (v : JVal)
-    (a : ActiveBlock) (h : PlanWire.readOptActive now v = .ok (some a)) :
-    ActiveBlock.wf now a = true := by
+theorem readOptActive_answers_only_a_block_mkActive_built (v : JVal)
+    (a : ActiveBlock) (h : PlanWire.readOptActive v = .ok (some a)) :
+    ActiveBlock.wf a = true := by
   unfold PlanWire.readOptActive at h
   split at h
   · exact absurd h (by simp)
   · exact absurd h (by simp)
   · rename_i w _
-    cases hr : PlanWire.readActive now w with
+    cases hr : PlanWire.readActive w with
     | error e => rw [hr] at h; exact absurd h (by simp [Except.map])
     | ok b =>
       rw [hr] at h
@@ -5994,14 +5994,14 @@ theorem readOptActive_answers_only_a_block_mkActive_built (now : Cal.Instant) (v
         have hm : (Except.ok b : Except PlanWire.PlannerRefusal ActiveBlock).map some
             = Except.ok (some b) := rfl
         rw [hm] at h; simpa using h
-      exact hb ▸ readActive_answers_only_a_block_mkActive_built now w b hr
+      exact hb ▸ readActive_answers_only_a_block_mkActive_built w b hr
 
 /-- **The `state` section's `active` field is the optional reader's answer** — the one step of
 the do-block this run needs, stated separately so the theorem below is a composition and not a
 second walk over six binds. -/
 theorem readState_reads_active (now : Cal.Instant) (sec : JVal) (st : RuntimeIn)
     (h : PlanWire.readState now sec = .ok st) :
-    PlanWire.readOptActive now sec = .ok st.active := by
+    PlanWire.readOptActive sec = .ok st.active := by
   unfold PlanWire.readState at h
   simp only [bind, Except.bind, pure, Except.pure] at h
   repeat' split at h
@@ -6012,8 +6012,8 @@ theorem readState_reads_active (now : Cal.Instant) (sec : JVal) (st : RuntimeIn)
 /-- **A `state` the wire read carries only blocks `Planner.mkActive?` built.** -/
 theorem readState_answers_only_a_block_mkActive_built (now : Cal.Instant) (sec : JVal)
     (st : RuntimeIn) (h : PlanWire.readState now sec = .ok st)
-    (a : ActiveBlock) (ha : st.active = some a) : ActiveBlock.wf now a = true :=
-  readOptActive_answers_only_a_block_mkActive_built now sec a (ha ▸ readState_reads_active now sec st h)
+    (a : ActiveBlock) (ha : st.active = some a) : ActiveBlock.wf a = true :=
+  readOptActive_answers_only_a_block_mkActive_built sec a (ha ▸ readState_reads_active now sec st h)
 
 /-- **`PlanCheck.DecoderPays`' second clause, paid by the wire** — the clause W-26 proved the
 *builder* can never pay (`the_builder_accepts_a_running_block_it_never_checked`).  Nothing is
@@ -7898,10 +7898,10 @@ theorem the_given_lifts_fire_at_the_quiet_impossible_request :
       (PlanCheck.withoutPast theQuietImpossibleRequest (dayPlan theQuietImpossibleRequest))
       = true :=
   ⟨PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_given_hot permissive theQuietImpossibleRequest
-     (by decide) theQuietImpossibleRequest_wallsAgree (by decide) (by decide) (by decide)
+     (by decide) theQuietImpossibleRequest_wallsAgree (by decide) (by decide)
      (by decide) (by decide) the_running_request_is_plain (by decide),
    PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day permissive
-     theQuietImpossibleRequest theQuietImpossibleRequest_wallsAgree (by decide) (by decide)
+     theQuietImpossibleRequest theQuietImpossibleRequest_wallsAgree (by decide)
      (by decide) the_running_request_is_plain (by decide) (by decide) (by decide)⟩
 
 /-! ### The waiting law, fired — and step 5's filter, spelled at a slot (W-37, D66)
@@ -12148,7 +12148,7 @@ theorem plan_places_no_demanding_block_after_wind_down_where_the_wire_agrees_or_
     (hi : b.val.item = some i) (hafter : w.val.start ≤ b.val.start) :
     (effectiveCi r.plan.val i).val < 4 :=
   hor.elim
-    (fun hca => PlanCheck.plan_places_no_demanding_block_after_wind_down r hca hwdcal b w i hb hw hbk hwk hi
+    (fun hca => PlanCheck.plan_places_no_demanding_block_after_wind_down r (PlanCheck.ciDisagreement_eq_none_of_candsAgree r hca) hwdcal b w i hb hw hbk hwk hi
       hafter)
     (fun hwin => PlanStable.plan_places_no_demanding_block_after_wind_down_when_the_window_ends_by_the_night r hwdcal hwin
       b w i hb hw hbk hwk hi hafter)
@@ -12235,7 +12235,7 @@ theorem the_wind_down_law_has_a_subject_on_the_eve :
   obtain ⟨b, hb, w, hw, hbk, hwk, hi, hle⟩ := hx
   exact ⟨b, hb, w, hw, hbk, hwk, hi, hle,
     PlanCheck.plan_places_no_demanding_block_after_wind_down theEveRequest
-      the_eves_window_runs_past_the_night.1 the_eves_window_runs_past_the_night.2.2.1 b w ['t','1']
+      (PlanCheck.ciDisagreement_eq_none_of_candsAgree _ the_eves_window_runs_past_the_night.1) the_eves_window_runs_past_the_night.2.2.1 b w ['t','1']
       hb hw hbk hwk hi hle⟩
 
 /-- **README gap 2326's bound needs the arrival inside the day** — `PlanStable.the_window_ends_by_the_night` without
@@ -12465,6 +12465,162 @@ theorem the_day_law_fires_at_the_short_break :
     ⟨(Cal.instantOf Cal.chicago 739867 825).sec, 0⟩ rfl rfl (by decide)
     (fun a ha => by have h : (none : Option ActiveBlock) = some a := ha; cases h) (by decide) (by decide) (by decide)
     (by decide)⟩
+
+/-! ############################################################################
+## W-41 (track K): a start after `now` planned from `now` (D78), the request's two refusals (D80),
+## and the running record's widths (D81 gap 3902)
+############################################################################
+
+(1) **D78** on the §4.3 Wednesday: `^m1`'s `start` line stamped 14:00:10 in a log read at 14:00 — the clock ten seconds
+behind the log, as two synced machines leave it — is planned from `now` as fork `active_run` plans it: the reservation
+runs 14:00:00 to 15:00:10, `block_min` after the START (`current_block_end`), with no minute worked, no open row
+(`open_block_segment`'s `since >= now`) and the `▶` on the reservation; E1 as W-40 stated it is refuted there, and the
+lead form holds.  An interruption stamped ten seconds ahead draws nothing and pauses nothing (`collect_walls`).
+(2) **D80**: the last evening is refused by name, the conference's wire is refused naming `^m2` and both values, the eve
+pays both clauses, and the wind-down goal is proved as written over every request the decoder accepts.
+(3) **D81, gap 3902**: an extension past the day agrees. -/
+
+/-! ### (1) D78 -/
+
+/-- **`witLines` with `^m1`'s `start` line stamped 14:00:10** — ten seconds after the 14:00 the request plans at. -/
+def startAfterNowLines : List Log.Line :=
+  witLines ++ [⟨7, some ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','9','T','1','4',':','0','0',':','1','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','s','t','a','r','t','"',',','"','i','d','"',':','"','m','1','"',',','"','p','r','e','d','"',':','5',',','"','r','e','p','"',':','4',',','"','h','s','w','"',':','7','.','9',',','"','s','l','e','e','p','t','_','m','i','n','"',':','4','9','0',',','"','l','o','c','"',':','"','l','o','u','n','g','e','"',',','"','b','l','o','c','k','s','_','d','o','n','e','"',':','2',',','"','s','i','n','c','e','_','b','r','e','a','k','_','m','i','n','"',':','0','}']⟩]
+
+set_option maxRecDepth 400000 in
+theorem startAfterNowRun_resumes_ok : runOk Cal.chicago 739867 startAfterNowLines = true := by decide
+
+def startAfterNowRun : Seal.Run :=
+  match h : Seal.resumeRun Cal.chicago 739867 (Seal.Ckpt.empty Cal.chicago) startAfterNowLines with
+  | .ok run => run
+  | .error _ => absurd startAfterNowRun_resumes_ok (by simp [runOk, h])
+
+/-- **The running block whose logged start is ten seconds after `now`** — `^m1`, ninety minutes. -/
+def theStartAfterNowBlock : ActiveBlock :=
+  ⟨['m','1'], ⟨(Cal.instantOf Cal.chicago 739867 840).sec + 10, 0⟩, 90, false⟩
+
+/-- **The Wednesday at 14:00 with that block running**: the log holds its `start` line, the state its start. -/
+def theStartAfterNowRequest : PlanReq :=
+  { theRunningRequest with
+    run := startAfterNowRun,
+    state := { RuntimeIn.empty with active := some theStartAfterNowBlock } }
+
+set_option maxRecDepth 400000 in
+/-- **D78, computed: planned from `now`, as fork 4748911 plans it.**  The decoder's clause holds (the start is no longer
+bounded by `now`), the lead is ten seconds, the block has worked nothing (the log's open block has banked nothing and
+began after `now`), no open row is drawn, and the reservation is 14:00:00 to 15:00:10 — the fork's `active_run`, whose
+`current_block_end(started)` ends the block `block_min` after the start because `elapsed` is clamped to zero, and whose
+`left` is the whole estimate — marked `▶`. -/
+theorem a_start_after_now_is_planned_from_now_as_the_fork_plans_it :
+    theStartAfterNowRequest.activeAgrees = true ∧
+    (theStartAfterNowRequest.state.active.map (fun a => a.started.sec - theStartAfterNowRequest.now.sec)).getD 0 = 10 ∧
+    theStartAfterNowRequest.activeWorked theStartAfterNowBlock = 0 ∧
+    openBlockRows theStartAfterNowRequest = [] ∧
+    theStartAfterNowRequest.activeRun.map (fun q => (q.start, q.stop, q.leftMin))
+      = some ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 900).sec + 10, 90) ∧
+    ((dayPlan theStartAfterNowRequest).segments.filter (fun s => s.val.flags.current)).map
+        (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.item))
+      = [((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 900).sec + 10,
+          SegKind.block, some ['m','1'])] := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **E1 as W-40 stated it is REFUTED by D78** — the decoder accepts the request (`activeAgrees`, `dayAgrees`) and its
+reservation, a Block row from `now`, is 3,610 seconds on a 60-minute block: one block plus the lead.  The restated E1
+(`Planner.plan_reserves_one_block_at_a_time`, with the block's lead) and the battery's restated checker hold
+there. -/
+theorem plan_reserves_one_block_at_a_time_without_the_lead_is_refuted_by_d78 :
+    theStartAfterNowRequest.activeAgrees = true ∧ theStartAfterNowRequest.dayAgrees = true ∧
+    (¬ ∀ s ∈ (dayPlan theStartAfterNowRequest).segments, s.val.kind = SegKind.block →
+        theStartAfterNowRequest.now.sec ≤ s.val.start →
+        s.val.stop - s.val.start ≤ (dayPlan theStartAfterNowRequest).blockMin * 60) ∧
+    PlanCheck.oneBlockAtATime theStartAfterNowRequest (dayPlan theStartAfterNowRequest) = true := by
+  refine ⟨by decide, by decide, by decide, by decide⟩
+
+/-- **An open interruption stamped ten seconds after `now`**, beside the running Wednesday's block. -/
+def theInterruptAfterNowRequest : PlanReq :=
+  { theRunningRequest with state := { theRunningRequest.state with
+      interrupt := some ⟨some ⟨(Cal.instantOf Cal.chicago 739867 840).sec + 10, 0⟩, some ['m','1']⟩ } }
+
+set_option maxRecDepth 400000 in
+/-- **…is drawn as fork 4748911 draws it: not at all** — `collect_walls` pushes the ad-hoc wall only `if self.now >
+start`, so there is no Lost row, nothing pauses the block, and the day is the running Wednesday's, row for row. -/
+theorem an_interruption_after_now_is_drawn_as_the_fork_draws_it :
+    interruptRows theInterruptAfterNowRequest = [] ∧ theInterruptAfterNowRequest.interrupted = false ∧
+    (dayPlan theInterruptAfterNowRequest).segments.map (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.item))
+      = (dayPlan theRunningRequest).segments.map (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.item)) := by
+  refine ⟨by decide, by decide, by decide⟩
+
+/-! ### (2) D80 -/
+
+set_option maxRecDepth 400000 in
+/-- **D80 (a): the last evening is refused by name** — its evening runs past the calendar's last second, so the clause
+fails and `PlanWire.planReqRefusal` answers `eveningPastTheCalendar`: the request at which W-40 found the goal's statement
+false (`the_wind_down_goal_fails_where_the_kernels_clock_merges_the_last_evening`) no longer reaches the planner. -/
+theorem the_last_evening_is_refused_by_name :
+    theLastEveningRequest.eveningInsideTheCalendar = false ∧
+    PlanWire.planReqRefusal theLastEveningRequest = some PlanWire.PlannerRefusal.eveningPastTheCalendar :=
+  ⟨by decide, PlanWire.planReqRefusal_names_an_evening_past_the_calendar _ (by decide)⟩
+
+set_option maxRecDepth 400000 in
+/-- **D80 (b): the conference's wire is refused by name** — `^m2` is `ci 0` on the wire and `ci 5` in its plan file, and
+the refusal names the candidate and both values. -/
+theorem the_conference_wire_is_refused_by_name :
+    theConferenceRequest.ciDisagreement = some (['m','2'], 0, some 5) ∧
+    PlanWire.planReqRefusal theConferenceRequest
+      = some (PlanWire.PlannerRefusal.ciDisagrees ['m','2'] 0 (some 5)) :=
+  ⟨by decide, PlanWire.planReqRefusal_names_a_candidate_whose_ci_disagrees _ (by decide) _ _ _ (by decide)⟩
+
+set_option maxRecDepth 400000 in
+/-- **The eve pays both of D80's clauses** — the window past the night is not a day past the calendar, and the wire
+agrees — so the request on which the wind-down law met its first subject (`the_wind_down_law_has_a_subject_on_the_eve`)
+is one the decoder hands the planner unchanged. -/
+theorem the_eve_pays_both_of_d80s_clauses :
+    theEveRequest.eveningInsideTheCalendar = true ∧ theEveRequest.ciDisagreement = none ∧
+    PlanWire.planReqRefusal theEveRequest = none :=
+  ⟨by decide, by decide, PlanWire.planReqRefusal_of_a_request_paying_both _ (by decide) (by decide)⟩
+
+/-- **`Goals.plan_places_no_demanding_block_after_wind_down`, AS WRITTEN, over every request the decoder accepts** (the
+owner's D80; README gaps 3780, 3785 and 1984).  Its statement verbatim, with one hypothesis: `r` is what
+`PlanWire.planReqOf` hands the planner.  The decoder pays D80's two clauses (`PlanWire.planReqOf_pays_the_evening_and_the_ci`)
+and `PlanCheck.plan_places_no_demanding_block_after_wind_down` holds wherever they hold.  It has a subject — the eve
+pays both clauses and holds a Block after its WindDown row — and without the hypothesis the statement is false at the
+last evening, which the decoder refuses (`the_last_evening_is_refused_by_name`). -/
+theorem plan_places_no_demanding_block_after_wind_down_on_every_request_the_decoder_accepts
+    (parts : CapParts) (bm : Nat) (q : PlanWire.PlannerIn) (r : PlanReq)
+    (hr : PlanWire.planReqOf parts bm q = .ok r) (b w : WfSeg) (i : Id)
+    (hb : b ∈ (dayPlan r).segments) (hw : w ∈ (dayPlan r).segments)
+    (hbk : b.val.kind = SegKind.block) (hwk : w.val.kind = SegKind.windDown)
+    (hi : b.val.item = some i) (hafter : w.val.start ≤ b.val.start) :
+    (effectiveCi r.plan.val i).val < 4 :=
+  PlanCheck.plan_places_no_demanding_block_after_wind_down_on_a_request_paying_d80 r
+    (PlanWire.planReqOf_pays_the_evening_and_the_ci parts bm q r hr).1
+    (PlanWire.planReqOf_pays_the_evening_and_the_ci parts bm q r hr).2 b w i hb hw hbk hwk hi hafter
+
+/-! ### (3) D81, gap 3902 -/
+
+set_option maxRecDepth 400000 in
+/-- **An extension past the day agrees since W-41**: `^m1`'s ninety minutes grown by 1,500 — past the day's 1,440 — are
+a block `Planner.mkActive?` builds, so the W-34 law the_extension_disagrees_past_a_day is refuted at the running
+Wednesday (`Planner.the_extension_disagrees_past_the_width` is the law beside it). -/
+theorem an_extension_past_the_day_agrees :
+    Look.maxDayMin < 90 + 1500 ∧ (theRunningRequest.extending ['m','1'] 1500).activeAgrees = true := by
+  refine ⟨by decide, by decide⟩
+
+/-- **The builder's unchecked sibling is a block past the width, decided** (check 9's second pass, W-41): a sibling
+that were any block `Planner.mkActive?` builds would pass `Planner.ActiveBlock.wf`, and `decide` refuses that here, where
+`the_builder_accepts_a_running_block_it_never_checked`'s `rfl` under a quantifier could not say which block it was. -/
+theorem aBlockPastTheWidth_is_past_the_width :
+    ActiveBlock.wf (aBlockPastTheWidth theRunningRequest) = false := by decide
+
+set_option maxRecDepth 400000 in
+/-- **The log the D78 Wednesday is planned against holds `^m1`'s open block, begun ten seconds after `now`** — so the
+block's no-minute-worked is the log's own reading through `Planner.openWorkedMin` (a span from a `since` ahead of the
+clock truncates to zero), not an absent block's (check 9, W-41: an empty log plans the same day, so the day alone
+could not tell this fixture from `[]`). -/
+theorem the_start_after_now_log_holds_the_open_block :
+    startAfterNowRun.answer.openBlock.map (fun b =>
+        (b.id, b.since.map (fun s => s.1.sec), openWorkedMin (Cal.instantOf Cal.chicago 739867 840).sec b))
+      = some (['m','1'], some ((Cal.instantOf Cal.chicago 739867 840).sec + 10), 0) := by decide
 
 end PlannerWit
 end Tm

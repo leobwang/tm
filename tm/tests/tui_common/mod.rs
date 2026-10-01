@@ -685,6 +685,56 @@ pub fn tight_overtime_app() -> App {
     app
 }
 
+/// **The world `worked_midnight_timer.rs` plans over** (stage 6 W-40 track T's D75 test; held here
+/// since W-41 track H, README gap 4090, so the TUI's fork-planned worlds are built through one
+/// harness): the §4.3 fixture's log with `^t3` done at 22:30 and `^t4` started at 23:00, paused
+/// 23:30–00:30 by a typed `tm pause` pair, and the runtime state as the first verb after midnight
+/// leaves it — `state.date` rolled to `now`'s, `active.started` still `23:00`, `est_min` 60. `now`
+/// is an instant of the day AFTER the fixture's. The app and the log's text.
+pub fn after_midnight_app(now: DateTime<Tz>) -> (App, String) {
+    let cfg = config();
+    let mut entries = log_entries(&cfg);
+    entries.extend([
+        entry(
+            &cfg,
+            22,
+            30,
+            Event::Done { id: "t3".into(), est_min: 192, actual_min: 778, went: Some(1), tags: Vec::new(), ci: 4, partial: false },
+        ),
+        entry(
+            &cfg,
+            23,
+            0,
+            Event::Start {
+                id: "t4".into(),
+                pred: 4,
+                rep: Some(4),
+                hsw: 16.92,
+                slept_min: 490,
+                loc: "lounge".into(),
+                blocks_done: 3,
+                since_break_min: 0,
+            },
+        ),
+        entry(&cfg, 23, 30, Event::Pause { id: "t4".into() }),
+        LogEntry::new(
+            cfg.tz
+                .from_local_datetime(&date().succ_opt().expect("tomorrow").and_hms_opt(0, 30, 0).expect("time"))
+                .single()
+                .expect("unambiguous local time")
+                .fixed_offset(),
+            Event::Unpause { id: "t4".into() },
+        ),
+    ]);
+    let log = chokepoint::text_of(&entries);
+    let state = RuntimeState {
+        date: Some(now.date_naive()),
+        active: Some(ActiveBlock { id: Id::new("t4"), started: time(23, 0), est_min: 60, paused: false }),
+        ..state()
+    };
+    (app_with_log_text(now, state, &log), log)
+}
+
 /// An app with nothing running, for §9.2's idle prompt and the Now pane's
 /// "nothing running" row: no `active` in `state.json`, and no segment flagged
 /// `current` — the planner marks the block it is inside, and there is none.

@@ -1,12 +1,12 @@
 //! **The TUI's fork-planned tests, answered by the kernel now** — and **a Review screen that
 //! draws the kernel's cut of the week** (stage 6 W-40 track H, README gap 3721).
 //!
-//! Fifteen tests reach the fork's planner through the `tm` crate's own TUI code (README gap
-//! 3476): `tui::tests::the_meeting_pause_is_said_on_the_status_line`, three of
+//! Sixteen tests reach the fork's planner through the `tm` crate's own TUI code (README gap
+//! 3476's fifteen, and since W-41 the sixteenth its list did not hold, gap 4090): `tui::tests::the_meeting_pause_is_said_on_the_status_line`, three of
 //! `tui_today_ghost` and eleven of `tui_today_prompts`. They test the shipped TUI, which plans
 //! with the fork until R3's body swap, and they assert values the FORK produced — and the
 //! kernel's answer on those worlds was never computed, so the swap would change their
-//! assertions blind. [`TUI_TESTS`] is the fifteen, each with EVERY planner call its own code
+//! assertions blind. [`TUI_TESTS`] is the sixteen, each with EVERY planner call its own code
 //! makes ([`Ask`]: the world, and whether §9.1's what-if is asked there — a `tick` replans, so
 //! a test that ticks plans at more than one instant), what it asserts that a planner produces,
 //! and the verdict; `the_kernel_answers_every_fork_planned_tui_world` computes the kernel's
@@ -19,6 +19,18 @@
 //! and the WHOLE answer through the frozen lines' one comparison (`forkclass::compare_line`
 //! over the comparand built from the in-tree fork) — so no verdict rests on a reading of a test
 //! alone.
+//!
+//! **Since W-41 track H fork 4748911's WHOLE DAY on each of those worlds is frozen by value**
+//! (README gaps 3963 and 3866, the owner's D81: the TUI's in-memory worlds count as worlds the
+//! shipped binary builds): `tests/fixtures/fork-4748911-planner-tui.jsonl` holds one class line
+//! per distinct world — the world as the TUI test's own constructors build it, and the fork's
+//! answers (`forkclass::ANSWERS`) taken from `tm-oracle plan`, fork 4748911 out of the tree,
+//! with every registered departure applied by `forkplan::comparand_answers` and carried by its
+//! flag. Outside the fork region the kernel is held to every line by the frozen lines' one
+//! comparison, `forkclass::compare_line`, so the verdicts that assert nothing a planner
+//! produces — twelve of the sixteen — compare the kernel's whole day with the fork's, and keep
+//! doing so after R3 deletes the region's live comparison
+//! (`the_kernel_plans_every_frozen_tui_world_as_fork_4748911_planned_it`).
 //!
 //! And no TUI test saw a cut week: `tui_common` builds every `App` with `PauseCut::default()`,
 //! under which `review::heat_of` draws a Pause whole, as the fork did.
@@ -64,13 +76,15 @@ mod forkgrid;
 #[path = "support/weekcut.rs"]
 mod weekcut;
 
-use serde_json::Value;
+use std::collections::BTreeSet;
+
+use serde_json::{json, Value};
 
 use tm_core::dayplan::{DayPlan, SegKind};
 use tm_core::log::Event;
 use tm_core::model::{Id, IsoWeek};
 use tm_core::planwire::KernelDay;
-use tm_core::store::ActiveBlock;
+use tm_core::store::{ActiveBlock, RuntimeState};
 
 use forkclass::{Built, ClassWorld};
 use tui_common::app::App;
@@ -113,6 +127,11 @@ enum Live {
     /// A finding, by its README gap: the fork and the kernel plan different days, and no
     /// registered number says so.
     Finding(u32),
+    /// **The kernel departs by a registered number no fork input can carry** (W-41 track H, README
+    /// gap 4090): the world's frozen line carries the number's flag, and the kernel is held to the
+    /// number's PROPERTY against fork 4748911's day by value — today P69, a start read from the log
+    /// (`forkplan::p69_day_unmet`) — rather than to a comparand day.
+    Departs(u32),
 }
 
 /// **The world one planner call plans over**, as `tui_common` builds it.
@@ -138,6 +157,11 @@ enum TuiWorld {
     IdleThenRunning,
     /// The ghost tests' `app_at(10, 42)` replanned, with the arrival record or without it.
     Replanned { arrival: bool },
+    /// `worked_midnight_timer.rs`' (`tui_common::after_midnight_app`) at `h:m` on the day after the
+    /// fixture's: `^t4` started 23:00 the evening before with `est_min` 60, paused 23:30–00:30 by a
+    /// typed pair, the state rolled to the new day with `active.started` still `23:00` (README gap
+    /// 4090: the sixteenth test, which W-40's list of fifteen did not hold).
+    AfterMidnight(u32, u32),
     /// `tui::tests::the_meeting_pause_is_said_on_the_status_line`'s: `plan-basic`'s fixture
     /// directory, `tm wake 06:05` at 09:00 (the fixture's own instant, no `--slept`),
     /// `tm start ^t4` at 12:00 and `tm now` at 13:20, inside the meeting — the CLI's verb path,
@@ -168,7 +192,9 @@ struct TuiTest {
     live: Live,
 }
 
-/// **The fifteen** (README gap 3476's list), each with every planner call its code makes.
+/// **The sixteen** (README gap 3476's list, and gap 4090's sixteenth — found by W-41's simulation of
+/// R3, whose guard tripped on a test this list did not hold), each with every planner call its code
+/// makes.
 /// `the_overtime_prompt_fires_past_est_times_the_multiplier` asks `app_at(12, 0)` first and
 /// gets no prompt — `overtime_due` returns before any planner when the estimate is not reached
 /// — so its one call is at 12:51; `the_elapsed_minutes_are_worked_minutes_not_wall_clock`'s
@@ -176,7 +202,7 @@ struct TuiTest {
 /// 13:01 (a replan, no prompt) and 13:08 (a replan and the what-if);
 /// `a_prompt_never_steals_a_character_from_the_command_line` ticks the tight app to 12:51 (a
 /// replan; the `:` line holds the prompt back) and asks a fresh tight app's what-if.
-const TUI_TESTS: [TuiTest; 15] = [
+const TUI_TESTS: [TuiTest; 16] = [
     TuiTest {
         name: "tui_today_prompts::the_overtime_prompt_fires_past_est_times_the_multiplier",
         asks: &[ask(TuiWorld::At(12, 51), true)],
@@ -276,11 +302,20 @@ const TUI_TESTS: [TuiTest; 15] = [
         live: Live::Equal,
     },
     TuiTest {
+        name: "worked_midnight_timer::the_overtime_prompt_comes_after_midnight",
+        asks: &[ask(TuiWorld::AfterMidnight(1, 0), true)],
+        asserted: Asserted::Nothing,
+        verdict: Verdict::Equal,
+        live: Live::Departs(69),
+    },
+    TuiTest {
         name: "tui::tests::the_meeting_pause_is_said_on_the_status_line",
         asks: &[ask(TuiWorld::MeetingNow, false)],
         asserted: Asserted::Nothing,
         verdict: Verdict::Equal,
-        live: Live::Finding(3861),
+        // `Finding(3861)` until W-41: the request carried `Ctx::loc`'s lounge. Since D81
+        // (parity P76) it carries the planner's `any`, and the kernel plans the fork's day.
+        live: Live::Equal,
     },
 ];
 
@@ -355,6 +390,15 @@ fn app_of(w: TuiWorld) -> (App, String, Vec<(String, String)>) {
             }
             (app, tui_common::log(&cfg), texts)
         }
+        TuiWorld::AfterMidnight(h, m) => {
+            let now = tm_core::capacity::local_dt(
+                cfg.tz,
+                tui_common::date().succ_opt().expect("tomorrow"),
+                chrono::NaiveTime::from_hms_opt(h, m, 0).expect("time"),
+            );
+            let (app, log) = tui_common::after_midnight_app(now);
+            (app, log, texts)
+        }
         TuiWorld::MeetingNow => {
             // The world the unit test's verbs leave, built by the shipped binary: the same three
             // verbs at the same instants, read back whole.
@@ -401,27 +445,6 @@ fn kernel_answer(app: &App, log: &str, texts: &[(String, String)]) -> Result<(Bu
     Ok((b, k))
 }
 
-/// **`forkclass::kernel_answer_with_grants`' request, its capacity section's location replaced**
-/// when `loc` names one — README gap 3861's probe. The request and the order it sent.
-fn request_with_loc(b: &Built, loc: Option<&str>) -> (Value, Vec<usize>) {
-    let pw = b.request_world();
-    let (mut req, order) = planreq::request(&pw, forkclass::whatif_json(b));
-    if let Some(worked) = forkclass::host_worked(b) {
-        tm_core::planwire::add_worked_min(&mut req["planner"], worked);
-    }
-    if let Some(l) = loc {
-        req["capacity"]["state"]["loc"] = serde_json::json!(l);
-    }
-    (req, order)
-}
-
-/// The kernel's day for [`request_with_loc`]'s request with `loc` sent.
-fn kernel_day_with_loc(b: &Built, loc: &str) -> Result<KernelDay, String> {
-    let (req, order) = request_with_loc(b, Some(loc));
-    let resp = planreq::call(&req);
-    planreq::kernel_day_of(&resp, &b.request_world(), &order).map(|(k, _)| k)
-}
-
 /// **P46's row, read off the kernel's day** (`forkplan::p46_row`'s property): the running
 /// block reserved from `now`, marked current, its note the fork's saturating `left`.
 fn has_p46_row(k: &KernelDay, b: &Built) -> bool {
@@ -450,12 +473,12 @@ fn drops_of(app: &App, k: &KernelDay) -> Vec<String> {
 /// README gap 3860's kernel half, which outlives R3: on a state dated the day before `now`, the
 /// kernel plans `now`'s date — the state's window, budget and arrival are not today's
 /// (`Look.Today.forToday`) — where fork `planwire::plan_date` plans the state's.
-fn plans_nows_date_on_a_stale_state(app: &App, k: &KernelDay) -> bool {
-    k.day.date == app.now.date_naive() && app.state.date.is_some_and(|d| d != k.day.date)
+fn plans_nows_date_on_a_stale_state(state: &RuntimeState, now: chrono::DateTime<chrono_tz::Tz>, k: &KernelDay) -> bool {
+    k.day.date == now.date_naive() && state.date.is_some_and(|d| d != k.day.date)
 }
 
 /// **The kernel answers every fork-planned TUI world, and each verdict holds** — README gap
-/// 3721. For every one of the fifteen and EVERY planner call its own code makes: the kernel
+/// 3721. For every one of the sixteen and EVERY planner call its own code makes: the kernel
 /// plans the world (no refusal, the rows it draws counted) and, where the call asks §9.1's
 /// what-if, answers it. On the first call — the one the test's assertions read — the kernel's
 /// drops are the asserted ones (`Verdict::Equal`) or differ by a registered number whose
@@ -488,6 +511,21 @@ fn the_kernel_answers_every_fork_planned_tui_world() {
             .collect();
         hs.into_iter().map(|h| h.join().expect("a worker")).collect()
     });
+    // **The whole answer on every world, against fork 4748911's frozen day** (README gap 3963):
+    // what a verdict that asserts nothing a planner produces is held to, by value — and it is
+    // computed on every world, so the drops verdicts' worlds are compared whole as well.
+    let frozen = tui_lines();
+    let whole: Vec<(TuiWorld, Vec<String>)> = worlds
+        .iter()
+        .map(|w| {
+            let unmet = match frozen.iter().find(|l| l["name"] == tui_name(*w)) {
+                Some(l) => frozen_unmet(l, &mut forkclass::ClassTally::default()),
+                None => vec![format!("{w:?}: no frozen TUI line holds fork 4748911's day on this world")],
+            };
+            (*w, unmet)
+        })
+        .collect();
+    let whole_holds = |w: TuiWorld| whole.iter().find(|(x, _)| *x == w).is_some_and(|(_, u)| u.is_empty());
     let mut table = Vec::new();
     let mut findings = Vec::new();
     let mut calls = 0usize;
@@ -521,11 +559,22 @@ fn the_kernel_answers_every_fork_planned_tui_world() {
                         Verdict::Registered(_) => false,
                     }
                 }
-                (Asserted::Nothing, Verdict::Equal) => true,
+                // The test asserts nothing a planner produces, so its verdict is about the whole
+                // answer: on every world its own code plans over, the kernel's day and what-if are
+                // fork 4748911's frozen ones by value (README gap 3963), or the world's finding
+                // holds as its gap states it.
+                (Asserted::Nothing, Verdict::Equal) => t.asks.iter().all(|x| whole_holds(x.world)),
                 (Asserted::Nothing, Verdict::Registered(_)) => false,
             };
             if !held {
-                findings.push(format!("{}: the verdict {:?} does not hold: the kernel drops {drops:?}, the test asserts {:?}", t.name, t.verdict, t.asserted));
+                let whole_unmet: Vec<&String> = t.asks.iter().flat_map(|x| whole.iter().filter(move |(w, _)| *w == x.world)).flat_map(|(_, u)| u).collect();
+                findings.push(format!(
+                    "{}: the verdict {:?} does not hold: the kernel drops {drops:?}, the test asserts {:?}{}",
+                    t.name,
+                    t.verdict,
+                    t.asserted,
+                    if whole_unmet.is_empty() { String::new() } else { format!("; against fork 4748911's frozen day: {whole_unmet:?}") }
+                ));
             }
             // The verdict on what the test asserts and the live answer on its world agree where the
             // test asserts the drops: a registered verdict is the live difference's number.
@@ -538,26 +587,23 @@ fn the_kernel_answers_every_fork_planned_tui_world() {
             if !consistent {
                 findings.push(format!("{}: the verdict {:?} and the live answer {:?} disagree", t.name, t.verdict, t.live));
             }
-            // A finding's kernel half, which outlives R3 (the fork's half is the region's) — and
-            // gap 3860's reading bites nowhere else: every other world's state is today's.
-            if t.live != Live::Finding(3860) && plans_nows_date_on_a_stale_state(app, k) {
+            // Gap 3860's reading bites nowhere else: every other world's state is today's. (The two
+            // findings' own statements are held by the `Nothing` verdict arm above, through
+            // `verdict_unmet` against the frozen day — one definition since W-41.)
+            if t.live != Live::Finding(3860) && plans_nows_date_on_a_stale_state(&app.state, app.now, k) {
                 findings.push(format!("{}: read as gap 3860's stale state, and its state is today's", t.name));
             }
-            match t.live {
-                Live::Finding(3860) if !plans_nows_date_on_a_stale_state(app, k) => {
-                    findings.push(format!("{}: the kernel no longer plans now's date on a state dated yesterday (gap 3860)", t.name));
+            if a.world == TuiWorld::MeetingNow {
+                // Gap 3861's world, closed by the campaign's D81 call at W-41 (parity P76): the day holds
+                // no location and the request carries the planner's reading of it, `any`
+                // (`planwire::planned_loc`), where it carried `Ctx::loc`'s lounge — and the
+                // location still moves the day here, so the pin is not vacuous. (Its verdict,
+                // `Live::Equal`, is held whole through `verdict_unmet` against the frozen day.)
+                let sent = forkplan::request_with_loc(b, None).0["capacity"]["state"]["loc"].clone();
+                let lounge = forkplan::kernel_day_with_loc(b, "lounge").map(|d| d.hash);
+                if b.world.state.loc.is_some() || sent != "any" || lounge.as_ref().is_ok_and(|h| *h == k.hash) {
+                    findings.push(format!("{}: P76 does not hold: loc {:?}, sent {sent}, the day sent `lounge` {lounge:?}, sent `any` {}", t.name, b.world.state.loc, k.hash));
                 }
-                Live::Finding(3861) => {
-                    // The day holds no location, the request carries `Ctx::loc`'s lounge, and which
-                    // curve the kernel plans on moves the day — so what R3's encoder sends for a day
-                    // before `tm arrive` is a decision.
-                    let sent = request_with_loc(b, None).0["capacity"]["state"]["loc"].clone();
-                    let any = kernel_day_with_loc(b, "any").map(|d| d.hash);
-                    if b.world.state.loc.is_some() || sent != "lounge" || any.as_ref().is_ok_and(|h| *h == k.hash) {
-                        findings.push(format!("{}: gap 3861 no longer holds: loc {:?}, sent {sent}, the day sent `any` {any:?}, sent lounge {}", t.name, b.world.state.loc, k.hash));
-                    }
-                }
-                _ => {}
             }
             table.push(format!(
                 "{} | {:?} | asserts {:?} | kernel: {} rows, drops {drops:?} | {:?} | live {:?}",
@@ -571,9 +617,9 @@ fn the_kernel_answers_every_fork_planned_tui_world() {
         }
     }
     println!("{}", table.join("\n"));
-    println!("the kernel answered {calls} planner call(s) of the fifteen tests, over {} distinct world(s)", worlds.len());
+    println!("the kernel answered {calls} planner call(s) of the sixteen tests, over {} distinct world(s)", worlds.len());
     assert!(findings.is_empty(), "{}", findings.join("\n  "));
-    assert_eq!(TUI_TESTS.len(), 15, "README gap 3476's fifteen");
+    assert_eq!(TUI_TESTS.len(), 16, "README gap 3476's fifteen and gap 4090's sixteenth");
     assert_eq!(calls, TUI_TESTS.iter().map(|t| t.asks.len()).sum::<usize>(), "every planner call was answered");
 }
 
@@ -603,6 +649,14 @@ fn the_tui_tests_planner_free_assertions_read_no_planner() {
     assert_eq!(app.active_elapsed_min(), Some(60));
     let (app, _, _) = app_of(TuiWorld::IdleThenRunning);
     assert!(app.active_elapsed_min().is_some_and(|m| m >= 10), "past its ten-minute estimate");
+    // The sixteenth world reads the timer `worked_midnight_timer.rs` asserts on its own copy of it
+    // (README gap 4090): 40 worked at 00:40, 59 at 00:59, 60 at 01:00 — the log's start and its
+    // pause, never the rolled `state.date`'s `23:00`.
+    for (h, m, worked) in [(0, 40, 40), (0, 59, 59), (1, 0, 60)] {
+        let (app, _, _) = app_of(TuiWorld::AfterMidnight(h, m));
+        assert_eq!(app.today, tui_common::date().succ_opt().expect("tomorrow"));
+        assert_eq!(app.active_elapsed_min(), Some(worked), "{h:02}:{m:02}: the midnight-timer test's own reading");
+    }
     for arrival in [true, false] {
         let (app, _, _) = app_of(TuiWorld::Replanned { arrival });
         assert!(app.state.window.is_some() && app.state.budget.is_some(), "the ghost row reads the state's window and budget");
@@ -611,7 +665,7 @@ fn the_tui_tests_planner_free_assertions_read_no_planner() {
 }
 
 /// **The kernel's drops and P46's row are read as the TUI reads them** (non-vacuity, AGENTS
-/// §5.2): the fifteen worlds' kernel what-ifs drop nothing, so a reading of the drops that
+/// §5.2): the sixteen tests' kernel what-ifs drop nothing, so a reading of the drops that
 /// answered nothing would pass them all. On the overtime world with `^t3` given 90 minutes and
 /// the budget four blocks, the kernel's what-if drops the evening's optional `Factorio` (no `p`:
 /// the title alone); a what-if naming `^t4` and `Factorio` reads `title (pN)` and the title,
@@ -781,40 +835,412 @@ fn an_uncut_week_is_drawn_as_the_fork_drew_it() {
     assert!(findings.is_empty(), "{}", findings.join("\n  "));
 }
 
+// ---------------------------------------------------------------------------
+// Fork 4748911's whole day on every TUI world, frozen (W-41 track H, README gaps 3963, 3866)
+// ---------------------------------------------------------------------------
+
+/// **The frozen TUI days** — one class line per distinct world the sixteen plan over, each the
+/// world as the test's own constructors build it ([`app_of`]) and fork 4748911's answers for it
+/// (`forkclass::ANSWERS`), asked of `tm-oracle plan` over the kernel's grants as R3's host asks
+/// them, every registered departure applied by `forkplan::comparand_answers` and carried by its
+/// flag. The owner's D81 counts the TUI's in-memory worlds as worlds the shipped binary builds,
+/// which is what admits them as class lines; they are held to their tests' constructors, not to
+/// `forkclass::binary_holds` (a TUI state need not be one D42's rebuild reproduces: the
+/// `For("m1", …)` world runs `^m1` where the log holds `^t3` open, and the `Midnight` world's
+/// log is empty).
+const FROZEN_TUI: &str = "fork-4748911-planner-tui.jsonl";
+
+/// Where the frozen TUI days live.
+fn tui_path() -> std::path::PathBuf {
+    forkday::frozen_path().with_file_name(FROZEN_TUI)
+}
+
+/// The frozen TUI lines, in file order; a name carried twice FAILS.
+fn tui_lines() -> Vec<Value> {
+    tui_lines_of(&std::fs::read_to_string(tui_path()).unwrap_or_else(|e| panic!("{}: {e}", tui_path().display())))
+}
+
+/// [`tui_lines`] over a file's text.
+fn tui_lines_of(text: &str) -> Vec<Value> {
+    let mut seen = BTreeSet::new();
+    text.lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| {
+            let v: Value = serde_json::from_str(l).expect("a frozen TUI line is JSON");
+            let name = v["name"].as_str().expect("a frozen TUI line names its world").to_string();
+            assert!(seen.insert(name.clone()), "two frozen TUI lines for {name}");
+            v
+        })
+        .collect()
+}
+
+/// **Every distinct world the sixteen plan over**, in [`TUI_TESTS`]' order — what the frozen
+/// file holds a line for, no more and no fewer.
+fn tui_worlds() -> Vec<TuiWorld> {
+    let mut out: Vec<TuiWorld> = Vec::new();
+    for a in TUI_TESTS.iter().flat_map(|t| t.asks.iter()) {
+        if !out.contains(&a.world) {
+            out.push(a.world);
+        }
+    }
+    out
+}
+
+/// A frozen TUI line's name.
+fn tui_name(w: TuiWorld) -> String {
+    format!("tui {w:?}")
+}
+
+/// The world a frozen line's name names, if the sixteen still plan over it.
+fn tui_world_named(name: &str) -> Option<TuiWorld> {
+    tui_worlds().into_iter().find(|w| tui_name(*w) == name)
+}
+
+/// The tests whose own code plans over `w`, by name.
+fn tui_tests_of(w: TuiWorld) -> Vec<&'static str> {
+    TUI_TESTS.iter().filter(|t| t.asks.iter().any(|a| a.world == w)).map(|t| t.name).collect()
+}
+
+/// **A world's verdict on the whole answer** — the [`Live`] of the tests whose FIRST call plans
+/// over it (one world, one verdict), and `Equal` for a world only a later call reaches.
+fn live_of(w: TuiWorld) -> Live {
+    let lives: Vec<Live> = TUI_TESTS.iter().filter(|t| t.asks[0].world == w).map(|t| t.live).collect();
+    assert!(lives.windows(2).all(|p| p[0] == p[1]), "{w:?}: one world, one live answer: {lives:?}");
+    lives.first().copied().unwrap_or(Live::Equal)
+}
+
+/// **A TUI line**: the world's name, the tests that plan over it, its class (a function of the
+/// world, as every class line's is), the world, and the answers given.
+fn tui_line(w: TuiWorld, b: &Built, answers: &Value) -> Value {
+    let mut line = json!({
+        "name": tui_name(w),
+        "tests": tui_tests_of(w),
+        "class": forkclass::class_of(b).key(),
+        "world": b.world.to_json(),
+    });
+    for key in forkclass::ANSWERS {
+        forkclass::set_answer(&mut line, key, answers[key].clone());
+    }
+    // A number no fork input carries is carried by its flag alone, in its own home (gap 4090).
+    if let Live::Departs(n) = live_of(w) {
+        let flag = format!("p{n}");
+        line[flag.as_str()] = json!({flag.as_str(): true});
+    }
+    line
+}
+
+/// **A finding world's stated difference, held against a line's answers** — README gap 3860
+/// as its paragraph states it (gap 3861's finding, held here until W-41's land step, is closed
+/// by P76: its world's verdict is `Live::Equal`), over the kernel's day `k` and the frozen lines' one
+/// comparison's `findings`; every other verdict is that there are no findings. Empty when the
+/// verdict holds. One definition for the frozen comparison and, while the fork is here, the
+/// region's live one.
+fn verdict_unmet(w: TuiWorld, live: Live, b: &Built, k: &KernelDay, line: &Value, findings: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    match live {
+        Live::Finding(3860) => {
+            // A state dated YESTERDAY, which the binary's housekeeping rolls at the first verb
+            // after midnight and the TUI does not until its next reload: the kernel plans `now`'s
+            // date with none of the state's facts (`Look.Today.forToday`), the fork the state's.
+            if !plans_nows_date_on_a_stale_state(&b.world.state, b.world.now, k) {
+                out.push(format!("{w:?}: the kernel no longer plans now's date on a state dated yesterday (gap 3860)"));
+            }
+            if line["day"]["day"]["date"] != "2026-09-07" {
+                out.push(format!("{w:?}: the fork's day is dated {}, not the state's date (gap 3860)", line["day"]["day"]["date"]));
+            }
+            if !findings.iter().any(|f| f.contains("date")) {
+                out.push(format!("{w:?}: gap 3860 says the two plan different dates, and the comparison found {findings:?}"));
+            }
+        }
+        Live::Finding(g) => out.push(format!("{w:?}: gap {g} names no finding this file pins")),
+        Live::Departs(69) => {
+            // P69 (README gap 4090): the kernel reads the running block's start off the log, which
+            // no fork input carries, so it is held to P69's property against fork 4748911's own
+            // day by value; the comparison itself must see the departure, and the line carry P69.
+            let fork = if line["shipped"].is_null() { &line["day"]["day"] } else { &line["shipped"]["day"] };
+            match forkplan::logged_start(b) {
+                Some(logged) => out.extend(forkplan::p69_day_unmet(&tui_name(w), fork, b, logged, k)),
+                None => out.push(format!("{w:?}: P69 departs on a world whose log holds no start for its running block")),
+            }
+            if findings.is_empty() {
+                out.push(format!("{w:?}: P69 departs here and the comparison found nothing — the departure is not real on this world"));
+            }
+            if line["p69"]["p69"] != true {
+                out.push(format!("{w:?}: P69 departs here and the line carries no `p69` flag"));
+            }
+        }
+        Live::Departs(n) => out.push(format!("{w:?}: P{n} names no property this file holds")),
+        Live::Equal | Live::Registered(_) => out.extend(findings.iter().cloned()),
+    }
+    out
+}
+
+/// **One frozen TUI line against the kernel**: the frozen lines' one comparison
+/// (`forkclass::compare_line`, the kernel asked as R3's host asks) and the world's verdict
+/// ([`verdict_unmet`]). Empty when it holds.
+fn frozen_unmet(line: &Value, t: &mut forkclass::ClassTally) -> Vec<String> {
+    let name = line["name"].as_str().unwrap_or("?");
+    let Some(w) = tui_world_named(name) else {
+        return vec![format!("{name}: no test plans over this world any more — the line is STALE")];
+    };
+    let b = match ClassWorld::of_json(&line["world"], tui_common::config().tz) {
+        Ok(world) => Built::of(world),
+        Err(e) => return vec![format!("{name}: {e}")],
+    };
+    let k = match forkclass::kernel_answer(&b) {
+        Ok(k) => k,
+        Err(e) => return vec![format!("{name}: the kernel did not plan the world: {e}")],
+    };
+    let findings = forkclass::compare_line(line, t);
+    verdict_unmet(w, live_of(w), &b, &k, line, &findings)
+}
+
+/// **Every frozen TUI world is the one its tests build** (AGENTS §5.4; README gap 3963): the
+/// file holds a line for every distinct world the sixteen plan over and for no other, each world
+/// byte for byte what [`app_of`] builds now through `tui_common`'s own constructors — so a
+/// change to a constructor that moves a world fails by name, and the bless decides whether it is
+/// a D64(b) re-draw — each naming the tests that plan over it, and a re-drawn line saying why.
+#[test]
+fn every_frozen_tui_world_is_the_one_its_tests_build() {
+    let lines = tui_lines();
+    let want: Vec<String> = tui_worlds().into_iter().map(tui_name).collect();
+    let have: Vec<String> = lines.iter().map(|l| l["name"].as_str().unwrap_or_default().to_string()).collect();
+    assert_eq!(have, want, "the frozen TUI lines are the sixteen's worlds, in their order");
+    let mut bad = Vec::new();
+    for l in &lines {
+        let w = tui_world_named(l["name"].as_str().unwrap_or_default()).expect("a world, checked above");
+        let (app, log, texts) = app_of(w);
+        let b = built_of(&app, &log, &texts);
+        if b.world.to_json() != l["world"] {
+            let first = forkplan::first_difference("world", &l["world"], &b.world.to_json());
+            bad.push(format!("{}: the test builds another world now ({})", tui_name(w), first.unwrap_or_default()));
+        }
+        if l["tests"] != json!(tui_tests_of(w)) {
+            bad.push(format!("{}: the line names the tests {}, and {:?} plan over it", tui_name(w), l["tests"], tui_tests_of(w)));
+        }
+        // The line the bless writes from its own answers is the committed line, byte for byte.
+        let mut again = tui_line(w, &b, l);
+        if let Some(why) = l.get("d64b") {
+            again["d64b"] = why.clone();
+        }
+        if again != *l {
+            bad.push(format!("{}: the bless would write another line ({})", tui_name(w), forkplan::first_difference("line", l, &again).unwrap_or_default()));
+        }
+        if let Some(why) = l.get("d64b").and_then(Value::as_str) {
+            if !forkclass::is_d64b_reason(why) {
+                bad.push(format!("{}: re-drawn with the reason {why:?}, which is not dated or names no D64(b)", tui_name(w)));
+            }
+        }
+    }
+    assert!(bad.is_empty(), "{}", bad.join("\n  "));
+}
+
+/// **The kernel plans every frozen TUI world as fork 4748911 planned it** — README gaps 3963
+/// and 3866, the comparison that outlives R3: on every frozen TUI line the kernel's whole day
+/// and what-if, asked as R3's host asks them, against fork 4748911's answers by value
+/// (`forkclass::compare_line`, with each registered departure by its property — P46's
+/// reservation, P47's pause, and the rest the comparand's flags carry), except where the world's
+/// verdict is a finding, which must hold as its gap states it ([`verdict_unmet`]). Neither side
+/// is in-tree code a test process runs after R3: one is the kernel, the other bytes on disk.
+#[test]
+fn the_kernel_plans_every_frozen_tui_world_as_fork_4748911_planned_it() {
+    let lines = tui_lines();
+    let mut t = forkclass::ClassTally::default();
+    let mut unmet = Vec::new();
+    let mut summary = Vec::new();
+    for l in &lines {
+        let u = frozen_unmet(l, &mut t);
+        let flags: Vec<u32> = forkclass::parity_flags(l).into_iter().filter(|f| f.1).map(|f| f.0).collect();
+        let w = tui_world_named(l["name"].as_str().unwrap_or_default());
+        summary.push(format!("{} | comparand flags {flags:?} | {:?} | {}", l["name"].as_str().unwrap_or("?"), w.map(live_of), if u.is_empty() { "holds" } else { "UNMET" }));
+        unmet.extend(u);
+    }
+    println!("{}", summary.join("\n"));
+    println!("{}", t.line(unmet.len()));
+    assert!(unmet.is_empty(), "{} frozen TUI line(s) unmet:\n  {}", unmet.len(), unmet.join("\n  "));
+    assert_eq!(lines.len(), tui_worlds().len(), "every world the sixteen plan over is compared");
+    assert!(t.whatifs > 0 && t.p46 > 0 && t.p47 > 0, "the TUI lines exercise the what-if, P46 and P47: {t:?}");
+}
+
+/// The oracle at `TM_ORACLE`, when set (D23's shape: every arm that asks it is inert without it).
+fn the_oracle() -> Option<forkplan::Oracle> {
+    forkplan::oracle_path().map(forkplan::Oracle::new)
+}
+
+/// **A world's fork answers over `fp`**: the kernel's grants as R3's host asks them, and
+/// `forkplan::comparand_answers` — the frozen lines' one definition — with `fp` planning.
+fn tui_answers(b: &Built, fp: &dyn forkplan::ForkPlan) -> Result<(Value, Vec<tm_core::priority::Prio>), String> {
+    let prios = forkclass::kernel_answer_with_grants(b)?.1;
+    let answers = forkplan::comparand_answers(b, &prios, fp)?;
+    Ok((answers, prios))
+}
+
+/// **The frozen TUI days are fork 4748911's answer today, out of the tree** (`TM_ORACLE`, D23's
+/// shape; outlives R3): every line's answers, asked again of `tm-oracle plan` through the
+/// comparand's one definition over the kernel's grants now, are the frozen ones, key for key.
+#[test]
+#[ignore]
+fn the_frozen_tui_days_are_the_forks_oracle_answer_today() {
+    let Some(oracle) = the_oracle() else { return };
+    let mut stale = Vec::new();
+    for l in tui_lines() {
+        let b = Built::of(ClassWorld::of_json(&l["world"], tui_common::config().tz).expect("a stored world"));
+        let (now, _) = tui_answers(&b, &oracle).unwrap_or_else(|e| panic!("{}: {e}", l["name"]));
+        stale.extend(forkclass::ANSWERS.iter().filter(|k| now[**k] != l[**k]).map(|k| format!("{}: `{k}`", l["name"].as_str().unwrap_or("?"))));
+    }
+    println!("tm-oracle plan asked {} time(s)", *oracle.asked.lock().expect("census"));
+    assert!(stale.is_empty(), "the fork oracle does not answer the frozen TUI days as frozen:\n  {}", stale.join("\n  "));
+}
+
+/// **Freeze the TUI days** — inert without `TM_TUI_BLESS`, and it asks `TM_ORACLE` (fork 4748911
+/// out of the tree, as the brief of README gap 3963 asks). Every world of [`tui_worlds`] is built
+/// through its tests' own constructors and written with the oracle's answers. A line the file
+/// already holds is held to the owner's D64 exactly as the class lines' re-bless is
+/// (`forkclass::d64_allows`, with the shipped fork's day asked of the oracle and the reasons
+/// `TM_TUI_BLESS_BECAUSE`); a WORLD that moved is a re-draw, allowed only with D64(b)'s reason in
+/// `TM_TUI_BLESS_REDRAW` (dated, naming `D64(b)`), which the line then carries as `d64b`; a held
+/// line no test plans over any more is refused. Each change is named; a refusal writes nothing.
+/// `TM_TUI_BLESS_OUT` writes elsewhere, for a dry run.
+#[test]
+#[ignore]
+fn the_frozen_tui_days_are_blessed() {
+    if std::env::var_os("TM_TUI_BLESS").is_none() {
+        eprintln!("inert: set TM_TUI_BLESS=1 (with TM_ORACLE) to write {FROZEN_TUI}");
+        return;
+    }
+    let oracle = the_oracle().expect("TM_TUI_BLESS asks the fork: set TM_ORACLE");
+    let because = forkclass::because_of("TM_TUI_BLESS_BECAUSE");
+    let redraw = std::env::var("TM_TUI_BLESS_REDRAW").ok();
+    let registered = forkclass::registered_parity();
+    let held = if tui_path().exists() { tui_lines() } else { Vec::new() };
+    let (mut out, mut refused, mut changed, mut added) = (String::new(), Vec::new(), Vec::new(), 0usize);
+    for w in tui_worlds() {
+        let (app, log, texts) = app_of(w);
+        let b = built_of(&app, &log, &texts);
+        let (answers, prios) = tui_answers(&b, &oracle).unwrap_or_else(|e| panic!("{w:?}: {e}"));
+        let mut line = tui_line(w, &b, &answers);
+        match held.iter().find(|o| o["name"] == line["name"]) {
+            None => added += 1,
+            Some(old) if old["world"] != line["world"] => match redraw.as_deref() {
+                Some(why) if forkclass::is_d64b_reason(why) => {
+                    line["d64b"] = json!(why);
+                    changed.push(format!("{} re-drawn", tui_name(w)));
+                }
+                _ => refused.push(format!(
+                    "{}: its test builds another world now — a re-draw, which needs D64(b)'s reason in TM_TUI_BLESS_REDRAW",
+                    tui_name(w)
+                )),
+            },
+            Some(old) => {
+                if let Some(why) = old.get("d64b") {
+                    line["d64b"] = why.clone();
+                }
+                let ask = forkplan::ForkAsk { state: &b.world.state, now: b.world.now, d60: false, p64: false, prios: &prios, extend: None, log_line: None };
+                let shipped = forkplan::ForkPlan::plan(&oracle, &b, &ask).unwrap_or_else(|e| panic!("{w:?}: {e}")).fork_day;
+                match forkclass::d64_allows(old, &line, &shipped, &because, &registered) {
+                    Err(e) => refused.push(e),
+                    Ok(keys) if !keys.is_empty() => changed.push(format!("{} `{}`", tui_name(w), keys.join("`, `"))),
+                    Ok(_) => {}
+                }
+            }
+        }
+        out.push_str(&serde_json::to_string(&line).expect("a line serialises"));
+        out.push('\n');
+    }
+    for o in &held {
+        if tui_world_named(o["name"].as_str().unwrap_or_default()).is_none() {
+            refused.push(format!("{}: a frozen line no test plans over any more", o["name"]));
+        }
+    }
+    eprintln!("TUI days: {added} line(s) added, {} changed ({}), {} refused", changed.len(), changed.join("; "), refused.len());
+    assert!(refused.is_empty(), "the TUI re-bless is refused and wrote nothing:\n  {}", refused.join("\n  "));
+    let path = std::env::var_os("TM_TUI_BLESS_OUT").map(std::path::PathBuf::from).unwrap_or_else(tui_path);
+    std::fs::write(path, out).expect("the frozen TUI days are written");
+}
+
+/// **A frozen TUI name carried twice is refused** (AGENTS §5.8: the reader's guard has an input
+/// that fails it).
+#[test]
+#[should_panic(expected = "two frozen TUI lines for")]
+fn a_frozen_tui_name_carried_twice_is_refused() {
+    let one = serde_json::to_string(&tui_lines()[0]).expect("a line");
+    tui_lines_of(&format!("{one}\n{one}\n"));
+}
+
+/// **The frozen comparison bites** (AGENTS §5.8): a frozen line bent in its day, in its what-if,
+/// or in its world's verdict is refused by name — and a line no test plans over is STALE.
+#[test]
+fn the_frozen_tui_comparison_bites_a_bent_line() {
+    let lines = tui_lines();
+    let held = |l: &Value| frozen_unmet(l, &mut forkclass::ClassTally::default());
+    let plain = lines.iter().find(|l| l["name"] == tui_name(TuiWorld::At(12, 51))).expect("the overtime world").clone();
+    assert!(held(&plain).is_empty(), "the unbent line holds: {:?}", held(&plain));
+    let mut day = plain.clone();
+    day["day"]["day"]["segments"][1]["end"] = json!("2026-09-07T23:59:00-05:00");
+    assert!(held(&day).iter().any(|f| f.contains("tui At(12, 51)")), "a bent day passed: {:?}", held(&day));
+    let mut whatif = plain.clone();
+    whatif["whatif"]["full"]["drift_min"] = json!(9999);
+    assert!(held(&whatif).iter().any(|f| f.contains("what-if")), "a bent what-if passed");
+    let mut stale = plain.clone();
+    stale["name"] = json!("tui NoSuchWorld");
+    assert!(held(&stale).iter().any(|f| f.contains("STALE")), "a stale line passed");
+    // A finding world's verdict bites too: gap 3860's line whose fork day is dated `now`'s day —
+    let midnight = lines.iter().find(|l| l["name"] == tui_name(TuiWorld::Midnight)).expect("the midnight world").clone();
+    assert!(held(&midnight).is_empty(), "the midnight line holds as gap 3860 states it");
+    let mut today = midnight.clone();
+    today["day"]["day"]["date"] = json!("2026-09-08");
+    assert!(held(&today).iter().any(|f| f.contains("not the state's date (gap 3860)")), "a bent 3860 line passed");
+    // — gap 4090's line, P69's, without its flag or with the kernel's running row in the fork's day —
+    let after = lines.iter().find(|l| l["name"] == tui_name(TuiWorld::AfterMidnight(1, 0))).expect("the after-midnight world").clone();
+    assert!(held(&after).is_empty(), "the after-midnight line holds P69's property");
+    let mut unflagged = after.clone();
+    unflagged.as_object_mut().expect("a line").remove("p69");
+    assert!(held(&unflagged).iter().any(|f| f.contains("carries no `p69` flag")), "a P69 line without its flag passed");
+    let ab = Built::of(ClassWorld::of_json(&after["world"], tui_common::config().tz).expect("a world"));
+    let ak = forkclass::kernel_answer(&ab).expect("the kernel plans");
+    let mut holding = after.clone();
+    holding["shipped"]["day"]["segments"] = serde_json::to_value(&ak.day).expect("a day")["segments"].clone();
+    assert!(held(&holding).iter().any(|f| f.contains("departs nowhere")), "a P69 line whose fork day holds the kernel's row passed");
+    // — and gap 3861's world, `Live::Equal` since P76 (W-41's land step): the kernel sent `any`
+    // plans the frozen fork day, and a line whose fork day is the kernel's LOUNGE day — what the
+    // request carried until P76 — is refused by the whole-day comparison.
+    let meeting = lines.iter().find(|l| l["name"] == tui_name(TuiWorld::MeetingNow)).expect("the meeting world").clone();
+    assert!(held(&meeting).is_empty(), "the meeting line holds whole under P76: {:?}", held(&meeting));
+    let b = Built::of(ClassWorld::of_json(&meeting["world"], tui_common::config().tz).expect("a world"));
+    let lounge = forkplan::kernel_day_with_loc(&b, "lounge").expect("the kernel plans the lounge day");
+    let mut agreeing = meeting.clone();
+    agreeing["day"] = forkclass::frozen_day(&lounge.day);
+    assert!(held(&agreeing).iter().any(|f| f.contains("tui MeetingNow")), "a meeting line holding the lounge day passed: {:?}", held(&agreeing));
+}
+
 // BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gap 3721)
 //
 // **The fork's LIVE answer on the same worlds**, while it is here: what each test's own call
 // reaches (`App::overtime_due`'s drops, `App::replan`'s day), held to the kernel's on every
 // world, and the WHOLE answer on every world through the frozen lines' one comparison
 // (`forkclass::compare_line` over the comparand built from the in-tree fork), so a verdict
-// above rests on the fork's answer and not only on a test's reading of it.
+// above rests on the fork's answer and not only on a test's reading of it — and, since W-41,
+// that in-tree comparand held to the FROZEN line of each world, key for key, so the frozen
+// answers the plain comparison reads after R3 are the in-tree fork's as well as the oracle's.
 
 /// A test's first planner call's world — the one its assertions read.
 fn first_world(t: &TuiTest) -> TuiWorld {
     t.asks[0].world
 }
 
-/// **A class line for a TUI world, its answers the in-tree comparand's** — the shape
-/// `forkclass::compare_line` reads (`support/forkp56.rs` builds the same for a seeded day), never
-/// frozen: the world, its class and every answer of `forkclass::ANSWERS`.
-fn live_line(name: &str, b: &Built, answers: &Value) -> Value {
-    let mut line = serde_json::json!({"name": name, "class": forkclass::class_of(b).key(), "world": b.world.to_json()});
-    for key in forkclass::ANSWERS {
-        forkclass::set_answer(&mut line, key, answers[key].clone());
-    }
-    line
-}
-
 /// **The fork's live answers are the asserted ones, the kernel's whole answer is the
-/// comparand's, and every live difference is named** — for each world the fifteen plan over
-/// (each once, every planner call of every test): the comparand (the in-tree fork with every
-/// registered departure applied by its property, `forkplan::comparand_answers`) and the kernel
-/// agree on the whole day and the what-if (`forkclass::compare_line`, the frozen lines' one
-/// comparison) — except on a `Live::Finding` world, where the finding holds as its gap states
-/// it; `overtime_due`'s drops (the fork's what-if through the TUI's own `extend_drops`) are what
-/// each test on the world asserts; they are the kernel's under `Live::Equal`, and under
-/// `Live::Registered(n)` they are not and the comparand departs from the shipped fork on the
-/// world by `n` and by no other number. The ghost worlds' `replan` reaches a day.
+/// comparand's, every live difference is named, and the comparand is the frozen line** — for
+/// each world the sixteen plan over (each once, every planner call of every test): the comparand
+/// (the in-tree fork with every registered departure applied by its property,
+/// `forkplan::comparand_answers`) and the kernel agree on the whole day and the what-if
+/// (`forkclass::compare_line`, the frozen lines' one comparison) — except on a `Live::Finding`
+/// world, where the finding holds as its gap states it ([`verdict_unmet`]); the comparand's
+/// answers are the frozen TUI line's, key for key (README gap 3963: the oracle froze them, and
+/// the in-tree fork the binary ships answers the same); `overtime_due`'s drops (the fork's what-if
+/// through the TUI's own `extend_drops`) are what each test on the world asserts; they are the
+/// kernel's under `Live::Equal`, and under `Live::Registered(n)` they are not and the comparand
+/// departs from the shipped fork on the world by `n` and by no other number. The ghost worlds'
+/// `replan` reaches a day.
 #[test]
 fn the_fork_and_the_kernel_answer_every_tui_world_as_the_verdicts_say() {
     let mut worlds: Vec<(TuiWorld, bool)> = Vec::new();
@@ -824,50 +1250,22 @@ fn the_fork_and_the_kernel_answer_every_tui_world_as_the_verdicts_say() {
             None => worlds.push((a.world, a.whatif)),
         }
     }
-    // A test's live verdict is about its first world; a world two tests share keeps one verdict,
-    // and a world that is only a later call is held to the comparand like any other (`Equal`).
-    let live_of = |w: TuiWorld| -> Live {
-        let lives: Vec<Live> = TUI_TESTS.iter().filter(|t| first_world(t) == w).map(|t| t.live).collect();
-        assert!(lives.windows(2).all(|p| p[0] == p[1]), "{w:?}: one world, one live answer: {lives:?}");
-        lives.first().copied().unwrap_or(Live::Equal)
-    };
+    let frozen = tui_lines();
     let mut tally = forkclass::ClassTally::default();
     let mut summary = Vec::new();
     for (w, whatif) in worlds {
         let live = live_of(w);
         let (mut app, log, texts) = app_of(w);
         let (b, k) = kernel_answer(&app, &log, &texts).unwrap_or_else(|e| panic!("{w:?}: {e}"));
-        let prios = forkclass::kernel_answer_with_grants(&b).expect("the kernel answers").1;
-        let answers = forkplan::comparand_answers(&b, &prios, &forkplan::InTree).expect("the in-tree fork answers");
+        let (answers, _) = tui_answers(&b, &forkplan::InTree).expect("the in-tree fork answers");
         let flags: Vec<u32> = forkclass::parity_flags(&answers).into_iter().filter(|(_, set)| *set).map(|(n, _)| n).collect();
-        let findings = forkclass::compare_line(&live_line(&format!("{w:?}"), &b, &answers), &mut tally);
-        match live {
-            Live::Finding(3860) => {
-                // README gap 3860, pinned: a state dated YESTERDAY, which the binary's
-                // housekeeping rolls at the first verb after midnight and the TUI does not until
-                // its next reload — the kernel plans `now`'s date with none of the state's facts
-                // (`Look.Today.forToday`), the fork `state.date`'s (`planwire::plan_date`).
-                assert!(plans_nows_date_on_a_stale_state(&app, &k), "{w:?}: the kernel plans now's date");
-                assert_eq!(answers["day"]["day"]["date"], "2026-09-07", "{w:?}: the fork plans the state's date");
-                assert!(!findings.is_empty(), "{w:?}: gap 3860 says the two plan different days, and the comparison found none");
-                assert!(findings.iter().any(|f| f.contains("date")), "{w:?}: the finding names the date: {findings:?}");
-            }
-            Live::Finding(3861) => {
-                // README gap 3861, pinned: a day before its first `tm arrive` holds no location;
-                // the request carries `Ctx::loc`'s reading of it, the LOUNGE, and the kernel plans
-                // that curve, where fork `Planner::new` reads `Loc::Any` — `energy::curve_key`'s
-                // HOME curve, with no home cap. Sent `any`, the kernel plans the fork's day,
-                // digest for digest.
-                assert_eq!(b.world.state.loc, None, "{w:?}: a day no `tm arrive` located");
-                let sent = request_with_loc(&b, None).0;
-                assert_eq!(sent["capacity"]["state"]["loc"], "lounge", "{w:?}: the request carries `Ctx::loc`'s lounge");
-                assert!(!findings.is_empty(), "{w:?}: gap 3861 says the two plan different days, and the comparison found none");
-                let any = kernel_day_with_loc(&b, "any").unwrap_or_else(|e| panic!("{w:?}: {e}"));
-                assert_eq!(serde_json::json!(any.hash), answers["day"]["hash"], "{w:?}: sent `any`, the kernel plans the fork's day");
-            }
-            Live::Finding(g) => panic!("{w:?}: gap {g} names no finding this test pins"),
-            _ => assert!(findings.is_empty(), "{w:?}: the kernel's answer is not the comparand's:\n  {}", findings.join("\n  ")),
-        }
+        let line = tui_line(w, &b, &answers);
+        let findings = forkclass::compare_line(&line, &mut tally);
+        let unmet = verdict_unmet(w, live, &b, &k, &line, &findings);
+        assert!(unmet.is_empty(), "{w:?}: the verdict {live:?} does not hold on the live comparand:\n  {}", unmet.join("\n  "));
+        let held = frozen.iter().find(|l| l["name"] == line["name"]).unwrap_or_else(|| panic!("{w:?}: no frozen TUI line"));
+        let stale: Vec<&str> = forkclass::ANSWERS.iter().copied().filter(|k| held[*k] != line[*k]).collect();
+        assert!(stale.is_empty(), "{w:?}: the in-tree fork does not answer the frozen line in {stale:?} (a re-bless is a decision, AGENTS §7.2)");
         if whatif {
             let fork = app.overtime_due().map(|o| o.drops).unwrap_or_else(|| panic!("{w:?}: no overtime is due"));
             for t in TUI_TESTS.iter().filter(|t| first_world(t) == w) {
@@ -882,7 +1280,7 @@ fn the_fork_and_the_kernel_answer_every_tui_world_as_the_verdicts_say() {
                     assert_ne!(fork, kernel, "{w:?}: a registered P{n} difference on drops the kernel shares");
                     assert_eq!(flags, vec![n], "{w:?}: the comparand departs from the shipped fork by P{n} and by no other number");
                 }
-                Live::Finding(_) => {}
+                Live::Finding(_) | Live::Departs(_) => {}
             }
         }
         if matches!(w, TuiWorld::Replanned { .. }) {

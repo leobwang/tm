@@ -51,24 +51,29 @@
 //! no encoder until a caller wants one.)
 //!
 //! **No bound is minted here.** An id past `CapWire.maxCandId`, a list past
-//! `Planner.maxCands`, an estimate or a break planned past `Look.maxDayMin`, or
-//! a break place `PlanWire.placeOf?` does not know is sent as the host holds it
-//! and refused BY THE KERNEL, by name (`{"err":{"planner":"badActive wf"}}` and
-//! its family, read back by [`planner_refusal`]); a second statement of those
-//! numbers here would be the defect AGENTS §5.3 names. Minutes cross as `u32`,
-//! which is the fork's width and is `Look.maxPlanMinutes` — the type is the
-//! bound. (README gap 2874 priced these at R3, and W-40 measured three of them
-//! reachable by an ordinary verb — `tm extend` or `tm break` past a day, and
-//! `tm break --where` with a fifth word — each a named gap owed before the
-//! swap, 3902 and 3903.)
+//! `Planner.maxCands`, or a break place `PlanWire.placeOf?` does not know is
+//! sent as the host holds it and refused BY THE KERNEL, by name
+//! (`{"err":{"planner":"badActive id"}}` and its family, read back by
+//! [`planner_refusal`]); a second statement of those numbers here would be the
+//! defect AGENTS §5.3 names. Minutes cross as `u32`, which is the fork's width
+//! and, since W-41 (the campaign's D81 call on README gap 3902), the kernel's
+//! bound on a running estimate, a running break and the worked minutes,
+//! `Look.maxPlanMinutes` — the type is the bound. (README gap 2874 priced these
+//! at R3; W-40 measured three reachable by an ordinary verb — `tm extend` or `tm
+//! break` past a day, refused `badActive wf`/`badBreak wf` against
+//! `Look.maxDayMin` until W-41 and PLANNED since, and `tm break --where` with a
+//! fifth word, which the verb itself refuses by name since W-41's P75; a hand
+//! edit still reaches the kernel's `badBreak place`, README gap 4005.)
 //!
 //! **A running record's start is the log's, and is never moved** (the W-40
 //! repair, README gaps 3943 and 3952): [`state_json`] reads the running block's
 //! and the interruption's start from the log's own lines (D75's clock, parity
-//! P69), and a start still after `now` is sent as read and refused by the
-//! kernel by name (`badActive wf`) — README gap 2874's input 1, owed the owner's
-//! behaviour row. From W-40 track E until the repair it was sent as `now`, a
-//! reading no owner decision named. No number of the kernel's is written here.
+//! P69), and a start still after `now` is sent as read. The kernel refused it by
+//! name (`badActive wf`) from the W-40 repair until W-41; since the owner's D78
+//! it plans such a block from `now` with no minute worked, as fork 4748911 does
+//! (P68 as restated at W-41 track K; README gap 3973 closed at the land step).
+//! From W-40 track E until the repair it was sent as `now`, a reading no owner
+//! decision named. No number of the kernel's is written here.
 //!
 //! # What it decodes, and the one check it makes
 //!
@@ -1009,12 +1014,37 @@ pub struct CapacityIn<'a> {
     /// The instant the verb runs at, in the configured zone (`Ctx::now_tz`): `at`,
     /// and its local date is the request's today.
     pub now: DateTime<Tz>,
-    /// The current location (`Ctx::loc`).
-    pub loc: Loc,
+    /// The replay of the log the request's `log` section carries (`Ctx::replay`): the
+    /// day record whose logged `arrive` [`planned_loc`] falls back to. Until W-41 this
+    /// was `loc`, the caller's `Ctx::loc` — the stored location, else the LOUNGE —
+    /// read by each caller for itself (README gap 4040).
+    pub replay: &'a crate::log::Replay,
     /// `tm plan --allow-home`.
     pub allow_home: bool,
     /// The lookahead's length, already through [`horizon`].
     pub days: u32,
+}
+
+/// **The location a day is planned at** — fork `Planner::new`'s reading, letter for
+/// letter: `.tm/state.json`'s `loc` (`stored`), else the location of the day's first
+/// logged `arrive` (`logged`, the replay's day record), else [`Loc::Any`] — which
+/// `energy::curve_key` reads as the HOME curve and `cap_for_location` caps at nothing.
+/// The fallback is taken before the name is parsed, as the fork takes it, so a stored
+/// name that does not parse is `any` and not the logged one. [`capacity_json`] reads
+/// the record of `now`'s date, the day the kernel plans (fork `Planner::new` read the
+/// state's; the two differ only on a state dated another day, which P77 reads as
+/// `tm plan` would at that instant, after `RuntimeState::roll_to`).
+///
+/// **And since W-41 it is day 0's capacity's reading too** (the campaign's **D81** call,
+/// README gaps 3861 and 4040, parity **P76**). Fork 4748911 read the location two ways: its
+/// planner this way, and day 0's capacity through `Ctx::loc` — the stored location,
+/// else the LOUNGE — so before the first `tm arrive` of a tree (`.tm/state.json`
+/// carries `loc` across days, `ctx.rs`' `roll_day` never clears it) the shipped `tm
+/// plan` laid out a home-curve day ranked by a lounge-curve day 0. The kernel has ONE
+/// input for both (`Look.Today.loc`: day 0 reads it, and `Planner.PlanReq.loc` reads
+/// it), so the capacity section carries this reading and the two cannot differ.
+pub fn planned_loc(stored: Option<&str>, logged: Option<&str>) -> Loc {
+    stored.or(logged).and_then(|s| Loc::parse(s).ok()).unwrap_or(Loc::Any)
 }
 
 /// **The capacity section** the binary sends (`Boundary.readSection`, `readCands`):
@@ -1022,7 +1052,8 @@ pub struct CapacityIn<'a> {
 /// else the literal `"log"` — the fork's precedence, gap 261), the learned curves, the
 /// prior, `[day]`, `[priority]` with `batchMaxMin`, `days`, and day 0's own host-only facts
 /// — `at`, `state`, `posterior`, `sleep` — with the candidates when priorities are asked
-/// for, in [`send_order`] (their facts are the host's, gap 113).
+/// for, in [`send_order`] (their facts are the host's, gap 113). `state.loc` is
+/// [`planned_loc`]'s reading, the planner's (P76).
 pub fn capacity_json(input: &CapacityIn<'_>, ranked: Option<&Ranked<'_>>) -> Result<Value, InputDefect> {
     // Every configured decimal as its file writes it (D10, D17): checked, then sent.
     let pairs = pairs_of(input.cfg, input.model, input.written)?;
@@ -1030,6 +1061,10 @@ pub fn capacity_json(input: &CapacityIn<'_>, ranked: Option<&Ranked<'_>>) -> Res
     let model = input.model;
     let state = input.state;
     let today = input.now.date_naive();
+    // The location the day is planned at, which day 0's capacity reads too (P76): ONE
+    // reading, `planned_loc`'s, and the kernel's planner reads it off this section
+    // (`Planner.PlanReq.loc` is `look.today0.loc`).
+    let loc = planned_loc(state.loc.as_deref(), input.replay.day(today).and_then(|d| d.loc.as_deref()));
     let wd_slot = |wd: chrono::Weekday| wd.num_days_from_monday() as usize;
     let week_table = |f: &dyn Fn(chrono::Weekday) -> Option<Value>| -> Map<String, Value> {
         WEEK.iter().filter_map(|wd| f(*wd).map(|v| (energy::weekday_key(*wd).to_string(), v))).collect()
@@ -1105,7 +1140,7 @@ pub fn capacity_json(input: &CapacityIn<'_>, ranked: Option<&Ranked<'_>>) -> Res
             "window": state.window.map(|(f, t)| json!({"from": fmt_time(f), "to": fmt_time(t)})),
             "budget": state.budget,
             "arrival": state.arrival.map(fmt_time),
-            "loc": input.loc.as_str(),
+            "loc": loc.as_str(),
             "allowHome": input.allow_home,
         },
         "posterior": {
@@ -1167,19 +1202,24 @@ fn clock_sec(tz: Tz, date: NaiveDate, t: NaiveTime) -> i64 {
 /// bare `HH:MM`, a cache of those instants (D42), and fork `Planner::active_run`
 /// put it on the plan's date — so after local midnight a block begun before it
 /// was sent as starting TONIGHT, after `now`. Only the BREAK keeps the cache's
-/// clock on the plan's date, because the log holds no line for a running break
-/// (README gap 3820), and so does a record the log does not hold (unreachable
-/// after D42's reconcile).
+/// clock, because the log holds no line for a running break (README gap 3820):
+/// since W-41's land step (README gap 4001, closing it beside track T's P73) it
+/// is placed by [`crate::store::BreakState::started_at`] — the latest instant at
+/// or before `now` whose local clock is the cache's, the one reading every host
+/// site of a running break's start shares — where until then it was the cache's
+/// clock on the plan's date, tonight's after midnight, which the kernel refused
+/// (`badBreak wf`). A record the log does not hold keeps the cache's clock on the
+/// plan's date (unreachable after D42's reconcile).
 ///
 /// **No start is moved** (README gap 3952). From W-40 track E until the repair a
 /// start after `now` was sent AS `now` — a reading no owner decision names (P68
 /// as issued) — and composed with the cache's clock it planned a block begun
 /// before midnight as begun at `now`: a refusal by name had become a plausible
-/// wrong answer (gap 3943). A start still after `now` is sent as it is read and
-/// refused by the kernel by name (`badActive wf`, `badBreak wf`, `badInterrupt
-/// wf`), where the fork plans it from `now`: README gap 2874's input 1, owed the
-/// owner's behaviour row before R3, and P68 as restated.
-pub fn state_json(state: &RuntimeState, logged: &LoggedStarts, date: NaiveDate, tz: Tz) -> Value {
+/// wrong answer (gap 3943). A start still after `now` is sent as it is read —
+/// `now` is read here only to place a running break, never to move a start — and
+/// since W-41 the kernel plans a block or an interruption begun after `now` from
+/// `now`, as the fork does (the owner's D78; P68 as restated at W-41 track K).
+pub fn state_json(state: &RuntimeState, logged: &LoggedStarts, date: NaiveDate, now: DateTime<Tz>, tz: Tz) -> Value {
     let cache = |t: NaiveTime| clock_sec(tz, date, t);
     let instant = |t: DateTime<chrono::FixedOffset>| kernel_sec(t.with_timezone(&tz));
     let mut o = Map::new();
@@ -1198,7 +1238,7 @@ pub fn state_json(state: &RuntimeState, logged: &LoggedStarts, date: NaiveDate, 
     if let Some(b) = &state.break_ {
         o.insert(
             "break".to_string(),
-            json!({"started": b.started.map(cache),
+            json!({"started": b.started_at(tz, now).map(kernel_sec),
                    "plannedMin": b.planned_min, "place": b.place}),
         );
     }
@@ -1408,7 +1448,7 @@ pub fn planner_json(
     overtime: Option<Value>,
 ) -> Value {
     let date = plan_date(state, now);
-    let mut o = json!({"state": state_json(state, &LoggedStarts::of(replay), date, tz), "routines": routines_json(routines)});
+    let mut o = json!({"state": state_json(state, &LoggedStarts::of(replay), date, now, tz), "routines": routines_json(routines)});
     if let Some(ot) = overtime {
         o["overtime"] = ot;
     }
@@ -1417,9 +1457,11 @@ pub fn planner_json(
 
 /// **The running block's WORKED minutes into a `planner` section** (W-36
 /// track T, README gap 2920): `state.active.workedMin`, the host's ONE reading
-/// — [`crate::log::Replay::active_worked_min`], fork `day::worked_min`, the
-/// wall clock since `started` net of the day's pauses, interruptions and
-/// breaks — which is what `tm now` prints and `tm done` logs. The kernel's
+/// — [`crate::log::Replay::running_worked_min`], `day::worked_min`'s since
+/// D75: the wall clock since the instant of the log's own `start` line, net of
+/// the pauses, interruptions and breaks of every day since — which is what `tm
+/// now` prints and `tm done` logs, and no number where the log holds no open
+/// block for the running item (then the key is not sent). The kernel's
 /// planner reads it for the reservation's `left` and the open row's `so far`
 /// (`Planner.PlanReq.workedOf`), so the day and the header cannot print two
 /// numbers for one block. A section without it gets the log's own open-block
@@ -1927,6 +1969,62 @@ mod tests {
         local_dt(tz(), NaiveDate::from_ymd_opt(2026, 9, 7).expect("date"), NaiveTime::from_hms_opt(h, m, 0).expect("time"))
     }
 
+    /// A replay of no log: no day record, nothing open. Every field is named, so a
+    /// field `Replay` gains is a compile error here rather than a guess.
+    fn empty_replay() -> crate::log::Replay {
+        crate::log::Replay {
+            tz: tz(),
+            range: None,
+            days: Default::default(),
+            items: Default::default(),
+            instances: Default::default(),
+            energy: Vec::new(),
+            durations: Vec::new(),
+            interrupts: Vec::new(),
+            named: Default::default(),
+            demotions: Default::default(),
+            closes: Vec::new(),
+            dropped_items: Default::default(),
+            done_items: Default::default(),
+            last_done: Default::default(),
+            done_dates: Default::default(),
+            longest_leak: None,
+            open_block: None,
+            open_interrupt: None,
+            unknown: 0,
+            warnings: Vec::new(),
+            seams: Default::default(),
+            last_effective_t: None,
+            rows: Vec::new(),
+            line_count: 0,
+            entry_count: 0,
+            done_date_totals: Default::default(),
+        }
+    }
+
+    /// **[`planned_loc`] is fork `Planner::new`'s reading** (W-41, D81, README gaps 3861
+    /// and 4040, parity P76): the stored location, else the day record's logged
+    /// `arrive`, else `any` — the fallback taken BEFORE the name is parsed, so a stored
+    /// name that does not parse is `any`, never the logged one. Until W-41 the capacity
+    /// section read `Ctx::loc` instead, whose `None` was the LOUNGE.
+    #[test]
+    fn the_planned_location_is_the_fork_planners_reading() {
+        let named = |s: &str| Loc::Named(s.to_string());
+        let cases: [(Option<&str>, Option<&str>, Loc); 8] = [
+            (None, None, Loc::Any),
+            (Some("home"), None, Loc::Home),
+            (Some("lounge"), Some("home"), Loc::Lounge),
+            (None, Some("home"), Loc::Home),
+            (None, Some("lounge"), Loc::Lounge),
+            (Some(""), Some("home"), Loc::Any),
+            (None, Some(""), Loc::Any),
+            (Some("zoom"), None, named("zoom")),
+        ];
+        for (stored, logged, want) in cases {
+            assert_eq!(planned_loc(stored, logged), want, "stored {stored:?}, logged {logged:?}");
+        }
+    }
+
     /// [`written_pair`]'s shape: the shortest decimal of the
     /// double over a power of ten.
     fn written(x: f64) -> Value {
@@ -2290,13 +2388,13 @@ mod tests {
             last_plan_hash: Some("0123456789abcdef".to_string()),
             ..RuntimeState::default()
         };
-        let v = state_json(&state, &LoggedStarts::default(), date, tz());
+        let v = state_json(&state, &LoggedStarts::default(), date, at(12, 0), tz());
         assert_eq!(v["active"], json!({"id": "m1", "started": kernel_sec(at(9, 5)), "estMin": 60, "paused": false}));
         assert_eq!(v["break"], json!({"started": kernel_sec(at(10, 0)), "plannedMin": 20, "place": "walk"}));
         assert_eq!(v["interrupt"], json!({"started": null, "id": "m1"}));
         // Read by no definition of the day (kernel/inputs-exempt.txt): not sent.
         assert!(v.get("lastHash").is_none() && v.get("yesterday").is_none(), "{v}");
-        assert_eq!(state_json(&RuntimeState::default(), &LoggedStarts::default(), date, tz()), json!({}));
+        assert_eq!(state_json(&RuntimeState::default(), &LoggedStarts::default(), date, at(12, 0), tz()), json!({}));
         // The planned date is `state.date`, else `now`'s.
         assert_eq!(plan_date(&state, at(23, 0) + Duration::days(3)), date);
         assert_eq!(plan_date(&RuntimeState::default(), at(23, 0)), date);
@@ -2307,9 +2405,11 @@ mod tests {
     /// planned after midnight, with `.tm/state.json`'s date rolled, is sent at
     /// YESTERDAY's 23:00 — the instant of its own `start` line — not tonight's,
     /// and so is the interruption's; the break, which the log holds no line for,
-    /// keeps the cache's clock on the plan's date; and a start after `now` is
-    /// sent as it is read, for the kernel to refuse by name. Until the repair the
-    /// block's was the cache's clock on the plan's date, moved to `now`.
+    /// is placed by `BreakState::started_at`, the latest 23:50 at or before `now`
+    /// — yesterday's (W-41's land step, README gap 4001; until then the cache's
+    /// clock on the plan's date, tonight's); and a start after `now` is sent as it
+    /// is read. Until the repair the block's was the cache's clock on the plan's
+    /// date, moved to `now`.
     #[test]
     fn a_running_record_starts_where_the_log_says_and_is_never_moved() {
         use crate::store::{ActiveBlock, BreakState, InterruptState};
@@ -2327,13 +2427,17 @@ mod tests {
             block: Some(("t4".to_string(), yesterday(23, 0).fixed_offset())),
             interrupt: Some(yesterday(23, 40).fixed_offset()),
         };
-        let v = state_json(&state, &logged, date, tz());
+        let now = at(0, 40);
+        let v = state_json(&state, &logged, date, now, tz());
         assert_eq!(v["active"]["started"], json!(kernel_sec(yesterday(23, 0))), "the log's start");
         assert_eq!(v["interrupt"]["started"], json!(kernel_sec(yesterday(23, 40))), "the log's start");
-        assert_eq!(v["break"]["started"], json!(kernel_sec(at(23, 50))), "the cache's clock: no log line");
+        assert_eq!(v["break"]["started"], json!(kernel_sec(yesterday(23, 50))), "the latest 23:50 at or before now: no log line");
+        // Before midnight the same clock is today's (the latest 23:50 at or before 23:55).
+        let v = state_json(&state, &logged, date, at(23, 55), tz());
+        assert_eq!(v["break"]["started"], json!(kernel_sec(at(23, 50))), "this evening's 23:50");
         // A log open block for ANOTHER item is not this one's start.
         let other = LoggedStarts { block: Some(("m1".to_string(), yesterday(23, 0).fixed_offset())), interrupt: None };
-        let v = state_json(&state, &other, date, tz());
+        let v = state_json(&state, &other, date, now, tz());
         assert_eq!(v["active"]["started"], json!(kernel_sec(at(23, 0))), "the cache's clock");
         assert_eq!(v["interrupt"]["started"], json!(kernel_sec(at(23, 40))), "the cache's clock");
         // Nothing is moved: `state_json` takes no `now`, so a start after it is
@@ -2365,9 +2469,10 @@ mod tests {
         let tree = Tree::from_texts(&[], &cfg);
         let state = RuntimeState { loc: Some("home".to_string()), budget: Some(5), ..RuntimeState::default() };
         let (model, written) = (Model::default(), Written::default());
+        let replay = empty_replay();
         let input = CapacityIn {
             cfg: &cfg, model: &model, written: &written, tree: &tree, state: &state,
-            now: at(9, 30), loc: Loc::Home, allow_home: true, days: 12,
+            now: at(9, 30), replay: &replay, allow_home: true, days: 12,
         };
         let bare = capacity_json(&input, None).expect("a default configuration is carried");
         let keys = |v: &Value| -> Vec<String> {
@@ -2385,6 +2490,11 @@ mod tests {
         assert_eq!(bare["days"], json!(12));
         assert_eq!(bare["at"], json!("2026-09-07T09:30:00-05:00"));
         assert_eq!(bare["state"]["loc"], json!("home"));
+        // P76: a day no `tm arrive` located is sent as the planner reads it, `any` (the
+        // home curve, no cap) — never `Ctx::loc`'s lounge.
+        let unlocated = RuntimeState { loc: None, ..state.clone() };
+        let sent = capacity_json(&CapacityIn { state: &unlocated, ..input }, None).expect("carried");
+        assert_eq!(sent["state"]["loc"], json!("any"), "no stored location and no logged arrive");
         assert_eq!(bare["state"]["allowHome"], json!(true));
         assert_eq!(bare["state"]["budget"], json!(5));
         assert_eq!(bare["wake"], json!("log"), "no stored wake: the kernel's own (D24)");

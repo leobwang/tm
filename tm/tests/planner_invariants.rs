@@ -99,7 +99,7 @@ mod forkplan;
 use std::collections::BTreeSet;
 use std::sync::Mutex;
 
-use chrono::{DateTime, Duration, NaiveTime, Timelike};
+use chrono::{DateTime, Duration, NaiveTime};
 use chrono_tz::Tz;
 use proptest::prelude::*;
 use serde_json::{json, Value};
@@ -1592,7 +1592,9 @@ proptest! {
 // cover is lost at R3 and is named there.
 use std::collections::BTreeMap;
 
-use chrono::NaiveDate;
+// `Timelike` is read only here (a whole-second check on the fork's rows): imported in the
+// region, so R3's deletion leaves no dead import behind (README gap 4080).
+use chrono::{NaiveDate, Timelike};
 use tm_core::capacity::{Exact, CAP_DEN};
 use tm_core::planner::{self, PlanInput};
 use tm_core::priority::PrioClass;
@@ -5016,18 +5018,20 @@ fn a_re_ranked_what_if_is_answered_by_the_grown_ranking_on_every_run() {
 // ===========================================================================
 
 
-/// **The host's worked minutes of the running block** — `Replay::active_worked_min`, the very call
-/// `tm done` makes (`tm/src/cli/day.rs`' `worked_min`), the running break included.
+/// **The host's worked minutes of the running block** — `day::worked_min`'s reading, the very call
+/// `tm done` makes: `Replay::running_worked_min`, from the INSTANT of the log's own `start` line, the
+/// running break included (D75, parity P65). `None` where the log holds no open block for the running
+/// block, as `day::worked_min` answers then (no draw here builds one: measured at W-41, 132 of 132
+/// calls a number, each the old reading's). Until W-41 this read `Replay::active_worked_min` from the
+/// cache's `HH:MM` on `date()` (README gaps 3825, 3941 and 4042).
 fn w36_host_worked(w: &World, st: &RuntimeState) -> Option<u32> {
     let a = st.active.as_ref()?;
     let tz = w.cfg.tz;
-    let started = local_dt(tz, date(), a.started);
-    let running_break = st
-        .break_
-        .as_ref()
-        .and_then(|b| b.started)
-        .map(|t| local_dt(tz, date(), t).fixed_offset());
-    Some(w.replay.active_worked_min(date(), started.fixed_offset(), w.now.fixed_offset(), running_break))
+    let today = w.now.date_naive();
+    // The running break where every host site places it (`BreakState::started_at`, track T's
+    // P73; composed here at W-41's land step, README gap 4121 — until then on `now`'s date).
+    let running_break = st.break_.as_ref().and_then(|b| b.started_at(tz, w.now)).map(|t| t.fixed_offset());
+    w.replay.running_worked_min(a.id.as_str(), today, w.now.fixed_offset(), running_break)
 }
 
 /// **The comparand, with the host's reading**: `w35_fork_plan` over a state whose running estimate

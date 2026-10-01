@@ -833,7 +833,8 @@ tm wake [HH:MM] [--slept 8h10m] [--onset 25m]
 tm arrive [lounge|home|<name>]               sets location; sync calendar; window + budget; plan
 tm plan [--week] [--allow-home] [--diff] [--explain ^id]
 tm now                                       current block + next 3 segments
-tm start ^id | tm done [--partial] | tm extend [1b] | tm stop | tm break [20m] [--where walk]
+tm start ^id | tm done [--partial] [--at HH:MM] | tm extend [1b] | tm stop [--at HH:MM]
+tm break [20m] [--where walk|seat|bed|phone]
 tm interrupt | tm resume | tm pause | tm energy 0-5 [--at HH:MM] | tm idle <w|b|t|i|l>
 tm add "<line>" [--to <file>] [--section <name>]
 tm edit ^id [ci=4] [est=2b] [due=…] [title="…"] [p=2] [--set key=value] [--unset key]
@@ -853,6 +854,8 @@ tm tui
 ```
 
 `tm plan --explain ^id` prints why an item is where it is: `p = k(3) + bin(u=0.31 → +1) = 4; slot 11:50 energy 4, ci 3, gap 1; deps ok; cap 2b/d: 1b used`.
+
+`tm stop --at HH:MM` and `tm done --at HH:MM` end the running block when it ended — the latest such time at or before now, so `--at 23:40` typed in the morning is last night — and log that instant; the minutes are worked up to it. An end before the block's start, or before a pause, interruption or running break the log or `state.json` already holds after it, is refused by name, and so is `--at` on a retro `tm done ^id`. `tm wake` is refused while a block, an interruption or a break is still running; `tm break --where` takes one of the four places of §12.6.
 
 ---
 
