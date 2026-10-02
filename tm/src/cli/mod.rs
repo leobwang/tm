@@ -288,8 +288,9 @@ pub struct BreakArgs {
 pub struct EnergyArgs {
     /// The reported level, 0–5.
     pub level: u8,
-    /// When (default: now).
-    #[arg(long)]
+    /// When — today's HH:MM, unless that is more than 12 hours after now, then
+    /// yesterday's, so `--at 23:40` typed after midnight is last night (default: now).
+    #[arg(long, value_name = "HH:MM")]
     pub at: Option<String>,
 }
 

@@ -82230,3 +82230,297 @@ function should take its held lines from the file at HEAD and at every commit si
 
 **Gap 4152 — the planner-refusal probe runs on every `tm check`.**  It is the whole day's request; `kernel_call_counts`
 pins one call.  Narrowing it (a flag, a cache) is the owner's call if gap 4150's second matters in a pre-commit hook.
+
+<!-- =====================================================================
+     APPENDED 2026-10-02: stage 6 (the planner), run **W-42**, **TRACK H**
+     — the owner's D84 (a TUI past midnight re-collects in memory) and D86
+     (`tm energy --at`'s twelve-hour rule).  Worktree `w42-h` off `d577322`;
+     the before-binaries (`d577322`'s, and `d577322` with the running clock
+     alone for the TUI drive), the drives and the plants in scratch clones
+     under `scratchpad/w42-h/`, never in the shared tree; the main checkout
+     on `rebuild-on-lean` throughout.  Gap range **4260-4279**: 4260-4268
+     taken, 4269-4279 free.  Parity: **P82 and P83 taken** (this track's
+     pre-allocation), **P77 and P79 restated**; `kernel/parity.txt` carries `hole
+     P80` and `hole P81` for tracks G and R's pre-allocated numbers, on this
+     branch only — the Land step deletes each as its row lands, or
+     renumbers down into it, never leaving a hole.  No `.lean` file changed;
+     burn-down **0**, unchanged.
+     ===================================================================== -->
+
+## Stage 6 — W-42 track H: a TUI left open past midnight reads its plan directory as `tm plan` reads it then, writing nothing; `tm energy --at` names today unless that is more than twelve hours ahead
+
+### 0. The two numbers this track took, and the two it restated
+
+**Parity P82 taken**: `tm energy 0-5 --at HH:MM` names TODAY's HH:MM unless that instant is MORE than twelve hours of elapsed time after now, and then YESTERDAY's (`tm_core::capacity::report_at`, one definition beside D79's `latest_at_or_before`; one parser, `tm_core::model::parse_time`, for every `--at`) — so `--at 23:40` typed at 00:40 is last night and `--at 10:30` at 09:00 a forward report on the same day, a DST change moving the edge by its hour — and a report it dates yesterday counts its hours since wake from THAT day's wake (the log's instant, `Ctx::woke_before`) and reads that day's night for its prediction (`Ctx::slept_on`); fork 4748911 put every `--at` clock on today's date, so the report typed after midnight for the evening before was logged 23 hours ahead, tomorrow evening; `tm stop --at` and `tm done --at` keep D79's rule (the owner's D86, W-42 track H, README gaps 4135 and 4260)
+
+**Parity P83 taken**: a TUI left open past local midnight re-collects at the date change, in memory and writing nothing, what `tm plan` reads at that instant — `.tm/state.json` as its roll leaves it (`RuntimeState::roll_to`, which `tui::read_as_tm_plan` applies to the context the TUI read), the candidates and the kernel's ranking for `now`'s date, and so §8.2 step 2's routine instances for that date — and so does every reload past midnight; so the shipped TUI plans `now`'s date before R3 (the fork planner on the state it reads), its status line, ghost row and panes read that state, and the request R3's swap sends from it is `tm plan`'s; fork 4748911's TUI kept its last load's candidates and ranking and the stale state until its next reload, and its reloads kept the stale state — Monday's day drawn on Tuesday, its running block shown "nothing running" (the owner's D84, W-42 track H, README gaps 4050 and 4124)
+
+| P | what | the reading now | where |
+|---|---|---|---|
+| **P77 (refined)** | a TUI left open past local midnight | RESTATED at W-42 track H (issued at W-41 track E at README.md:80527, its `taken` line standing; the owner's D84, README gaps 4050 and 4124): the KERNEL plans a request whose state is dated before `now` as `tm plan` plans after its roll — `now`'s date, none of the stale state's window, budget or arrival (`Look.Today.forToday`), its running records as they stand — where fork 4748911 planned the state's date (`planwire::plan_date`). The TUI no longer SENDS such a request: since D84 it reads its state as the roll leaves it (P83), so its request is `tm plan`'s, and the issued row's last clause — "the request the TUI builds between reloads is not yet `tm plan`'s" — is withdrawn | `Look.Today.forToday`; `tui::recollect` |
+| **P79 (refined)** | hours since wake on an `energy` line | RESTATED at W-42 track H (issued at the W-41 repair at README.md:82186, its `taken` line standing; the owner's D86, README gap 4260): every `energy` and `start` line counts its hours since wake from the wake that had HAPPENED by the instant it is counted to (`Ctx::woke_before`) — for every instant on today's date the latest instant at or before now whose clock is the wake (`Ctx::woke_before_now`, the issued rule, unchanged), and for a report P82 dates yesterday THAT day's own wake, the log's instant, when it is at or before the report, else the latest instant at or before the report with the wake's clock; fork 4748911 counted from the clock on today's date | `Ctx::woke_before`; `day::features` |
+
+### 1. D86 — `tm energy --at`'s twelve-hour rule (gap 4135 CLOSED)
+
+**One rule, one definition, one parser.**  `tm_core::capacity::report_at(tz, now, clock)`: the clock on today's
+date (`local_dt`, the reading `tm energy` always took), unless that is more than `REPORT_AHEAD_HOURS` (12) after
+`now`, and then the clock on yesterday's date.  It sits beside D79's `latest_at_or_before` and says why it is not
+it: an END is a time the block ran through, a REPORT may name a time a little ahead on the same day.  `day::energy`
+calls it and nothing else does; `tm stop --at` and `tm done --at` keep `stated_end`'s D79 reading, untouched.  The
+`--json` answer's `at` is `HH:MM`, dated when the report is not today's (`2026-09-07 23:40`), as `tm stop`'s
+`ended` is.  `tm energy --help` says the rule on the flag (`--at <HH:MM>`), and §13 writes it beside D79's.
+
+**Elapsed time, not the wall clock.**  "More than twelve hours" is the difference of two instants, so on the
+night DST ends 00:40 CDT to 12:30 CST is 12 h 50 m (yesterday's), and on the night it starts 00:30 CST to 13:00
+CDT is 11 h 30 m (today's) — both the other way on the wall clock.  The unit test sweeps both halves of the rule
+over the five zones `the_latest_clock_at_or_before_now` sweeps (Chicago's two changes, Santiago's midnight gap,
+Lord Howe's half hour, Apia's missing day): `a_report_names_today_unless_more_than_twelve_hours_ahead`.
+
+**Gap 4260 CLOSED here — the composition with P79.**  D86 dates a report YESTERDAY, and P79's hours since wake
+count from the wake before NOW — today's, after the report: `tm energy 3 --at 22:00` typed at 09:00 the morning
+after a 07:00 wake would have logged `"hsw":-9.0`, the wrong fact P79 removed (driven by plant 4, §4).  The
+features of a report are now read on its own day (`day::features`): hours since wake from the wake that had
+happened by that instant (`Ctx::woke_before` — `Ctx::woke_before_now`, P79's rule, unchanged, for every instant
+on today's date; for an earlier date THAT day's own wake, the log's instant, when it is at or before the report,
+else the latest instant at or before it with today's wake clock), and the night slept and the blocks done of that
+day (`Ctx::slept_on`, of which `Ctx::slept_min` is today's).  Every same-day line — every `start`, every report on
+today's date — reads exactly what it read.
+
+**The fork-pinned test and its snapshot are untouched and green**: `cli_day.rs`' `energy_logs_a_report_against_the_prediction`
+and `energy_json` (`--at 10:30` at 09:00 → today's 10:30, `"at":"10:30"`).
+
+**Behaviour rows**, driven on both binaries (`drive/d86.sh`; `d577322`'s and this branch's, every call
+`--now`, under the memory cap):
+
+| `tm --json energy 3 --at …` | `d577322` | this branch |
+|---|---|---|
+| `23:40` at Tue 00:40, woken Mon 07:00 | `"t":"2026-09-08T23:40:00-05:00"`, `hsw 40.67`, `"at":"23:40"` | `"t":"2026-09-07T23:40:00-05:00"`, `hsw 16.67`, `"at":"2026-09-07 23:40"` |
+| `10:30` at Mon 09:00 (the pinned forward report) | `2026-09-07T10:30`, `hsw 3.5` | the same |
+| `21:00` at Mon 09:00 (exactly twelve hours) | `2026-09-07T21:00`, `hsw 14.0` | the same |
+| `21:01` at Mon 09:00 | `2026-09-07T21:01`, `hsw 14.02` | `2026-09-06T21:01`, `hsw 14.02`, `"at":"2026-09-06 21:01"` |
+| `12:30` at 2026-11-01 00:40 CDT (DST ends) | `"t":"2026-11-01T12:30:00-06:00"`, `hsw 30.5` | `"t":"2026-10-31T12:30:00-05:00"`, `hsw 5.5` |
+| `13:00` at 2026-03-08 00:30 CST (DST starts) | `"t":"2026-03-08T13:00:00-05:00"` | the same |
+| `22:00` at Tue 09:00, woken Mon 06:05 and Tue 07:00 | `"t":"2026-09-08T22:00:00-05:00"`, `hsw 15.0` | `"t":"2026-09-07T22:00:00-05:00"`, `hsw 15.92` (Monday's logged wake) |
+
+**Pinned** by `cli_energy_at.rs` (4: the owner's example, the edge and both DST changes, a report read on its own
+day — Tuesday's night moving Tuesday morning's prediction and not Monday evening's — and `tm stop`/`tm done`
+refusing D79's reading of the same `--at 10:30` by name, nothing written), the unit test above, and two in
+`cli_conformance.rs`: `section_13_and_the_help_agree_on_energys_twelve_hour_rule`, and
+`every_at_flag_is_read_by_the_one_parser` — a PROPERTY over the walked verb tree, not a list: every verb whose
+help advertises `--at` (the walk finds four: `arrive`, `done`, `energy`, `stop`, the set asserted so a fifth is
+seen) refuses six malformed clocks with the one parser's sentence, exit 1, every byte of the tree unchanged — 24
+refusals.  `tm wake [TIME]` takes its clock positionally and through the same parser; the walk reads flags.
+
+### 2. D84 — a TUI left open past midnight re-collects in memory (gap 4050 CLOSED; gap 4124's TUI half)
+
+**What it does.**  The driver keeps the context it read (`tui::load`, `tui::reload`) beside the App, and one turn
+of its clock (`tui::advance_clock`) re-collects at a date change (`tui::recollect`): the context is moved to `now`
+in memory (`tui::advance`) and its state read as `tm plan`'s roll leaves it (`tui::read_as_tm_plan`, the one rule
+`RuntimeState::roll_to` — the CLI's housekeeping writes it, the TUI reads it); the candidates and the kernel's
+ranking for the new date follow (`tui::adopt_read`, the one body `reload` shares, a refused ranking keeping the
+last one as before), and with the state's date the routine instances.  A reload past midnight — a file saved, a
+verb run from the TUI, the Review screen entered — reads the state the same way.  `App::tick` is unchanged: it
+moves `now` and rolls nothing.  `planwire::plan_date` keeps its meaning (fork `PlanInput::date`): it is the
+STATE's date, and the state the TUI hands it is now the one `tm plan` would.
+
+**It writes nothing — and why it does not re-read the directory.**  A read of the plan directory past midnight
+reseals the replay cache: driven on `d577322`, `tm check` (no housekeeping) at 00:30 rewrites
+`.tm/cache/replay/ckpt.json` (`resealDay` 739865 → 739866).  So the date change reads NOTHING: the files, the
+tree, the replay and the model stay as the TUI read them, and the one kernel call — the ranking — resumes its
+`log` section from the checkpoint the process holds (`kernel_log::capacity_log_section` writes nothing) and
+reads the zone table the load cached.  Measured both ways: the unit test hashes every byte under the plan
+directory, `.tm/` and its cache included, before and after the date change; the pty drive (below) hashes all 17
+files at +10 s and +31 s.
+
+**The request is `tm plan`'s, key for key.**  `tui::tests::d84_a_tui_left_open_past_midnight_recollects_in_memory_and_sends_tm_plans_request`
+builds the Midnight world as the binary builds it (§4.3's tree, woken 06:05, arrived 07:00, `^p1` done at 22:00,
+`^t3` started 23:30; the TUI opened at 23:50 through `tui::load`) and moves the clock to 00:30 through the loop's
+own step.  R3's builder over the TUI's context (`kernel_capacity::planner_request`) and over `tm plan`'s own load
+at 00:30 — its housekeeping run, in a copy — differ at exactly ONE key path, `log.ckpt.resealDay`: the
+checkpoint `tm plan`'s read resealed and the TUI's, writing nothing, did not.  The kernel plans one day from the
+two (the whole `ok.plan`, hash included), and it carries Tuesday's `breakfast@2026-09-08`; the request the TUI
+built before D84 — the same context without the roll — carries Monday's instances and plans another day (its
+hash differs).  The brief's `Midnight` world is `tui_kernel_answers.rs`' in-memory one (an EMPTY log, `^t3`
+running from 23:30 in `.tm/state.json` alone): written to disk, D42's reconcile ends that block on every load —
+driven, `tm --json now` at 00:30 says `.tm/state.json said ^t3 is running and .tm/log.jsonl says nothing is
+running — the log decides` and its `active` is `null` — so the binary-level comparison runs on the same tree and
+instants with the log the binary would have written.
+
+**P77's test flipped** (`planner_w41_request.rs`, the brief's "last assertions"), and renamed for what it now
+asserts — `p77_a_tui_past_midnight_is_read_as_the_roll_and_sends_tm_plans_request`, until W-42
+p77_a_tui_past_midnight_is_read_as_the_roll_and_does_not_yet_send_tm_plans_request (AGENTS §7.4 item 3, gap
+4144's lesson).  The kernel's half (P77) stands as it was; the request half now says: the TUI's read of its state
+at the date change IS the roll's, its request is the rolled world's key for key, it carries Tuesday's breakfast,
+and the kernel plans `tm plan`'s day from it (one hash) — while the stale world's request, which no TUI sends now,
+still lacks Tuesday's instances and plans another day.
+
+**Gap 4127's first half CLOSED — a clock that runs.**  `TM_TUI_CLOCK_RUNS` (`tui::CLOCK_RUNS_ENV`): with `--now`,
+the TUI's clock starts at the injected instant and runs with the wall clock, and the verbs it runs are stamped
+with it.  Opt-in and inert without `--now`, as `TM_KERNEL_FAULT_PROBE` is.  The reload now loads at the instant
+the App is moved to (`tui::at`), where it read the clock twice — once in the load, once for the App — and could
+straddle midnight between the two.
+
+**Behaviour rows — the TUI driven ACROSS midnight through a pty** (`drive/d84-tui.sh`: `script -q -f -T timing
+-O raw`, `TM_TUI_CLOCK_RUNS=1`, `--now 2026-09-07T23:59:40-05:00`, `q` at +34 s; frames rendered from the raw
+stream cut at +8 s and +31 s by `vtat.py`, the W-41 land step's emulator with a time cut).  The before-binary is
+`d577322` with ONLY the running clock added (five lines in its clock function, now_of, in a scratch clone), because
+`d577322`'s own `--now` cannot cross midnight:
+
+| the TUI at Tue 00:00:11 | `d577322` + the clock | this branch |
+|---|---|---|
+| status line | `tm · Tue 2026-09-08 · 00:00 · … adherence 0% · window → 16:00 · lost 0` | `tm · Tue 2026-09-08 · 00:00 · … adherence - · lost 0` |
+| timeline | Monday's: `12:50 ⏰ Meeting w/ host`, `16:00 ─── window ends 16:00`, `23:30 4 p3 ▶ Exercises 5.3–5…` | Tuesday's: `00:00 4 p3 ▶ Exercises 5.3–5…`, …, `06:00 · breakfast 30m`, `08:00 ─── window ends 08:00`, `11:30 · lunch 30m`, `17:30 · dinner 30m`, `21:30 🌙 wind-down`, `22:00 · sleep 8h30m` |
+| Now pane | `— nothing running (00:00)`, `next —` | `ci4 p3 Exercises 5.3–5.5`, `elapsed 30m`, `next 00:30 …` |
+| HOT / overdue | `x1 Midterm · wall`, `laundry · overdue`, `g1 Meeting w/ host · wall` | `x1 Midterm · wall`, `breakfast · due today`, `lunch · due today`, `dinner · due today`, `laundry · overdue` |
+| Energy today | hours `07 … 16` | hours `00 … 08` |
+| files changed across the date change | none (17 files) | none (17 files) |
+| at +8 s (Mon 23:59:48) | Monday's frame | the same Monday frame |
+
+Tuesday's frame from 00:00 schedules work blocks through the night: the window runs from `now` when the day has
+no arrival — `tm plan`'s day at that instant too, the fork planner's (P77 is the kernel's same reading), not a
+TUI behaviour.
+
+### 3. Gaps 4260-4268
+
+**Gap 4260 — a report D86 dates yesterday read with today's wake and night (CLOSED here).**  §1.
+
+**Gap 4261 — the TUI does not run the automatic close past midnight, and `tm plan` does.**  1. *What.*  On a tree
+whose Monday day file still holds unfinished work, `tm plan` at 00:30 first closes Monday — driven on `d577322`'s
+§4.3 world with `^p1` left in `# Pinned`: `tm now` at 00:30 demotes `^p1` into `week/2026-W37.md` with
+`demoted:D07` and logs `demote` and `close` — and the TUI, writing nothing, plans with the files as they stand,
+so the two requests differ by exactly what the close wrote.  2. *Why not changed.*  D81 and D84: nothing writes
+on a timer; a close computed in memory (the kernel answers the close's documents) is a new mechanism no decision
+names.  3. *Cost.*  Past midnight the TUI plans with Monday's unclosed day file until a verb runs the close; a
+closed period's line is then a candidate the CLI would have moved.  4. *Clears it.*  The owner: an in-memory close
+at the date change, or the line as it stands; R3 meets it on the same worlds.
+
+**Gap 4262 — gap 4124's frozen-line half is track C's file.**  1. *What.*  D84's row says the `Midnight` TUI
+world's frozen line "then gains D81's day under D70"; the line is in `tm/tests/fixtures/fork-4748911-planner-tui.jsonl`
+and its verdict (`Live::Finding(3860)`) in `tm/tests/tui_kernel_answers.rs`, both track C's this run.
+2. *Why not changed.*  The brief: a file another track owns is recorded, not edited.  3. *Cost.*  The verdict still
+names gap 3860's finding after the request half closed.  4. *Clears it.*  The Land step, with track C's
+comparand: P77/P83's answer introduced on the line under D70, the verdict re-pinned.
+
+**Gap 4263 — `tm check` past midnight asks the kernel for the stale day.**  1. *What.*  Read off the code, not
+driven: `tm check` loads tolerantly, with no housekeeping (`Ctx::load_tolerant`), and hands that context to
+`kernel_capacity::planner_request`, so before any verb has rolled the day its request carries Monday's state and
+§8.2 step 2's instances on `planwire::plan_date` of it — the gap D84 closed for the TUI.  P78 says `tm check` asks
+for the day R3's `tm plan` asks for; past midnight, until a verb rolls the state, it does not.  2. *Why not
+changed.*  `tm check`'s load is `lifecycle.rs`', outside this track's files.  3. *Cost.*  A refusal of Tuesday's
+day is named only after a verb runs; the kernel reads the stale state as rolled (P77), so the difference is the
+routine instances.  4. *Clears it.*  One line, `ctx.state.roll_to(ctx.today)` before the request (the TUI's
+`read_as_tm_plan`), in `tm check` or in `planner_request` itself, with P78's row saying so.
+
+**Gap 4264 — the Review screen keeps its week cut across an ISO-week boundary until the next reload.**  1. *What.*
+The date change re-collects the planner's inputs; the heat grid's cut of the week's Pauses (`day::week_cut`, read
+where the Review screen is shown) is kept, so a TUI on the Review screen from Sunday into Monday draws last week's
+cut until a reload.  2. *Why not changed.*  The cut's read rebuilds a missing month file of the replay cache — a
+write — and D84 names the planner's inputs.  3. *Cost.*  One screen, one week boundary, until any reload (leaving
+and re-entering the screen re-reads it).  4. *Clears it.*  A cut read at the date change that never rebuilds, or
+the owner's word that the screen re-reads.
+
+**Gap 4265 — a report D86 dates yesterday keeps `now`'s location and minutes since a break.**  1. *What.*  The
+`loc` an `energy` line logs and the (v2) `since_break_min` feature are now's for every `--at` report, past or
+yesterday's — fork 4748911's reading for a past report on the same day, which D86 extended to yesterday's.
+2. *Why not changed.*  Neither moves `pred` in v1's predictor (`energy::predict` reads the location, hours since
+wake and the night), and the location of a past instant is a replay question no decision asked.  3. *Cost.*  A
+report typed at home for last night at the lounge is logged `loc: home`.  4. *Clears it.*  The owner, if ever.
+
+**Gap 4266 — `tm arrive --at` and `tm wake HH:MM` still name today's clock.**  1. *What.*  D86 named `tm energy`;
+`tm arrive lounge --at 23:40` typed at 00:40 is tonight's arrival and `tm wake 23:50` typed at 00:10 tonight's
+wake, the fork's reading, through the one parser.  2. *Why not changed.*  Not the owner's question.  3. *Cost.*  A
+retro arrival or wake across midnight is dated ahead.  4. *Clears it.*  The owner, by the same shape as D79 or D86.
+
+**Gap 4267 — a TUI left open across midnight was undrivable (gap 4127's first half, CLOSED here).**  §2's clock.
+What stays the owner's is §5.13's 30-minute human drive.
+
+**Gap 4268 — R3's TUI swap has its context.**  1. *What.*  The TUI's replan and what-if still run the fork planner
+inside `app.rs`, which is pure and cannot name `crate::cli`; R3 sends `kernel_capacity::planner_request` over the
+context the driver now keeps (`read` in `tui::event_loop`), the one the unit test compares — the App needs the
+kernel's day handed in (the driver plans, the App adopts), the seam gap 3476's swap must cut.  2. *Why not
+changed.*  R3's.  3. *Cost.*  None until the swap.  4. *Clears it.*  R3 (W-43).
+
+### 4. D40 — every new or changed definition shown failing with itself broken (plants in a scratch clone carrying this track's diff on `d577322`; the clone's `git status --porcelain` the same before and after each, the worktree untouched)
+
+`scratchpad/w42-h/d40/plants.py`, transcript `d40/transcript.txt` (and `transcript-12-11.txt` for the two
+assertion messages quoted); the control run — the clone unbroken — passes every targeted test (`d40/control.txt`).
+Each plant FAILS a test by its ASSERTION, never by a compile error:
+
+| # | the plant | what fails, and at which assertion |
+|---|---|---|
+| 1 | `report_at` always today's | the unit test (the owner's example); `cli_energy_at.rs`: the example, the edge, a report read on its day |
+| 2 | `>=` for `>` — exactly twelve hours yesterday's | the unit test (21:00 at 09:00); `the_edge_is_twelve_hours_of_elapsed_time_across_both_dst_changes` |
+| 3 | the wall clock's difference for elapsed time | the unit test (DST ends); the same test's DST-ends row |
+| 4 | `Ctx::woke_before` → P79's `woke_before_now` for every instant | `a_report_for_last_night_is_read_on_that_day`: `hsw` `-9.0`, not `15.92` (gap 4260, driven) |
+| 5 | `day::features` reads today's night for yesterday's report | the same test: Tuesday's sleep moves Monday evening's `pred` |
+| 6 | energy's answer without the date | the example's `"at"` and the DST row's |
+| 7 | energy parses its clock with its own parser | `every_at_flag_is_read_by_the_one_parser` |
+| 8 | energy's `--at` help without the rule | `section_13_and_the_help_agree_on_energys_twelve_hour_rule` |
+| 9 | `tui::read_as_tm_plan` reads the stale state | both D84 unit tests: Monday's window, budget and arrival kept; the reload's date |
+| 10 | `tui::advance` leaves the context's date | the D84 test: `(today, state.date)` |
+| 11 | `tui::advance_clock` re-collects nothing | the D84 test: `left: (2026-09-08, Some(2026-09-07))` |
+| 12 | `tui::recollect` re-reads the plan directory (fresh `Ctx::load_scoped`) | the D84 test: **"the date change wrote nothing under the plan directory"** — the reseal this track's design avoids |
+| 13 | `tui::reload` keeps the stale state | `d84_a_reload_past_midnight_reads_the_roll_and_a_tick_within_the_day_recollects_nothing` |
+| 14 | the injected clock never runs | `the_tuis_clock_is_fixed_unless_it_is_asked_to_run` |
+
+The P77 test's flip is a statement over the harness's request (§2); the binary's half is plants 9-13's test.
+
+### 5. What the brief said that measured otherwise
+
+* **"Its reload … collects candidates, ranking and §8.2 step 2's routine instances on the stale state's date."**
+  Half of it.  The TICK kept the last load's candidates and ranking; the RELOAD — `Ctx::priorities` — collected
+  candidates and ranked them on `ctx.today`, NOW's date, while the routine instances (`planwire::plan_date`, fork
+  `PlanInput::date`, and `planner_request`'s) and the state stayed the stale date's: a reload past midnight mixed
+  Tuesday's candidates with Monday's state and instances.  The harness collects on `plan_date`
+  (`forkclass::Built::of`, `tui_common::app_of_world`), which is where the sentence holds whole.
+* **"Compare the two request JSONs on the `Midnight` world, key for key."**  The `Midnight` world of
+  `tui_kernel_answers.rs` is in-memory with an EMPTY log; on disk D42's reconcile ends its block, so the
+  comparison ran on the same tree and instants as the binary builds them (§2).  And "key for key" is not
+  byte-for-byte under "writes nothing": the replay checkpoint differs by the reseal `tm plan`'s read wrote
+  (`log.ckpt.resealDay`), the one differing path, and on a tree whose Monday day file holds unfinished work by
+  everything `tm plan`'s automatic close writes (gap 4261).
+* **"Drive the TUI through a pty across midnight with `--now` before and after."**  `--now` fixes the TUI's clock
+  for its life (gap 4127): no pty drive could cross midnight.  A clock that runs from `--now` was added for it
+  (`TM_TUI_CLOCK_RUNS`), and the before-binary needed the same five lines in a scratch clone.
+* **Unsaid, and measured:** D86 composed with P79 logs a negative `hsw` for a report D86 dates yesterday after
+  today's wake (gap 4260, plant 4); `tm check` past midnight has the stale request D84 removed from the TUI (gap
+  4263, read off the code).
+
+### 6. For the Land step
+
+* `kernel/parity.txt`'s `hole P80` and `hole P81` go as tracks G's and R's rows land, or P82/P83 are renumbered
+  down into whichever is left unissued, with every citation of them (`git grep -n 'P82\|P83'`).
+* `kernel/citations-allow.txt` counts the P77 test's old name once (gap 4144's block cites it as it stood).
+* Gap 4262 needs track C's two files.
+* Files this track changed outside the brief's list, each for D86's rule or P77's flip: `tm-core/src/capacity.rs`
+  (`report_at`, its test), `tm/src/cli/ctx.rs` (`Ctx::woke_before`, `Ctx::slept_on`), `tm/src/cli/mod.rs`
+  (`EnergyArgs`' help), `tm/tests/cli_stated_clocks.rs` (its module doc), `tm/tests/planner_w41_request.rs` (P77's
+  test).
+
+### 7. Acceptance, capped (`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`; 16 GB for the drives, the plants and the gate scripts alone)
+
+* **`check.sh`: seventeen lines, every one ok** (31.3 s): lake build; totality; axiom audit 6,171 theorems; Negative.lean
+  rejected; FFI 95; corpus 29/37 files and 4/5 whole plans; stage goals 0; prose citations 54,685 (52,404 resolved,
+  2,281 allowed, 0 allow entries unused); new definitions mutated 613 rostered, 0 owed (no `.lean` changed); parity
+  81 registered, P1-P83 with 2 declared holes, next free P84; no two names 3,350 bodies, 0 UNANSWERED; reached 1,245,
+  1,199 exempt, 0 UNANSWERED; fields 17/17; inputs 33 of 37; sent 169 key paths over 10 sections; written 220; the
+  kernel replays 93 modules.
+* **`cargo test --workspace`: 2,100 passed / 0 failed / 32 ignored across 129 result lines, in THREE complete runs**
+  (`--no-fail-fast`, 37.0, 36.5 and 40.9 min, every binary's counts identical across the three), under load averages
+  of 9-43 from the other tracks' Lean builds and suites (`uptime` before and after each, beside the logs).  2,090 at
+  `d577322` plus this track's ten: `cli_energy_at.rs` 4, `cli_conformance.rs` 2, the binary's own 3 (the two D84
+  tests and the clock's), `tm-core`'s 1.  A FIRST run, without `--no-fail-fast`, stopped at `cli_latency`'s two
+  three-year rows (`tm drop` still running after 5 s, load 23.6).  No `.proptest-regressions` line moved (D46).
+* **The named suites**, the same in all three runs: T5 31 passed / 4 ignored; the door suite 26; `cli_switch_acceptance`
+  16; `cli_latency` 5 / 1 ignored; `kernel_call_counts` 2; `one_padder` 9; `one_renderer` 27; `kernel_row_cells` 28;
+  `kernel_item_grammar` 6; `kernel_planner_wire` 27; `planner_classes` 54 / 6 ignored; `planner_invariants` 39 / 2
+  ignored; `cli_conformance` 5; `cli_json_matrix` 8; and this track's `cli_energy_at` 4, `planner_w41_request` 33,
+  `cli_day` 30.
+* **`cli_latency` alone with `--include-ignored` — a measurement, not a band**: on this branch 6/6 in every run at
+  load averages 9-24 (nine runs) and FAILED in four at 17-36, each a single `tm drop` on the three-year tree past its
+  1 s or 5 s limit; `d577322`'s binary, alternated with it, failed the same way once (load 12.3, `still running
+  after 1s`) in eleven.  Per-row medians, three runs each side at load 15-24: the 1-year later verb 141.6 / 131.6 ms
+  (base / branch), the 3-year later verb 207.4 / 217.5, T11's later verb 187.2 / 197.6, the first verb 2,706 / 2,575,
+  `review week` 541 / 521, the reseal 354 / 319 — the same within run-to-run noise.  No band was touched.
+* No new compiler warning (`cargo build -p tm` and every test target).  `git status --porcelain` of the main checkout
+  empty throughout; the plants' clone carried its own status, the same before and after each plant.

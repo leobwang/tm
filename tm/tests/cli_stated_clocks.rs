@@ -6,10 +6,12 @@
 //! TONIGHT's wake and `tm energy` at 00:30 logged `hsw: -6.5` for a day woken at
 //! 07:00 — a wrong fact the fit reads (D75's reason).
 //!
-//! `tm energy --at HH:MM` keeps fork 4748911's reading (today's date, so a
-//! forward report on the same day — `cli_day.rs`' pinned
-//! `energy_logs_a_report_against_the_prediction` and its snapshot): moving it to
-//! D79's rule is the owner's call (README gap 4135).
+//! `tm energy --at HH:MM` names today's clock unless that is more than twelve
+//! hours after now, then yesterday's — the owner's D86 (README gap 4135, W-42
+//! track H, parity P82; `cli_energy_at.rs`), which keeps fork 4748911's forward
+//! report on the same day (`cli_day.rs`' pinned
+//! `energy_logs_a_report_against_the_prediction` and its snapshot); a report it
+//! dates yesterday counts its hours since that day's wake (`Ctx::woke_before`).
 
 mod cli_common;
 

@@ -28,7 +28,7 @@
 use std::collections::BTreeSet;
 use std::io::{self, BufRead, IsTerminal, Write};
 
-use chrono::{DateTime, FixedOffset, NaiveTime};
+use chrono::{DateTime, FixedOffset};
 use serde::Serialize;
 
 use tm_core::energy::{self, Features};
@@ -225,11 +225,16 @@ fn instance_key(ctx: &Ctx, item: &tm_core::model::Item, at: DateTime<chrono_tz::
         .unwrap_or_else(|| at.date_naive().to_string())
 }
 
-/// The features of the current instant (§8.5).
+/// The features of the instant `at` (§8.5): `now` for `tm start`, the instant
+/// `tm energy --at` names otherwise. Hours since wake count from the wake that
+/// had happened by `at` ([`Ctx::woke_before`], P79), and the night slept and
+/// the blocks done are `at`'s day's — today's, except for a report the owner's
+/// D86 dates yesterday (README gap 4260, parity P82), which reads yesterday's.
 fn features(ctx: &Ctx, at: DateTime<chrono_tz::Tz>) -> Features {
-    Features::at(at, ctx.woke_before_now(), ctx.loc())
-        .with_slept(ctx.slept_min())
-        .with_progress(ctx.replay.blocks_done(ctx.today), since_break_min(ctx))
+    let day = at.date_naive();
+    Features::at(at, ctx.woke_before(at), ctx.loc())
+        .with_slept(ctx.slept_on(day))
+        .with_progress(ctx.replay.blocks_done(day), since_break_min(ctx))
 }
 
 /// End the running break NOW, appending its §10.1 `break` event with the
@@ -2118,7 +2123,7 @@ fn pause_inside_an_interruption(ctx: &Ctx, open: &tm_core::log::Interruption) ->
 /// `tm energy --json`.
 #[derive(Debug, Serialize)]
 pub struct EnergyOut {
-    /// `HH:MM`.
+    /// `HH:MM`, dated (`2026-09-07 23:40`) when the report is yesterday's (D86).
     pub at: String,
     /// What was predicted.
     pub pred: u8,
@@ -2142,16 +2147,19 @@ pub fn energy(g: &Globals, args: &super::EnergyArgs) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
     preflight(&ctx, "energy")?;
     let rec = Recorder::start(&ctx, "energy")?;
-    let at: NaiveTime = match &args.at {
-        Some(t) => parse_time(t)?,
-        None => ctx.now_tz.time(),
+    // **The owner's D86** (README gap 4135, parity P82): the clock is read by
+    // the one parser every `--at` shares, and names today's instant unless that
+    // is more than twelve hours after now, then yesterday's — one definition,
+    // `tm_core::capacity::report_at`. `tm stop --at`/`tm done --at` keep D79's.
+    let reported = match &args.at {
+        Some(t) => tm_core::capacity::report_at(ctx.cfg.tz, ctx.now_tz, parse_time(t)?),
+        None => ctx.now_tz,
     };
-    let when = ctx.at(at);
-    let f = features(&ctx, when);
+    let f = features(&ctx, reported);
     let pred = energy::predict(&ctx.model, &ctx.cfg, &f);
     let loc = ctx.state.loc.clone().unwrap_or_else(|| "lounge".to_string());
     let entry = log::LogEntry::new(
-        when.fixed_offset(),
+        reported.fixed_offset(),
         Event::Energy {
             pred,
             rep: args.level,
@@ -2183,7 +2191,8 @@ pub fn energy(g: &Globals, args: &super::EnergyArgs) -> Result<i32, CliError> {
     rec.finish(&ctx, format!("energy {}", args.level))?;
 
     let out = EnergyOut {
-        at: fmt_time(at),
+        // `HH:MM`, dated when the report is not today's (D86), as `tm stop`'s `ended` is.
+        at: when(&ctx, reported),
         pred,
         rep: args.level,
         delta,

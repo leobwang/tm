@@ -45,7 +45,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration as StdDuration, Instant};
 
-use chrono::{DateTime, Datelike, Local, NaiveDate};
+use chrono::{DateTime, Datelike, FixedOffset, Local, NaiveDate};
 use chrono_tz::Tz;
 use clap::Parser;
 use crossterm::event::{
@@ -101,7 +101,8 @@ pub fn run(g: &Globals) -> Result<i32, CliError> {
     // (`--dir ./plan`) or go through a symlink, so the form the events are
     // matched against is the canonical one (see [`is_watched`]).
     let watch_root = root.canonicalize().unwrap_or_else(|_| root.clone());
-    let mut app = load(g)?;
+    let clock = Clock::of(g);
+    let (mut read, mut app) = load(g)?;
     let (watcher, changes) = watch(&root)?;
     install_panic_hook();
     // Panic layer 2 (AGENTS 8.1): while the TUI owns the screen, every
@@ -111,7 +112,7 @@ pub fn run(g: &Globals) -> Result<i32, CliError> {
     // is restored.
     crate::cli::kernel_bridge::capture_kernel_stderr(true);
     let mut term = setup()?;
-    let result = event_loop(&mut term, &mut app, g, &root, &watch_root, &changes);
+    let result = event_loop(&mut term, &mut app, &mut read, g, &clock, &root, &watch_root, &changes);
     restore();
     crate::cli::kernel_bridge::capture_kernel_stderr(false);
     drop(watcher);
@@ -163,12 +164,48 @@ fn install_panic_hook() {
 // Loading and watching
 // ---------------------------------------------------------------------------
 
-/// `now` in `cfg.tz`: the injected `--now` when there is one (§17.2: clocks
-/// are injected), else the real clock.
-fn now_of(g: &Globals, cfg: &Config) -> DateTime<Tz> {
-    g.now
-        .unwrap_or_else(|| Local::now().fixed_offset())
-        .with_timezone(&cfg.tz)
+/// **The TUI's clock RUNS from `--now` when this is set** (W-42 track H,
+/// README gap 4127): the TUI starts at the injected instant and advances with
+/// the wall clock, so a pty can drive a TUI LEFT OPEN across local midnight —
+/// the owner's D84, which nothing could drive while `--now` was fixed for the
+/// TUI's life. Opt-in and inert without `--now`, as `TM_TRACE_KERNEL_CALLS`
+/// and `TM_KERNEL_FAULT_PROBE` are: the shipped TUI reads the real clock.
+pub const CLOCK_RUNS_ENV: &str = "TM_TUI_CLOCK_RUNS";
+
+/// **The TUI's one clock** (§17.2: clocks are injected): the injected `--now`,
+/// fixed — or running from it, with [`CLOCK_RUNS_ENV`] — else the real clock.
+#[derive(Clone, Copy, Debug)]
+struct Clock {
+    /// `--now`.
+    from: Option<DateTime<FixedOffset>>,
+    /// When the TUI started, for a clock that runs.
+    started: Instant,
+    /// Whether the injected clock runs.
+    runs: bool,
+}
+
+impl Clock {
+    /// The clock `g` asks for.
+    fn of(g: &Globals) -> Clock {
+        Clock { from: g.now, started: Instant::now(), runs: g.now.is_some() && std::env::var_os(CLOCK_RUNS_ENV).is_some() }
+    }
+
+    /// The injected instant now — what a verb run from the TUI is stamped with
+    /// (`Globals::now`) — or `None` on the real clock, which the verb reads.
+    fn injected(&self) -> Option<DateTime<FixedOffset>> {
+        let ran = chrono::Duration::from_std(self.started.elapsed()).unwrap_or_default();
+        self.from.map(|from| if self.runs { from + ran } else { from })
+    }
+
+    /// `now` in `cfg.tz`.
+    fn now(&self, cfg: &Config) -> DateTime<Tz> {
+        self.injected().unwrap_or_else(|| Local::now().fixed_offset()).with_timezone(&cfg.tz)
+    }
+}
+
+/// `g` stamped with `now`: a read at exactly the instant the App is moved to.
+fn at(g: &Globals, now: DateTime<Tz>) -> Globals {
+    Globals { now: Some(now.fixed_offset()), ..g.clone() }
 }
 
 /// Read the plan directory into the shape [`App`] wants. `week_cut` is the
@@ -234,23 +271,103 @@ fn tui_scope(
 }
 
 /// Load the plan directory and plan today (§6.3's auto-close runs first, as
-/// for every other verb).
-fn load(g: &Globals) -> Result<App, CliError> {
+/// for every other verb). The context is kept beside the App: it is what a
+/// date change re-collects from (D84, [`recollect`]).
+fn load(g: &Globals) -> Result<(Ctx, App), CliError> {
     let ctx = Ctx::load_scoped(g, true, |state, today| tui_scope(Screen::default(), state, today))?;
-    Ok(App::new(data_of(&ctx, PauseCut::default())?))
+    let app = App::new(data_of(&ctx, PauseCut::default())?);
+    Ok((ctx, app))
+}
+
+/// **`.tm/state.json` as `tm plan` reads it at the context's instant — in
+/// memory** (the owner's D84, W-42 track H, README gap 4050, parity P83). The
+/// CLI's housekeeping rolls the state at the first verb of a new local date
+/// (`RuntimeState::roll_to`, `ctx.rs`' `roll_day`) and writes it; the TUI
+/// reads its plan directory without housekeeping, so past midnight it held
+/// the stale state, and its plan inputs were collected on the stale date — the
+/// candidates and ranking of its last load, and §8.2 step 2's routine
+/// instances on `planwire::plan_date` (yesterday's breakfast, not today's).
+/// It reads the state through the same one rule here and writes nothing (D81:
+/// nothing writes on a timer); `planwire::plan_date` keeps its meaning, fork
+/// `PlanInput::date`. A state of today's date, or of none, is read as it is.
+fn read_as_tm_plan(ctx: &mut Ctx) {
+    ctx.state.roll_to(ctx.today);
+}
+
+/// **[`read_as_tm_plan`] at `now`, for a context already read** — the date
+/// change's whole re-collection of the plan directory (D84): the clock moves
+/// and the state is read as `tm plan`'s roll leaves it; the files, the tree,
+/// the replay and the model stay as they were read, and nothing touches the
+/// disk. The candidates and the kernel's ranking for the new date follow from
+/// it in [`adopt_read`].
+fn advance(ctx: &mut Ctx, now: DateTime<Tz>) {
+    ctx.now = now.fixed_offset();
+    ctx.now_tz = now;
+    ctx.today = now.date_naive();
+    read_as_tm_plan(ctx);
+}
+
+/// **The App drawn from `read`** — the ranking is the kernel's, and a refused
+/// capacity request (a file saved half-edited into a tree the kernel cannot
+/// load, or a configured value it cannot read, parity P26) keeps the last
+/// ranking, adopts the rest, and says so on the status line; a kernel fault
+/// still ends the TUI. One body for [`reload`] and [`recollect`].
+fn adopt_read(app: &mut App, read: &Ctx, week_cut: PauseCut, cut_refused: Option<String>) -> Result<(), CliError> {
+    let (data, refused) = match data_of(read, week_cut.clone()) {
+        Ok(data) => (data, None),
+        Err(e) if !e.is_kernel_fault() => {
+            let data = data_with(read, app.candidates.clone(), app.prios.clone(), app.caps.clone(), week_cut);
+            (data, Some(e.to_string()))
+        }
+        Err(e) => return Err(e),
+    };
+    app.adopt(data);
+    if let Some(why) = refused {
+        app.message = Some(format!("priorities not refreshed: {why}"));
+    } else if let Some(why) = cut_refused {
+        app.message = Some(format!("week grid not refreshed: {why}"));
+    }
+    Ok(())
+}
+
+/// **A TUI left open past local midnight re-collects its inputs IN MEMORY at
+/// the date change** — the owner's D84 (W-42 track H, README gaps 4050 and
+/// 4124, parity P83): from the context it last read ([`advance`]), the
+/// candidates and the kernel's ranking for `now`'s date, and with the state
+/// read as `tm plan`'s roll leaves it, §8.2 step 2's routine instances for that
+/// date — so the request R3's swap sends from here is the one `tm plan` builds
+/// at that instant (`kernel_capacity::planner_request`). It WRITES NOTHING:
+/// no fresh read of the plan directory, whose replay would reseal
+/// `.tm/cache/replay` (the ranking's own `log` section resumes from the
+/// checkpoint the process already holds), and no roll of `.tm/state.json` —
+/// the CLI's housekeeping's write on a timer, which the owner declined.
+fn recollect(app: &mut App, read: &mut Ctx, now: DateTime<Tz>) -> Result<(), CliError> {
+    advance(read, now);
+    adopt_read(app, read, app.week_cut.clone(), None)
+}
+
+/// **One turn of the clock**: at a date change the TUI re-collects in memory
+/// ([`recollect`], D84), then [`App::tick`] moves `now`, replans on a new
+/// minute and raises §9's prompts. Returns whether anything changed.
+fn advance_clock(app: &mut App, read: &mut Ctx, now: DateTime<Tz>) -> Result<bool, CliError> {
+    let dated = now.date_naive() != app.today;
+    if dated {
+        recollect(app, read, now)?;
+    }
+    Ok(app.tick(now) || dated)
 }
 
 /// Re-read the plan directory into an existing [`App`], keeping the UI state,
-/// in the scope of the screen it shows.
+/// in the scope of the screen it shows, at the clock's instant — read as `tm
+/// plan` reads it then ([`read_as_tm_plan`], D84: a reload past midnight is the
+/// date change's re-collection too) — and keep the context it read in `read`.
 ///
-/// Stage 5 D10 L8: the ranking is the kernel's. A reload whose capacity
-/// request is refused — a file saved half-edited into a tree the kernel cannot
-/// load, or a configured value it cannot read (parity P26) — keeps the last
-/// ranking, adopts the rest, and says so on the status line; a kernel fault
-/// still ends the TUI.
-fn reload(app: &mut App, g: &Globals) -> Result<(), CliError> {
+/// Stage 5 D10 L8: the ranking is the kernel's ([`adopt_read`]).
+fn reload(app: &mut App, read: &mut Ctx, g: &Globals, clock: &Clock) -> Result<(), CliError> {
     let screen = app.screen;
-    let ctx = Ctx::load_scoped(g, false, |state, today| tui_scope(screen, state, today))?;
+    let now = clock.now(&app.cfg);
+    let mut ctx = Ctx::load_scoped(&at(g, now), false, |state, today| tui_scope(screen, state, today))?;
+    read_as_tm_plan(&mut ctx);
     // **The heat grid's Pauses are cut by the kernel** (README gaps 3432 and
     // 3528, W-39 track T), as `tm review week` cuts them — read only where the
     // Review screen is shown, the one screen that draws the grid, because it
@@ -265,21 +382,8 @@ fn reload(app: &mut App, g: &Globals) -> Result<(), CliError> {
     } else {
         (app.week_cut.clone(), None)
     };
-    let (mut data, refused) = match data_of(&ctx, week_cut.clone()) {
-        Ok(data) => (data, None),
-        Err(e) if !e.is_kernel_fault() => {
-            let data = data_with(&ctx, app.candidates.clone(), app.prios.clone(), app.caps.clone(), week_cut);
-            (data, Some(e.to_string()))
-        }
-        Err(e) => return Err(e),
-    };
-    data.now = now_of(g, &data.cfg);
-    app.adopt(data);
-    if let Some(why) = refused {
-        app.message = Some(format!("priorities not refreshed: {why}"));
-    } else if let Some(why) = cut_refused {
-        app.message = Some(format!("week grid not refreshed: {why}"));
-    }
+    adopt_read(app, &ctx, week_cut, cut_refused)?;
+    *read = ctx;
     Ok(())
 }
 
@@ -357,16 +461,22 @@ fn is_watched(root: &Path, path: &Path) -> bool {
 // ---------------------------------------------------------------------------
 
 /// Draw, wait for an event, act, tick — until `q`.
+#[allow(clippy::too_many_arguments)]
 fn event_loop(
     term: &mut Term,
     app: &mut App,
+    read: &mut Ctx,
     g: &Globals,
+    clock: &Clock,
     root: &Path,
     watch_root: &Path,
     changes: &Receiver<PathBuf>,
 ) -> Result<(), CliError> {
     let mut due: Option<Instant> = None;
     loop {
+        // The verbs the TUI runs are stamped with its clock's instant (a clock
+        // that runs, README gap 4127); on the real clock each reads its own.
+        let g = &Globals { now: clock.injected(), ..g.clone() };
         term.draw(|f| today::draw(f, app))
             .map_err(|e| CliError::io("terminal", e))?;
         if app.quit {
@@ -394,7 +504,7 @@ fn event_loop(
                 _ => Vec::new(),
             };
             for effect in effects {
-                perform(term, app, g, root, effect)?;
+                perform(term, app, read, g, clock, root, effect)?;
                 if app.quit {
                     return Ok(());
                 }
@@ -409,7 +519,7 @@ fn event_loop(
                     || tui_scope(app.screen, &app.state, app.today)
                         != tui_scope(screen, &app.state, app.today))
             {
-                reload(app, g)?;
+                reload(app, read, g, clock)?;
             }
         }
 
@@ -425,10 +535,10 @@ fn event_loop(
         }
         if due.is_some_and(|at| Instant::now() >= at) {
             due = None;
-            reload(app, g)?;
+            reload(app, read, g, clock)?;
         }
 
-        app.tick(now_of(g, &app.cfg));
+        advance_clock(app, read, clock.now(&app.cfg))?;
     }
 }
 
@@ -464,7 +574,9 @@ fn mouse(app: &mut App, area: Rect, m: MouseEvent) {
 fn perform(
     term: &mut Term,
     app: &mut App,
+    read: &mut Ctx,
     g: &Globals,
+    clock: &Clock,
     root: &Path,
     effect: Effect,
 ) -> Result<(), CliError> {
@@ -484,7 +596,7 @@ fn perform(
             // Either way the verb has printed to the real stdout underneath
             // the UI; a full repaint covers it.
             term.clear().map_err(|e| CliError::io("terminal", e))?;
-            reload(app, g)?;
+            reload(app, read, g, clock)?;
             app.message = Some(message);
         }
         Effect::Editor { file, line } => {
@@ -493,17 +605,17 @@ fn perform(
         }
         Effect::Note(text) => {
             note(g, &text)?;
-            reload(app, g)?;
+            reload(app, read, g, clock)?;
             app.message = Some("note written".to_string());
         }
         Effect::SetLocation(loc) => {
             set_location(g, &loc)?;
-            reload(app, g)?;
+            reload(app, read, g, clock)?;
             app.message = Some(format!("location {loc}"));
         }
         Effect::Mutate(m) => {
             let message = mutate(g, &m)?;
-            reload(app, g)?;
+            reload(app, read, g, clock)?;
             app.message = Some(message);
         }
     }
@@ -839,6 +951,202 @@ mod tests {
         let ctx = Ctx::load(&g, false).expect("load");
         assert_ne!(ctx.state.loc.as_deref(), Some("home"), "put back");
         crate::cli::run(&g, Command::Undo).expect("undo the wake underneath it");
+    }
+
+    /// Every file under `root`, by path, as bytes — `.tm/` and its cache included.
+    fn tree_bytes(root: &Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+        fn walk(root: &Path, dir: &Path, out: &mut std::collections::BTreeMap<String, Vec<u8>>) {
+            for entry in fs::read_dir(dir).expect("read dir") {
+                let path = entry.expect("entry").path();
+                if path.is_dir() {
+                    walk(root, &path, out);
+                } else {
+                    let rel = path.strip_prefix(root).expect("inside").display().to_string();
+                    out.insert(rel, fs::read(&path).expect("bytes"));
+                }
+            }
+        }
+        let mut out = std::collections::BTreeMap::new();
+        walk(root, root, &mut out);
+        out
+    }
+
+    /// Every key path at which two JSON values differ (`a.b[2].c`).
+    fn json_diff(a: &serde_json::Value, b: &serde_json::Value, path: &str, out: &mut Vec<String>) {
+        use serde_json::Value;
+        match (a, b) {
+            (Value::Object(x), Value::Object(y)) => {
+                let keys: std::collections::BTreeSet<&String> = x.keys().chain(y.keys()).collect();
+                for k in keys {
+                    let p = if path.is_empty() { k.clone() } else { format!("{path}.{k}") };
+                    match (x.get(k), y.get(k)) {
+                        (Some(u), Some(v)) => json_diff(u, v, &p, out),
+                        _ => out.push(p),
+                    }
+                }
+            }
+            (Value::Array(x), Value::Array(y)) if x.len() == y.len() => {
+                for (i, (u, v)) in x.iter().zip(y).enumerate() {
+                    json_diff(u, v, &format!("{path}[{i}]"), out);
+                }
+            }
+            _ if a != b => out.push(path.to_string()),
+            _ => {}
+        }
+    }
+
+    /// The routine instances a planner request sends, as `id@inst`.
+    fn routines_of(req: &serde_json::Value) -> Vec<String> {
+        req["planner"]["routines"]
+            .as_array()
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+            .iter()
+            .map(|r| format!("{}@{}", r["id"].as_str().unwrap_or_default(), r["inst"].as_str().unwrap_or("-")))
+            .collect()
+    }
+
+    /// `g` at an RFC 3339 instant.
+    fn at_str(g: &Globals, s: &str) -> Globals {
+        Globals { now: Some(DateTime::parse_from_rfc3339(s).expect("an instant")), ..g.clone() }
+    }
+
+    /// **The Midnight world as the shipped binary builds it** — §4.3's tree,
+    /// woken Monday 06:05, arrived 07:00 (the window and budget of the day), the
+    /// pinned `^p1` done at 22:00 so Monday's close has nothing to move, and
+    /// `^t3` started at 23:30 and left running — with the TUI opened on it at
+    /// 23:50 (`load`, its housekeeping): the context it read and its App.
+    fn midnight_world() -> (tempfile::TempDir, Globals, Ctx, App) {
+        let (tmp, g) = fixture();
+        for (when, args) in [
+            ("2026-09-07T06:05:00-05:00", &["wake", "06:05", "--slept", "8h10m"][..]),
+            ("2026-09-07T07:00:00-05:00", &["arrive", "lounge"][..]),
+            ("2026-09-07T22:00:00-05:00", &["done", "^p1"][..]),
+            ("2026-09-07T23:30:00-05:00", &["start", "^t3", "--energy", "3"][..]),
+        ] {
+            let argv: Vec<String> = args.iter().map(|a| (*a).to_string()).collect();
+            let said = verb(&at_str(&g, when), &argv).expect("a verb of the world");
+            assert!(said.ends_with(": ok"), "`tm {}`: {said}", args.join(" "));
+        }
+        let (read, app) = load(&at_str(&g, "2026-09-07T23:50:00-05:00")).expect("the TUI opens at 23:50");
+        (tmp, g, read, app)
+    }
+
+    /// **D84: a TUI left open past local midnight re-collects IN MEMORY at the
+    /// date change, writes nothing, and the request it would send is `tm plan`'s
+    /// at that instant** (the owner's D84, W-42 track H, README gaps 4050 and
+    /// 4124, parity P83). The clock moves the TUI from Monday 23:50 to Tuesday
+    /// 00:30 through the loop's own step ([`advance_clock`]):
+    ///
+    /// * every byte of the plan directory, `.tm/` and its replay cache
+    ///   included, is the same after the date change (D81: nothing writes on a
+    ///   timer);
+    /// * the App reads its state as `tm plan`'s roll leaves it — Tuesday, none
+    ///   of Monday's window, budget or arrival — and the running block as it
+    ///   stands;
+    /// * R3's builder over what the TUI re-collected
+    ///   (`kernel_capacity::planner_request`) and over `tm plan`'s own load at
+    ///   00:30 — its housekeeping run, in a copy — agree KEY FOR KEY but for the
+    ///   replay checkpoint's reseal day, which `tm plan`'s read wrote and the
+    ///   TUI's, writing nothing, did not; and the kernel plans ONE day from the
+    ///   two (the whole `ok.plan`, its hash included);
+    /// * the request the TUI built before D84 — the stale state, read without
+    ///   the roll — carries Monday's routine instances where these carry
+    ///   Tuesday's breakfast, and plans another day.
+    #[test]
+    fn d84_a_tui_left_open_past_midnight_recollects_in_memory_and_sends_tm_plans_request() {
+        let _env = kernel_env();
+        let (tmp, g, mut read, mut app) = midnight_world();
+        let plan = g.dir.clone().expect("the plan directory");
+        assert_eq!(app.state.date, Some(tui_date(2026, 9, 7)), "Monday's state at 23:50");
+        assert!(app.state.window.is_some() && app.state.budget.is_some(), "Monday's day facts");
+
+        let before = tree_bytes(&plan);
+        let tuesday = DateTime::parse_from_rfc3339("2026-09-08T00:30:00-05:00").expect("now").with_timezone(&app.cfg.tz);
+        assert!(advance_clock(&mut app, &mut read, tuesday).expect("the date change"), "the date change changes the App");
+        assert!(tree_bytes(&plan) == before, "the date change wrote nothing under the plan directory");
+
+        assert_eq!((app.today, app.state.date), (tui_date(2026, 9, 8), Some(tui_date(2026, 9, 8))));
+        assert_eq!((app.state.window, app.state.budget, app.state.arrival), (None, None, None), "read as the roll leaves it");
+        assert_eq!(app.state.active.as_ref().map(|a| a.id.as_str()), Some("t3"), "the running block stands");
+        assert_eq!(read.today, tui_date(2026, 9, 8));
+
+        // The request R3's swap sends from here, and `tm plan`'s at the same instant.
+        let tui: serde_json::Value =
+            serde_json::from_str(&crate::cli::kernel_capacity::planner_request(&read, false).expect("the TUI's request")).expect("JSON");
+        let copy = tmp.path().join("tm-plan");
+        copy_dir(&plan, &copy);
+        let plan_g = Globals { dir: Some(copy.clone()), now: Some(tuesday.fixed_offset()), json: false };
+        let plan_ctx = Ctx::load(&plan_g, true).expect("tm plan's load, its housekeeping run");
+        let plan_text = crate::cli::kernel_capacity::planner_request(&plan_ctx, false).expect("tm plan's request");
+        let tm_plan: serde_json::Value = serde_json::from_str(&plan_text).expect("JSON");
+        let mut differ = Vec::new();
+        json_diff(&tui, &tm_plan, "", &mut differ);
+        assert_eq!(differ, ["log.ckpt.resealDay"], "key for key, but for the checkpoint `tm plan`'s read resealed");
+        assert!(routines_of(&tui).iter().any(|r| r == "breakfast@2026-09-08"), "{:?}", routines_of(&tui));
+
+        let tui_text = crate::cli::kernel_capacity::planner_request(&read, false).expect("the TUI's request");
+        let (tui_resp, _) = crate::cli::kernel_bridge::call_text(&tui_text).expect("the kernel plans the TUI's request");
+        let (plan_resp, _) = crate::cli::kernel_bridge::call_text(&plan_text).expect("the kernel plans tm plan's request");
+        assert!(tui_resp["ok"]["plan"].is_object(), "a day: {}", tui_resp["ok"]);
+        assert_eq!(tui_resp["ok"]["plan"], plan_resp["ok"]["plan"], "one day from the two requests, hash and all");
+
+        // What the TUI sent before D84: the stale state, read without the roll (in a copy —
+        // a fresh read of the directory reseals its cache).
+        let stale_dir = tmp.path().join("stale");
+        copy_dir(&plan, &stale_dir);
+        let stale_g = Globals { dir: Some(stale_dir), now: Some(tuesday.fixed_offset()), json: false };
+        let stale_ctx = Ctx::load_scoped(&stale_g, false, |state, today| tui_scope(Screen::Today, state, today)).expect("a read");
+        assert_eq!(stale_ctx.state.date, Some(tui_date(2026, 9, 7)), "the file still says Monday");
+        let stale_text = crate::cli::kernel_capacity::planner_request(&stale_ctx, false).expect("the stale request");
+        let stale: serde_json::Value = serde_json::from_str(&stale_text).expect("JSON");
+        assert!(!routines_of(&stale).iter().any(|r| r.ends_with("@2026-09-08")), "Monday's instances: {:?}", routines_of(&stale));
+        let (stale_resp, _) = crate::cli::kernel_bridge::call_text(&stale_text).expect("the kernel plans it");
+        assert_ne!(stale_resp["ok"]["plan"]["hash"], plan_resp["ok"]["plan"]["hash"], "the stale request plans another day");
+    }
+
+    /// A date.
+    fn tui_date(y: i32, m: u32, d: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(y, m, d).expect("a date")
+    }
+
+    /// **A reload past midnight reads the state as `tm plan` does too** (D84: the
+    /// TUI's reload, which runs no housekeeping, collected on the stale date as
+    /// its tick did), and **a turn of the clock within a day re-collects
+    /// nothing**: the App's candidates and ranking are the load's until the date
+    /// changes.
+    #[test]
+    fn d84_a_reload_past_midnight_reads_the_roll_and_a_tick_within_the_day_recollects_nothing() {
+        let _env = kernel_env();
+        let (_tmp, g, mut read, mut app) = midnight_world();
+        let cands = app.candidates.clone();
+        let later = DateTime::parse_from_rfc3339("2026-09-07T23:58:00-05:00").expect("now").with_timezone(&app.cfg.tz);
+        advance_clock(&mut app, &mut read, later).expect("a minute");
+        assert_eq!((app.today, read.today), (tui_date(2026, 9, 7), tui_date(2026, 9, 7)), "no date change, no re-collection");
+        assert_eq!(app.candidates, cands);
+
+        let tuesday = at_str(&g, "2026-09-08T00:30:00-05:00");
+        reload(&mut app, &mut read, &tuesday, &Clock::of(&tuesday)).expect("a reload past midnight");
+        assert_eq!(app.state.date, Some(tui_date(2026, 9, 8)), "the reload reads the roll");
+        assert_eq!(app.state.window, None);
+        let on_disk = Ctx::load(&Globals { now: tuesday.now, ..g.clone() }, false).expect("the file");
+        assert_eq!(on_disk.state.date, Some(tui_date(2026, 9, 7)), "and writes nothing to `.tm/state.json`");
+    }
+
+    /// **The TUI's clock runs from `--now` only when asked** (README gap 4127):
+    /// fixed by default, the real clock with no `--now`, and with
+    /// [`CLOCK_RUNS_ENV`] the injected instant plus the time since the TUI started.
+    #[test]
+    fn the_tuis_clock_is_fixed_unless_it_is_asked_to_run() {
+        let from = DateTime::parse_from_rfc3339("2026-09-07T23:59:59-05:00").expect("now");
+        let started = Instant::now() - StdDuration::from_secs(90);
+        let fixed = Clock { from: Some(from), started, runs: false };
+        assert_eq!(fixed.injected(), Some(from));
+        let running = Clock { from: Some(from), started, runs: true };
+        let ran = running.injected().expect("injected") - from;
+        assert!(ran >= chrono::Duration::seconds(90) && ran < chrono::Duration::seconds(120), "{ran}");
+        let real = Clock { from: None, started, runs: true };
+        assert_eq!(real.injected(), None, "no `--now`: the verbs read the real clock");
     }
 
     /// Design §11.1, step R13, gap 112: the TUI asks for the scope of the

@@ -1243,3 +1243,9 @@ with_minute
 # says (gap 4144: it asserts the TUI's request is NOT yet `tm plan`'s) and was renamed; the three earlier blocks that
 # cite it -- E's, the land's §8 and its gap 4128 -- name it as it stood.  This block names it without backticks.
 3 p77_a_tui_left_open_past_midnight_plans_the_day_tm_plan_would_plan
+
+# W-42 TRACK H (README gaps 4260-4268).  The P77 test's last assertions flipped with the owner's D84 -- the TUI's
+# request past midnight IS `tm plan`'s now -- and the test was renamed for what it asserts (AGENTS §7.4 item 3, gap
+# 4144's lesson); the W-41 repair's gap 4144 cites the name it carried then, as it stood.  This block names it
+# without backticks.
+1 p77_a_tui_past_midnight_is_read_as_the_roll_and_does_not_yet_send_tm_plans_request

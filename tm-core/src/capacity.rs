@@ -259,6 +259,38 @@ pub fn latest_at_or_before(tz: Tz, now: DateTime<Tz>, clock: NaiveTime) -> DateT
     now
 }
 
+/// **How far after `now` a reported clock may still name today**, in hours —
+/// the owner's **D86** (README gap 4135): twelve.
+pub const REPORT_AHEAD_HOURS: i64 = 12;
+
+/// **The instant `tm energy --at HH:MM` names** — the owner's **D86** (README
+/// gap 4135, W-42 track H, parity **P82**): `clock` on TODAY's date
+/// ([`local_dt`], the reading `tm energy` always took and fork 4748911's), unless
+/// that instant is MORE than [`REPORT_AHEAD_HOURS`] after `now`, when it is the
+/// same clock on YESTERDAY's date. So `--at 23:40` typed at 00:40 is last night,
+/// `--at 10:30` at 09:00 is still a forward report on the same day (the one
+/// `cli_day.rs`' `energy_logs_a_report_against_the_prediction` and its snapshot
+/// pin), and a clock exactly twelve hours ahead is today's.
+///
+/// It is NOT [`latest_at_or_before`], D79's rule for `tm stop --at` and `tm done
+/// --at`, and the difference is the owner's: an END is a time the block ran
+/// through, never one still to come, while a REPORT may name a time a little
+/// ahead on the same day. One parser reads the clock for every `--at`
+/// (`tm_core::model::parse_time`); each rule has this one definition.
+///
+/// "More than twelve hours" is ELAPSED time between instants, so across a DST
+/// change it is not the wall clock's difference: at 00:40 CDT on the day DST
+/// ends, `--at 12:30` is 12 h 50 m ahead (yesterday's), and at 00:30 CST on the
+/// day it starts, `--at 13:00` is 11 h 30 m ahead (today's)
+/// (`a_report_names_today_unless_more_than_twelve_hours_ahead`).
+pub fn report_at(tz: Tz, now: DateTime<Tz>, clock: NaiveTime) -> DateTime<Tz> {
+    let today = local_dt(tz, now.date_naive(), clock);
+    match now.date_naive().pred_opt() {
+        Some(yesterday) if today - now > Duration::hours(REPORT_AHEAD_HOURS) => local_dt(tz, yesterday, clock),
+        _ => today,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // §8.1 window and budget
 // ---------------------------------------------------------------------------
@@ -1046,6 +1078,65 @@ mod tests {
             }
         }
         assert_eq!(checked, 5 * 96 * 8);
+    }
+
+    /// **`report_at` names today's clock unless that is more than twelve hours
+    /// after `now`, and then yesterday's** (the owner's D86, README gap 4135,
+    /// parity P82): the owner's two examples, both sides of the edge, both DST
+    /// changes read in ELAPSED time, and a sweep of the rule's two halves over
+    /// the zones `the_latest_clock_at_or_before_now` sweeps.
+    #[test]
+    fn a_report_names_today_unless_more_than_twelve_hours_ahead() {
+        let hm = |h, m| NaiveTime::from_hms_opt(h, m, 0).expect("t");
+        let at = |y, mo, d, h, m| Chicago.with_ymd_and_hms(y, mo, d, h, m, 0).single().expect("t");
+        // `--at 23:40` typed at 00:40 is last night; `--at 10:30` at 09:00 stays today.
+        assert_eq!(report_at(Chicago, at(2026, 9, 8, 0, 40), hm(23, 40)), at(2026, 9, 7, 23, 40));
+        assert_eq!(report_at(Chicago, at(2026, 9, 7, 9, 0), hm(10, 30)), at(2026, 9, 7, 10, 30));
+        // Exactly twelve hours ahead is today's; a minute more is yesterday's.
+        assert_eq!(report_at(Chicago, at(2026, 9, 7, 9, 0), hm(21, 0)), at(2026, 9, 7, 21, 0));
+        assert_eq!(report_at(Chicago, at(2026, 9, 7, 9, 0), hm(21, 1)), at(2026, 9, 6, 21, 1));
+        // A clock behind now is today's, however far behind.
+        assert_eq!(report_at(Chicago, at(2026, 9, 7, 23, 59), hm(0, 0)), at(2026, 9, 7, 0, 0));
+        // DST ends 2026-11-01 02:00 CDT: 00:40 CDT to 12:30 CST is 12 h 50 m — yesterday's.
+        let fall = Chicago.with_ymd_and_hms(2026, 11, 1, 0, 40, 0).single().expect("CDT");
+        assert_eq!(report_at(Chicago, fall, hm(12, 30)), at(2026, 10, 31, 12, 30));
+        // DST starts 2026-03-08 02:00 CST: 00:30 CST to 13:00 CDT is 11 h 30 m — today's.
+        let spring = Chicago.with_ymd_and_hms(2026, 3, 8, 0, 30, 0).single().expect("CST");
+        assert_eq!(report_at(Chicago, spring, hm(13, 0)), at(2026, 3, 8, 13, 0));
+
+        let zones: [(Tz, (i32, u32, u32)); 5] = [
+            (chrono_tz::America::Chicago, (2026, 3, 7)),
+            (chrono_tz::America::Chicago, (2026, 10, 31)),
+            (chrono_tz::America::Santiago, (2026, 9, 5)),
+            (chrono_tz::Australia::Lord_Howe, (2026, 10, 3)),
+            (chrono_tz::Pacific::Apia, (2011, 12, 28)),
+        ];
+        let clocks = [hm(0, 0), hm(0, 30), hm(1, 30), hm(2, 0), hm(2, 30), hm(12, 0), hm(23, 40), hm(23, 59)];
+        let ahead = Duration::hours(REPORT_AHEAD_HOURS);
+        let (mut today_side, mut yesterday_side) = (0, 0);
+        for (tz, (y, mo, d)) in zones {
+            let start = tz.from_utc_datetime(
+                &NaiveDate::from_ymd_opt(y, mo, d).expect("date").and_hms_opt(0, 0, 0).expect("t"),
+            );
+            for step in 0..96 {
+                let now = start + Duration::minutes(step * 53);
+                for clock in clocks {
+                    let today = local_dt(tz, now.date_naive(), clock);
+                    let r = report_at(tz, now, clock);
+                    if today - now > ahead {
+                        let yesterday = now.date_naive().pred_opt().expect("a day before");
+                        assert_eq!(r, local_dt(tz, yesterday, clock), "{tz} {now} {clock}: yesterday's");
+                        yesterday_side += 1;
+                    } else {
+                        assert_eq!(r, today, "{tz} {now} {clock}: today's");
+                        today_side += 1;
+                    }
+                    assert!(r - now <= ahead, "{tz} {now} {clock}: {r} is more than twelve hours ahead");
+                }
+            }
+        }
+        assert!(today_side > 0 && yesterday_side > 0, "both halves are swept: {today_side} {yesterday_side}");
+        assert_eq!(today_side + yesterday_side, 5 * 96 * 8);
     }
 
     #[test]
