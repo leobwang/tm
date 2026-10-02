@@ -55,7 +55,9 @@ fn a_commented_item_is_not_checked_and_an_uncommented_one_is() {
     assert!(errs[0].contains("[dangling-parent]"), "{errs:#?}");
 }
 
-/// The kernel's `isSp` is `c == ' '`, so a TAB-indented `<!--` opens nothing
+/// The kernel's comment opener drops `isIndent`, the space alone (its separator
+/// `isSp` has been `char::is_whitespace` since the owner's D83, W-42, but an
+/// opener's indent is not a separator), so a TAB-indented `<!--` opens nothing
 /// and the item behind it is still live. The host used to trim, which is how
 /// `tm triage` and the TUI inbox could disagree with the parser.
 #[test]

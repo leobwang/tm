@@ -724,7 +724,8 @@ pub fn edit(g: &Globals, args: &super::EditArgs) -> Result<i32, CliError> {
     // superseding the est-only routing of "the five lifecycle verbs"): the
     // kernel parses the value with the key's own field grammar, writes it
     // through the one proven setter, and refuses by name (`badValue`,
-    // `keyAbsent`, `tabbedLine`). **README gap 48's eight — `due at win
+    // `keyAbsent`; a tabbed line was refused too until the owner's D83 made a
+    // tab the kernel's separator, W-42). **README gap 48's eight — `due at win
     // every on-event after loc waiting` — joined at W-27 under the owner's
     // D49**; the host's remaining half is closed and the kernel is the one
     // writer of every KEYED edit the wire carries. (`--set` still writes a
@@ -1121,10 +1122,11 @@ fn with_the_value_typed(e: CliError, pairs: &[String]) -> CliError {
 /// rewriting the positional digit; `est=` writes the slot the view reads —
 /// since W-35 (D56) a leading estimate with no `est:` token beside it is
 /// rewritten in place as written (`30b` → `20b`), a line with no estimate
-/// gains an `est:` token, and the leading estimate is never invented; a bad value, an
-/// unset of an absent key, and a tabbed line are refused **by name**
-/// (`badValue <k>`, `keyAbsent`, `tabbedLine`) where the old path wrote
-/// silently or raised its own free text.
+/// gains an `est:` token, and the leading estimate is never invented; a bad value and an
+/// unset of an absent key are refused **by name** (`badValue <k>`, `keyAbsent`) where the
+/// old path wrote silently or raised its own free text.  A line carrying a tab was refused
+/// by name as well until W-42, when the owner's D83 made a tab the kernel's separator as it
+/// is this host's, and the line is edited as the host would edit it.
 fn edit_kernel(
     ctx: &mut Ctx,
     id: &Id,

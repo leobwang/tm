@@ -1475,7 +1475,7 @@ def kerrName : KErr → String
   | .alreadyDemoted => "alreadyDemoted"
   | .badHorizon     => "badHorizon"
   | .badItem        => "badItem"
-  | .tabbedLine     => "tabbedLine"
+  -- tabbedLine stood here until W-42: the owner's D83 lifted gap 32's edit refusal with its reason
   | .keyAbsent      => "keyAbsent" | .danglingDep => "danglingDep" | .depCycle => "depCycle"
   | .noTarget       => "noTarget"  | .noSection => "noSection"
 
@@ -5065,40 +5065,40 @@ theorem move_has_no_inverse_command :
       rw [hml, he1live] at hdoc
       simp at hdoc
     | est i' v' =>
+      -- Since W-42 (owner D83) the edit at the entity refuses nothing — gap 32's tab guard was
+      -- its one refusal, and a tab is a separator to this kernel as to the host — so `editE`'s
+      -- answer IS the edited entity, read off `Except.ok.inj` without a case split; the `edit`
+      -- arm below is the same, and the `unset` arm keeps its one split, the absent key.
       rw [hcmd] at hcon
       simp only [applyCmd, cmdSetEst, cmdEdit] at hcon
       have h := hback i' _ (nameEditFault_ok hcon)
       unfold editE at h
-      split at h
-      · injection h
-      · have hdoc : e.val.live.doc = e1.val.live.doc := by
-          rw [← Except.ok.inj h]
-        rw [hml, he1live] at hdoc
-        simp at hdoc
+      have hdoc : e.val.live.doc = e1.val.live.doc := by
+        rw [← Except.ok.inj h]
+      rw [hml, he1live] at hdoc
+      simp at hdoc
     | edit i' v' =>
       rw [hcmd] at hcon
       simp only [applyCmd, cmdEdit] at hcon
       have h := hback i' _ (nameEditFault_ok hcon)
       unfold editE at h
-      split at h
-      · injection h
-      · have hdoc : e.val.live.doc = e1.val.live.doc := by
-          rw [← Except.ok.inj h]
-        rw [hml, he1live] at hdoc
-        simp at hdoc
+      have hdoc : e.val.live.doc = e1.val.live.doc := by
+        rw [← Except.ok.inj h]
+      rw [hml, he1live] at hdoc
+      simp at hdoc
     | unset i' k' =>
+      -- the absent key is the one refusal left (`keyAbsent`), and it moves nothing either:
+      -- a refused command is no successful one, so only the removal's entity is read here
       rw [hcmd] at hcon
       simp only [applyCmd, cmdUnset] at hcon
       have h := hback i' _ hcon
       unfold unsetE at h
       split at h
+      · have hdoc : e.val.live.doc = e1.val.live.doc := by
+          rw [← Except.ok.inj h]
+        rw [hml, he1live] at hdoc
+        simp at hdoc
       · injection h
-      · split at h
-        · have hdoc : e.val.live.doc = e1.val.live.doc := by
-            rw [← Except.ok.inj h]
-          rw [hml, he1live] at hdoc
-          simp at hdoc
-        · injection h
     | demote i' d' st' =>
       rw [hcmd] at hcon
       cases hrd' : resolveDest q.val d' with
@@ -5163,57 +5163,15 @@ the same claims about the code the FFI runs — `applyCmd` on `ReqCmd.edit` /
 refusals, `parseCmd_rejects_add_title_variants`-style. -/
 
 /-- The standing `est` op **is** the keyed edit at `.est` — one path, one
-guard, one reader.  Definitional, so the two can never drift apart. -/
+reader.  Definitional, so the two can never drift apart. -/
 theorem the_est_op_is_the_keyed_est_edit (i : Id) (v : Nat) (p : WfPlan) :
     applyCmd (.est i v) p
       = applyCmd (.edit i (.est ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩ ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩)) p := rfl
 
-/-- **Gap 32's check bites on the wire**: a keyed edit addressed to a line
-whose raw bytes carry a tab is refused as `tabbedLine`, whatever the key and
-value, and nothing is written. -/
-theorem edit_of_a_tabbed_line_is_refused (p : WfPlan) (i : Id) (e : Entity) (v : EditVal)
-    (hget : p.val.store.get i = some e) (htab : lineHasTab e.val.line = true) :
-    applyCmd (.edit i v) p = .error .tabbedLine := by
-  show nameEditFault p i v (p.mapAt i (editE v)) = .error .tabbedLine
-  have hm : p.mapAt i (editE v) = .error .tabbedLine := by
-    unfold WfPlan.mapAt
-    split
-    · rename_i hn; rw [hget] at hn; simp at hn
-    · rename_i a hget'
-      rw [hget] at hget'
-      injection hget' with hget'
-      subst hget'
-      rw [editE_refuses_a_tabbed_line v _ htab]
-  rw [hm]; rfl
-
-/-- **And the `est` op is behind the same guard.**  This is the one behaviour
-change to a shipped op, taken deliberately and on the refusal side only: the
-un-guarded `est` was the kernel writing the *second* `est:` of a line whose
-tab hid the first — the S2 shape, in the shipped operation (gap 32). -/
-theorem est_of_a_tabbed_line_is_refused (p : WfPlan) (i : Id) (e : Entity) (v : Nat)
-    (hget : p.val.store.get i = some e) (htab : lineHasTab e.val.line = true) :
-    applyCmd (.est i v) p = .error .tabbedLine :=
-  edit_of_a_tabbed_line_is_refused p i e
-    (.est ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩ ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩) hget htab
-
-/-- The unset guard, on the wire. -/
-theorem unset_of_a_tabbed_line_is_refused (p : WfPlan) (i : Id) (e : Entity) (k : EditKey)
-    (hget : p.val.store.get i = some e) (htab : lineHasTab e.val.line = true) :
-    applyCmd (.unset i k) p = .error .tabbedLine := by
-  show p.mapAt i (unsetE k) = .error .tabbedLine
-  unfold WfPlan.mapAt
-  split
-  · rename_i hn; rw [hget] at hn; simp at hn
-  · rename_i a hget'
-    rw [hget] at hget'
-    injection hget' with hget'
-    subst hget'
-    rw [unsetE_refuses_a_tabbed_line k _ htab]
-
 /-- §5.7 at the wire: unsetting a key the line does not carry is `keyAbsent`,
 not a success that removed nothing. -/
 theorem unset_of_an_absent_key_is_refused (p : WfPlan) (i : Id) (e : Entity) (k : EditKey)
-    (hget : p.val.store.get i = some e) (htab : lineHasTab e.val.line = false)
+    (hget : p.val.store.get i = some e)
     (hkey : Field.hasKeyTok k.val e.val.line = false) :
     applyCmd (.unset i k) p = .error .keyAbsent := by
   show p.mapAt i (unsetE k) = .error .keyAbsent
@@ -5224,35 +5182,76 @@ theorem unset_of_an_absent_key_is_refused (p : WfPlan) (i : Id) (e : Entity) (k 
     rw [hget] at hget'
     injection hget' with hget'
     subst hget'
-    rw [unset_of_a_key_the_line_does_not_carry_is_refused k _ htab hkey]
+    rw [unset_of_a_key_the_line_does_not_carry_is_refused k _ hkey]
 
-/-- **The tab hypothesis is satisfiable on this kernel's own loader** — the
-guard is a check something real can fail, not decoration.  A week file whose
-item line carries a tab inside a word loads whole (`Text.isSp` is space-only,
-so the tab is a word character), and the loaded entity trips `lineHasTab`. -/
+/-! ### Gap 32's edit refusal, retired (owner D83, W-42 track G)
+
+Until W-42 the keyed edit, the unset and the standing `est` op refused a line whose bytes
+carried a tab, by name: a tab was a word character to this kernel and a separator to the host,
+so an edit routed through two token readings could write a token the host never read (the S2
+shape, gap 32).  D83 made a tab — and every `White_Space` character the host splits on — the
+kernel's separator (`Text.isSp`), so there is one reading and the refusal's reason is gone; it
+is lifted, and its laws are retired, each refuted by the theorem named beside it:
+
+| retired | its statement, and why it is false since D83 | the refutation |
+|---|---|---|
+| edit_of_a_tabbed_line_is_refused | a keyed edit of a tabbed line is refused; it is written | `a_tabbed_line_is_edited_as_the_host_edits_it` |
+| est_of_a_tabbed_line_is_refused | the `est` op on one is refused; it rewrites the slot | the same, its second conjunct |
+| unset_of_a_tabbed_line_is_refused | an unset of a key on one is refused; it removes the key | `unsetE_ok_of_present`, on any line |
+| the_tab_guard_is_not_vacuous | a loaded tabbed line trips the guard; there is no guard | the same witness, which loads it |
+
+and at the entity (Cmd.lean) editE_refuses_a_tabbed_line, unsetE_refuses_a_tabbed_line and
+editE_ok_of_tabless went the same way: `editE_ok` is the last of them, stated of every line.
+The success forms below dropped their tab hypothesis and are the same theorems over more lines,
+so their names stand.  What the guard used to keep out, the host's own editor writes: the
+witness's two lines are the bytes fork 4748911's `set_token("dur", "45m")` and the kernel's D56
+slot rewrite give the line.  -/
+
+/-- **The line gap 32's guard refused, edited as the host edits it** (owner D83, W-42).  A
+week file whose item line carries a tab between two title words loads whole — the tab is a
+separator, so `Finish<TAB>the report` is two words with a tab between them, kept verbatim — and
+`dur=45m` lands before the `^m1`, which is what fork 4748911's `set_token("dur", "45m")` writes
+on the same line; the `est` op rewrites the leading `6b` in place (D56).  Until W-42 every edit
+op refused this line by name, tabbedLine, because a tab was a word character to the kernel and a
+separator to the host; the guard is lifted with its reason, and its four laws —
+edit_of_a_tabbed_line_is_refused, est_of_a_tabbed_line_is_refused,
+unset_of_a_tabbed_line_is_refused and the_tab_guard_is_not_vacuous — are retired, refuted here. -/
 def tabbedWitnessDoc : ReqDoc :=
   ⟨"week/2026-W37.md", some ⟨week, 35⟩,
     ["# Tasks".toList, "- [ ] 5 6b Finish\tthe report ^m1".toList]⟩
 
-theorem the_tab_guard_is_not_vacuous :
+theorem a_tabbed_line_is_edited_as_the_host_edits_it :
     (match loadPlan [tabbedWitnessDoc] with
-     | .ok p => (p.val.store.get "m1".toList).map (fun e => lineHasTab e.val.line)
-     | .error _ => none) = some true := by decide
+     | .ok p =>
+       match applyCmd (.edit "m1".toList (.dur ⟨Field.Dur.simple 45 Field.DurUnit.minutes, rfl⟩)) p with
+       | .ok q => (q.val.store.get "m1".toList).map
+           (fun e => serializeItem "m1".toList Glyph.todo e.val.line)
+       | .error _ => none
+     | .error _ => none) = some "- [ ] 5 6b Finish\tthe report dur:45m ^m1".toList ∧
+    (match loadPlan [tabbedWitnessDoc] with
+     | .ok p =>
+       match applyCmd (.est "m1".toList 45) p with
+       | .ok q => (q.val.store.get "m1".toList).map
+           (fun e => serializeItem "m1".toList Glyph.todo e.val.line)
+       | .error _ => none
+     | .error _ => none) = some "- [ ] 5 45m Finish\tthe report ^m1".toList := by
+  decide
 
-/-- **The complement (§5.8): a tabless line is not refused on that ground.**
-`cmdMove_succeeds`' mirror for the keyed edit: the edit moves no placement, so
+/-- **The edit's success form** (§5.8): `cmdMove_succeeds`' mirror for the keyed edit, on any
+line — the tabless line it was stated over until W-42 and the tabbed one the guard refused:
+the edit moves no placement, so
 `normalized_after_edit` discharges the rank conjunct outright and what stays a
 hypothesis is `itemsWfButRanks` — the six conjuncts an edit can genuinely
 break (a `min:` whose rate re-parses is still subject to `shapesWf`, say).
 Combined with `the_edit_path_writes_what_the_field_path_reads` (Cmd.lean) the
 post-state's field view reads exactly the value the wire carried. -/
 theorem applyCmd_edit_succeeds (p : WfPlan) (i : Id) (e : Entity) (v : EditVal)
-    (hget : p.val.store.get i = some e) (htab : lineHasTab e.val.line = false)
+    (hget : p.val.store.get i = some e)
     (hrest : ∀ hs : (p.val.store.get i).isSome = true,
       itemsWfButRanks { p.val with store := p.val.store.set i (⟨{ e.val with line := setVal v e.val.line }, e.property⟩ : Entity) hs } = true) :
     ∃ q : WfPlan, applyCmd (.edit i v) p = .ok q ∧
       q.val.store.get i = some ⟨{ e.val with line := setVal v e.val.line }, e.property⟩ := by
-  have hf := editE_ok_of_tabless v e htab
+  have hf := editE_ok v e
   have hdom : i ∈ p.val.store.dom := (p.val.store.domSpec i).mpr (by rw [hget]; rfl)
   have hore := List.all_eq_true.1 (planWf_parts p.property).2.2.2.1 i hdom
   rw [hget] at hore
@@ -5270,23 +5269,24 @@ theorem applyCmd_edit_succeeds (p : WfPlan) (i : Id) (e : Entity) (v : EditVal)
 
 /-- The same, for the standing `est` op — the success form it never had. -/
 theorem applyCmd_est_succeeds (p : WfPlan) (i : Id) (e : Entity) (v : Nat)
-    (hget : p.val.store.get i = some e) (htab : lineHasTab e.val.line = false)
+    (hget : p.val.store.get i = some e)
     (hrest : ∀ hs : (p.val.store.get i).isSome = true,
       itemsWfButRanks { p.val with store := p.val.store.set i (⟨{ e.val with line := setVal (.est ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩ ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩) e.val.line }, e.property⟩ : Entity) hs } = true) :
     ∃ q : WfPlan, applyCmd (.est i v) p = .ok q ∧
       q.val.store.get i = some ⟨{ e.val with line := setVal (.est ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩ ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩) e.val.line }, e.property⟩ :=
-  applyCmd_edit_succeeds p i e _ hget htab hrest
+  applyCmd_edit_succeeds p i e _ hget hrest
 
-/-- And the unset success form: present key, tabless line, the removal lands
-and the store holds exactly the filtered line. -/
+/-- And the unset success form: present key, any line, the removal lands
+and the store holds exactly the filtered line (the tab hypothesis it carried until W-42 went
+with gap 32's guard). -/
 theorem applyCmd_unset_succeeds (p : WfPlan) (i : Id) (e : Entity) (k : EditKey)
-    (hget : p.val.store.get i = some e) (htab : lineHasTab e.val.line = false)
+    (hget : p.val.store.get i = some e)
     (hkey : Field.hasKeyTok k.val e.val.line = true)
     (hrest : ∀ hs : (p.val.store.get i).isSome = true,
       itemsWfButRanks { p.val with store := p.val.store.set i (⟨{ e.val with line := Field.unsetKey k.val e.val.line }, e.property⟩ : Entity) hs } = true) :
     ∃ q : WfPlan, applyCmd (.unset i k) p = .ok q ∧
       q.val.store.get i = some ⟨{ e.val with line := Field.unsetKey k.val e.val.line }, e.property⟩ := by
-  have hf := unsetE_ok_of_present k e htab hkey
+  have hf := unsetE_ok_of_present k e hkey
   have hdom : i ∈ p.val.store.dom := (p.val.store.domSpec i).mpr (by rw [hget]; rfl)
   have hore := List.all_eq_true.1 (planWf_parts p.property).2.2.2.1 i hdom
   rw [hget] at hore
@@ -5691,7 +5691,7 @@ theorem parseCmd_reads_the_bridged_keys :
 /-- The post-state `mapAt` re-checks is `editPost` — so when it fails `planWf`,
 the name the wire carries is `editFault` read off that same plan. -/
 theorem applyCmd_edit_names_the_plan_tier_fault (p : WfPlan) (i : Id) (e : Entity)
-    (v : EditVal) (hget : p.val.store.get i = some e) (htab : lineHasTab e.val.line = false)
+    (v : EditVal) (hget : p.val.store.get i = some e)
     (hbad : ∀ hs, planWf (editPost p i e v hs) = false) :
     applyCmd (.edit i v) p = .error (editFault p i v) := by
   show nameEditFault p i v (p.mapAt i (editE v)) = _
@@ -5703,7 +5703,7 @@ theorem applyCmd_edit_names_the_plan_tier_fault (p : WfPlan) (i : Id) (e : Entit
       rw [hget] at hget'
       injection hget' with hget'
       subst hget'
-      rw [editE_ok_of_tabless v _ htab]
+      rw [editE_ok v _]
       simp only
       rw [dif_neg]
       intro hc
@@ -5731,10 +5731,10 @@ theorem editFault_of_get (p : WfPlan) (i : Id) (e : Entity) (v : EditVal)
 /-- **A dangling `after:` is refused by name** (§5.8, the bite): an edit whose
 post-state names an id no item carries is `danglingDep`, not `badHorizon`. -/
 theorem edit_of_a_dangling_after_is_refused_by_name (p : WfPlan) (i : Id) (e : Entity)
-    (ds : WfDeps) (hget : p.val.store.get i = some e) (htab : lineHasTab e.val.line = false)
+    (ds : WfDeps) (hget : p.val.store.get i = some e)
     (hdang : ∀ hs, afterTotal (editPost p i e (.after ds) hs) = false) :
     applyCmd (.edit i (.after ds)) p = .error .danglingDep := by
-  rw [applyCmd_edit_names_the_plan_tier_fault p i e _ hget htab (fun hs => by
+  rw [applyCmd_edit_names_the_plan_tier_fault p i e _ hget (fun hs => by
     cases hw : planWf (editPost p i e (.after ds) hs) with
     | false => rfl
     | true =>
@@ -5746,11 +5746,11 @@ theorem edit_of_a_dangling_after_is_refused_by_name (p : WfPlan) (i : Id) (e : E
 /-- **A cyclic `after:` is refused by name**: a post-state whose dependencies
 are all present but deadlock (§5.5) is `depCycle`. -/
 theorem edit_of_a_cyclic_after_is_refused_by_name (p : WfPlan) (i : Id) (e : Entity)
-    (ds : WfDeps) (hget : p.val.store.get i = some e) (htab : lineHasTab e.val.line = false)
+    (ds : WfDeps) (hget : p.val.store.get i = some e)
     (htot : ∀ hs, afterTotal (editPost p i e (.after ds) hs) = true)
     (hcyc : ∀ hs, afterAcyclic (editPost p i e (.after ds) hs) = false) :
     applyCmd (.edit i (.after ds)) p = .error .depCycle := by
-  rw [applyCmd_edit_names_the_plan_tier_fault p i e _ hget htab (fun hs => by
+  rw [applyCmd_edit_names_the_plan_tier_fault p i e _ hget (fun hs => by
     cases hw : planWf (editPost p i e (.after ds) hs) with
     | false => rfl
     | true =>
@@ -5765,7 +5765,7 @@ exists to change — and the four conjuncts an edit can break by other means
 (`parentsTotal`, `parentsAcyclic`, `sectionsWf`, `shapesWf`), the edit lands,
 and the stored item's `Core.after` is exactly the parsed list. -/
 theorem applyCmd_after_succeeds (p : WfPlan) (i : Id) (e : Entity) (ds : WfDeps)
-    (hget : p.val.store.get i = some e) (htab : lineHasTab e.val.line = false)
+    (hget : p.val.store.get i = some e)
     (hdeps : ∀ hs, afterTotal (editPost p i e (.after ds) hs) = true ∧
       afterAcyclic (editPost p i e (.after ds) hs) = true)
     (hrest : ∀ hs, (parentsTotal (editPost p i e (.after ds) hs) &&
@@ -5773,7 +5773,7 @@ theorem applyCmd_after_succeeds (p : WfPlan) (i : Id) (e : Entity) (ds : WfDeps)
       sectionsWf (editPost p i e (.after ds) hs) && shapesWf (editPost p i e (.after ds) hs)) = true) :
     ∃ q : WfPlan, applyCmd (.edit i (.after ds)) p = .ok q ∧
       ∃ a : Entity, q.val.store.get i = some a ∧ a.val.after = ds.val := by
-  obtain ⟨q, hq, hqi⟩ := applyCmd_edit_succeeds p i e (.after ds) hget htab (fun hs => by
+  obtain ⟨q, hq, hqi⟩ := applyCmd_edit_succeeds p i e (.after ds) hget (fun hs => by
     have h1 := hdeps hs
     have h2 := hrest hs
     simp only [Bool.and_eq_true] at h2
@@ -5790,7 +5790,7 @@ theorem applyCmd_after_succeeds (p : WfPlan) (i : Id) (e : Entity) (ds : WfDeps)
     simp [itemsWfButRanks, h1.1, h1.2, h2.1.1.1, h2.1.1.2, h2.1.2, h2.2, hbox])
   refine ⟨q, hq, _, hqi, ?_⟩
   exact the_edit_path_writes_what_the_field_path_reads (.after ds) e _
-    (editE_ok_of_tabless _ e htab)
+    (editE_ok _ e)
 
 /-- The three `after` outcomes, decided on a loaded plan — so neither refusal
 theorem's hypothesis is vacuous and the success form is reachable: a dangling

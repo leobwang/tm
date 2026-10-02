@@ -64,7 +64,7 @@
 //!
 //! Every kernel refusal reaches the caller **by name** ([`refusal`]):
 //! `occupied`, `noSuchId`, `notDemoted`, `alreadyDemoted`, `badHorizon`,
-//! `badItem`, `tabbedLine`, `keyAbsent`, `danglingDep`, `depCycle`,
+//! `badItem`, `keyAbsent`, `danglingDep`, `depCycle`,
 //! `siteOutOfRange`, `noTarget`, `noSection`, `dupId`,
 //! `notADemotion`, `ambiguousDemotion`, `duplicatePath`, `badLine`,
 //! `unterminatedComment`, `itemCheck`, plus `parseCmd`'s parse-tier names riding the free-text
@@ -1384,7 +1384,7 @@ fn refusal(err: &Value) -> KernelIssue {
         } else if s.starts_with("title") && !s.contains(' ') {
             let why = match s {
                 "titleNewline" => "the title carries a newline, which would split the line",
-                "titleTab" => "the title carries a tab, which this kernel cannot read as a separator (gap 32)",
+                "titleTab" => "the title carries a tab; `add` refuses one by name rather than write it (README gap 4164)",
                 "titleId" => "the title carries a `^`, which would read back as a second id",
                 "titleBlank" => "the title is empty or only spaces",
                 "titleEdge" => "the title starts or ends with a space, which would not re-tokenize as written",
@@ -1416,7 +1416,6 @@ fn refusal(err: &Value) -> KernelIssue {
             "alreadyDemoted" => "the line is itself a `[-]` archive record, or the item's other line is a `[-]` outside a month's `# Demoted`; demoting again would overwrite that tombstone and delete its line (a record is carried by the month close)",
             "badHorizon" => "the rewritten plan fails the kernel's whole-plan check — a destination that is not in the plan, a line landing in a section it may not occupy, or a rank collision",
             "badItem" => "the rewritten item fails the kernel's item check",
-            "tabbedLine" => "the line carries a tab, which this kernel does not read as a separator; the edit is refused rather than written against the wrong token (gap 32)",
             "keyAbsent" => "the line does not carry that key",
             "danglingDep" => "the edited `after:` names an id no item in the plan carries",
             "depCycle" => "the edited `after:` makes the dependencies cycle (§5.5)",
@@ -1605,9 +1604,9 @@ fn refusal(err: &Value) -> KernelIssue {
         let why = match name {
             "ciDisagrees" => "a candidate's `ci` as tm reads its line is not the `ci` the kernel reads on \
                  the same line, so the kernel refuses to plan the day rather than plan it on one \
-                 reader's number (the owner's D80, parity P72) — a tab or another non-space \
-                 character between the line's leading fields is the known cause: the kernel reads \
-                 only a space as a separator (README gaps 32 and 4130)",
+                 reader's number (the owner's D80, parity P72) — the two read a line's separators \
+                 alike since the owner's D83 (README gaps 32 and 4130, closed), so a refusal here \
+                 is a disagreement in what they derive from the line, and a finding",
             "eveningPastTheCalendar" => "the day's evening runs past the calendar's last second (the \
                  owner's D80, parity P71)",
             _ => "a value of the planner request is refused — see PlanWire.lean's `PlannerRefusal`",
@@ -1704,7 +1703,6 @@ mod tests {
             (serde_json::json!({"kernel":"alreadyDemoted"}), "alreadyDemoted"),
             (serde_json::json!({"kernel":"badHorizon"}), "badHorizon"),
             (serde_json::json!({"kernel":"badItem"}), "badItem"),
-            (serde_json::json!({"kernel":"tabbedLine"}), "tabbedLine"),
             (serde_json::json!({"kernel":"keyAbsent"}), "keyAbsent"),
             (serde_json::json!({"kernel":"danglingDep"}), "danglingDep"),
             (serde_json::json!({"kernel":"depCycle"}), "depCycle"),

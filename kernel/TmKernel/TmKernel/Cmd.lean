@@ -67,15 +67,6 @@ inductive KErr
       the *loader's* diagnostic (the `itemCheck` field) and never accompanies
       a command refusal. -/
   | badItem
-  /-- the line's raw bytes contain a tab.  `Text.isSp` is space-only (gap 32),
-      so a tab is a *word* character to this kernel while it is whitespace to
-      the shipped Rust tokenizer: on a line with a tab before a repeated
-      `est:`, `tm edit` writes the first occurrence and the kernel would
-      write the second.  An edit routed through two token readings is the S2
-      shape, so the edit path refuses such a line loudly instead of shipping
-      a wrong write.  Widening `isSp` is a grammar-wide behaviour change and
-      stays plan-tier; this refusal is the sanctioned narrow route. -/
-  | tabbedLine
   /-- `tm edit ^id <key>=` (unset) of a key the line does not carry: there is
       no token to remove, and reporting success would be the "success
       reported, nothing changed" shape C1 died of. -/
@@ -163,7 +154,7 @@ def setLeadToks (w : List Char) : List Tok → List Tok
 /-- The rewrite on a line.  Only a boxed line has positional slots (`kinds`), so a bare line
 is returned as it is. -/
 def setLead (w : List Char) (r : RawItem) : RawItem :=
-  if r.boxed then ⟨r.indent, r.boxed, setLeadToks w r.toks⟩ else r
+  if r.boxed then { r with toks := setLeadToks w r.toks } else r
 
 /-- **The leading estimate is the slot the view reads**: the line carries no `est:` token, and
 phase 1 read a leading estimate.  (`viewRemainingDur` reads `est:` first, else this.) -/
@@ -228,7 +219,7 @@ theorem estLeadOf_setLead (w : List Char) (d : Dur) (r : RawItem)
   unfold estLeadOf at h ⊢
   rw [kinds_boxed r hb] at h
   unfold setLead
-  rw [if_pos hb, kinds_boxed { indent := r.indent, boxed := r.boxed, toks := setLeadToks w r.toks } hb]
+  rw [if_pos hb, kinds_boxed { r with toks := setLeadToks w r.toks } hb]
   show (classifyPhase0 (setLeadToks w r.toks)).findSome? kEst = some d
   generalize r.toks = ts at h ⊢
   cases ts with
@@ -482,14 +473,31 @@ theorem idWords_setLeadToks (w : List Char) (hw : isIdWord w = false) : ∀ ts :
         simp only [setLeadToks, hc, ht, Option.isSome_some, if_true]
         simp [hw, isIdWord_of_estSlot ht]
 
+/-- The leading-slot rewrite keeps every separator, the first token's included. -/
+theorem setLeadToks_head_sep (w : List Char) (ts : List Tok) :
+    (setLeadToks w ts).head?.map Tok.sep = ts.head?.map Tok.sep := by
+  cases ts with
+  | nil => rfl
+  | cons t ts' =>
+    cases hc : ciSlot t.word with
+    | some c =>
+      cases ts' with
+      | nil => simp [setLeadToks, hc]
+      | cons u us =>
+        by_cases he : (estSlot u.word).isSome = true <;> simp [setLeadToks, hc, he]
+    | none =>
+      by_cases he : (estSlot t.word).isSome = true <;> simp [setLeadToks, hc, he]
+
 /-- **Whatever the leading-slot rewrite writes, the kernel reads back.** -/
 theorem setLead_canonical (i : Id) (w : List Char) (r : RawItem) (hw : wordWf w = true)
     (hid : isIdWord w = false) (h : CanonicalItem i r = true) :
     CanonicalItem i (setLead w r) = true := by
-  obtain ⟨hb, hind, htw, hids⟩ := (canonical_iff i r).1 h
+  obtain ⟨hb, hind, hlead, hend, htw, hids⟩ := (canonical_iff i r).1 h
   unfold setLead
   rw [if_pos hb]
-  refine (canonical_iff i _).2 ⟨hb, hind, toksWf_setLeadToks w hw r.toks htw, ?_⟩
+  have hend' : (setLeadToks w r.toks).head?.all (fun t => t.sep.head?.any isBoxEnd) = true := by
+    rw [endsBox_of_head_sep (setLeadToks_head_sep w r.toks)]; exact hend
+  refine (canonical_iff i _).2 ⟨hb, hind, hlead, hend', toksWf_setLeadToks w hw r.toks htw, ?_⟩
   unfold idToks at hids ⊢
   rw [idWords_setLeadToks w hid r.toks]
   exact hids
@@ -521,7 +529,7 @@ each statement rather than named by a `def`: a fixture here would be code the ex
 twenty blocks — 1,200 minutes at a 60-minute block, the number the planner uses. -/
 theorem the_leading_estimate_is_rewritten_in_place :
     let r : RawItem := ⟨[], true, [⟨[' '], ['2']⟩, ⟨[' '], ['3','0','b']⟩, ⟨[' '], ['B','i','g']⟩,
-      ⟨[' '], ['m','i','g','r','a','t','i','o','n']⟩, ⟨[' '], ['^','x','3']⟩]⟩
+      ⟨[' '], ['m','i','g','r','a','t','i','o','n']⟩, ⟨[' '], ['^','x','3']⟩], []⟩
     leadIsTheSlot r = true ∧
     (setRemaining (.simple 20 .blocks) (.simple 1200 .minutes) r).toks.map Tok.word
       = [['2'], ['2','0','b'], ['B','i','g'], ['m','i','g','r','a','t','i','o','n'],
@@ -538,10 +546,10 @@ canonical minutes before the `^id`; an `est:` token is rewritten, and the leadin
 estimate as written — is not touched. -/
 theorem a_line_without_a_leading_estimate_gets_the_key :
     let none_ : RawItem := ⟨[], true, [⟨[' '], ['2']⟩, ⟨[' '], ['B','i','g']⟩,
-      ⟨[' '], ['m','i','g','r','a','t','i','o','n']⟩, ⟨[' '], ['^','x','3']⟩]⟩
+      ⟨[' '], ['m','i','g','r','a','t','i','o','n']⟩, ⟨[' '], ['^','x','3']⟩], []⟩
     let key_ : RawItem := ⟨[], true, [⟨[' '], ['2']⟩, ⟨[' '], ['3','0','b']⟩,
       ⟨[' '], ['B','i','g']⟩, ⟨[' '], ['m','i','g','r','a','t','i','o','n']⟩,
-      ⟨[' '], ['e','s','t',':','5','b']⟩, ⟨[' '], ['^','x','3']⟩]⟩
+      ⟨[' '], ['e','s','t',':','5','b']⟩, ⟨[' '], ['^','x','3']⟩], []⟩
     leadIsTheSlot none_ = false ∧ leadIsTheSlot key_ = false ∧
     (setRemaining (.simple 20 .blocks) (.simple 1200 .minutes) none_).toks.map Tok.word
       = [['2'], ['B','i','g'], ['m','i','g','r','a','t','i','o','n'],
@@ -583,7 +591,7 @@ minutes, where the `30b` stood, and no `est:` token beside it (D56's line, open 
 no tombstone). -/
 theorem setEstE_rewrites_the_leading_estimate :
     let r : RawItem := ⟨[], true, [⟨[' '], ['2']⟩, ⟨[' '], ['3','0','b']⟩, ⟨[' '], ['B','i','g']⟩,
-      ⟨[' '], ['m','i','g','r','a','t','i','o','n']⟩, ⟨[' '], ['^','x','3']⟩]⟩
+      ⟨[' '], ['m','i','g','r','a','t','i','o','n']⟩, ⟨[' '], ['^','x','3']⟩], []⟩
     let e : Entity :=
       ⟨{ live := ⟨0, 0⟩, archive := none, status := .live .free, line := r }, by decide⟩
     (setEstE 1200 e).val.line.toks.map Tok.word
@@ -1020,14 +1028,6 @@ classes crossing here — day-free durations, `Fin 6`, and the eight wf-bounded
 subtypes (`WfMoment` … `WfDeps`, and `WordLoc`) — go through the smart
 constructors their decoders use (`ndDur?`, `parseCi`, `guardWf`). -/
 
-/-- Gap 32's guard: a tab anywhere in the raw bytes the line renders from —
-indent, any separator, any word.  `toksWf` keeps separators space-only, so on
-a loaded line a tab can only hide inside a word, but the guard checks all
-three so it is a fact about the bytes and not about a parse. -/
-def lineHasTab (r : RawItem) : Bool :=
-  r.indent.any (· == '\t') ||
-    r.toks.any (fun t => t.sep.any (· == '\t') || t.word.any (· == '\t'))
-
 /-- A day-free duration — `est:`/`dur:` refuse `3d`.  The bound lives in the
 type so a days-carrying `Dur` cannot reach `setEst`/`setDur` from the wire at
 all (R10); `Negative.lean` CHEAT 46 is the door staying shut. -/
@@ -1076,14 +1076,14 @@ theorem guardWf_none_iff {α : Type} (p : α → Bool) (o : Option α) :
       · simp only [Bool.not_eq_true] at h; simp [h]
 
 /-- A `loc:` name is free text to `parseLoc`, so unlike every other value it
-could carry a byte that is not a word: a space would split the token when the
-line is read back, a newline would split the line, and a tab is gap 32's
-unreadable separator.  The edit path writes `loc:` only for a value made of
-characters that are none of those — no space and no C0 control byte.  A
-loaded line's `loc:` word can never hold a space or a newline, so this narrows
-the loader's reading only by the control bytes, which are recorded (gap 40's
-successor paragraph). -/
-def locWordOk (w : List Char) : Bool := w.all (fun c => c != ' ' && decide (32 ≤ c.toNat))
+could carry a byte that is not a word: a separator would split the token when the
+line is read back, and a newline would split the line.  The edit path writes `loc:` only for
+a value made of characters that are none of those — no separator (`isSp`, which since W-42 is
+every `White_Space` character the host splits on, a tab and a no-break space among them; it
+was the space alone, and a tab was gap 32's unreadable separator) and no C0 control byte.  A
+loaded line's `loc:` word can never hold a separator or a newline, so this narrows the loader's
+reading only by the control bytes, which are recorded (gap 40's successor paragraph). -/
+def locWordOk (w : List Char) : Bool := w.all (fun c => !isSp c && decide (32 ≤ c.toNat))
 
 /-- The bound a `loc:` value carries onto the line: the enum's own wf, and a
 rendering the tokenizer reads back as one word. -/
@@ -1188,7 +1188,7 @@ theorem setVal_writes_the_token_the_loader_reads_is_refuted :
   intro h
   exact absurd (h (.est ⟨.simple 20 .blocks, rfl⟩ ⟨.simple 1200 .minutes, rfl⟩)
     ⟨[], true, [⟨[' '], ['2']⟩, ⟨[' '], ['3','0','b']⟩, ⟨[' '], ['B','i','g']⟩,
-      ⟨[' '], ['m','i','g','r','a','t','i','o','n']⟩, ⟨[' '], ['^','x','3']⟩]⟩) (by decide)
+      ⟨[' '], ['m','i','g','r','a','t','i','o','n']⟩, ⟨[' '], ['^','x','3']⟩], []⟩) (by decide)
 
 /-- **The law, on its subdomain, named** (§3.1 item 4): every edit but the est edit of a line
 whose leading estimate is the slot lands its own key's token, read back as the rendered value —
@@ -1459,40 +1459,38 @@ theorem wordLoc_renders_a_word (c : WordLoc) : Field.wordWf (Field.renderLoc c.v
   refine ⟨by cases hr : Field.renderLoc c.val with
             | nil => exact absurd hr hne
             | cons a t => rfl, ?_⟩
-  simp only [locWordOk, List.all_eq_true, Bool.and_eq_true, bne_iff_ne, ne_eq] at hw
+  simp only [locWordOk, List.all_eq_true, Bool.and_eq_true] at hw
   simp only [List.all_eq_true]
   intro x hx
-  simpa [isSp] using (hw x hx).1
+  exact (hw x hx).1
 
-/-! ### The entity transforms, behind gap 32's guard -/
+/-! ### The entity transforms
 
-/-- `tm edit ^id <key>=<value>` at the entity: refuse a tabbed line by name,
-otherwise write through the field setter.  `wf` never reads the line's bytes,
-so the standing proof rides along — an edit cannot move a placement. -/
+Until W-42 both stood behind gap 32's guard, tabbedLine: a line whose bytes carried a tab
+was refused by name, because a tab was a word character to this kernel and a separator to the
+host, and an edit routed through two token readings writes the wrong token.  D83 made the
+kernel read separators as the host reads them, so there is one reading and the guard's reason
+is gone; it is lifted, and `a_tabbed_line_is_edited_as_the_host_edits_it` (Boundary.lean) is
+the line the guard used to refuse, edited. -/
+
+/-- `tm edit ^id <key>=<value>` at the entity: write through the field setter.  `wf` never
+reads the line's bytes, so the standing proof rides along — an edit cannot move a placement. -/
 def editE (v : EditVal) (e : Entity) : Except KErr Entity :=
-  if lineHasTab e.val.line then .error .tabbedLine
-  else .ok ⟨{ e.val with line := setVal v e.val.line }, e.property⟩
+  .ok ⟨{ e.val with line := setVal v e.val.line }, e.property⟩
 
-/-- `tm edit ^id <key>=` at the entity: same guard, then remove the key's
-tokens — or refuse by name if there is nothing to remove. -/
+/-- `tm edit ^id <key>=` at the entity: remove the key's tokens — or refuse by name if there
+is nothing to remove. -/
 def unsetE (k : EditKey) (e : Entity) : Except KErr Entity :=
-  if lineHasTab e.val.line then .error .tabbedLine
-  else if Field.hasKeyTok k.val e.val.line then
+  if Field.hasKeyTok k.val e.val.line then
     .ok ⟨{ e.val with line := Field.unsetKey k.val e.val.line }, e.property⟩
   else .error .keyAbsent
 
-/-- **The gap-32 check bites** (§5.8): a line carrying a tab anywhere in its
-raw bytes is refused, whatever the key and value. -/
-theorem editE_refuses_a_tabbed_line (v : EditVal) (e : Entity)
-    (h : lineHasTab e.val.line = true) : editE v e = .error .tabbedLine := by
-  unfold editE; rw [if_pos h]
-
-/-- **…and does not over-bite**: a tabless line is never refused on that
-ground — the edit goes through, to exactly the field-setter write. -/
-theorem editE_ok_of_tabless (v : EditVal) (e : Entity)
-    (h : lineHasTab e.val.line = false) :
-    editE v e = .ok ⟨{ e.val with line := setVal v e.val.line }, e.property⟩ := by
-  unfold editE; rw [if_neg (by simp [h])]
+/-- **The edit is never refused at the entity**: every line goes through, to exactly the
+field-setter write — a tabbed line included since W-42 (editE_ok_of_tabless said this of a
+tabless line, and editE_refuses_a_tabbed_line refused the rest; both are retired with the
+guard). -/
+theorem editE_ok (v : EditVal) (e : Entity) :
+    editE v e = .ok ⟨{ e.val with line := setVal v e.val.line }, e.property⟩ := rfl
 
 /-- **Gap 4's collapse, generalised over the wired keys.**  Whatever keyed
 value the command path accepts, the field path — the very view the loader and
@@ -1529,11 +1527,9 @@ theorem the_edit_path_writes_what_the_field_path_reads (v : EditVal) (e a : Enti
     | .waiting n => Field.viewWaiting a.val.line = some n.val
     | .after ds => a.val.after = ds.val := by
   unfold editE at h
-  split at h
-  · injection h
-  · injection h with h
-    subst h
-    cases v with
+  injection h with h
+  subst h
+  cases v with
     | est lead key =>
         exact Field.view_set_remaining_slot lead.val key.val e.val.line lead.property key.property
     | dur d => exact Field.view_set_dur d.val e.val.line d.property
@@ -1569,26 +1565,20 @@ theorem the_edit_path_writes_the_minutes_it_was_given (d : NdDur) (bm : Nat) (e 
   rw [hl]
   split <;> rfl
 
-/-- The unset guard bites like the edit guard. -/
-theorem unsetE_refuses_a_tabbed_line (k : EditKey) (e : Entity)
-    (h : lineHasTab e.val.line = true) : unsetE k e = .error .tabbedLine := by
-  unfold unsetE; rw [if_pos h]
-
 /-- **The absence check bites** (§5.7): unsetting a key the line does not
 carry is `keyAbsent`, by name, not a reported success that removed nothing. -/
 theorem unset_of_a_key_the_line_does_not_carry_is_refused (k : EditKey) (e : Entity)
-    (ht : lineHasTab e.val.line = false) (hk : Field.hasKeyTok k.val e.val.line = false) :
+    (hk : Field.hasKeyTok k.val e.val.line = false) :
     unsetE k e = .error .keyAbsent := by
   unfold unsetE
-  rw [if_neg (by simp [ht]), if_neg (by simp [hk])]
+  rw [if_neg (by simp [hk])]
 
-/-- …and does not over-bite: present key, tabless line, the removal goes
-through. -/
+/-- …and does not over-bite: a present key's removal goes through, on any line. -/
 theorem unsetE_ok_of_present (k : EditKey) (e : Entity)
-    (ht : lineHasTab e.val.line = false) (hk : Field.hasKeyTok k.val e.val.line = true) :
+    (hk : Field.hasKeyTok k.val e.val.line = true) :
     unsetE k e = .ok ⟨{ e.val with line := Field.unsetKey k.val e.val.line }, e.property⟩ := by
   unfold unsetE
-  rw [if_neg (by simp [ht]), if_pos hk]
+  rw [if_pos hk]
 
 /-- What the unset removes, the field path stops seeing — `lookupKey_unsetKey`
 carried through the command path. -/
@@ -1596,12 +1586,10 @@ theorem the_unset_path_removes_what_the_field_path_reads (k : EditKey) (e a : En
     (h : unsetE k e = .ok a) : Field.lookupKey k.val a.val.line = none := by
   unfold unsetE at h
   split at h
+  · injection h with h
+    subst h
+    exact Field.lookupKey_unsetKey k.val e.val.line
   · injection h
-  · split at h
-    · injection h with h
-      subst h
-      exact Field.lookupKey_unsetKey k.val e.val.line
-    · injection h
 
 /-- `tm move`.  The destination is a `Dest`, not a `Nat`. -/
 def cmdMove (i : Id) (rank : Nat) : Relocation := fun p d => p.mapAt i (moveTo (d.site rank))
@@ -1650,10 +1638,11 @@ theorem nameEditFault_ok_of {p : WfPlan} {i : Id} {v : EditVal} {q : WfPlan} :
 /-- `tm edit ^id <key>=` — remove the key's tokens. -/
 def cmdUnset (k : EditKey) (i : Id) : Transform := (·.mapAt i (unsetE k))
 /-- `tm edit ^id est=v`.  Since the edit widening this **is** the keyed edit at
-`.est` — one path, one guard, one reader — so the wire behaviour of the
-standing `est` op moves in exactly one respect: a tabbed line is now refused
-as `tabbedLine` where it was silently edited against the wrong token reading
-(gap 32).  The written token is unchanged: `renderDur (Dur.simple v minutes)`,
+`.est` — one path, one reader — so the wire behaviour of the standing `est` op moved in
+exactly one respect: a tabbed line was refused as tabbedLine where it had been silently
+edited against the wrong token reading (gap 32); since W-42 (D83) a tab is a separator to
+this kernel as to the host, and the line is edited as the host edits it.  The written
+token is unchanged: `renderDur (Dur.simple v minutes)`,
 the same bytes `setEstE` wrote — and since W-35 (D56) it is written where the view reads:
 into the leading slot, in place, on a line whose leading estimate is the slot.  This `min`
 form's one value is in minutes, so its leading slot reads `Nm`; the host sends the value as
@@ -1847,8 +1836,8 @@ theorem move_last_wins_refuted_globally :
     ∃ (t t' : Site) (e : Entity),
       ((moveTo t e).bind (moveTo t')).map Subtype.val ≠ (moveTo t' e).map Subtype.val := by
   refine ⟨⟨1, 0⟩, ⟨2, 0⟩,
-    ⟨{ live := ⟨0, 0⟩, archive := some ⟨⟨1, 0⟩, ⟨[], true, []⟩⟩, status := .live .free,
-       line := ⟨[], true, []⟩ }, rfl⟩, ?_⟩
+    ⟨{ live := ⟨0, 0⟩, archive := some ⟨⟨1, 0⟩, ⟨[], true, [], []⟩⟩, status := .live .free,
+       line := ⟨[], true, [], []⟩ }, rfl⟩, ?_⟩
   simp [moveTo, lift, Except.map, Except.bind]
 
 /-! ### L4: what `move` is and is not invertible by
@@ -2061,7 +2050,7 @@ theorem floor_and_respect_are_incompatible (bm : Nat) (f : Nat → Entity → En
     (hf : FloorsAtRecorded bm f) : ¬ RespectsUserEdit bm f := by
   intro hr
   let e0 : Entity := ⟨{ live := ⟨0, 0⟩, archive := none, status := .live .free,
-                        line := ⟨[], true, []⟩ }, rfl⟩
+                        line := ⟨[], true, [], []⟩ }, rfl⟩
   have h1 : 1 ≤ remainingOf bm (f 1 e0).val.line := hf 1 e0
   have h2 : remainingOf bm (f 1 e0).val.line = remainingOf bm e0.val.line := hr 1 e0
   have h3 : remainingOf bm e0.val.line = 0 := rfl
@@ -2173,7 +2162,7 @@ original estimate unit"). -/
 def carryEst (t line : RawItem) : RawItem :=
   if ownsEstimate line then line
   else match estKeyTok t with
-    | some tok => ⟨line.indent, line.boxed, insertBeforeId tok.word line.toks⟩
+    | some tok => { line with toks := insertBeforeId tok.word line.toks }
     | none     => line
 
 /-- The bytes a demotion files forward: with no standing record, `demote`'s; with
@@ -2466,8 +2455,8 @@ def setEstInTo (w : List Char) : List Tok → List Tok
   | t :: ts => if isEstKey t.word then ⟨t.sep, w⟩ :: ts else t :: setEstInTo w ts
 
 def setEstTo (v : List Char) (r : RawItem) : RawItem :=
-  if hasEst r then ⟨r.indent, r.boxed, setEstInTo (['e', 's', 't', ':'] ++ v) r.toks⟩
-  else ⟨r.indent, r.boxed, insertBeforeId (['e', 's', 't', ':'] ++ v) r.toks⟩
+  if hasEst r then { r with toks := setEstInTo (['e', 's', 't', ':'] ++ v) r.toks }
+  else { r with toks := insertBeforeId (['e', 's', 't', ':'] ++ v) r.toks }
 
 theorem find_setEstInTo (w : List Char) (hw : isEstKey w = true) (ts : List Tok)
     (h : ts.any (fun t => isEstKey t.word) = true) :

@@ -452,23 +452,35 @@ fn two_documents_may_not_share_a_path() {
     assert_eq!(out, r##"{"err":{"duplicatePath":"w.md"}}"##, "{out}");
 }
 
-/// **Warning 6.** One `tm edit est=` from a line the kernel accepts used to
+/// **Warning 6.** One `tm edit est=` from a line the kernel accepted used to
 /// produce a line the kernel could no longer parse: the id token of `- [ ]^m1`
-/// carries no separator, so the inserted token ran into it.
+/// carried no separator, so the inserted token ran into it.
+///
+/// **Since W-42 (owner D83) that line is no boxed line at all**: a box needs a
+/// separator or the end of the line after its `]`, which is fork 4748911's
+/// `state_at`, so `- [ ]^m1` is a box-less line whose one word after `[` is
+/// `]^m1` — no `^id`, keyed by its title `[ ]^m1`, as the host keys it — and
+/// `m1` names nothing.  A boxed line's first token always begins with a
+/// separator now, so the edit this test was written for writes before an id
+/// that has one, and the line it writes is read back as an item.
 #[test]
 fn edit_est_cannot_produce_an_unparseable_line() {
     let out = call(
         r##"{"docs":[{"path":"w.md","lines":["- [ ]^m1"]}],"cmds":[{"op":"est","id":"m1","min":45}]}"##,
     )
     .unwrap();
-    assert!(out.contains("est:45m"), "{out}");
-    assert!(out.contains("^m1"), "the id token must survive: {out}");
-    // and the result is still an item line, so a second edit lands on it
-    let out2 = call(
-        r##"{"docs":[{"path":"w.md","lines":["- [ ]est:45m ^m1"]}],"cmds":[{"op":"est","id":"m1","min":90}]}"##,
+    assert_eq!(out, r##"{"err":{"kernel":"noSuchId"}}"##, "a glued box is no box, and `]^m1` no id: {out}");
+    let out = call(
+        r##"{"docs":[{"path":"w.md","lines":["- [ ] ^m1"]}],"cmds":[{"op":"est","id":"m1","min":45}]}"##,
     )
     .unwrap();
-    assert!(out2.contains("est:90m"), "{out2}");
+    assert!(out.contains(r#""- [ ] est:45m ^m1""#), "{out}");
+    // and the result is still an item line, so a second edit lands on it
+    let out2 = call(
+        r##"{"docs":[{"path":"w.md","lines":["- [ ] est:45m ^m1"]}],"cmds":[{"op":"est","id":"m1","min":90}]}"##,
+    )
+    .unwrap();
+    assert!(out2.contains(r#""- [ ] est:90m ^m1""#), "{out2}");
 }
 
 /// **Warning 7.** `LErr.badLine` was dead code: a line with an item's shape
@@ -645,10 +657,11 @@ fn add_titles_are_refused_by_name() {
 
 // ---------------------------------------------------------------------------
 // The widened edit: {"op":"edit","id","key","value"} — keyed set, empty value
-// = unset — plus gap 32's tab guard on the whole edit path, est op included.
-// Lean-side twins: the_edit_path_writes_what_the_field_path_reads,
-// parseCmd_rejects_edit_variants, edit_of_a_tabbed_line_is_refused,
-// est_of_a_tabbed_line_is_refused, unset_of_an_absent_key_is_refused.
+// = unset.  Until W-42 gap 32's tab guard stood on the whole edit path, est op
+// included; D83 made a tab the kernel's separator as it is the host's, and the
+// guard is lifted.  Lean-side twins: the_edit_path_writes_what_the_field_path_reads,
+// parseCmd_rejects_edit_variants, a_tabbed_line_is_edited_as_the_host_edits_it,
+// unset_of_an_absent_key_is_refused.
 // ---------------------------------------------------------------------------
 
 /// A keyed edit goes through the same field grammar the loader reads: the
@@ -827,28 +840,31 @@ fn the_bridged_keys_refuse_bad_values_by_name() {
     }
 }
 
-/// Gap 32, refused loudly instead of shipped wrong: `Text.isSp` is space-only,
-/// so a tab hides tokens from this kernel — on such a line Rust's edit and a
-/// kernel edit could write two different `est:` slots.  Any edit addressed to
-/// a line whose raw bytes carry a tab is `tabbedLine`, by name.
+/// **Gap 32, closed (owner D83, W-42).**  Until W-42 `Text.isSp` was the space
+/// alone, so a tab hid tokens from this kernel, and every edit addressed to a
+/// line whose bytes carried a tab was refused by name (tabbedLine) rather
+/// than written against the wrong token.  A tab is the kernel's separator now,
+/// as it is the host's, so the line is edited as the host edits it: the
+/// leading estimate `2b` is the slot (D56) and is rewritten in place, the tab
+/// between the title words kept.
 #[test]
-fn edit_of_a_tabbed_line_is_refused_loudly() {
+fn edit_of_a_tabbed_line_writes_what_the_host_writes() {
     let out = call(
         r#"{"docs":[{"path":"w.md","lines":["- [ ] 2b Fix\tthe bug ^m1"]}],"cmds":[{"op":"edit","id":"m1","key":"est","value":"45m"}]}"#,
     )
     .unwrap();
-    assert_eq!(out, r#"{"err":{"kernel":"tabbedLine"}}"#, "{out}");
+    assert!(out.contains(r#""- [ ] 45m Fix\tthe bug ^m1""#), "{out}");
 }
 
-/// ...and the standing est op sits behind the same guard — the one behaviour
-/// change to a shipped op from this widening, on the refusal side only.
+/// ...and the standing est op, which sat behind the same guard, edits the same
+/// line the same way.
 #[test]
-fn the_est_op_refuses_the_same_tabbed_line() {
+fn the_est_op_edits_the_same_tabbed_line() {
     let out = call(
         r#"{"docs":[{"path":"w.md","lines":["- [ ] 2b Fix\tthe bug ^m1"]}],"cmds":[{"op":"est","id":"m1","min":45}]}"#,
     )
     .unwrap();
-    assert_eq!(out, r#"{"err":{"kernel":"tabbedLine"}}"#, "{out}");
+    assert!(out.contains(r#""- [ ] 45m Fix\tthe bug ^m1""#), "{out}");
 }
 
 /// Unsetting a key the line does not carry is a named refusal, not a success

@@ -82230,3 +82230,389 @@ function should take its held lines from the file at HEAD and at every commit si
 
 **Gap 4152 — the planner-refusal probe runs on every `tm check`.**  It is the whole day's request; `kernel_call_counts`
 pins one call.  Narrowing it (a flag, a cache) is the owner's call if gap 4150's second matters in a pre-commit hook.
+
+<!-- =====================================================================
+     APPENDED 2026-10-02: stage 6 (the planner), run **W-42**, **TRACK G**
+     — the owner's D83: README gap 32 is closed before R3; the kernel reads
+     as a separator exactly what the host reads, and not one character more.
+     Built in the worktree `.claude/worktrees/w42-g` (branch `w42-g`, off
+     `d577322`); mutations, plants and drives in clones and scratch trees
+     under `scratchpad/w42-g/` (`mclone`, `p80`, the `drive*` trees), never
+     in the shared tree; the main checkout on `rebuild-on-lean` throughout.
+     Gap range **4160-4199**: 4160-4168 taken, 4169 free.  Parity: **P80**
+     taken, and P54 and P78 restated (D54: no withdrawal).  The register
+     runs P1-P80 with no hole; next free P81, pre-allocated to track R.
+     Burn-down **0**, unchanged.
+     ===================================================================== -->
+
+## Stage 6 — W-42 track G: one separator rule for the kernel and the host, and README gap 32 is closed
+
+### 0. The brief, measured before it was acted on
+
+* **The rule is two rules, and the brief named one.**  Fork 4748911's `grammar.rs` reads the separators BETWEEN
+  WORDS with `char::is_whitespace` (`split_words`, `skip_ws`) and ends a STATE BOX only at the end of the line or an
+  ASCII-whitespace byte after its `]` (`state_at`, `b[i + 3] as char` tested is_ascii_whitespace, and the box's
+  character must be one of `State::from_glyph`'s six).  So a no-break space separates two words and ends no box:
+  `- [ ]<NBSP>3 1b …` is a box-less line whose title begins `[ ]`, to the fork and to the host.  Adopting "a tab and
+  a no-break space" as the separator everywhere would have widened the box past the host's; the kernel took both
+  rules (§1).
+* **The host is the fork here.**  `split_words`, `skip_ws` and `state_at` are byte-identical at `d577322` and at
+  `4748911` (`awk` over both `git show`s); `ItemLine::parse` differs only in how it recognises the estimate slot
+  (`is_est_slot`), which reads no separator.  So D53's comparand and the fork agree, and nothing is recorded against
+  either.
+* **Gap 4130 said all four hand-typed worlds were refused; three were.**  Measured on the `d577322` binary before any
+  edit: the tab after the box, the tab after the `ci` digit and the no-break space after the `ci` digit each made
+  R3's request refuse `ciDisagrees t4 wire 3 plan 4`; the no-break space after the box did NOT — the kernel read a box
+  there where the host reads none, and both happened to read no `ci`.  The fourth world was a disagreement the gate
+  could not see, not a refusal.
+* **Two more worlds of the same class were refused at `d577322` and are not in gap 4130**, both driven (§7): a CRLF
+  `backlog.md` (every id read with a trailing carriage return: at `--now 2026-09-08T09:00` `tm drop ^a1` refused
+  `noSuchId` and `tm check` named `ciDisagrees d2 wire 5 plan none`; at `2026-09-07T09:00` the first refusal it
+  names is the same carriage return on a routine's item, routineRefused unknownItem a3), and a bare line carrying a
+  bracket (`- read the [Lean] book` in a week file: the host's candidate, the kernel's prose,
+  `ciDisagrees read the [Lean] book wire 3 plan none`).
+* **AGENTS §7.3's grammar figures are stale before this step**: 138 corpus lines with **43** clean, not 77, and
+  2,048 generated lines with **466** clean, not 470, measured at `d577322` through an oracle extracted and built
+  fresh for this step (gap 196's rule).  §7 has the figures after.
+
+### 1. The separator, measured, and where each half of it lives
+
+| where | the host (fork 4748911 = `d577322`) | the kernel since W-42 |
+|---|---|---|
+| between two words | `char::is_whitespace`: 25 code points, U+0009-U+000D, U+0020, U+0085, U+00A0, U+1680, U+2000-U+200A, U+2028, U+2029, U+202F, U+205F, U+3000 (enumerated from rustc 1.92.0's own predicate, not from a table) | `isSp`, the same 25 (`isSp_eq_whiteSpace`, `the_separator_is_white_space`); a run of them is one separator, kept verbatim in the token (`Tok.sep`) |
+| after a box's `]` | the end of the line, or one of five ASCII bytes: U+0009, U+000A, U+000C, U+000D, U+0020 (not U+000B) | `isBoxEnd`, the same five (`a_box_needs_its_end`) |
+| between the bullet and the box | `- ` (a SPACE: `strip_prefix("- ")`), then any `char::is_whitespace` run | the same; the run after the space is `RawItem.boxLead`, verbatim |
+| before the bullet | nothing: the host reads an item at column 0 only | the space alone (`isIndent`), as before — README gap 46's divergence, not widened |
+| before a comment opener | spaces (`opens_comment`) | `isIndent`, as before |
+| a title key | `Tree::key_of`: the title, `ItemLine::title` — the leading segment's span verbatim, later words after one space | `keyWords`: the same span (`the_title_key_is_the_hosts_span`; README gap 403 closed) |
+
+**One definition.**  `isSp` is the kernel's one separator; `isBoxEnd` is narrower BECAUSE the host's box test is,
+and `isSp_of_isBoxEnd` says it is a sub-predicate rather than a second definition.  `LogStamp.isRustSpace`, the
+log's copy of the same 25 code points written at stage 5 D9 step B2, is pinned to it by `isRustSpace_eq_isSp`; its
+readers live in `Log.lean`, which is track R's this run (gap 4161).
+
+### 2. What changed in the kernel
+
+`Text.lean`: `isSp` (the space → the 25), `isIndent` (new; the space), `chunk` (a chunk starts where a separator
+starts, not where a space does).  `Line.lean`: `RawItem` gains `boxLead` (last, defaulted, so a record built by
+field name need not name it); `serializeItem` writes it; `isBoxEnd` (new); `boxAt` demands the end; `bareOk` drops
+tokBare's bracket clause for the one round trip B needs — the run starts with the bullet's space, carries a word, and
+does not read as a box after its separators; `parseToks` carries the lead; `parseBare` (new) and `parseBody` read a
+box after any separator run; `parseItem` splits the indent with `isIndent`; `CanonicalItem` and `CanonicalKeyed` gain
+the two clauses below; `keyWords`/`afterSlots` key a title by its span; `endBox` (new) and `unsetKey` keep a box
+ended (§6, P80).  `Cmd.lean`: KErr.tabbedLine and lineHasTab are deleted, `editE` refuses nothing, `unsetE` refuses
+only the absent key, `locWordOk` refuses every separator and not the space alone.  `Plan.lean`: `opensComment` and
+`headingBody` read `isIndent`, which is what they read before.  `Stamp.lean`: `isRustSpace_eq_isSp`.  The wire loses
+one name: `kerrName` no longer has tabbedLine to print.
+
+### 3. The laws
+
+**Retired, each refuted by the theorem beside it** (D5: a theorem that held because a tab was not a separator
+describes the hole):
+
+| retired | why it is false since D83 | refuted by |
+|---|---|---|
+| tokens_are_whitespace_separated (CHEAT 122) | its claim now HOLDS, so a negative test of it is a check no input can fail; withdrawn in place | `the_separator_is_white_space`, `a_tab_separates_the_id` |
+| one_space_is_not_the_only_separator_after_the_bullet (CHEAT 123) | the same | `a_line_spaced_from_its_box_is_boxed` |
+| a_line_with_a_bracket_is_not_a_bare_item | `-  [ ] …` is boxed and `- read the [Lean] book` is an item | `a_line_spaced_from_its_box_is_boxed`, `a_bracket_in_a_bare_line_is_title_text` |
+| boxAt_box | `[ ]x` is no box | `a_box_needs_its_end` |
+| parseBody_boxed, parseBody_bare_of_noBox, parseBody_bare_head | a box after separators is read; a box glued to a word is not | `parseBody_boxed_of_end`, `parseBody_bare_of_no_box_after_seps`, `a_line_spaced_from_its_box_is_boxed` |
+| round trip B over the old `CanonicalItem` | a boxed line whose first token has no separator writes `- [ ]x ^a1` and re-reads box-less | `round_trip_B_without_the_box_end_is_refuted` |
+| editE_refuses_a_tabbed_line, unsetE_refuses_a_tabbed_line, edit_of_a_tabbed_line_is_refused, est_of_a_tabbed_line_is_refused, unset_of_a_tabbed_line_is_refused, the_tab_guard_is_not_vacuous | there is no guard: the line is edited as the host edits it | `editE_ok`, `unsetE_ok_of_present`, `a_tabbed_line_is_edited_as_the_host_edits_it` |
+| editE_ok_of_tabless | implied by `editE_ok`, which drops its hypothesis | — |
+| tokBare_sep, tokBare_head, bareOk_all, bareOk_mk | helpers of the deleted clause | `bareOk_iff` |
+
+**Restated — the same name, a different statement** (old ⇒ new?):
+
+* `CanonicalItem` gains `r.boxLead.all isSp` (vacuous on every record the old grammar built: its lead was `[]`) and
+  "the first token's separator begins with a box end" (NOT vacuous: `round_trip_B_without_the_box_end_is_refuted` is
+  a record the old predicate admitted); its indent clause reads `isIndent`, which is what `isSp` was.  So
+  `parse_serialize`, `setEst_canonical`, `setKey_canonical`, `unsetKey_canonical`, `setLead_canonical`,
+  `renderItem_canonical` and `canonicalKeyed_of_canonical` are stated over a NARROWER predicate: the new statement does
+  not imply the old one, and the old one is false (the refutation).  Every setter re-proves the new clause
+  (`endsBox_of_head_sep`, `setEstIn_head_sep`, `setKeyIn_head_sep`, `setLeadToks_head_sep`,
+  `insertBeforeId_endsBox`, `endBox_endsBox`); `canonical_iff` is a six-way conjunction.
+* `CanonicalKeyed`: a boxed line as `CanonicalItem`; a bare line has no lead and the new `bareOk`.  The new `bareOk`
+  admits brackets the old refused, and on a run whose separators are spaces and whose words carry no other
+  whitespace it refuses nothing the old admitted, so there old ⇒ new; `parseLine_serializeItem` is re-proved over it.
+* `boxAt_eq_some` gains the end (new ⇒ old); `parseBody_bare` and `parseToks_ok` read the four-field record (the same
+  statement with the lead `[]` on a bare line).
+* `chunk_merge`'s hypothesis reads `isSp` where it read the space — the same statement over the new `chunk`.
+* Dropping the tab hypothesis (new ⇒ old, strictly stronger): `applyCmd_edit_succeeds`, `applyCmd_est_succeeds`,
+  `applyCmd_unset_succeeds`, `applyCmd_edit_names_the_plan_tier_fault`, `edit_of_a_dangling_after_is_refused_by_name`,
+  `edit_of_a_cyclic_after_is_refused_by_name`, `applyCmd_after_succeeds`, `unset_of_an_absent_key_is_refused`,
+  `unset_of_a_key_the_line_does_not_carry_is_refused`, `unsetE_ok_of_present`.
+* The same text over the new definitions, re-proved: `serialize_parse` (round trip A — every line the parser
+  accepts writes back byte for byte, now over more lines), `move_has_no_inverse_command`,
+  `the_edit_path_writes_what_the_field_path_reads`, `the_unset_path_removes_what_the_field_path_reads`,
+  `lookupKey_unsetKey`, `group_word`, `digitsOf_noSpace`, `digitChar_not_space`, `isName_no_space`,
+  `key_name_avoids`, `wordLoc_renders_a_word`; and every line literal gained the record's fourth field.
+
+**New** (38 audit lines, appended under Check.lean's W-42 banner; 16 retired lines removed): the definitions' laws
+above and `isSp_of_isIndent`, `isSp_of_digit`, `isBoxEnd_space`, `bareOk_iff`, `parseBody_cons`,
+`Field.isSp_of_printable`, `Field.isSp_of_isNameC`, `Field.isSp_of_isKeyC`, `Field.endBox_words`,
+`Field.endBox_filterMap_word`, `Field.toksWf_endBox`, `Field.idWords_endBox`; `an_unset_keeps_the_box_ended`, P80's
+positive statement (§6); and the witnesses D40 asked for (§8) — `setLeadWord_writes_the_leading_word`, for
+`setLeadWord`, whose body this step touched (its two record literals became updates) and which came back ALONE at
+`default`: `lead_edit_is_silent`, its one reader, reads it through the estimate view alone; and
+`the_title_key_of_a_boxed_line_skips_its_slots`, for the new `Field.afterSlots`, which SURVIVED `default` — `keyOf`
+refuses an id-less boxed line before it asks for a title key, so nothing in the package read a boxed line's key; the
+key is still the host's (`Tree::key_of` keys such a line by its title, with a `missing-id` warning), and that is now
+stated; and `PlannerWit.kerrName_names_each_refusal` with `PlannerWit.kerrName_injective`, for `kerrName`, whose
+tabbedLine arm went with the refusal and which SURVIVED `default`: every theorem about a refusal on the wire reads it
+symbolically, so a kernel naming every refusal `""` built.  Negative.lean: CHEATs 122 and 123
+withdrawn in place (their claims hold), 174-176 amended for the field count only, **260-265** appended — a no-break
+space ending a box, a tab indenting an item, a zero-width space separating, the one-space title key, an unset gluing a
+box to a no-break space, a tab indenting a comment opener — each failing for its stated reason.
+
+### 4. The edit path: tabbedLine is lifted, titleTab is kept
+
+The guard existed because a tab was a word character to the kernel and a separator to the host, so an edit could land
+on a token the host never read.  That reason is gone, and so is the guard: `- [ ] 5 6b Finish<TAB>the report ^m1`
+takes `dur=45m` before its `^m1`, which is what fork `set_token` writes, and the `est` op rewrites the leading `6b`
+(D56) — `a_tabbed_line_is_edited_as_the_host_edits_it`, by `decide` over the loaded plan.  In the binary:
+`est_edit_of_a_tabbed_line_writes_what_the_host_writes`, the tab-line arm of
+`edit_refuses_by_name_where_the_host_wrote_or_said_nothing` (now `loc:out` written before the `^id`), and the FFI's
+`edit_of_a_tabbed_line_writes_what_the_host_writes` and `the_est_op_edits_the_same_tabbed_line`.  `tm stop`,
+`tm done --partial` and `tm extend` on a tabbed line write the estimate as on any line
+(`tm_stop_on_a_tabbed_line_writes_the_estimate_as_on_any_line`,
+`tm_done_partial_on_a_tabbed_line_writes_the_estimate_and_says_nothing_new`, `tm_extend_on_a_tabbed_line_extends_it`):
+D66's call on gap 3047 can no longer fire, and the branch that prints its sentence is dead (gap 4165).
+`edit_est_cannot_produce_an_unparseable_line` is restated: its line, `- [ ]^m1`, is box-less to the host and now to
+the kernel, so `m1` names nothing, and the spaced line it was protecting is edited.
+
+**titleTab is kept, and the change does not force it** (the brief: keep it unless forced, and say which).  A title
+carrying a tab now reads back as written — the tab is a separator kept verbatim in the span the key is — so the
+refusal is policy, not necessity; the bridge's message for it said "this kernel cannot read a tab as a separator"
+and now says what is true.  Its comment in `parseCmd` sits in track S's region this run (gap 4164).
+
+| parity | what diverges | this branch, restated at W-42 track G | fork 4748911 | decided by |
+|---|---|---|---|---|
+| **P54 (refined)** | where the three estimate writers put the estimate | RESTATED (issued at W-36 track T, its `taken` line standing): the leading estimate that is the slot is rewritten in place as the verb spells it and gains no `est:` token; an `est:` slot is written in canonical minutes — on EVERY line, a tabbed one included.  The clause the row carried for a tabbed line (gap 32: no estimate written; `tm stop` and `tm done --partial` end the block and say so, `tm extend` refused) is FALSE since D83 | writes an `est:` token in the verb's own spelling beside a leading estimate, on every line | D62, D56; D83 for the tab clause |
+| **P78 (refined)** | what `tm check` names | RESTATED (issued at the W-41 repair, its `taken` line standing): `tm check` names every refusal of the day R3's `tm plan` asks the kernel for, at the item's line, exit 2.  The world it was built for — a tab or no-break space after a box or a `ci` digit (gap 32) — names NOTHING since D83 (`no_world_is_refused_by_the_planner`, four worlds); what it names is a real disagreement in what the two readers derive, `ci:+5` (gap 4162; `a_ci_the_kernel_reads_otherwise_is_named_at_its_line`) | asks no planner, prints "no problems" | D80, D32's shape; D83 |
+
+### 5. Gap 4130 closed: the four worlds, and P72 still bites
+
+`kernel_separator_worlds.rs` (new, this track's) builds `plan-basic` with `^t4`'s line hand-edited four ways — a tab
+or a no-break space, after the box or after the `ci` digit.  `no_world_is_refused_by_the_planner`: `tm check`, which
+asks for R3's day (P78), names no `planner-refusal` on any of the four — `no problems` on three, and on the
+no-break-space-after-the-box world only the host's own `missing state`, as at `d577322`.
+`the_kernel_plans_a_separator_world_as_its_spaced_twin`: on the three worlds the host reads as the unedited tree, the
+host's reader returns the same item (state, `ci`, estimate, title, parent) and the kernel's planned day EQUALS the
+unedited tree's, by value.  `the_nbsp_box_world_is_box_less_to_both_readers`: the host finds no box and no slots and
+the kernel plans no row for `^t4`; `the_kernel_plans_the_nbsp_box_day_as_the_fork_does` compares that day with fork
+4748911's through `forkday::compare_day_with_fork`, the frozen class lines' comparator, against the in-tree fork
+planner (R3 deletes it: gap 4168).  P72 still refuses a REAL disagreement, `ci:+5` (§7, gap 4162), and P78 names it:
+`week/2026-W37.md:19: error[planner-refusal]: kernel refusal: ciDisagrees t4 wire 5 plan 3`, exit 2.
+
+### 6. An unset keeps its box ended — P80
+
+Fork `remove_token` drops a token with its own separator.  On `- [x] due:2026-09-10<NBSP>Title ^a1` that glues the box
+to a no-break space, which ends no box, so the done item loses its state on the next read.  DRIVEN against the fork's
+own `tm-core` (a scratch crate on the extracted `4748911`, `p80/`): `"- [x]\u{a0}Title ^a1"`, box-less on re-read; the
+tab and space spellings stay boxed.  The kernel cannot write that: `unsetKey_canonical` would be false and the store
+would hold a line that does not re-read as itself (round trip B).  So `unsetKey` puts a space before a first token whose
+separator ends no box (`endBox`, a no-op on every other run); `an_unset_keeps_the_box_ended` states all three spellings,
+and CHEAT 264 is the fork's line, refused.  DRIVEN through the W-42 binary on `tm init --example`:
+`tm edit ^a1 due=` writes `- [x] <NBSP>Insurance claim for the bike  ^a1`, exit 0, `tm check` "no problems".
+**The same command on the `d577322` binary DELETED A TITLE WORD** (re-driven at the resume on both binaries at
+`--now 2026-09-07T09:00`): the no-break space was a word character there, so `due:2026-09-10<NBSP>Insurance` was ONE token
+and the unset removed it whole — `- [x] claim for the bike  ^a1`, exit 0, `tm check` "no problems".  Gap 32 was a
+silent data loss on the shipped edit path as well as the refusals it is remembered for; D83 closes it, and P80 is the
+one departure the closing costs.
+
+**Parity P80 taken**: `tm edit ^id <key>=` (an unset through the kernel) on a boxed line whose removed token was the first after the box and whose next token is led by a separator that ends no box (a no-break space, or any `White_Space` character outside ASCII) writes a space after the box so the line keeps its box (`Field.unsetKey`, `Field.endBox`); fork 4748911's `ItemLine::remove_token` glued the box to that separator, `- [x]<NBSP>Title ^a1`, a box-less line on the next read with its state lost (the owner's D83, W-42 track G)
+
+### 7. What moved
+
+**The oracle** (fork 4748911 extracted and built fresh by `build-oracle.sh` into `scratchpad/w42-g/oracle`, sets 1
+and 2 of `run-oracle.sh`, `512 4`, deterministic):
+
+| input set | `d577322` | W-42 |
+|---|---|---|
+| 1, the corpus's item lines | 138 compared, 43 with nothing to report | 138, **43** — unchanged, row for row |
+| 2, generated lines | 2,048 compared, 466 with nothing to report | 2,048, **1,395** |
+| 2: item-ness disagreements | 1,049 (922 id-less + 127 with an id: README gap 32's figure) | **0** |
+| 2: "different id" (a tab glued into the id) | 14 | **0** |
+| 2: "Rust reads one, kernel refuses (noId)" / badLine noId | 9 / 3 | **0 / 0** |
+| 2: "est edit — the kernel refused the edit" (the tab guard) | 27 | **0** |
+| 2: lines the id comparison ran on / the `est` edit ran on | 999 / 60 | 2,048 / 177 |
+| 2: lines the kernel loads (and hands back unchanged) | 1,506 (1,049 of them prose) | 596 |
+
+The last row is the class turning from prose into items: 1,452 generated lines are now items the kernel REFUSES by
+name — a boxed line with no `^id` (`noId`, cheat 174's rule), a reference a one-line plan cannot resolve, a `^`-word
+gap 33 reads as a second id, a value the field grammar refuses.  The comparer reports a refusal as a disagreement only
+where Rust is clean AND reads an id, and those rows hold 14 lines (3 manyIds, 4 danglingDep, 7 danglingParent); it
+does not break the rest down, and this step did not either.  The rows that GREW are classes that were there: "Rust
+reads none, kernel reads one" 437 → 485 (an id-less bare line keyed by its title, D31), "kernel refuses (manyIds)" 13
+→ 26 (gap 33), "est edit — different line" 12 → 70 (D56's slot rewrite against the fork's appended token, P54); the
+other acceptance rows shrank ("missing state" 351 → 347, "duplicate key" 233 → 70), because a line the kernel refuses
+is no longer a line it accepts.
+
+**The item-grammar census** (`kernel_item_grammar.rs`, `TM_PROPTEST_CASES=4096`, `--test-threads=1 --nocapture`):
+`[drawn, addressable, compared]` — the drop arm **[4118, 4118, 2433], 59.1%** (19.1% before), the keyed-edit arm
+**[4118, 4118, 3255], 79.0%** (24.7%), the item-ness arm **[4118, 4118, 3306], 80.3%** (36.8%).  Nothing is assumed
+away: `drawn` equals `addressable`.  Re-taken once on the final tree at the resume (the census is a fresh random draw
+each run, D46 — two runs, not one): **[4118, 4118, 2397], 58.2%**, **[4118, 4118, 3291], 79.9%**, **[4118, 4118,
+3318], 80.6%**; refusal census {badHorizon 898, badState 1, danglingDep 710, danglingParent 1354, depCycle 4, manyIds
+651, noId 2698, noSuchId 1, parentCycle 4}, 6 passed.
+
+**The corpus ratchet**: 29/37 files and 4/5 whole plans, unchanged; `corpus/round-trip.expected` untouched.
+
+**Driven on both binaries** (`d577322`'s and W-42's, `tm init --example` trees; re-driven at the resume from
+`scratchpad/w42-g/drive.sh` at `--now 2026-09-07T09:00`, the CRLF tree at `2026-09-08T09:00` as well): the unset of §6
+— a title word deleted → the box and the title kept; a CRLF `backlog.md` — `tm drop ^a1`
+`noSuchId` → `dropped ^a1` with the `\r` kept, `tm check` `ciDisagrees d2 …` → "no problems"; `- read the [Lean] book`
+appended to the week file — `tm check` 2 errors → 1 (the host's own `missing state`), the planner refusal gone;
+`-  [Z] stray thought ^z1` — loaded at `d577322` (prose to the kernel), refused `badLine … badState 'Z'` now;
+`-  [ ] call mom about the trip`, no id — loaded at `d577322` (`tm check` one warning, exit 0), refused `badLine …
+noId` now (`tm check` exit 2; `tm check --fix-ids` assigns the id and the tree loads), exactly as `- [ ] call mom …`
+was at `d577322` (gap 4163).
+
+### 8. The gates
+
+* **Check 3** (the axiom audit): 38 lines appended under the W-42 banner and 16 removed, one per retired theorem (§3);
+  6,171 + 38 − 16 = 6,193, the count check 3 prints.
+* **Check 4** (Negative.lean): every block that states a claim still fails, and each of the nine this step wrote or
+  amended for its stated reason, read off a full elaboration with `-DmaxErrors=1000000`: 174, 175 and 176 by `rfl`
+  failing on the claim (the field count alone moved), 260-265 by `decide` proving the claim false.  CHEATs 122 and 123
+  carry `withdrawn` in their headers, so the check's own rule exempts them, and their theorems are deleted rather than
+  left to compile.
+* **Check 8**: a counted block in `citations-allow.txt` for the eleven dead names the ledger and AGENTS.md cite, 22
+  citations (README gap 4160 is AGENTS.md's half); every name W-42's own prose and code cite resolves.
+* **Check 9** (D40), run in the clone `mclone` only, one definition at a time (`mutate.py --write --only`), then
+  `--gate` there: **645 new or changed since `86c4dc6`, 645 rostered, 0 owed** (`mutations.txt` 614 → 646 rows: 32
+  new; `Field.setLead` re-audited, its body touched; `Field.setRemaining` and `Field.leadIsTheSlot` re-verified with
+  `--verify --write`, their recorded pin sites moved by this step's edits to `Cmd.lean`).  Of the 33 definitions this
+  step added or touched, **30 are PINNED** by a constant, an identity or a synthesised literal — **three of them only
+  after a witness** (§3), having come back FATAL first: `setLeadWord` ALONE at `default`, `Field.afterSlots` SURVIVED
+  `default` and the identity, `kerrName` SURVIVED `default`.  **Three are UNFOLDABLE** — `orientCore` (no `Inhabited Core`), `editE` and
+  `unsetE` (no `Inhabited (Except KErr Entity)`) — so the gate counts them "pinned by nothing", 32 → 35; each was
+  then planted BY HAND in the clone with a constant the fold could not build, and each build FAILED for the right
+  reason: `editE := .error .keyAbsent` at `editE_ok` (`rfl`), `unsetE := .error .keyAbsent` at
+  `unsetE_ok_of_present` (its statement false of the plant; the build also reported errors at
+  `unset_of_a_key_the_line_does_not_carry_is_refused` and `the_unset_path_removes_what_the_field_path_reads`, but
+  only in their proof scripts — both statements hold of the plant, so neither is a pin, which the resume's read of
+  the log says rather than the count of errors), `orientCore` with no archive at
+  `a_backwards_demotion_is_refused` (`decide`, the statement false); the clone's `git status --porcelain` equal before
+  and after each.  The rows still read `unfoldable`: the gate has no column for a hand plant, and this paragraph is
+  their evidence.
+* **Check 10**: P80 taken; P54 and P78 re-anchored to their `(refined)` rows (§4), their `taken` lines standing.
+* **Check 12**: `reach-exempt.txt` shrinks by one, 1,199 → 1,198 — `Tok.raw` is reached now that `bareOk` reads a run's
+  raw bytes; `Cmd.lean`'s census loses lineHasTab (44 of 59 → 43 of 58), `Line.lean` gains `isBoxEnd`, `parseBare`,
+  `afterSlots` and `Field.endBox`, all reached (165 of 249 → 167 of 252), `Text.lean` gains `isIndent` (21 of 27 → 23
+  of 28).
+
+### 9. Gaps
+
+**Gap 32 — CLOSED here** (§1-§3), with cheats 122 and 123.  **Gap 403 — CLOSED here** (`keyWords`).  **Gap 4130 —
+CLOSED here** (§5).
+
+**Gap 4160 — AGENTS.md says gap 32 is open.**  1. *What.*  §8.1's trap ("A tab is not a separator"), §2.4's list of
+`kernel` names (it carries tabbedLine) and §7.3's grammar figures (77 and 470; measured 43 and 466 at `d577322`, 43
+and 1,395 here).  2. *Why not changed.*  AGENTS.md is not this track's file.  3. *Cost.*  A reader of the process
+document meets a closed gap as open.  4. *Clears it.*  Whoever holds AGENTS.md next.
+
+**Gap 4161 — the log's whitespace is a second definition of the separator.**  1. *What.*  `LogStamp.isRustSpace`
+(Stamp.lean, read in `Stamp.lean` and seventeen times in `Log.lean`) is the same 25 code points as `isSp`.
+`isRustSpace_eq_isSp` pins them; check 11 does not see the pair (the bodies differ in shape — `isSp` is a ladder so a
+printable ASCII character costs two comparisons).  2. *Why not changed.*  `Log.lean` is track R's this run.  3.
+*Cost.*  §5.3's class held by a theorem rather than removed.  4. *Clears it.*  The step that holds `Log.lean`: its
+readers call `isSp` and `isRustSpace` is deleted with its theorem.
+
+**Gap 4162 — `ci:+5` is read 5 by the host and not at all by the kernel.**  1. *What.*  The host's `ci:` value is
+`u8::from_str`, which takes a leading `+`; `Field.parseCi` does not, so the kernel keeps the positional `3`, the wire
+carries 5, and P72 refuses the day (`ciDisagrees t4 wire 5 plan 3`; `ci:+0` likewise; `ci:05` agrees).  P78 names it
+in `tm check`, beside the host's own "ci given twice" warning.  2. *Why not changed.*  It is not a separator: the two
+readers tokenise the line alike and derive different values, which is the disagreement P72 exists to refuse.  3.
+*Cost.*  R3's `tm plan` refuses a day the fork plans.  4. *Clears it.*  The owner: one reading of a `ci:` value.
+
+**Gap 4163 — the kernel's two refusals of a boxed line now reach a box after a separator run.**  1. *What.*  A
+line whose box follows two spaces or a tab was prose to the kernel and is boxed now, so the kernel's standing answers
+for a boxed line reach it: a box whose character is no glyph (`-  [Z] x`, which the host reads box-less, `missing
+state`) is `badLine … badState`, and a box with no `^id` (`-  [ ] call mom`, which the host keys by its title with a
+`missing-id` warning) is `badLine … noId` — each refusing the whole tree, where at `d577322` the tree loaded (§7).  2.
+*Why not changed.*  Both answers are standing decisions for `- [Z]` and `- [ ] x` (§5.7; cheat 174, D31/D33); D83
+moved where a box is found, not what a box must carry.  3. *Cost.*  A tree with such a line, which `tm check` passed
+(`noId`) or already failed (`badState`), is refused by every kernel-backed verb until the line is fixed; `tm check`
+names it and `tm check --fix-ids` fixes the `noId` case.  4. *Clears it.*  Nothing, unless the owner wants either
+refusal read the host's way.
+
+**Gap 4164 — add's title guards were written for the old separator.**  1. *What.*  `parseCmd` refuses a title
+carrying a tab (`titleTab`) and one with a SPACE at an edge (`titleEdge`); its comment says a tab "is not a separator
+this kernel can read", false since D83, and an edge no-break space is now a separator the edge guard does not check
+(the host trims with `str::trim` before sending, so no shipped path reaches it).  2. *Why not changed.*  The brief
+keeps `titleTab` unless forced, and it is not forced (§4); `parseCmd` is in `Boundary.lean`'s request-reading region,
+track S's this run.  3. *Cost.*  `tm add` refuses a title the line grammar now reads back as written.  And on the
+wire alone — MEASURED at the resume through the FFI's `oneshot`, a request the shipped binary never builds (`tm add`
+trims the line with `str::trim`, the same `White_Space` set) — an edge separator other than a space is not refused and
+the add's token run (`addTitleToks`) does not re-read as itself: a title `<NBSP>a` writes `- [ ] a ^7`, the no-break
+space DROPPED (the first token's separator is forced to a space); `a<NBSP>` writes `- [ ] a<NBSP> ^7` with an
+empty-word token before the id, so an `est` in the SAME request writes `- [ ] a<NBSP> est:45m ^7` where the same two
+commands in two requests write `- [ ] a est:45m<NBSP> ^7`; and a title of one no-break space is not `titleBlank` and
+adds `- [ ]  ^7`, an item with no title.  Before D83 a no-break space was a word character and none of the three
+arose.  4. *Clears it.*  The owner on `titleTab`; then `titleEdge` and `titleBlank` read `isSp` (two lines in
+`parseCmd`), and the comment says why.
+
+**Gap 4165 — `tm/src/cli/day.rs` keeps D66's branch for a refusal that cannot happen.**  1. *What.*  `tm stop` and
+`tm done --partial` match a kernel refusal named tabbedLine to print "the estimate was not written"; the kernel has no
+such refusal.  2. *Why not changed.*  `day.rs` is track H's this run.  3. *Cost.*  Dead code and a dead sentence.
+4. *Clears it.*  The step holding `day.rs`: delete the arm and its `estimate_not_written` field.
+
+**Gap 4166 — the heading reader is two readers.**  1. *What.*  The host's `heading` (grammar) and `heading_of`
+(store) want a space, a tab or nothing after the `#`s and `trim` the rest; `Plan.isHeading` takes any `#` line and
+`headingBody` drops spaces only, so `#Demoted`, `#<TAB>Demoted`, `# Demoted ` and a CRLF `# Demoted\r` name different
+sections to the two.  2. *Why not changed.*  It is not the item separator and D83 did not widen it; widening
+`headingBody` alone would still leave `#Demoted`.  3. *Cost.*  A hand-edited or CRLF heading can file a `# Demoted`
+record where the host sees an organisational section.  4. *Clears it.*  One heading rule, the host's, taken as D83
+took the separator.
+
+**Gap 4167 — the item-grammar census floors are the pre-D83 measurement.**  1. *What.*  `kernel_item_grammar.rs`
+demands each arm compare 1/10 of its draws; they compare 59-80% now (§7).  2. *Why not changed.*  A floor is raised
+on a multi-seed measurement (D46), not on one run.  3. *Cost.*  A regression that narrowed item-ness back towards the
+old rate would pass the floor.  4. *Clears it.*  The next step on the grammar tests.
+
+**Gap 4168 — the no-break-space-after-the-box day is compared with the in-tree fork planner.**  1. *What.*
+`the_kernel_plans_the_nbsp_box_day_as_the_fork_does` sits in a `BEGIN THE FORK PLANNER` region; R3 deletes it.  2.
+*Why not changed.*  The world is new and has no frozen line; freezing one is a comparand change (D64/D70/D85).  3.
+*Cost.*  After R3 the claim rests on the reader comparison alone.  4. *Clears it.*  Track C's comparand work, or D72's
+`tm-oracle plan` arm, before R3.
+
+### 10. Acceptance, capped (`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`)
+
+`git status --porcelain` recorded before and after each measurement below and equal each time.  Other tracks were
+building and testing on the same machine throughout; the load average is quoted where a number could feel it.
+
+**The step was cut off once, by an account usage limit and through no fault of its own**, mid-way through its first
+workspace run, with nothing committed.  At the resume the worktree's diff was compared with the orchestrator's backup
+(`.git/w42-wip/w42-g.patch`, 255,627 bytes) and was byte-identical, and nothing measured before the cut was trusted
+until it was measured again on the tree committed here: `check.sh`; the oracle's input sets 1 and 2 (identical to
+the pre-cut report, line for line); the 4096-case census (§7, a second draw); `Negative.lean` elaborated with every
+error shown (225 errors, byte-identical to the pre-cut log); the four worlds and the §7 drives on both binaries
+(`scratchpad/w42-g/redrive/`, `worlds/redrive-*`); the fork-side P80 probe; and three workspace runs.
+
+* **`check.sh`, all seventeen lines ok, exit 0** (27.6 s warm at load 5.9-6.1, the kernel built; check 14 remembered
+  all 93 modules, 87 of them replayed on this same build before the cut), on the tree committed here: lake build ok;
+  totality ok; axiom audit **6,193** theorems (Classical.choice 3,256, Quot.sound 4,752, propext 5,789; 401 on none
+  — `d577322`'s 6,171, plus 38 new, less 16 retired); Negative.lean rejected; FFI **95**; corpus **29/37 and 4/5**;
+  stage goals **0**; prose citations 54,922 (52,596 resolved, 2,326 allowed, 479 counted), 0 allow entries unused;
+  new definitions mutated **645** rostered, **0** owed (219 unfoldable, 156 witness fixtures, 35 pinned by nothing,
+  2 literal); parity **P1-P80**, no hole, next free P81; no two names, 3,353 bodies, 0 UNANSWERED; every emitted
+  definition reached, **1,248** reachable, **1,198** exempt; fields 17/17; inputs 33 of 37; sent 169 key paths, 168
+  decoded; written 220, 168 written; the kernel replays 93 modules.  No new compiler warning: the build's warnings,
+  by file and message, are `d577322`'s less three unused simp arguments in `Text.lean`, and the one on a line this
+  step rewrote (`canonicalKeyed_of_canonical`'s unused `hft`) was there at `d577322`.
+* **`cargo test --workspace`, THREE complete runs, each 2,100 passed / 0 failed / 32 ignored across 129 result lines,
+  0 warnings, no `.proptest-regressions` file changed** (`d577322`'s 2,090 across 128, plus this step's one new
+  binary): 35 min 50 s at load 3.3 → 24.8, 36 min 48 s at 19.9 → 18.0, 34 min 15 s at 15.6 → 9.6 — four other
+  tracks building and testing throughout.  The named suites, the same in each run: T5 `kernel_replay_parity` 31 (4
+  ignored); the door
+  `kernel_log_door` 26; `cli_switch_acceptance` 16; `cli_latency` 5 (1 ignored); `kernel_call_counts` 2; `one_padder`
+  9; `one_renderer` 27; `kernel_row_cells` 28; `kernel_item_grammar` 6; `kernel_planner_wire` 27; `planner_classes` 54
+  (6 ignored); `planner_invariants` 39 (2 ignored); `cli_conformance` 3; `cli_json_matrix` 8; and the files this step
+  wrote or restated, `kernel_separator_worlds` 10 (its four, and six of the support modules it includes), `cli_items`
+  66, `cli_tabbed_stop` 4, `cli_check_planner` 2.  The FFI's own suites are checks 5 and 6 above.
+* **`--include-ignored`, once, after the three runs** (load 8.7 → 9.5): `cli_latency` 6 passed in 20.0 s, R14's
+  by-hand three-year variant included; T5 `kernel_replay_parity` 35 passed, its four fork-oracle arms inert without
+  `TM_ORACLE` (this step's oracle work is input sets 1 and 2, §7, which touch the item grammar; the log grammar's
+  sets 3 and 4 read no line this step changed).  Every other suite named above has no ignored arm.

@@ -12622,5 +12622,24 @@ theorem the_start_after_now_log_holds_the_open_block :
         (b.id, b.since.map (fun s => s.1.sec), openWorkedMin (Cal.instantOf Cal.chicago 739867 840).sec b))
       = some (['m','1'], some ((Cal.instantOf Cal.chicago 739867 840).sec + 10), 0) := by decide
 
+
+/-! ## W-42 track G: the kernel's refusal names (the owner's D83; D40)
+
+`kerrName`'s body moved at W-42 track G — its tabbedLine arm went with the refusal D83 lifted — so D40 folded it to a
+constant, and the constant SURVIVED: every theorem about a refusal on the wire reads `kerrName` symbolically, so a
+kernel that named every refusal `""` built.  The names are the ones the host's `kernel_bridge::refusal` matches on, so
+they are stated here, each constructor's own and no two alike. -/
+
+/-- **Each kernel refusal reaches the wire under its own name.** -/
+theorem kerrName_names_each_refusal :
+    [KErr.occupied, .noSuchId, .notDemoted, .alreadyDemoted, .badHorizon, .badItem, .keyAbsent,
+      .danglingDep, .depCycle, .noTarget, .noSection].map kerrName =
+      ["occupied", "noSuchId", "notDemoted", "alreadyDemoted", "badHorizon", "badItem", "keyAbsent",
+        "danglingDep", "depCycle", "noTarget", "noSection"] := by decide
+
+/-- **…and no two refusals share one**, so a host matching on the name reads back the refusal. -/
+theorem kerrName_injective (a b : KErr) (h : kerrName a = kerrName b) : a = b := by
+  cases a <;> cases b <;> first | rfl | (simp [kerrName] at h)
+
 end PlannerWit
 end Tm

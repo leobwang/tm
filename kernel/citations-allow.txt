@@ -1243,3 +1243,21 @@ with_minute
 # says (gap 4144: it asserts the TUI's request is NOT yet `tm plan`'s) and was renamed; the three earlier blocks that
 # cite it -- E's, the land's §8 and its gap 4128 -- name it as it stood.  This block names it without backticks.
 3 p77_a_tui_left_open_past_midnight_plans_the_day_tm_plan_would_plan
+
+# W-42 TRACK G (README gaps 4160-4199).  The owner's D83 closed README gap 32: a tab is the kernel's separator, so the
+# edit path's tab guard -- KErr.tabbedLine and its predicate lineHasTab -- was DELETED with the three entity laws and the
+# four wire laws that stated it, and the bare grammar's bracket clause tokBare was deleted with it (W-42's block, §3,
+# says what refutes each).  Every citation counted here is a sentence naming the thing as it stood: the append-only
+# README blocks of 2026-09-12 (the edit widening), K3a and their successors, and AGENTS.md §8.1's gap-32 trap, which is
+# not this track's file (README gap 4160).  W-42's own block names them without backticks.
+2 lineHasTab
+5 tokBare
+3 Field.tokBare
+1 editE_refuses_a_tabbed_line
+1 Cmd.editE_refuses_a_tabbed_line
+2 editE_ok_of_tabless
+3 edit_of_a_tabbed_line_is_refused
+1 est_of_a_tabbed_line_is_refused
+1 unset_of_a_tabbed_line_is_refused
+2 the_tab_guard_is_not_vacuous
+1 est_edit_of_a_tabbed_line_is_refused_by_name

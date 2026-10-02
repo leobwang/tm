@@ -240,9 +240,14 @@ fn err_kind(err: &str) -> String {
     }
 }
 
-/// Why the kernel calls a line prose, when the Rust calls it an item. The
-/// kernel's rule is `parseBody` (Line.lean): leading spaces, then exactly
-/// `- [`, one state character, `]`.
+/// Why the kernel calls a line prose, when the Rust calls it an item — by the
+/// line's SHAPE at the bullet, which is also how [`emit_corpus_lines`] picks
+/// set 1's lines (`- [c]` after leading spaces), so its denominator stays
+/// comparable across runs.  Until W-42 the kernel's `parseBody` matched exactly
+/// `- [` and the third class below was the whole of README gap 32's 1,049
+/// generated lines; since D83 the kernel reads the separators between the
+/// bullet and the box as the host reads them, and a line in that class is an
+/// item to both readers — a row there now is a finding, not the gap.
 fn why_prose(line: &str) -> &'static str {
     let s = line.trim_start_matches([' ', '\t']);
     let c: Vec<char> = s.chars().collect();
