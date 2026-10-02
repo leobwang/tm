@@ -82230,3 +82230,206 @@ function should take its held lines from the file at HEAD and at every commit si
 
 **Gap 4152 — the planner-refusal probe runs on every `tm check`.**  It is the whole day's request; `kernel_call_counts`
 pins one call.  Narrowing it (a flag, a cache) is the owner's call if gap 4150's second matters in a pre-commit hook.
+
+<!-- =====================================================================
+     APPENDED 2026-10-02: stage 6 (the planner), run **W-42**, **TRACK R**
+     — the owner's D87, a break taken inside a block is not block time.
+     Measured on every reader, built and proved in a clone, and NOT landed:
+     it moves six tests in Track C's files, which this track may not edit.
+     What lands is the replay cache's kernel key, shown working by a test.
+     Worktree `.claude/worktrees/w42-r` (branch `w42-r` off `d577322`); the
+     built change, its probes and the drives in clones under
+     `scratchpad/w42-r/`, never in the shared tree.  Gap range
+     **4240-4259**: 4240-4246 taken, 4247 free.  Parity: **`P81` NOT
+     issued** — pre-allocated to this track, and the divergence it would
+     name is not in this tree (gap 4240).  Burn-down **0**, unchanged.
+     ===================================================================== -->
+
+## Stage 6 — W-42 track R: a break inside a block, measured on every reader; the replay's one definition built and proved in a clone and held back by the comparands it moves; the cache key that retires the old reading, tested
+
+### 0. The brief, measured before it was acted on
+
+* HEAD `d577322`, the tree clean.  Gap 4137's drive re-run on the binary built from it (§6): `tm stop` "after 40m";
+  `tm review day` load 60.0 and 60 block minutes; the heat grid's 09:00 cell 60 block and 20 break minutes.
+* **A block COUNT is not what a break moves.**  D87's row and gap 4137 name the review's "block count" and the week
+  pane's "3/5 blocks"; a block count is a count of `done` lines carrying minutes (`DayAcc.blocksDone`, the review's
+  "N/M blocks", `week_blocks_done`), and no break changes one — the drive's day reads "0/6 blocks" before and after.
+  What a break moves is MINUTES: block minutes, load, load in blocks, the energy mix, an item's done minutes.
+* **Step 4 named the T5 files; the change reaches further.**  One workspace run against the built change failed
+  **9** tests: T5's three (`kernel_log_door.rs` ×1, `kernel_replay_parity.rs` ×2), which this track carries by value
+  in the clone (§4), and **six in Track C's files** — `planner_classes.rs` ×5 and `planner_invariants.rs` ×1 (§3).
+  `tm/tests/support/fork.rs`, which step 4 also names, is Track C's file; the carry lives in T5's callers instead.
+
+### 1. Who reads a block's minutes on a day (step 1)
+
+Measured at `d577322` over `tm/src` and `tm-core/src`.  "Span" is the block's whole clock span, break included;
+"net" is its worked minutes.  The replay credits a block CUT by `stop` (or by the next `start`) from its clock, which
+never sees a `break`; a `done` credits the `actual_min` the host logs, which is net.
+
+| reader | what it reads | at `d577322` |
+|---|---|---|
+| `tm stop`'s "after Nm", `tm done`'s logged `actual_min`, `tm now`, the TUI's timer, §9.1's overtime prompt | `Replay::running_worked_min` → `Replay::idle_min_since` (the host's rule over the seam's idle marks) | **net** |
+| the replay's credit on a cut (`Replay.cut` → `Replay.creditFx`): a day's `blockMin` and `ciUnknown`, the item's `minutes` and item-day minutes | the machine's sub-segments (`Replay.closeSub`) | **span** |
+| the replay's credit on a `done` (`Replay.doneFx`): `blockMin`, `byCi`, `loadFifths`; the fit's duration observations | the logged `actual_min` | net |
+| the replay's `Block` segments | `Replay.closeSub` | **span**, drawn across the `Break` segment |
+| sealed day records (`Seal.DayRecord`, `.tm/cache/replay/`) | copies of the replay's day | as the replay |
+| `tm review day` (block minutes, load, load in blocks, energy mix) and the TUI's Review screen | the day record | **span** for a cut block |
+| `tm review week` and month (block minutes, load) and the heat grid (`heat_of` over the day's segments) | the day record and segments | **span**; the grid counts the break as break AND as block |
+| the TUI's week-pane milestones and queue progress (`done_minutes_map`, §6.4's done minutes) | the item's minutes | **span** for a cut block |
+| the close's remaining estimate (`day_remaining` → `block_minutes_on`) and priority's cap usage (`block_minutes_on`) | the item-day minutes | **span** for a cut block |
+| the fork planner's past rows (`past_segments`) and the kernel planner's (`Planner.pastRows`) | the segments | **span** |
+| the open block (fork `active_run`, `open_block_segment`; `Planner.openBlockRows`, `Planner.openWorkedMin`) | the machine's open block | **span** (P55: the kernel reads the host's minutes when the request carries them, `PlanReq.workedOf`) |
+| the review's "N/M blocks", the week pane's block count | `blocksDone`, a count of `done`s | not a minutes reader |
+| `tm log` | the log's lines | not a minutes reader |
+
+### 2. The one definition (step 2) — built and proved in a clone, not landed
+
+`scratchpad/w42-r/d87` (a clone of `d577322`, branch `d87-work`, uncommitted) and the whole change as
+`scratchpad/w42-r/d87-full.patch`.  **The rule**: a `break` stepped while the open block's clock runs closes the
+running sub-segment at the break's start — exactly what a `pause` does — and restarts the clock at the break's end,
+or at the clock's own start when that is later.  A paused or interrupted block, and a break with no block open,
+change nothing.  The break's end is the instant its `Break` segment ends (its planned minutes when the line carries no
+`actual_min`), defined once and read by both.  It is the host's `tm break`, which sets `active.paused`, read into
+the log's reading.
+
+What it took, all proved, nothing admitted (the burn-down stays 0): the replay's machine gains the break arm and its
+structural laws (the arm is `closeSub` and one machine that keeps the last cut, the interruption and the pending
+observation); C5's `Replay.arm_split` is restated (block family effects, then the day family's), its old statement
+refuted by name and kept, proved, on every event but a break; `Replay.conserves_arm`, `Replay.arm_sleptOk`,
+`Replay.arm_obs`, `Seal.arm_durations_nil`, `Seal.arm_congr`, `Seal.stepQueries_sub`, `Seal.arm_pending`,
+`Seal.arm_lastCut` and `Seal.arm_interrupt` gain the break case with their statements unchanged; `Seal.entryInstants`
+gains a break's end — the instant a LATER step reads the day index at when it closes the clock the break restarted —
+and `Seal.stepQueries` the break's own `closeSub`; W2's `Seal.arm_mi` and `Seal.stepWith_mi` are restated over those
+instants, their old statements refuted by name.  The sixteen window laws, the codecs and every replay law compile on
+top unchanged.  Six replay witnesses decide each case under an 8 GiB cap (a stopped block credited 40 and drawn as
+three segments, a `done` still crediting its logged minutes, the open block restarting at the break's end, a
+planned-only break, a break inside a pause, and gap 4241's edge).  `PlannerWit`'s sections 14 and 26 stood on a break
+logged INSIDE a running block; they move to a break logged before the block began (gap 4241) — line for line,
+because the mutation roster pins `PlannerWit` sites by line — and an appended section 31 proves the two old days
+now keep their Block rows off their Break, with the open row starting at the break's end.
+
+**Measured on the clone**: `check.sh` checks 1-8 and 11, 13 and 14 `ok`; check 9 owed 21 definitions (19 new, 2
+changed), whose `mutate.py --write` run is still running in the clone as this commit is made (its first verdicts: `midBreakLine` and `midBreakLines` PINNED); check 10 needs `P81`'s issuance (the T5 callers cite it) and
+P36's row re-anchored (its cite moved down `Replay.lean`); check 12 needs two witness values moved out of
+`SealStep.lean` and two census lines of `reach-exempt.txt` corrected — each named in gap 4240's recipe.  The patch's
+own tests: tm/tests/cli_break_in_block.rs 2 passed, `cli_replay_cache_kernel.rs` 1, `kernel_log_door.rs` 26 (`P81` carried:
+two breaks, 64 minutes, over its two passes), `kernel_replay_parity.rs` 32 passed and 4 ignored.  One workspace run
+of the first build: **2,081 passed / 9 failed / 32 ignored over 128 result lines** — the nine of §0.
+
+### 3. Why it is not landed: six tests in Track C's files
+
+| test (Track C's file) | what it says under D87 | why it moves |
+|---|---|---|
+| `planner_classes.rs` `the_kernel_plans_every_generated_class_the_fork_planned` | 18 disagreements over the eight "(worked)" worlds: the kernel's open row starts at the logged break's end, the stretch before it a past Block row; the frozen fork day's runs from the block's start | `P81`'s planner half; the frozen lines need D64 (a) |
+| `planner_classes.rs` `the_frozen_classes_are_the_forks_answer_today` | `day`, `shipped` and `p55` of the same eight lines | the in-tree fork planner reads the kernel's replay |
+| `planner_classes.rs` `the_frozen_file_holds_every_class_the_arms_draw` | `overtime/home` and `overtime/travel` now classify as `running/*` | the class is read off the log's worked minutes, now net |
+| `planner_classes.rs` `every_w38_comparison_bites_a_bent_answer` | "running/home: the unbent line differs" | as the first row |
+| `planner_classes.rs` `the_frozen_worked_worlds_are_every_one_the_inner_break_derives` | "the inner break left the two readings equal" | P55's logged-break half is gone (gap 4242) |
+| `planner_invariants.rs` `the_kernel_reads_the_hosts_worked_minutes` | "no open row was compared on a day the two readings differ" | the same |
+
+The run's file rule is explicit — a track that needs another track's file records it by name and stops rather than
+edits it — and a commit with these red is forbidden.  So the change waits (gap 4240).
+
+### 4. The comparand (step 4) — in the clone
+
+The clone's `tm/tests/support/p81.rs` moves the fork's frozen answer by `P81`'s rule and nothing else, computed from the
+FORK's own segments: a `Break` segment that begins strictly inside a `Block` segment is a break stepped while that
+block ran; the block is split around it and, when its minutes were a cut's clock credit (the fork records those as
+the item's ci-unknown minutes on the cut's day), the netted minutes come off that day's block and ci-unknown minutes
+and off the item's.  It never reads the kernel's answer, and it refuses by name the shapes it will not guess at (a
+break inside two blocks or inside the fork's open block, a post-break stretch on another day, a cut holding too few
+ci-unknown minutes).  T5's callers compare the kernel with the moved answer key for key.  The generated month is the
+one frozen input it moves — `^66`'s `done` is undone by the evening's `undo`, so the block runs on and the 13:44
+break falls inside it: one break, 32 minutes — and a dedicated test shows the carry is not vacuous (the unmoved
+answer disagrees at the four leaves `P81` names) and that a kernel answer one minute off on `^66` fails by name.
+
+### 5. The cache (step 3) — LANDED
+
+`.tm/cache/replay/ckpt.json` carries the identity of the kernel that wrote it (`kernel_log::kernel_id`, FNV-1a-64 of
+the linked archive), and `Snapshot::valid_for` sends a checkpoint any other kernel wrote to genesis, whose new
+generation replaces every month file the old manifest named.  Measured: the archive at `d577322` is
+`02f5cbd8b0dfad94` and the clone's `a38e97812ec670e3`; the clone's binary over a cache the base wrote went to genesis
+on its first verb.  `tm/tests/cli_replay_cache_kernel.rs` (new) shows the key working BY VALUE, and first that it is
+needed: a sealed record poisoned by hand IS served under this binary's own id (`tm review day --date 2026-08-25`
+reads 3 blocks for 4 — the bite), and under another kernel's id the same poison is not: the answer is the replay's,
+and the cache is rewritten under this binary's id with a new generation and an August file holding the true record.
+It holds before D87 and after it; it is the instrument the change relies on.
+
+### 6. The drive (step 5)
+
+`tm init --example`, `wake 07:00`, `start ^m1` at 09:00, `break 20m` at 09:30, `break` at 09:50, `stop` at 10:00; the
+binary at `d577322` beside the clone's.
+
+| surface | `d577322` | the clone (D87) |
+|---|---|---|
+| `tm stop` | after 40m | after 40m |
+| `tm review day` | load 60.0 · 60 block minutes · 1.0 blocks of load · mix 60 | load 40.0 · 40 · 0.67 · 40 |
+| `tm review week` | load 60.0 · heat "block 1h · break 20m" · 09:00 cell 60 + 20 | load 40.0 · heat "block 40m · break 20m" · 09:00 cell 40 + 20 |
+| the TUI (a pty: `script`, then a terminal emulator) | Timeline: `09:00` block, `09:30 break 20m` under it; week pane `m1 … 1/6` | `09:00` block, `09:30 break 20m`, `09:50` block; week pane `m1 … 1/6` |
+
+### 7. Gaps 4240-4246
+
+**Gap 4240 — D87's replay change is built and proved, and not in the tree.**  1. *What.*  §2's change, its comparand
+(§4) and its surface tests are in `scratchpad/w42-r/d87` and `d87-full.patch`.  2. *Why not changed.*  It moves six
+tests in Track C's files (§3); the run forbids editing another track's file and committing red.  3. *Cost.*  Gap 4137
+stays open in the binary: the reviews, the heat grid, the TUI's done minutes, priority's cap usage and the close's
+remaining count a cut block's break; `P81` is unissued, so the land renumbers H's `P82`-`P83` down.  4. *Clears it.*  The
+land or repair step, or W-43: apply the patch; move the two `PlannerWit` witness values `SealStep.lean` defines into
+the refutations that use them (check 12), correct `reach-exempt.txt`'s `## Replay.lean` and `## Seal.lean` census
+lines (66 of 206, 69 of 238) and P36's row in `parity.txt`; issue `P81` with a behaviour row; move the eight "(worked)"
+frozen lines under D64 (a) — fork 4748911 CAN be asked the D87 day, given the inner break as a `pause` at its start
+and an `unpause` at its end, which its machine nets (D70's introduction shape); re-aim P55's instrument (gap 4242);
+and finish `mutate.py --write` over the patch's 21 definitions.
+
+**Gap 4241 — a break the log records running INTO a block is two readings.**  1. *What.*  A `break` line stepped
+before a block's `start`, whose span reaches into the block, is credited and drawn across by the replay (no block ran
+when it was stepped) and netted by the host's `Replay::idle_min_since`, which clips every break span to the block's.
+2. *Why not changed.*  The binary never writes it — `tm start` ends a running break before it logs its `start` — and
+netting it needs the break's span at the `start` (a machine field, or the seam).  The generated month holds 22 such
+overlaps (`loggen`'s breaks outlast its 22-minute gap); the fork draws them too.  3. *Cost.*  Under the patch the
+refutation of `plan_places_no_block_over_a_break` and CHEAT 201 stand on this log; whether a refutation standing on
+it is a discharge (lesson 4) turns on whether it is a defect.  4. *Clears it.*  The owner.
+
+**Gap 4242 — P55's instrument draws a logged break, which D87 nets.**  1. *What.*  The eight "(worked)" frozen worlds
+and the W-36 arm separate the host's reading from the log's with a break LOGGED inside the running block; under D87
+both readings net it.  2. *Why not changed.*  Track C's files.  3. *Cost.*  Under the patch P55's subject is a
+RUNNING break (logged only when it ends) and a pause stamped before the block, and nothing draws either.  4. *Clears
+it.*  Track C or the integrator: draw a running break.
+
+**Gap 4243 — the host's worked minutes subtract a break inside a pause twice, and skip a planned-only break.**
+1. *What.*  `Replay::idle_min_since` sums pause and break spans without a union, and `idle_spans` skips a `break`
+with no `actual_min`; the replay nets neither twice and nets the planned span its segment draws.  2. *Why not
+changed.*  `tm-core/src/log.rs` is not this track's file; the first log is a typed `tm pause` then `tm break`, the
+second no verb writes.  3. *Cost.*  `tm stop`'s minutes and the replay's disagree on those logs.  4. *Clears it.*  A
+union of spans and the planned span in the host's rule, with a behaviour row.
+
+**Gap 4244 — two of Track S's notes describe the pre-D87 machine.**  1. *What.*  `PlanCheck.lean`'s break-law note
+(a break at 07:30 inside `m1`'s block) and `Planner.lean`'s W-36 note (the replay's machine never touches a block
+for a break) are true at HEAD and false under the patch.  2. *Why not changed.*  Track S's files.  3. *Cost.*  Stale
+prose once the patch lands.  4. *Clears it.*  The integrator, with the patch.
+
+**Gap 4245 — the probe's proptest seed, restored and said.**  1. *What.*  The first workspace run against the built
+change appended seed `f1e6d11e…` to the tracked `tm/tests/planner_invariants.proptest-regressions` (the W-36 census
+failing, gap 4242).  2. *Why not changed.*  Restored deliberately: it records a failure of an uncommitted kernel, not
+of this tree (D46 keeps a seed that is a finding about the tree).  3. *Cost.*  None here; the integrator meets the
+same failure.  4. *Clears it.*  Nothing; recorded so the restore is not silent.
+
+**Gap 4246 — a sealed record is trusted with no digest of its own.**  1. *What.*  §5's bite: under a valid kernel
+id a month file's record is served as written; the manifest names month files, never digests of their contents.
+2. *Why not changed.*  D13 trusts a sealed record as it trusts the checkpoint, and a hand edit of `.tm/cache/` is
+outside the binary's writes.  3. *Cost.*  A corrupted month file is served until the next genesis.  4. *Clears it.*
+A digest per month file in the manifest, if the owner wants the cache to defend against its own corruption.
+
+### 8. Acceptance of this commit
+
+* `check.sh`, capped: **17 lines, every one `ok`** — the axiom audit at 6,171 theorems, FFI 95, the corpus 29/37 and
+  4/5, stage goals 0, prose citations 54,625 (52,345 resolved), check 9's 613 rostered and 0 owed, the parity register
+  P1-P79 (next free P80), check 11 0 UNANSWERED, check 12 1,245 reachable and 1,199 exempt, check 13 17/17 and 33 of
+  37, check 14 93 modules.  The commit holds no library or binary code: one test file and this block.
+* `cargo test --workspace`, capped: **TWO runs, each 2,091 passed / 0 failed / 32 ignored across 129 result lines**
+  (40 m 51 s and 37 m 39 s, load average 13-44 from the other tracks' builds and mutations; `cli_latency` 5 passed on
+  both).  The named suites, run 2: T5 31 passed (4 ignored), the door 26, `cli_switch_acceptance` 16,
+  `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 27, `kernel_row_cells` 28, `kernel_item_grammar` 6,
+  `kernel_planner_wire` 27, `planner_classes` 54 (6 ignored), `planner_invariants` 39 (2 ignored), `cli_conformance` 3,
+  `cli_json_matrix` 8, and the new `cli_replay_cache_kernel` 1.  No `.proptest-regressions` file moved.  Two runs and not
+  three: D46's three is for a commit touching parsing, editing, the planner or the log reader, and this one adds a test.
