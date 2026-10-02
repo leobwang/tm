@@ -37,6 +37,11 @@ mod forkplan;
 #[path = "support/forkp56.rs"]
 mod forkp56;
 
+/// The committed history a bless holds its lines against (README gap 4151).
+#[allow(dead_code)]
+#[path = "support/frozenhist.rs"]
+mod frozenhist;
+
 use chrono::DateTime;
 use chrono_tz::Tz;
 use serde_json::Value;
@@ -352,7 +357,10 @@ fn the_oracle_draws_every_seeded_p56_day_as_the_in_tree_fork() {
 /// answers are computed by BOTH backends and must agree — the in-tree fork's `cut_out` and
 /// reconstruction against fork 4748911 and `p56_cut` — and whose `cut` is the in-tree fork's
 /// shipped day. A line it already holds is held to the owner's D64 (`forkclass::d64_allows`,
-/// `TM_P56_BLESS_BECAUSE`), its world and `cut` by value; a refusal writes nothing.
+/// `TM_P56_BLESS_BECAUSE`, and since the owner's D85 `TM_P56_BLESS_HARNESS`, D64(c)), its world and
+/// `cut` by value; a refusal writes nothing. **What a line is held against is the file's COMMITTED
+/// history** (W-42 track C, README gap 4151; `frozenhist::held`), never the working copy — and a
+/// line HEAD holds that the seed no longer draws is refused.
 #[test]
 #[ignore]
 fn the_seeded_p56_days_are_blessed() {
@@ -366,9 +374,11 @@ fn the_seeded_p56_days_are_blessed() {
         .split(',')
         .filter_map(|s| s.trim().trim_start_matches('P').parse().ok())
         .collect();
+    let harness = forkclass::harness_of("TM_P56_BLESS_HARNESS");
     let registered = forkclass::registered_parity();
-    let held: Vec<Value> = if forkp56::p56_path().exists() { forkp56::p56_lines() } else { Vec::new() };
-    let (mut out, mut refused, mut changed) = (String::new(), Vec::new(), Vec::new());
+    let held = frozenhist::held(&forkp56::p56_path(), frozenhist::key_of("draw")).unwrap_or_else(|e| panic!("{e}"));
+    eprintln!("{}", held.census(forkp56::FROZEN_P56));
+    let (mut out, mut refused, mut changed, mut drawn) = (String::new(), Vec::new(), Vec::new(), Vec::new());
     for (d, w) in forkp56::p56_days(forkp56::P56_SEED).take(forkp56::P56_FROZEN) {
         let b = Built::of(w.clone());
         let prios = grants(&b);
@@ -385,13 +395,14 @@ fn the_seeded_p56_days_are_blessed() {
             forkclass::set_answer(&mut line, key, a_in[key].clone());
         }
         line["cut"] = forkplan::frozen_day_json(&p.day);
-        if let Some(old) = held.iter().find(|o| o["draw"] == line["draw"]) {
+        drawn.push(line["draw"].to_string());
+        if let Some(old) = held.get(&line["draw"].to_string()) {
             if old["world"] != line["world"] || old["typed"] != line["typed"] {
                 refused.push(format!("{}: the seed draws another world — a re-draw, which D64(b) must decide", line["name"]));
             } else if old["cut"] != line["cut"] {
                 refused.push(format!("{}: the in-tree fork's cut moved over the same world", line["name"]));
             } else {
-                match forkclass::d64_allows(old, &line, &p.fork_day, &because, &registered) {
+                match forkclass::d64_allows(old, &line, &p.fork_day, &because, harness.as_deref(), &registered) {
                     Err(e) => refused.push(e),
                     Ok(k) if !k.is_empty() => changed.push(format!("{} `{}`", line["name"], k.join("`, `"))),
                     Ok(_) => {}
@@ -400,6 +411,9 @@ fn the_seeded_p56_days_are_blessed() {
         }
         out.push_str(&serde_json::to_string(&line).expect("a line serialises"));
         out.push('\n');
+    }
+    for draw in held.head.iter().filter(|d| !drawn.contains(d)) {
+        refused.push(format!("p56 draw {draw}: a frozen line the seed no longer draws"));
     }
     eprintln!("seeded P56 days: {} changed ({}), {} refused", changed.len(), changed.join("; "), refused.len());
     assert!(refused.is_empty(), "the re-bless is refused and wrote nothing:\n  {}", refused.join("\n  "));

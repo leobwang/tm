@@ -76,6 +76,11 @@ mod forkgrid;
 #[path = "support/weekcut.rs"]
 mod weekcut;
 
+/// The committed history a bless holds its lines against (README gap 4151).
+#[allow(dead_code)]
+#[path = "support/frozenhist.rs"]
+mod frozenhist;
+
 use std::collections::BTreeSet;
 
 use serde_json::{json, Value};
@@ -127,10 +132,12 @@ enum Live {
     /// A finding, by its README gap: the fork and the kernel plan different days, and no
     /// registered number says so.
     Finding(u32),
-    /// **The kernel departs by a registered number no fork input can carry** (W-41 track H, README
-    /// gap 4090): the world's frozen line carries the number's flag, and the kernel is held to the
-    /// number's PROPERTY against fork 4748911's day by value — today P69, a start read from the log
-    /// (`forkplan::p69_day_unmet`) — rather than to a comparand day.
+    /// **The kernel departs by a registered number the shipped fork's inputs do not carry** (W-41
+    /// track H, README gap 4090): the world's frozen line carries the number's flag, and the kernel
+    /// is held to the number's PROPERTY against fork 4748911's day by value — today P69, a start
+    /// read from the log (`forkplan::p69_day_unmet`). Since the owner's D89 (W-42 track C, README
+    /// gap 4133) the comparand carries P69 too, by a transformation of the fork's inputs
+    /// (`forkplan::p69_state`), so the line is ALSO held to the comparand's whole day and what-if.
     Departs(u32),
 }
 
@@ -954,16 +961,21 @@ fn verdict_unmet(w: TuiWorld, live: Live, b: &Built, k: &KernelDay, line: &Value
         }
         Live::Finding(g) => out.push(format!("{w:?}: gap {g} names no finding this file pins")),
         Live::Departs(69) => {
-            // P69 (README gap 4090): the kernel reads the running block's start off the log, which
-            // no fork input carries, so it is held to P69's property against fork 4748911's own
-            // day by value; the comparison itself must see the departure, and the line carry P69.
-            let fork = if line["shipped"].is_null() { &line["day"]["day"] } else { &line["shipped"]["day"] };
+            // P69 (README gap 4090): the kernel reads the running block's start off the log, where
+            // fork 4748911 puts the cache's clock on the plan's date — held to P69's property against
+            // fork 4748911's own day by value, which is also where the departure is shown real.
+            // Since the owner's D89 (README gap 4133) the comparand plans from a start the fork CAN
+            // be asked with (`forkplan::p69_state`), so the comparison holds the WHOLE day and
+            // what-if as well and must find nothing; until D89 it held only the property, and a
+            // bent row after the running one passed.
+            let fork = forkclass::shipped_of(line);
             match forkplan::logged_start(b) {
                 Some(logged) => out.extend(forkplan::p69_day_unmet(&tui_name(w), fork, b, logged, k)),
                 None => out.push(format!("{w:?}: P69 departs on a world whose log holds no start for its running block")),
             }
-            if findings.is_empty() {
-                out.push(format!("{w:?}: P69 departs here and the comparison found nothing — the departure is not real on this world"));
+            out.extend(findings.iter().cloned());
+            if forkplan::p69_state(b, &b.world.state).is_none() {
+                out.push(format!("{w:?}: P69 departs here and its transformation does not reach the world (D89)"));
             }
             if line["p69"]["p69"] != true {
                 out.push(format!("{w:?}: P69 departs here and the line carries no `p69` flag"));
@@ -1097,10 +1109,17 @@ fn the_frozen_tui_days_are_the_forks_oracle_answer_today() {
 /// through its tests' own constructors and written with the oracle's answers. A line the file
 /// already holds is held to the owner's D64 exactly as the class lines' re-bless is
 /// (`forkclass::d64_allows`, with the shipped fork's day asked of the oracle and the reasons
-/// `TM_TUI_BLESS_BECAUSE`); a WORLD that moved is a re-draw, allowed only with D64(b)'s reason in
-/// `TM_TUI_BLESS_REDRAW` (dated, naming `D64(b)`), which the line then carries as `d64b`; a held
-/// line no test plans over any more is refused. Each change is named; a refusal writes nothing.
-/// `TM_TUI_BLESS_OUT` writes elsewhere, for a dry run.
+/// `TM_TUI_BLESS_BECAUSE`, and since the owner's D85 a corrected harness reading's in
+/// `TM_TUI_BLESS_HARNESS`, D64(c)); a WORLD that moved is a re-draw, allowed only with D64(b)'s
+/// reason in `TM_TUI_BLESS_REDRAW` (dated, naming `D64(b)`), which the line then carries as
+/// `d64b`; a line HEAD holds that no test plans over any more is refused. Each change is named; a
+/// refusal writes nothing. `TM_TUI_BLESS_OUT` writes elsewhere, for a dry run.
+///
+/// **What a line is held against is the file's COMMITTED history** (W-42 track C, README gap
+/// 4151; `frozenhist::held`): its latest version at HEAD or at any first-parent commit since
+/// `kernel/ratchet.py`'s base — never the working copy, so deleting the file or a line of it is
+/// not a fresh freeze. W-41's land step froze this file fresh with the fixture removed (README
+/// gaps 4123 and 4139); under this rule that run would have been held to the committed line.
 #[test]
 #[ignore]
 fn the_frozen_tui_days_are_blessed() {
@@ -1110,16 +1129,18 @@ fn the_frozen_tui_days_are_blessed() {
     }
     let oracle = the_oracle().expect("TM_TUI_BLESS asks the fork: set TM_ORACLE");
     let because = forkclass::because_of("TM_TUI_BLESS_BECAUSE");
+    let harness = forkclass::harness_of("TM_TUI_BLESS_HARNESS");
     let redraw = std::env::var("TM_TUI_BLESS_REDRAW").ok();
     let registered = forkclass::registered_parity();
-    let held = if tui_path().exists() { tui_lines() } else { Vec::new() };
+    let held = frozenhist::held(&tui_path(), frozenhist::key_of("name")).unwrap_or_else(|e| panic!("{e}"));
+    eprintln!("{}", held.census(FROZEN_TUI));
     let (mut out, mut refused, mut changed, mut added) = (String::new(), Vec::new(), Vec::new(), 0usize);
     for w in tui_worlds() {
         let (app, log, texts) = app_of(w);
         let b = built_of(&app, &log, &texts);
         let (answers, prios) = tui_answers(&b, &oracle).unwrap_or_else(|e| panic!("{w:?}: {e}"));
         let mut line = tui_line(w, &b, &answers);
-        match held.iter().find(|o| o["name"] == line["name"]) {
+        match held.get(&tui_name(w)) {
             None => added += 1,
             Some(old) if old["world"] != line["world"] => match redraw.as_deref() {
                 Some(why) if forkclass::is_d64b_reason(why) => {
@@ -1137,7 +1158,7 @@ fn the_frozen_tui_days_are_blessed() {
                 }
                 let ask = forkplan::ForkAsk { state: &b.world.state, now: b.world.now, d60: false, p64: false, prios: &prios, extend: None, log_line: None };
                 let shipped = forkplan::ForkPlan::plan(&oracle, &b, &ask).unwrap_or_else(|e| panic!("{w:?}: {e}")).fork_day;
-                match forkclass::d64_allows(old, &line, &shipped, &because, &registered) {
+                match forkclass::d64_allows(old, &line, &shipped, &because, harness.as_deref(), &registered) {
                     Err(e) => refused.push(e),
                     Ok(keys) if !keys.is_empty() => changed.push(format!("{} `{}`", tui_name(w), keys.join("`, `"))),
                     Ok(_) => {}
@@ -1147,9 +1168,9 @@ fn the_frozen_tui_days_are_blessed() {
         out.push_str(&serde_json::to_string(&line).expect("a line serialises"));
         out.push('\n');
     }
-    for o in &held {
-        if tui_world_named(o["name"].as_str().unwrap_or_default()).is_none() {
-            refused.push(format!("{}: a frozen line no test plans over any more", o["name"]));
+    for name in &held.head {
+        if tui_world_named(name).is_none() {
+            refused.push(format!("{name}: a frozen line no test plans over any more"));
         }
     }
     eprintln!("TUI days: {added} line(s) added, {} changed ({}), {} refused", changed.len(), changed.join("; "), refused.len());
@@ -1201,6 +1222,23 @@ fn the_frozen_tui_comparison_bites_a_bent_line() {
     let mut holding = after.clone();
     holding["shipped"]["day"]["segments"] = serde_json::to_value(&ak.day).expect("a day")["segments"].clone();
     assert!(held(&holding).iter().any(|f| f.contains("departs nowhere")), "a P69 line whose fork day holds the kernel's row passed");
+    // — and since the owner's D89, P69's comparand WHOLE (README gap 4133): a step-5 row a minute
+    // longer (`work`) and two step-5 rows' items swapped (`swap`) in the frozen comparand — the two
+    // bends P69's property alone let through at the W-41 repair — each refused by name.
+    let step5 = |r: &Value| r["kind"] == "block" && r["flags"]["current"] != true && r["flags"]["open"] != true;
+    let mut work = after.clone();
+    let rows = work["day"]["day"]["segments"].as_array_mut().expect("the comparand's rows");
+    let r = rows.iter_mut().find(|r| step5(r)).expect("a step-5 row on the after-midnight day");
+    r["end"] = json!((forkplan::at(&r["end"]).expect("an end") + chrono::Duration::minutes(1)).to_rfc3339());
+    assert!(held(&work).iter().any(|f| f.contains("tui AfterMidnight(1, 0)") && f.contains("the rows differ at")), "a bent step-5 row passed: {:?}", held(&work));
+    let mut swap = after.clone();
+    let rows = swap["day"]["day"]["segments"].as_array_mut().expect("the comparand's rows");
+    let i = rows.iter().position(|r| step5(r)).expect("a step-5 row");
+    let j = rows.iter().position(|r| step5(r) && r["item"] != rows[i]["item"]).expect("a second step-5 item");
+    let (a, z) = (rows[i]["item"].clone(), rows[j]["item"].clone());
+    rows[i]["item"] = z;
+    rows[j]["item"] = a;
+    assert!(held(&swap).iter().any(|f| f.contains("tui AfterMidnight(1, 0)") && f.contains("the rows differ at")), "two swapped step-5 rows passed: {:?}", held(&swap));
     // — and gap 3861's world, `Live::Equal` since P76 (W-41's land step): the kernel sent `any`
     // plans the frozen fork day, and a line whose fork day is the kernel's LOUNGE day — what the
     // request carried until P76 — is refused by the whole-day comparison.

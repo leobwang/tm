@@ -28,6 +28,11 @@ mod planner_common;
 #[path = "support/forkday.rs"]
 mod forkday;
 
+/// The committed history a bless holds its lines against (README gap 4151).
+#[allow(dead_code)]
+#[path = "support/frozenhist.rs"]
+mod frozenhist;
+
 use std::path::Path;
 
 use chrono::{DateTime, NaiveDate};
@@ -178,7 +183,11 @@ fn the_fork_ends_the_wednesday_inside_the_night() {
 
 /// **Freeze the conference Wednesday** — inert without `TM_PLANNER_BLESS_CONFERENCE`.
 /// Writes a line for every instant the file does not hold and REFUSES, by name, to
-/// change one it holds (D64).  After R3 it is gone with the region and the file is final.
+/// change one it holds (D64; its lines record no departure, so D85's D64(c) reaches none).
+/// What a line is held against is the file's COMMITTED history (W-42 track C, README gap 4151;
+/// `frozenhist::held`), never the working copy, so deleting the file is not a fresh freeze; a
+/// line HEAD holds that no instant draws is refused.  After R3 it is gone with the region and the
+/// file is final.
 #[test]
 #[ignore]
 fn the_frozen_conference_days_are_blessed() {
@@ -189,16 +198,21 @@ fn the_frozen_conference_days_are_blessed() {
     let (_dir, fx) = conference();
     let state = wednesday();
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(FROZEN_CONFERENCE);
-    let held: Vec<String> = std::fs::read_to_string(&path).unwrap_or_default().lines().map(str::to_string).collect();
-    let mut out = String::new();
-    for (i, (h, m)) in INSTANTS.iter().enumerate() {
+    let held = frozenhist::held(&path, frozenhist::key_of("name")).unwrap_or_else(|e| panic!("{e}"));
+    eprintln!("{}", held.census(FROZEN_CONFERENCE));
+    let (mut out, mut names) = (String::new(), Vec::new());
+    for (h, m) in INSTANTS.iter() {
         let now = at("2026-09-09", *h, *m);
-        let line = forkday::basic_line(&format!("wednesday {h:02}:{m:02}"), &state, now, &fork_conference_day(&fx, &state, now));
-        if let Some(old) = held.get(i) {
-            assert_eq!(old.as_str(), line.trim_end(), "{h:02}:{m:02}: a held line is not rewritten");
+        let name = format!("wednesday {h:02}:{m:02}");
+        let line = forkday::basic_line(&name, &state, now, &fork_conference_day(&fx, &state, now));
+        if let Some(old) = held.ever.get(&name) {
+            assert_eq!(old.raw.as_str(), line.trim_end(), "{h:02}:{m:02}: a held line is not rewritten (held since {})", old.sha);
         }
+        names.push(name);
         out.push_str(&line);
     }
+    let stale: Vec<&String> = held.head.iter().filter(|n| !names.contains(n)).collect();
+    assert!(stale.is_empty(), "frozen lines no instant draws any more: {stale:?}");
     std::fs::write(&path, out).expect("the frozen conference days are written");
 }
 // END THE FORK PLANNER

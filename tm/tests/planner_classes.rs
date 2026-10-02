@@ -61,6 +61,11 @@ mod plangen;
 #[path = "support/srcwalk.rs"]
 mod srcwalk;
 
+/// The committed history a bless holds its lines against (README gap 4151).
+#[allow(dead_code)]
+#[path = "support/frozenhist.rs"]
+mod frozenhist;
+
 /// The fork's planner as a backend, and the comparand built over any backend (W-39,
 /// the owner's D72): the in-tree fork until R3, `tm-oracle plan` after.
 #[allow(dead_code)]
@@ -1577,20 +1582,20 @@ fn the_d64_rule_bites_and_does_not_over_bite() {
     assert!(!shipped.is_null(), "a P46 line keeps the shipped fork's day");
     let mut bent = old.clone();
     bent["day"]["hash"] = Value::String("bent".to_string());
-    assert!(forkclass::d64_allows(&old, &old, &shipped, &[], &registered).is_ok_and(|c| c.is_empty()));
-    assert!(forkclass::d64_allows(&old, &bent, &shipped, &[], &registered).is_err(), "no reason passed");
+    assert!(forkclass::d64_allows(&old, &old, &shipped, &[], None, &registered).is_ok_and(|c| c.is_empty()));
+    assert!(forkclass::d64_allows(&old, &bent, &shipped, &[], None, &registered).is_err(), "no reason passed");
     assert!(!registered.contains(&9999));
-    assert!(forkclass::d64_allows(&old, &bent, &shipped, &[9999], &registered).is_err(), "an unregistered number passed");
-    assert!(forkclass::d64_allows(&old, &bent, &shipped, &[51], &registered).is_err(), "a number the line has no flag of passed");
-    assert_eq!(forkclass::d64_allows(&old, &bent, &shipped, &[46], &registered), Ok(vec!["day".to_string()]));
+    assert!(forkclass::d64_allows(&old, &bent, &shipped, &[9999], None, &registered).is_err(), "an unregistered number passed");
+    assert!(forkclass::d64_allows(&old, &bent, &shipped, &[51], None, &registered).is_err(), "a number the line has no flag of passed");
+    assert_eq!(forkclass::d64_allows(&old, &bent, &shipped, &[46], None, &registered), Ok(vec!["day".to_string()]));
     let mut cleared = old.clone();
     for key in forkclass::ANSWERS {
         cleared[key] = Value::Null;
     }
-    assert!(forkclass::d64_allows(&cleared, &bent, &shipped, &[], &registered).is_ok(), "a D64(b) re-draw's answers were refused");
+    assert!(forkclass::d64_allows(&cleared, &bent, &shipped, &[], None, &registered).is_ok(), "a D64(b) re-draw's answers were refused");
     let mut lost = bent.clone();
     lost["shipped"] = Value::Null;
-    assert!(forkclass::d64_allows(&old, &lost, &shipped, &[46], &registered).is_err(), "a comparand that dropped the shipped day passed");
+    assert!(forkclass::d64_allows(&old, &lost, &shipped, &[46], None, &registered).is_err(), "a comparand that dropped the shipped day passed");
     // **The W-37 repair's three clauses** (README gap 3331), each driven by a finding.
     // 1. A flag the RECOMPUTED answer sets licenses nothing: an unflagged line whose new
     //    answer sets `d60.p51` (the W-37 auditor's plant, `idle/lounge`).
@@ -1604,7 +1609,7 @@ fn the_d64_rule_bites_and_does_not_over_bite() {
     self_certified["day"]["hash"] = Value::String("bent".to_string());
     self_certified["d60"]["p51"] = Value::Bool(true);
     assert!(
-        forkclass::d64_allows(&plain, &self_certified, &plain_day, &[51], &registered).is_err(),
+        forkclass::d64_allows(&plain, &self_certified, &plain_day, &[51], None, &registered).is_err(),
         "a flag the recomputed answer set licensed its own change"
     );
     // 2. The shipped fork's day may not move, whatever number is named (the W-37 critic's
@@ -1620,19 +1625,19 @@ fn the_d64_rule_bites_and_does_not_over_bite() {
     let mut both = coincident.clone();
     both["day"]["day"] = moved.clone();
     assert_eq!(
-        forkclass::d64_allows(&coincident, &coincident, &shipped, &[46], &registered),
+        forkclass::d64_allows(&coincident, &coincident, &shipped, &[46], None, &registered),
         Ok(Vec::new()),
         "the coincident line itself is not refused"
     );
     assert!(
-        forkclass::d64_allows(&coincident, &both, &moved, &[46], &registered).is_err(),
+        forkclass::d64_allows(&coincident, &both, &moved, &[46], None, &registered).is_err(),
         "a moved shipped fork passed under a comparand number"
     );
     // 3. A number governs the object its flag lives in, `day` and `whatif` — not another's.
     let mut other = bent.clone();
     other["d60"]["p51"] = Value::Bool(!old["d60"]["p51"].as_bool().unwrap_or(false));
     assert!(
-        forkclass::d64_allows(&old, &other, &shipped, &[46], &registered).is_err(),
+        forkclass::d64_allows(&old, &other, &shipped, &[46], None, &registered).is_err(),
         "P46 licensed a change to P51's object"
     );
     // **The W-38 introduction** (README gap 3470): a number whose comparand did not exist
@@ -1642,20 +1647,20 @@ fn the_d64_rule_bites_and_does_not_over_bite() {
     let mut intro = old.clone();
     intro["p45"] = serde_json::json!({"p45": true, "from": "t", "rows": []});
     assert_eq!(
-        forkclass::d64_allows(&old, &intro, &shipped, &[45], &registered),
+        forkclass::d64_allows(&old, &intro, &shipped, &[45], None, &registered),
         Ok(vec!["p45".to_string()]),
         "an introduction that only adds its own answer was refused"
     );
     // Refused: no reason; another number; an unregistered one.
-    assert!(forkclass::d64_allows(&old, &intro, &shipped, &[], &registered).is_err(), "an introduction with no reason passed");
-    assert!(forkclass::d64_allows(&old, &intro, &shipped, &[56], &registered).is_err(), "P56 introduced P45's answer");
-    assert!(forkclass::d64_allows(&old, &intro, &shipped, &[9999], &registered).is_err(), "an unregistered introduction passed");
+    assert!(forkclass::d64_allows(&old, &intro, &shipped, &[], None, &registered).is_err(), "an introduction with no reason passed");
+    assert!(forkclass::d64_allows(&old, &intro, &shipped, &[56], None, &registered).is_err(), "P56 introduced P45's answer");
+    assert!(forkclass::d64_allows(&old, &intro, &shipped, &[9999], None, &registered).is_err(), "an unregistered introduction passed");
     // Refused: an introduction that ALSO moves a frozen answer (P45 carries no flag on the
     // committed line, so nothing licenses the change to `day`).
     let mut intro_and_day = intro.clone();
     intro_and_day["day"]["hash"] = Value::String("bent".to_string());
     assert!(
-        forkclass::d64_allows(&old, &intro_and_day, &shipped, &[45], &registered).is_err(),
+        forkclass::d64_allows(&old, &intro_and_day, &shipped, &[45], None, &registered).is_err(),
         "an introduction moved a frozen answer"
     );
     // Refused: an added answer whose flag is NOT set, and one holding a number the committed
@@ -1663,13 +1668,13 @@ fn the_d64_rule_bites_and_does_not_over_bite() {
     // 1's self-certification in another spelling).
     let mut unset = old.clone();
     unset["p45"] = serde_json::json!({"p45": false});
-    assert!(forkclass::d64_allows(&old, &unset, &shipped, &[45], &registered).is_err(), "an unset flag introduced itself");
+    assert!(forkclass::d64_allows(&old, &unset, &shipped, &[45], None, &registered).is_err(), "an unset flag introduced itself");
     let plain_line = plain.clone();
     assert_eq!(plain_line["d57"]["p46"], false, "the plain line carries P46's flag unset");
     let mut respelled = plain_line.clone();
     respelled["p45"] = serde_json::json!({"p46": true});
     assert!(
-        forkclass::d64_allows(&plain_line, &respelled, &plain_day, &[46], &registered).is_err(),
+        forkclass::d64_allows(&plain_line, &respelled, &plain_day, &[46], None, &registered).is_err(),
         "a new key flipped a flag the committed line carries"
     );
     // Refused: an introduction that ALTERS an object the committed line carries — P45's flag
@@ -1677,7 +1682,7 @@ fn the_d64_rule_bites_and_does_not_over_bite() {
     let mut into_d57 = old.clone();
     into_d57["d57"]["p45"] = Value::Bool(true);
     assert!(
-        forkclass::d64_allows(&old, &into_d57, &shipped, &[45], &registered).is_err(),
+        forkclass::d64_allows(&old, &into_d57, &shipped, &[45], None, &registered).is_err(),
         "an introduction altered an object the committed line carries"
     );
     // Refused: an introduction on a line whose SHIPPED fork's day moved (clause 2 holds):
@@ -1686,9 +1691,137 @@ fn the_d64_rule_bites_and_does_not_over_bite() {
     let departed = old["day"]["day"].clone();
     assert_ne!(departed, shipped, "the P46 line departs from its shipped day");
     assert!(
-        forkclass::d64_allows(&old, &intro, &departed, &[45], &registered).is_err(),
+        forkclass::d64_allows(&old, &intro, &departed, &[45], None, &registered).is_err(),
         "an introduction passed while the shipped fork's day moved"
     );
+}
+
+/// **The owner's D85, D64(c), bites and does not over-bite** (W-42 track C, README gaps 4123,
+/// 4139 and 4281; AGENTS §5.8) — `forkclass::d64_allows` with a corrected harness reading named,
+/// on a frozen P46 line: the comparand's `day` and a flag object the line carries moving, with a
+/// D64(c) reason, is allowed — the flag FLIPPED included, which (a) refuses (clause 1: a flag the
+/// recomputed answer sets licenses nothing) — and refused with no reason or with a reason that is
+/// not one; a moved world, a moved provenance key, a moved shipped fork's day (on the line or
+/// live), and an answer the committed line records no flag of are each refused under (c) whatever
+/// the reason; and a departure leaving the line (gap 4123's P55) is one of the moves it allows.
+#[test]
+fn the_d64c_rule_bites_and_does_not_over_bite() {
+    let registered = forkclass::registered_parity();
+    let why = "2026-10-02 D64(c): the harness reads the host's worked minutes as the binary does (README gap 3941)";
+    assert!(forkclass::is_d64c_reason(why));
+    for not in [
+        "D64(c): undated (gap 3941)",
+        "2026-10-02 D64(c): names no gap",
+        "2026-10-02 D64(c): gap three",
+        "2026-10-02 D64(b): the wrong clause (gap 3941)",
+    ] {
+        assert!(!forkclass::is_d64c_reason(not), "`{not}` read as a D64(c) reason");
+    }
+    let old = frozen_lines()
+        .iter()
+        .find(|l| l["d57"]["p46"] == true && l["d57"]["p47"] == false && !l["shipped"].is_null() && l["p45"].is_null() && l["p55"].is_null())
+        .expect("a frozen P46 line with no P45 and no P55 answer")
+        .clone();
+    let shipped = forkclass::shipped_of(&old).clone();
+    // Allowed: the comparand's day and a flag object it carries — the flag flipped.
+    let mut corrected = old.clone();
+    corrected["day"]["hash"] = Value::String("corrected".to_string());
+    corrected["d57"]["p47"] = Value::Bool(true);
+    assert_eq!(
+        forkclass::d64_allows(&old, &corrected, &shipped, &[], Some(why), &registered),
+        Ok(vec!["day".to_string(), "d57".to_string()]),
+        "a corrected harness reading moving the recorded departures was refused"
+    );
+    assert_eq!(forkclass::d64c_allows(&old, &corrected, &shipped, why), Ok(vec!["d57".to_string(), "day".to_string()]));
+    // Refused: no reason; a reason that is not one; and (a) for the flipped flag.
+    assert!(forkclass::d64_allows(&old, &corrected, &shipped, &[], None, &registered).is_err(), "no reason passed");
+    assert!(forkclass::d64c_allows(&old, &corrected, &shipped, "2026-10-02 D64(c): no gap named").is_err(), "a reason naming no gap passed");
+    assert!(
+        forkclass::d64_allows(&old, &corrected, &shipped, &[47], None, &registered).is_err(),
+        "(a) licensed a flag its recomputed answer set (clause 1)"
+    );
+    // Refused under (c), whatever the reason: the world, a provenance key, the shipped fork's day.
+    let mut world = corrected.clone();
+    world["world"]["now"] = Value::String("2026-09-07T23:59:00-05:00".to_string());
+    assert!(forkclass::d64c_allows(&old, &world, &shipped, why).is_err_and(|e| e.contains("`world` moved")), "a moved world passed");
+    let mut seed = corrected.clone();
+    seed["draw"] = serde_json::json!(9999);
+    assert!(forkclass::d64c_allows(&old, &seed, &shipped, why).is_err_and(|e| e.contains("`draw` moved")), "a moved provenance key passed");
+    let mut moved = shipped.clone();
+    moved["budget_blocks"] = serde_json::json!(99);
+    let mut on_line = corrected.clone();
+    on_line["shipped"]["day"] = moved.clone();
+    assert!(forkclass::d64c_allows(&old, &on_line, &shipped, why).is_err_and(|e| e.contains("SHIPPED")), "a shipped day moved on the line passed");
+    assert!(forkclass::d64c_allows(&old, &corrected, &moved, why).is_err_and(|e| e.contains("SHIPPED")), "a shipped day moved live passed");
+    assert!(forkclass::d64_allows(&old, &on_line, &shipped, &[46], Some(why), &registered).is_err(), "(a) passed what (c) refused");
+    // Refused under (c): an answer the committed line records no flag of — an introduction, (a)'s.
+    let mut intro = corrected.clone();
+    intro["p45"] = serde_json::json!({"p45": true, "from": "t", "rows": []});
+    assert!(forkclass::d64c_allows(&old, &intro, &shipped, why).is_err_and(|e| e.contains("`p45` moved")), "an introduction passed as (c)");
+    // Allowed: a departure LEAVING the line (gap 4123's P55) — a flag object the line carries, gone.
+    let mut with_p55 = old.clone();
+    with_p55["p55"] = serde_json::json!({"p55": true});
+    let mut gone = with_p55.clone();
+    gone.as_object_mut().expect("a line").remove("p55");
+    gone["d57"]["p47"] = Value::Bool(true);
+    assert_eq!(forkclass::d64c_allows(&with_p55, &gone, &shipped, why), Ok(vec!["d57".to_string(), "p55".to_string()]));
+    // And a line whose shipped day moves from the comparand to `shipped` — the comparand starting to
+    // depart from the same shipped day — is (c)'s too: the shipped fork's day did not move.
+    let mut coincident = old.clone();
+    coincident["day"]["day"] = shipped.clone();
+    coincident["shipped"] = Value::Null;
+    assert_eq!(
+        forkclass::d64c_allows(&coincident, &old, &shipped, why),
+        Ok(vec!["day".to_string(), "shipped".to_string()]),
+        "the comparand starting to depart from the same shipped day was refused"
+    );
+    // The reason is read STRICTLY, as `because_of` reads a number: absent is none, a malformed one
+    // fails rather than being ignored.
+    assert_eq!(forkclass::harness_of("TM_W42_C_HARNESS_UNSET_PROBE"), None);
+    std::env::set_var("TM_W42_C_HARNESS_PROBE", why);
+    assert_eq!(forkclass::harness_of("TM_W42_C_HARNESS_PROBE").as_deref(), Some(why));
+    std::env::set_var("TM_W42_C_HARNESS_BAD_PROBE", "a harness reading corrected, undated");
+    assert!(std::panic::catch_unwind(|| forkclass::harness_of("TM_W42_C_HARNESS_BAD_PROBE")).is_err(), "a malformed D64(c) reason was ignored");
+}
+
+/// **A world re-drawn since its committed line is held to D64(b) as the re-draw ran it** (W-42 track
+/// C, README gap 4151; `forkclass::redrawn_since`): asked of the COMMITTED line, so a world edited in
+/// the working copy cannot pass for a re-draw at the re-bless. A committed world the binary cannot
+/// hold, re-drawn to one it can, of the same class, carrying a new dated D64(b) reason, passes; the
+/// same with no new reason, with an undated one, from a committed world the binary CAN hold, to a
+/// world it cannot, or to another class, is refused by name.
+#[test]
+fn a_world_redrawn_since_its_committed_line_is_held_to_d64b() {
+    let tz = tz();
+    let held = frozen_lines()
+        .iter()
+        .find(|l| l["secondary"].is_null() && !l["world"]["state"]["active"].is_null())
+        .expect("a primary line with a running block")
+        .clone();
+    assert!(forkclass::binary_holds(&Built::of(ClassWorld::of_json(&held["world"], tz).expect("a world"))).is_ok());
+    // The committed world: the cache names a block the log does not hold open (clause 1 fails).
+    let mut committed = held.clone();
+    committed["world"]["state"]["active"]["id"] = serde_json::json!("zz99");
+    assert!(forkclass::binary_holds(&Built::of(ClassWorld::of_json(&committed["world"], tz).expect("a world"))).is_err());
+    let why = serde_json::json!({"why": "2026-10-02 D64(b): the cache names a block the log does not hold", "held": ["1: …"]});
+    let mut redrawn = held.clone();
+    redrawn["d64b"] = why.clone();
+    assert_eq!(forkclass::redrawn_since(&committed, &redrawn, tz), Ok(()), "a licensed re-draw was refused");
+    let no_reason = held.clone();
+    assert!(forkclass::redrawn_since(&committed, &no_reason, tz).is_err_and(|e| e.contains("no new D64(b) reason")));
+    let mut stale = held.clone();
+    stale["d64b"] = why.clone();
+    let mut committed_with = committed.clone();
+    committed_with["d64b"] = why.clone();
+    assert!(forkclass::redrawn_since(&committed_with, &stale, tz).is_err_and(|e| e.contains("no new D64(b) reason")), "the committed line's own reason licensed a new re-draw");
+    let mut undated = held.clone();
+    undated["d64b"] = serde_json::json!({"why": "D64(b): undated"});
+    assert!(forkclass::redrawn_since(&committed, &undated, tz).is_err(), "an undated reason passed");
+    assert!(forkclass::redrawn_since(&held, &redrawn, tz).is_err_and(|e| e.contains("one the binary can hold")), "a held committed world was re-drawn");
+    assert!(forkclass::redrawn_since(&committed, &{ let mut x = committed.clone(); x["d64b"] = why.clone(); x }, tz).is_err_and(|e| e.contains("not one the binary can hold")));
+    let mut other_class = committed.clone();
+    other_class["class"] = serde_json::json!("idle/elsewhere");
+    assert!(forkclass::redrawn_since(&other_class, &redrawn, tz).is_err_and(|e| e.contains("world")), "a re-draw into another class passed");
 }
 
 /// **P67's answer is its own, and it departs only where its rule does** (W-41 track H, README
@@ -1765,19 +1898,18 @@ fn p67s_answer_is_its_own_and_departs_only_where_its_rule_does() {
     let shipped = if l["shipped"].is_null() { l["day"]["day"].clone() } else { l["shipped"]["day"].clone() };
     let mut bent = l.clone();
     bent["p67"]["rows"][0]["kind"] = Value::String("rest".into());
-    assert!(forkclass::d64_allows(&l, &bent, &shipped, &[45], &registered).is_err(), "P45 licensed a change to P67's answer");
-    assert_eq!(forkclass::d64_allows(&l, &bent, &shipped, &[67], &registered), Ok(vec!["p67".to_string()]), "P67 may move its own answer");
+    assert!(forkclass::d64_allows(&l, &bent, &shipped, &[45], None, &registered).is_err(), "P45 licensed a change to P67's answer");
+    assert_eq!(forkclass::d64_allows(&l, &bent, &shipped, &[67], None, &registered), Ok(vec!["p67".to_string()]), "P67 may move its own answer");
     let mut merged = l.clone();
     merged["p45"]["rows"] = l["p67"]["rows"].clone();
     merged.as_object_mut().expect("a line").remove("p67");
     assert!(
-        forkclass::d64_allows(&l, &merged, &shipped, &[45], &registered).is_err(),
+        forkclass::d64_allows(&l, &merged, &shipped, &[45], None, &registered).is_err(),
         "P67's rows moved back under P45's flag with only P45 named (README gap 3958)"
     );
 }
 
 // BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gaps 2722, 2925)
-use std::collections::BTreeMap;
 use tm_core::dayplan::DayPlan;
 use tm_core::planner;
 use tm_core::priority::Prio;
@@ -1912,6 +2044,11 @@ fn the_frozen_plan_basic_days_are_the_forks_answer_today() {
 /// parity number or a world the binary cannot build, and these lines carry no flag a number
 /// could license — so a day of this file that the fork answers differently is a finding to
 /// report, never a line to rewrite. After R3 it is gone with the region and the file is final.
+/// (These lines carry no departure, so the owner's D85 — D64(c), a corrected harness reading —
+/// cannot reach them either: what it may move is a departure the line records, and the shipped
+/// fork's day it holds by value is the whole line.) **What a line is held against is the file's
+/// COMMITTED history** (W-42 track C, README gap 4151; `frozenhist::held`), never the working copy,
+/// so deleting the file is not a fresh freeze; a line HEAD holds that no instant draws is refused.
 #[test]
 #[ignore]
 fn the_frozen_plan_basic_days_are_blessed() {
@@ -1921,25 +2058,20 @@ fn the_frozen_plan_basic_days_are_blessed() {
     }
     let fx = planner_common::load_with_log("plan-basic", Some(planner_common::BASIC_LOG));
     let path = forkday::frozen_basic_path();
-    let held: BTreeMap<String, String> = std::fs::read_to_string(&path)
-        .unwrap_or_default()
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .map(|l| {
-            let v: Value = serde_json::from_str(l).expect("JSON");
-            (v["name"].as_str().unwrap_or_default().to_string(), l.to_string())
-        })
-        .collect();
-    let (mut out, mut added, mut refused) = (String::new(), 0usize, Vec::new());
+    let held = frozenhist::held(&path, frozenhist::key_of("name")).unwrap_or_else(|e| panic!("{e}"));
+    eprintln!("{}", held.census(forkday::FROZEN_BASIC));
+    let (mut out, mut added, mut refused, mut names) = (String::new(), 0usize, Vec::new(), Vec::new());
     for (name, state, now) in basic_instants() {
         let line = forkday::basic_line(&name, &state, now, &basic_fork_day(&fx, &state, now));
-        match held.get(&name) {
-            Some(old) if old.as_str() != line.trim_end() => refused.push(name),
+        match held.ever.get(&name) {
+            Some(old) if old.raw.as_str() != line.trim_end() => refused.push(name.clone()),
             Some(_) => {}
             None => added += 1,
         }
+        names.push(name);
         out.push_str(&line);
     }
+    refused.extend(held.head.iter().filter(|n| !names.contains(n)).map(|n| format!("{n}: a frozen line no instant draws any more")));
     eprintln!("plan-basic days: {added} added, {} refused", refused.len());
     assert!(refused.is_empty(), "the fork answers these frozen days differently, and they are not rewritten:\n  {}", refused.join("\n  "));
     std::fs::write(&path, out).expect("the frozen plan-basic days are written");
@@ -1976,7 +2108,20 @@ fn bless_because() -> Vec<u32> {
 /// the shipped fork's day stays beside a departing comparand by value; and a
 /// re-bless that is neither FAILS BY NAME and writes nothing. After R3 this
 /// test is gone with the region and the file is final. `TM_PLANNER_BLESS_OUT`
-/// writes elsewhere (a scratch copy), for a dry run.
+/// writes elsewhere (a scratch copy), for a dry run. Since the owner's D85,
+/// `TM_PLANNER_BLESS_HARNESS` names a corrected harness reading (D64(c)).
+///
+/// **What a line is held against is the file's COMMITTED history, not the
+/// working copy** (W-42 track C, README gap 4151; `frozenhist::held`, keyed by
+/// `frozenhist::class_key`). The working copy is still the INPUT — its
+/// worlds, where a pending re-draw lives — but a line's answers are held to
+/// its latest committed version: a re-drawn world to D64(b) as
+/// `forkclass::redrawn_since` asks it of the committed line, the rest to
+/// `forkclass::d64_allows`. So a line whose answers were cleared, or deleted
+/// and re-derived, in the working copy is not a fresh freeze; a line no
+/// committed version holds is. And a line HEAD holds that the re-bless no
+/// longer writes is refused, unless it is derived from a primary line this
+/// re-bless re-drew (the re-draw re-derives those).
 #[test]
 #[ignore]
 fn the_frozen_fork_classes_are_reblessed() {
@@ -1985,15 +2130,20 @@ fn the_frozen_fork_classes_are_reblessed() {
         return;
     }
     let because = bless_because();
+    let harness = forkclass::harness_of("TM_PLANNER_BLESS_HARNESS");
     let registered = forkclass::registered_parity();
     let path = forkclass::frozen_path();
+    let held = frozenhist::held(&path, frozenhist::class_key).unwrap_or_else(|e| panic!("{e}"));
+    eprintln!("{}", held.census(forkclass::FROZEN_CLASSES));
     let out_path = std::env::var_os("TM_PLANNER_BLESS_OUT").map(std::path::PathBuf::from).unwrap_or_else(|| path.clone());
     let text = std::fs::read_to_string(&path).expect("the frozen classes read");
     let mut out = String::new();
     let (mut refused, mut changed, mut filled) = (Vec::new(), Vec::new(), 0usize);
+    let (mut written, mut redrawn_parents) = (BTreeSet::new(), BTreeSet::new());
     for l in text.lines().filter(|l| !l.trim().is_empty()) {
-        let old: Value = serde_json::from_str(l).expect("a frozen class line is JSON");
-        let mut line = old.clone();
+        let input: Value = serde_json::from_str(l).expect("a frozen class line is JSON");
+        let key = frozenhist::class_key(&input).expect("a frozen class line names its class");
+        let mut line = input.clone();
         let b = Built::of(ClassWorld::of_json(&line["world"], tz()).expect("a stored world"));
         let prios = kernel_prios(&b);
         let answers = fork_answers(&b, &prios);
@@ -2003,17 +2153,36 @@ fn the_frozen_fork_classes_are_reblessed() {
         // The SHIPPED fork's day is fork 4748911's (P56), as `fork_answers` keeps it.
         let ask = forkplan::ForkAsk { state: &b.world.state, now: b.world.now, d60: false, p64: false, prios: &prios, extend: None, log_line: None };
         let shipped_day = forkplan::ForkPlan::plan(&forkplan::InTree, &b, &ask).expect("the fork plans").fork_day;
-        match forkclass::d64_allows(&old, &line, &shipped_day, &because, &registered) {
-            Err(e) => refused.push(e),
-            Ok(keys) if !keys.is_empty() => changed.push(format!("{} `{}`", line["class"], keys.join("`, `"))),
-            Ok(_) => filled += usize::from(old["day"].is_null()),
+        match held.get(&key) {
+            None => filled += 1,
+            Some(old) if old["world"] != line["world"] => match forkclass::redrawn_since(old, &line, tz()) {
+                Err(e) => refused.push(e),
+                Ok(()) => {
+                    if line["secondary"].is_null() {
+                        redrawn_parents.insert(line["class"].as_str().unwrap_or_default().to_string());
+                    }
+                    changed.push(format!("{key} re-drawn"));
+                }
+            },
+            Some(old) => match forkclass::d64_allows(old, &line, &shipped_day, &because, harness.as_deref(), &registered) {
+                Err(e) => refused.push(e),
+                Ok(keys) if !keys.is_empty() => changed.push(format!("{} `{}`", line["class"], keys.join("`, `"))),
+                Ok(_) => {}
+            },
         }
-        assert_eq!(line["world"], old["world"], "a re-bless changed a world");
+        assert_eq!(line["world"], input["world"], "a re-bless changed a world");
+        written.insert(key);
         out.push_str(&serde_json::to_string(&line).expect("a line serialises"));
         out.push('\n');
     }
+    for key in held.head.iter().filter(|k| !written.contains(*k)) {
+        let parent = held.get(key).and_then(|l| l["derived"]["from"].as_str()).unwrap_or_default();
+        if !redrawn_parents.contains(parent) {
+            refused.push(format!("{key}: a committed line the re-bless no longer writes, derived from no primary it re-drew"));
+        }
+    }
     eprintln!(
-        "re-bless for {:?}: {} line(s) changed ({}), {filled} cleared line(s) answered, {} refused",
+        "re-bless for {:?}: {} line(s) changed ({}), {filled} line(s) no committed version holds answered, {} refused",
         because,
         changed.len(),
         changed.join("; "),
@@ -2049,7 +2218,11 @@ fn the_frozen_batch_is_the_forks_answer_today() {
 /// exactly as the classes' re-bless is (`forkclass::d64_allows`, `TM_PLANNER_BLESS_BECAUSE`):
 /// a changed answer needs a registered number the line carries, and a changed WORLD is a
 /// re-draw, which this refuses by name. `TM_PLANNER_BLESS_BATCH_OUT` writes elsewhere, for a
-/// dry run. After R3 it is gone with the region and the file is final.
+/// dry run. After R3 it is gone with the region and the file is final. **What a line is held
+/// against is the file's COMMITTED history** (W-42 track C, README gap 4151;
+/// `frozenhist::held`), never the working copy — so deleting the file is not a fresh freeze — and
+/// a line HEAD holds that the draw no longer writes is refused; `TM_PLANNER_BLESS_HARNESS` names a
+/// corrected harness reading (the owner's D85, D64(c)).
 #[test]
 #[ignore]
 fn the_frozen_batch_is_blessed() {
@@ -2058,18 +2231,13 @@ fn the_frozen_batch_is_blessed() {
         return;
     }
     let because = bless_because();
+    let harness = forkclass::harness_of("TM_PLANNER_BLESS_HARNESS");
     let registered = forkclass::registered_parity();
     let path = forkclass::batch_path();
     let out_path = std::env::var_os("TM_PLANNER_BLESS_BATCH_OUT").map(std::path::PathBuf::from).unwrap_or_else(|| path.clone());
-    let held: BTreeMap<u64, Value> = std::fs::read_to_string(&path)
-        .unwrap_or_default()
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .map(|l| {
-            let v: Value = serde_json::from_str(l).expect("a batch line is JSON");
-            (v["draw"].as_u64().expect("a draw"), v)
-        })
-        .collect();
+    let held = frozenhist::held(&path, frozenhist::key_of("draw")).unwrap_or_else(|e| panic!("{e}"));
+    eprintln!("{}", held.census(forkclass::FROZEN_BATCH));
+    let mut written = Vec::new();
     let (mut out, mut added, mut changed, mut refused, mut not_held) = (String::new(), 0usize, Vec::new(), Vec::new(), Vec::new());
     for (index, draw) in forkclass::class_draws(forkclass::BATCH_SEED, None).take(forkclass::BATCH_DRAWS).enumerate() {
         let world = forkclass::world_of(&draw);
@@ -2084,7 +2252,8 @@ fn the_frozen_batch_is_blessed() {
         for key in forkclass::ANSWERS {
             forkclass::set_answer(&mut line, key, answers[key].clone());
         }
-        match held.get(&(index as u64)) {
+        written.push(index.to_string());
+        match held.get(&index.to_string()) {
             None => added += 1,
             Some(old) if old["world"] != line["world"] => {
                 refused.push(format!("draw {index}: the generator draws another world — a re-draw, which D64(b) must decide"));
@@ -2092,7 +2261,7 @@ fn the_frozen_batch_is_blessed() {
             Some(old) => {
                 let ask = forkplan::ForkAsk { state: &b.world.state, now: b.world.now, d60: false, p64: false, prios: &prios, extend: None, log_line: None };
                 let shipped_day = forkplan::ForkPlan::plan(&forkplan::InTree, &b, &ask).expect("the fork plans").fork_day;
-                match forkclass::d64_allows(old, &line, &shipped_day, &because, &registered) {
+                match forkclass::d64_allows(old, &line, &shipped_day, &because, harness.as_deref(), &registered) {
                     Err(e) => refused.push(e),
                     Ok(keys) if !keys.is_empty() => changed.push(format!("draw {index} `{}`", keys.join("`, `"))),
                     Ok(_) => {}
@@ -2102,6 +2271,7 @@ fn the_frozen_batch_is_blessed() {
         out.push_str(&serde_json::to_string(&line).expect("a line serialises"));
         out.push('\n');
     }
+    refused.extend(held.head.iter().filter(|d| !written.contains(d)).map(|d| format!("draw {d}: a frozen line the draw no longer writes")));
     eprintln!(
         "batch: {added} line(s) added, {} changed ({}), {} refused; {} draw(s) of {} not held by the binary:\n  {}",
         changed.len(),
@@ -2135,7 +2305,10 @@ fn the_frozen_driven_days_are_the_forks_answer_today() {
 /// Each of `forkclass::DRIVES` is driven with the built binary over its parent primary line and
 /// frozen with `fork_answers`, the classes' own. A line it holds is held to the owner's D64 as the
 /// classes' re-bless is (`forkclass::d64_allows`, `TM_PLANNER_BLESS_BECAUSE`), and a changed world
-/// is refused by name. `TM_PLANNER_BLESS_DRIVEN_OUT` writes elsewhere, for a dry run.
+/// is refused by name. `TM_PLANNER_BLESS_DRIVEN_OUT` writes elsewhere, for a dry run. **What a
+/// line is held against is the file's COMMITTED history** (W-42 track C, README gap 4151;
+/// `frozenhist::held`), never the working copy, and a line HEAD holds that no drive writes is
+/// refused; `TM_PLANNER_BLESS_HARNESS` names a corrected harness reading (the owner's D85).
 #[test]
 #[ignore]
 fn the_frozen_driven_days_are_blessed() {
@@ -2145,15 +2318,12 @@ fn the_frozen_driven_days_are_blessed() {
     }
     let tz = tz();
     let because = bless_because();
+    let harness = forkclass::harness_of("TM_PLANNER_BLESS_HARNESS");
     let registered = forkclass::registered_parity();
     let path = forkclass::driven_path();
     let out_path = std::env::var_os("TM_PLANNER_BLESS_DRIVEN_OUT").map(std::path::PathBuf::from).unwrap_or_else(|| path.clone());
-    let held: Vec<Value> = std::fs::read_to_string(&path)
-        .unwrap_or_default()
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .map(|l| serde_json::from_str(l).expect("a driven line is JSON"))
-        .collect();
+    let held = frozenhist::held(&path, frozenhist::key_of("name")).unwrap_or_else(|e| panic!("{e}"));
+    eprintln!("{}", held.census(forkclass::FROZEN_DRIVEN));
     let (mut out, mut refused) = (String::new(), Vec::new());
     for d in &forkclass::DRIVES {
         let parent = frozen_lines().iter().find(|l| l["class"] == d.from && l["secondary"].is_null()).expect("a primary parent");
@@ -2169,13 +2339,13 @@ fn the_frozen_driven_days_are_blessed() {
         for key in forkclass::ANSWERS {
             forkclass::set_answer(&mut line, key, answers[key].clone());
         }
-        if let Some(old) = held.iter().find(|l| l["name"] == d.name) {
+        if let Some(old) = held.get(d.name) {
             if old["world"] != line["world"] {
                 refused.push(format!("{}: the binary writes another world now — a re-draw, which D64(b) must decide", d.name));
             } else {
                 let ask = forkplan::ForkAsk { state: &b.world.state, now: b.world.now, d60: false, p64: false, prios: &prios, extend: None, log_line: None };
                 let shipped_day = forkplan::ForkPlan::plan(&forkplan::InTree, &b, &ask).expect("the fork plans").fork_day;
-                if let Err(e) = forkclass::d64_allows(old, &line, &shipped_day, &because, &registered) {
+                if let Err(e) = forkclass::d64_allows(old, &line, &shipped_day, &because, harness.as_deref(), &registered) {
                     refused.push(e);
                 }
             }
@@ -2183,6 +2353,9 @@ fn the_frozen_driven_days_are_blessed() {
         out.push_str(&serde_json::to_string(&line).expect("a line serialises"));
         out.push('\n');
     }
+    refused.extend(
+        held.head.iter().filter(|n| !forkclass::DRIVES.iter().any(|d| d.name == n.as_str())).map(|n| format!("{n}: a frozen line no drive writes any more")),
+    );
     assert!(refused.is_empty(), "the driven re-bless is refused and wrote nothing:\n  {}", refused.join("\n  "));
     std::fs::write(&out_path, out).expect("the frozen driven days are written");
 }
@@ -2206,7 +2379,9 @@ fn the_frozen_driven_days_are_blessed() {
 /// floor of [`DRAWN_FLOORS`] (W-38: the two `p52` lines), only for a world the
 /// binary can hold and a draw no line records. `TM_PLANNER_DRAW_OUT` writes
 /// elsewhere, for a dry run. After R3 this test is gone with the region: a
-/// world the fork cannot answer cannot be frozen.
+/// world the fork cannot answer cannot be frozen. Since W-42 track C (README gap
+/// 4151) a derived line the working copy lacks is looked up in the file's
+/// COMMITTED history (`frozenhist::held`) before it is re-derived as added.
 #[test]
 #[ignore]
 fn the_frozen_class_worlds_are_redrawn() {
@@ -2222,6 +2397,14 @@ fn the_frozen_class_worlds_are_redrawn() {
     let out_path = std::env::var_os("TM_PLANNER_DRAW_OUT").map(std::path::PathBuf::from).unwrap_or_else(|| path.clone());
     let text = std::fs::read_to_string(&path).expect("the frozen classes read");
     let lines: Vec<Value> = text.lines().filter(|l| !l.trim().is_empty()).map(|l| serde_json::from_str(l).expect("JSON")).collect();
+    // **A derived line the working copy lacks is found in the COMMITTED history** (W-42 track C,
+    // README gap 4151; `frozenhist::held`): deleting one is then not re-derived as an "added" line
+    // with its answers cleared — the re-bless would hold it to its committed self anyway.
+    let committed = frozenhist::held(&path, frozenhist::class_key).unwrap_or_else(|e| panic!("{e}"));
+    let derived_of = |secondary: &str, derived: &Value| -> Option<Value> {
+        let same = |l: &&Value| l["secondary"] == secondary && l["derived"] == *derived;
+        lines.iter().find(same).or_else(|| committed.ever.values().map(|c| &c.line).find(same)).cloned()
+    };
     let mut bad = Vec::new();
     let mut redrawn = Vec::new();
     let clear = |line: &mut Value| {
@@ -2328,10 +2511,10 @@ fn the_frozen_class_worlds_are_redrawn() {
                 "world": w.to_json(),
             });
             clear(&mut line);
-            match lines.iter().find(|l| l["secondary"] == "d61" && l["derived"] == line["derived"]) {
-                Some(old) if old["world"] == line["world"] => line = old.clone(),
+            match derived_of("d61", &line["derived"]) {
+                Some(old) if old["world"] == line["world"] => line = old,
                 Some(old) => {
-                    let mut kept = old.clone();
+                    let mut kept = old;
                     replace(&mut kept, w, what, &mut bad, &mut redrawn);
                     line = kept;
                 }
@@ -2354,10 +2537,10 @@ fn the_frozen_class_worlds_are_redrawn() {
                 "world": w.to_json(),
             });
             clear(&mut line);
-            match lines.iter().find(|l| l["secondary"] == "window" && l["derived"] == line["derived"]) {
-                Some(old) if old["world"] == line["world"] => line = old.clone(),
+            match derived_of("window", &line["derived"]) {
+                Some(old) if old["world"] == line["world"] => line = old,
                 Some(old) => {
-                    let mut kept = old.clone();
+                    let mut kept = old;
                     replace(&mut kept, w, what, &mut bad, &mut redrawn);
                     line = kept;
                 }
@@ -2380,10 +2563,10 @@ fn the_frozen_class_worlds_are_redrawn() {
                 "world": w.to_json(),
             });
             clear(&mut line);
-            match lines.iter().find(|l| l["secondary"] == "worked" && l["derived"] == line["derived"]) {
-                Some(old) if old["world"] == line["world"] => line = old.clone(),
+            match derived_of("worked", &line["derived"]) {
+                Some(old) if old["world"] == line["world"] => line = old,
                 Some(old) => {
-                    let mut kept = old.clone();
+                    let mut kept = old;
                     replace(&mut kept, w, what, &mut bad, &mut redrawn);
                     line = kept;
                 }
@@ -2406,10 +2589,10 @@ fn the_frozen_class_worlds_are_redrawn() {
                 "world": w.to_json(),
             });
             clear(&mut line);
-            match lines.iter().find(|l| l["secondary"] == "overrun" && l["derived"] == line["derived"]) {
-                Some(old) if old["world"] == line["world"] => line = old.clone(),
+            match derived_of("overrun", &line["derived"]) {
+                Some(old) if old["world"] == line["world"] => line = old,
                 Some(old) => {
-                    let mut kept = old.clone();
+                    let mut kept = old;
                     replace(&mut kept, w, what, &mut bad, &mut redrawn);
                     line = kept;
                 }

@@ -35,6 +35,11 @@ mod planreq;
 #[path = "support/forkday.rs"]
 mod forkday;
 
+/// The committed history a bless holds its lines against (README gap 4151).
+#[allow(dead_code)]
+#[path = "support/frozenhist.rs"]
+mod frozenhist;
+
 use chrono::{DateTime, NaiveTime};
 use chrono_tz::Tz;
 use planner_common::{
@@ -467,6 +472,16 @@ fn plan_travel_day() {
 /// `planner::plan` through `with_ranking` — `planning::build_ranked`'s call.
 /// Rewriting a committed comparand is a decision and never a repair (AGENTS
 /// §7.2); after R3 this test is gone with the region and the file is final.
+///
+/// **It holds the lines it already has, since W-42 track C** (README gaps 4151 and
+/// 4283): until then it rewrote the whole file with nothing held — a re-bless held
+/// to no rule at all, beside siblings that refuse to change a held line. These four
+/// days record no departure (a line is the shipped fork's day and its digest), so
+/// no parity number (D64(a)) and no corrected harness reading (D64(c)) can license
+/// moving one; a day the fork answers differently is a finding to report, and is
+/// REFUSED by name. A day no committed version holds is added; what a line is held
+/// against is the file's COMMITTED history (`frozenhist::held`), never the working
+/// copy; a line HEAD holds that no day of [`DAYS`] writes is refused.
 #[test]
 #[ignore]
 fn the_frozen_fork_days_are_reblessed() {
@@ -474,13 +489,21 @@ fn the_frozen_fork_days_are_reblessed() {
         eprintln!("inert: set TM_PLANNER_BLESS=1 to rewrite {}", forkday::FROZEN_DAYS);
         return;
     }
-    let mut out = String::new();
+    let held = frozenhist::held(&forkday::frozen_path(), frozenhist::key_of("name")).unwrap_or_else(|e| panic!("{e}"));
+    eprintln!("{}", held.census(forkday::FROZEN_DAYS));
+    let (mut out, mut refused) = (String::new(), Vec::new());
     for d in &DAYS {
         let l = Loaded::of(d);
         let (_, ans) = planreq::kernel_day(&l.world(), None).unwrap_or_else(|e| panic!("{}: {e}", d.name));
         let fork = planner::plan(&l.fx.input(&l.state, l.now).with_ranking(&l.cands, &ans.prios));
-        out.push_str(&forkday::frozen_line(d.name, &fork));
+        let line = forkday::frozen_line(d.name, &fork);
+        if held.ever.get(d.name).is_some_and(|old| old.raw.as_str() != line.trim_end()) {
+            refused.push(format!("{}: the fork answers this frozen day differently, and it is not rewritten", d.name));
+        }
+        out.push_str(&line);
     }
+    refused.extend(held.head.iter().filter(|n| !DAYS.iter().any(|d| d.name == n.as_str())).map(|n| format!("{n}: a frozen line no day writes")));
+    assert!(refused.is_empty(), "the re-bless is refused and wrote nothing:\n  {}", refused.join("\n  "));
     std::fs::write(forkday::frozen_path(), out).expect("the frozen days are written");
 }
 // END THE FORK PLANNER

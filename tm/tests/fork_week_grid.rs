@@ -44,6 +44,11 @@ mod forkplan;
 #[path = "support/forkgrid.rs"]
 mod forkgrid;
 
+/// The committed history a bless holds its lines against (README gap 4151).
+#[allow(dead_code)]
+#[path = "support/frozenhist.rs"]
+mod frozenhist;
+
 use std::collections::BTreeSet;
 
 use proptest::prelude::*;
@@ -282,20 +287,30 @@ fn the_grid_rebless_gate_holds_d64() {
     let reg = registered();
     let old = json!({"name": "x", "from": {}, "steps": [], "date": "2026-09-07", "at": "a", "sealed": false,
                      "world": [["a.md", "x"]], "fork": {"heat": [1]}, "p63": [["2026-09-07", 12, -10, 10]]});
-    assert_eq!(forkgrid::rebless_allows(&old, &old, &[], None, &reg), Ok(Vec::new()));
+    assert_eq!(forkgrid::rebless_allows(&old, &old, &[], None, None, &reg), Ok(Vec::new()));
     let mut fork = old.clone();
     fork["fork"]["heat"] = json!([2]);
-    assert!(forkgrid::rebless_allows(&old, &fork, &[63], None, &reg).is_err(), "the fork's grid moved over one world");
+    assert!(forkgrid::rebless_allows(&old, &fork, &[63], None, None, &reg).is_err(), "the fork's grid moved over one world");
     let mut cells = old.clone();
     cells["p63"] = json!([["2026-09-07", 12, -20, 20]]);
-    assert!(forkgrid::rebless_allows(&old, &cells, &[], None, &reg).is_err(), "cells moved with no number named");
-    assert!(forkgrid::rebless_allows(&old, &cells, &[62], None, &reg).is_err(), "cells moved with another number named");
-    assert_eq!(forkgrid::rebless_allows(&old, &cells, &[63], None, &reg), Ok(vec!["p63".to_string()]));
+    assert!(forkgrid::rebless_allows(&old, &cells, &[], None, None, &reg).is_err(), "cells moved with no number named");
+    assert!(forkgrid::rebless_allows(&old, &cells, &[62], None, None, &reg).is_err(), "cells moved with another number named");
+    assert_eq!(forkgrid::rebless_allows(&old, &cells, &[63], None, None, &reg), Ok(vec!["p63".to_string()]));
     let mut world = old.clone();
     world["world"] = json!([["a.md", "y"]]);
     world["fork"]["heat"] = json!([3]);
-    assert!(forkgrid::rebless_allows(&old, &world, &[63], None, &reg).is_err(), "a re-draw with no reason");
-    assert!(forkgrid::rebless_allows(&old, &world, &[], Some("D64(b): the binary no longer writes it"), &reg).is_ok());
+    assert!(forkgrid::rebless_allows(&old, &world, &[63], None, None, &reg).is_err(), "a re-draw with no reason");
+    assert!(forkgrid::rebless_allows(&old, &world, &[], Some("D64(b): the binary no longer writes it"), None, &reg).is_ok());
+    // The owner's D85, D64(c) (W-42 track C, README gap 4281): a corrected harness reading moves the
+    // named cells with no number named, and nothing else — not the fork's grid, not the world.
+    let why = Some("2026-10-02 D64(c): P63's reading corrected (gap 4281)");
+    assert_eq!(forkgrid::rebless_allows(&old, &cells, &[], None, why, &reg), Ok(vec!["p63".to_string()]), "a corrected reading of the cells was refused");
+    let mut cells_and_fork = cells.clone();
+    cells_and_fork["fork"]["heat"] = json!([2]);
+    assert!(forkgrid::rebless_allows(&old, &cells_and_fork, &[], None, why, &reg).is_err(), "the fork's grid moved under (c)");
+    let mut cells_and_world = cells.clone();
+    cells_and_world["world"] = json!([["a.md", "y"]]);
+    assert!(forkgrid::rebless_allows(&old, &cells_and_world, &[], None, why, &reg).is_err(), "a world moved under (c)");
 }
 
 /// **A line cannot be shadowed** (AGENTS §5.8): a frozen grid file carrying one name twice is
@@ -448,7 +463,12 @@ proptest! {
 /// the fork pauses it holds (no oracle: the land step's re-bless when D77 restates P63). Every
 /// line it already holds is held to the owner's D64 (`forkgrid::rebless_allows`):
 /// `TM_GRID_BLESS_BECAUSE` names the parity numbers (`63`), `TM_GRID_BLESS_REDRAW` D64(b)'s
-/// reason for a re-draw. Each changed line is named; a refusal writes nothing.
+/// reason for a re-draw, and since the owner's D85 `TM_GRID_BLESS_HARNESS` a corrected harness
+/// reading's (D64(c): the named cells move, nothing else). Each changed line is named; a refusal
+/// writes nothing. **What each line is held against is the file's COMMITTED history** (W-42 track
+/// C, README gap 4151; `frozenhist::held`) — never the working copy, which stays the INPUT of
+/// `TM_GRID_BLESS=p63` only — so deleting the file or a line of it is not a fresh freeze, and a line
+/// HEAD holds that the bless no longer draws is refused.
 #[test]
 #[ignore]
 fn the_frozen_week_grids_are_blessed() {
@@ -462,8 +482,11 @@ fn the_frozen_week_grids_are_blessed() {
         .filter_map(|s| s.trim().trim_start_matches('P').parse().ok())
         .collect();
     let redraw = std::env::var("TM_GRID_BLESS_REDRAW").ok();
+    let harness = forkclass::harness_of("TM_GRID_BLESS_HARNESS");
     let reg = registered();
     let held: Vec<Value> = if forkgrid::frozen_path().exists() { forkgrid::frozen_lines() } else { Vec::new() };
+    let committed = frozenhist::held(&forkgrid::frozen_path(), frozenhist::key_of("name")).unwrap_or_else(|e| panic!("{e}"));
+    eprintln!("{}", committed.census(forkgrid::FROZEN_GRID));
     let fresh: Vec<Value> = match mode.as_str() {
         "p63" => held
             .iter()
@@ -513,18 +536,18 @@ fn the_frozen_week_grids_are_blessed() {
     };
     let (mut refused, mut changed, mut added) = (Vec::new(), Vec::new(), 0usize);
     for n in &fresh {
-        match held.iter().find(|o| o["name"] == n["name"]) {
+        match committed.get(n["name"].as_str().unwrap_or_default()) {
             None => added += 1,
-            Some(o) => match forkgrid::rebless_allows(o, n, &because, redraw.as_deref(), &reg) {
+            Some(o) => match forkgrid::rebless_allows(o, n, &because, redraw.as_deref(), harness.as_deref(), &reg) {
                 Err(e) => refused.push(e),
                 Ok(k) if !k.is_empty() => changed.push(format!("{} `{}`", n["name"], k.join("`, `"))),
                 Ok(_) => {}
             },
         }
     }
-    for o in &held {
-        if !fresh.iter().any(|n| n["name"] == o["name"]) {
-            refused.push(format!("{}: a frozen line the bless no longer draws", o["name"]));
+    for name in &committed.head {
+        if !fresh.iter().any(|n| n["name"] == name.as_str()) {
+            refused.push(format!("{name}: a frozen line the bless no longer draws"));
         }
     }
     eprintln!(

@@ -988,12 +988,34 @@ pub fn line_of(
 ///   D64(a), the re-bless naming P63 (`because`), which the register holds.
 ///
 /// `Ok` names what changed (empty when nothing did).
-pub fn rebless_allows(old: &Value, new: &Value, because: &[u32], redraw: Option<&str>, registered: &std::collections::BTreeSet<u32>) -> Result<Vec<String>, String> {
+///
+/// **And D64(c), since the owner's D85** (W-42 track C, README gap 4281): `harness` is a corrected
+/// HARNESS reading's reason, which the caller has read strictly (`forkclass::harness_of`). Under
+/// it the named cells — the one departure a grid line records — may move when every other key of
+/// the line, `fork` and the world included, is byte-identical: P63's reading of a world is the
+/// harness's, and fork 4748911's grid over the same bytes cannot move.
+pub fn rebless_allows(
+    old: &Value,
+    new: &Value,
+    because: &[u32],
+    redraw: Option<&str>,
+    harness: Option<&str>,
+    registered: &std::collections::BTreeSet<u32>,
+) -> Result<Vec<String>, String> {
     let who = old["name"].as_str().unwrap_or("<unnamed>");
     let keys = ["name", "from", "steps", "date", "at", "sealed", "world", "fork", "p63"];
     let changed: Vec<String> = keys.iter().filter(|k| old[**k] != new[**k]).map(|k| (*k).to_string()).collect();
     if changed.is_empty() {
         return Ok(changed);
+    }
+    if harness.is_some_and(|why| !why.trim().is_empty()) {
+        let bytes = |v: &Value| serde_json::to_string(v).expect("a value serialises");
+        let all: std::collections::BTreeSet<&String> =
+            old.as_object().into_iter().flatten().chain(new.as_object().into_iter().flatten()).map(|(k, _)| k).collect();
+        let moved: Vec<&String> = all.into_iter().filter(|k| bytes(&old[k.as_str()]) != bytes(&new[k.as_str()])).collect();
+        if moved.iter().all(|k| *k == "p63") {
+            return Ok(changed);
+        }
     }
     let drawn = ["name", "from", "steps", "date", "at", "sealed", "world"];
     if changed.iter().any(|k| drawn.contains(&k.as_str())) {

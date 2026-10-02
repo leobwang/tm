@@ -82230,3 +82230,397 @@ function should take its held lines from the file at HEAD and at every commit si
 
 **Gap 4152 — the planner-refusal probe runs on every `tm check`.**  It is the whole day's request; `kernel_call_counts`
 pins one call.  Narrowing it (a flag, a cache) is the owner's call if gap 4150's second matters in a pre-commit hook.
+
+<!-- =====================================================================
+     APPENDED 2026-10-02: stage 6 (the planner), run **W-42**, **TRACK C**
+     (the gate's clause (c), the bless reads the committed history, P69's
+     day compared: Rust, the oracle and fixtures only, no `.lean` file), on
+     branch `w42-c` in its own worktree off `d577322`; the plants, the R3
+     simulation and the mutations ran in clones under `scratchpad/w42-c/`.
+     Gap range **4280-4319**: **4280-4294 taken**, 4295-4319 free.  Parity:
+     **none issued**.  PARITY-PENDING: none -- the comparand answers this
+     step adds carry P69 and P46, both registered; nothing departs anew.
+     ===================================================================== -->
+
+## Stage 6 — W-42 track C: a corrected harness reading is the gate's third clause, a bless holds what was committed, and P69's day is compared after R3
+
+### 0. The brief, measured before it was acted on
+
+* **"Every `*_are_blessed`" is a CLASS of thirteen, not a name pattern** (lesson 2).  By body shape — a `#[test]` that
+  writes a file, reads a `TM_…BLESS…` or `TM_PLANNER_DRAW` variable and names a fork helper — `tm/tests` holds eleven
+  blesses of a frozen fork comparand and the two D21 blesses of the replay and log-line fixtures.  Three of the eleven are
+  not spelled `*_are_blessed` (`the_frozen_fork_classes_are_reblessed`, `the_frozen_class_worlds_are_redrawn`,
+  `the_frozen_fork_days_are_reblessed`), and **the last held no line at all**: it rewrote `fork-4748911-planner-days.jsonl`
+  whole on `TM_PLANNER_BLESS`, a re-bless held to nothing beside siblings that refuse to change a held line (gap 4283).
+* **Gap 4151's walk alone would not have caught gap 4139's own case.**  Track H's line was committed only on its track
+  commit `2c40a49`; on the pre-D88 line the merge `5070801` already carried the land's fresh freeze (its file is byte for
+  byte `710c090`'s), and D88 removed the merges.  The first-parent walk since `17a13c2` reaches neither.  W-41's land froze
+  the file fresh WHILE MERGING, so the reader also holds the incoming commit's lines during a merge (`MERGE_HEAD`, gap
+  4286) — measured in a test repository, not assumed (§3).
+* **"P69's frozen line" is two lines.**  `p69 a block begun before midnight` (the start file; the kernel's day has
+  seventeen rows: the running one, the fourteen the brief counts, the wind-down and the sleep) and `tui AfterMidnight(1,
+  0)` (the TUI file: twenty rows, sixteen after the open and the running row).  The TUI line's verdict asked only that
+  the comparison find SOMETHING (`Live::Departs(69)`), so a bent row after the running one passed there too.  Both are
+  compared whole now (§4).
+* **"Introduce the answer under D70 (adds-only)" fits the start line and not the TUI line.**  The start line carried no
+  comparand, so it gains one, adds-only (D70, P69 named).  The TUI line already carried a comparand `day` — P46's
+  reservation planned from the fork's tonight-start, four rows — and P69's flag SET, so P69's comparand MOVES its `day` and
+  `whatif`: that is D64(a), clause 1 met by the committed flag (§4).
+* **"The host's worked minutes … composed" composes nothing on either P69 world**: the host reads 100 and 60 minutes, the
+  fork's log reading the same, so P55 does not depart; the transformation composes `p55_state` as the comparand always
+  does, and what the new answers carry beside P69 is P46.
+* **The brief's figures, re-measured.**  No `.lean` file moved here, so `check.sh`'s Lean-side lines on this tree are
+  `d577322`'s, and they are the brief's (§8); the one line this step moves, the prose citations, was measured at
+  `d577322` in a clone: **54,516**, the brief's.  The workspace's 2,090 / 0 / 32 over 128 was not re-run at `d577322`:
+  this tree's **2,101 / 0 / 32 over 129** (§8) is it plus this step's eleven tests (`fork_rebless_history` 7,
+  `planner_classes` 2, `planner_w41_starts` 2) and the one new result line, exactly.
+* **"Track R will edit exactly six tests … and the eight `(worked)` frozen lines" — measured: it has not.**  Track R's
+  commit `67be1ba` holds its D87 change back (its gap 4240) and touches neither `planner_classes.rs` nor
+  `planner_invariants.rs` nor the classes file, so the Land merges no conflict there.  How this step's gate meets R's
+  recipe when it is applied — it does not change how (a) and the introduction license those lines, and (c) cannot
+  reach them: gap 4294.
+* The rest of the brief's statements about this track's files were re-derived and hold.
+
+### 1. D85 — the gate's clause (c), in both gates
+
+`forkclass::d64_allows` takes a sixth argument, `harness`, a corrected HARNESS reading's reason, read strictly by
+`forkclass::harness_of` (dated, naming `D64(c)`, naming the README gap of the correction — `forkclass::is_d64c_reason`;
+a malformed one FAILS rather than being ignored).  Under it `forkclass::d64c_allows` licenses a change on its own when,
+by bytes (`forkclass::bytes`): (1) the world and every key that is not a departure — name, class, tests, seed, draw,
+derivation — are the committed line's; (2) the shipped fork's day (`forkclass::shipped_of`) is the committed line's AND
+the live one's; (3) only the departures the committed line RECORDS move: the comparand's `day` and `whatif` and every
+object it carries a parity flag in — a flag may flip and a departure may leave (gap 4123's P55) or arrive on a recorded
+home (its P46).  A departure the committed line does not record is an introduction, D70's, under (a).  Where (c) does
+not license a change, (a) and the introduction are still asked, so one run may carry both kinds of reason; a refusal
+quotes both.  `forkgrid::rebless_allows` gains the same clause over the grid's one recorded departure: the named cells
+move under (c) when every other key, `fork` and the world included, is byte-identical.  Every bless reads its reason:
+`TM_TUI_BLESS_HARNESS`, `TM_STARTS_BLESS_HARNESS`, `TM_P56_BLESS_HARNESS`, `TM_PLANNER_BLESS_HARNESS` (classes, batch,
+driven) and `TM_GRID_BLESS_HARNESS`.  The three that hold lines recording no departure — plan-basic, the conference
+Wednesday, the four fixture days — refuse every change, and (c) cannot reach them either; their doc comments say so.
+
+Both directions, in plain `cargo test --workspace`: `the_d64c_rule_bites_and_does_not_over_bite` (allowed: `day` and a
+flipped `d57.p47` under (c) — which (a) refuses; a departure leaving; a comparand starting to depart from the same shipped
+day.  Refused: no reason, a reason naming no gap, a moved world, a moved `draw`, a shipped day moved on the line or live,
+an introduction passed off as (c); the strict read) and `the_grid_rebless_gate_holds_d64`'s three new cases.
+
+### 2. Gap 4139's line through the gate under (c): ACCEPTED — gaps 4123 and 4139 closed
+
+Driven through the real bless (`the_frozen_tui_days_are_blessed`, a freshly built `tm-oracle`, banner read) in a clone,
+with the comparand as the W-41 land computed it (P69's start not yet read, P-C1 below): track H's TUI file from `2c40a49`
+committed, the working copy's file then DELETED as the land deleted it.  The bless held all thirteen lines against the
+committed history, and:
+
+| reasons | the gate's words |
+|---|---|
+| none | refused: `` `day`, `d57`, `whatif`, `p55` changed and the re-bless names no reason `` |
+| `TM_TUI_BLESS_BECAUSE=P55,P46` (D64(a)) | refused: `` `d57` changed, which P55 does not govern `` — P46's flag was `false` on H's line (gap 4123) |
+| `TM_TUI_BLESS_HARNESS="2026-10-02 D64(c): the harness reads the after-midnight block's worked minutes as the binary does (README gap 3941)"` | **accepted**: `1 changed (tui AfterMidnight(1, 0) `day`, `d57`, `whatif`, `p55`)`, and the file it wrote is `d577322`'s byte for byte |
+
+So the line W-41's land re-blessed past the gate stands under D85 exactly as committed; H's other twelve lines were
+byte-identical.  The line is named here, as D85 asks: `tui AfterMidnight(1, 0)`, its `day`, `d57` (`p46` false → true),
+`whatif` and `p55` (gone), its world and its `shipped` byte-identical.
+
+### 3. Gap 4151 — every bless holds its lines against the committed history (gap 4280)
+
+`tm/tests/support/frozenhist.rs` (new, 215 lines) is the one definition: `frozenhist::held(path, key)` reads the file at
+`kernel/ratchet.py`'s `BASE` (read from that file: `frozenhist::base`) and at every commit after it on HEAD's first-parent
+line, oldest first, keeping each key's LATEST committed line (`Held::ever`) and HEAD's keys in order (`Held::head`); and
+during a merge in progress, a key no first-parent version holds is held against the incoming commit's line
+(`frozenhist::merge_heads`, gap 4286).  UNCHECKED fails, as `ratchet.py`'s does: a base that is not an ancestor, a
+history git cannot read, a committed version that does not parse, two lines of one key — an `Err`, and the bless panics
+and writes nothing.  Each of the ten blesses that write answers now (a) holds each written line against its committed self,
+never the working copy, (b) refuses a line HEAD holds that it no longer writes (the classes' re-bless excepting a line
+derived from a primary it re-drew — the re-draw re-derives those), and (c) prints its census (`Held::census`); the
+eleventh, the classes' re-draw, writes worlds and clears answers, and reads the history to find a derived line the working
+copy lacks.  The two whose
+INPUT is the file — the classes' re-bless and the grid's `p63` mode — still read their worlds from the working copy,
+where a pending re-draw lives; a world that moved since its committed line is a re-draw held to D64(b) AS ASKED OF THE
+COMMITTED LINE (`forkclass::redrawn_since`: a new dated reason, a committed world the binary cannot hold, a re-drawn one
+it can, the class kept), so a world edited in the working copy cannot pass.  The re-draw looks a derived line the working
+copy lacks up in the history before re-deriving it as added.  The classes' key has one home, `frozenhist::class_key`.
+
+**The rule as a CLASS**: `fork_rebless_history.rs`' `every_bless_holds_its_lines_against_the_committed_history` walks
+every `tm/tests` file (`srcwalk::every_rust_file`, comments stripped, literals blanked) and requires every bless-shaped
+function to call `frozenhist::held`; it found the eleven and the two D21 blesses, and the D21 family is excepted by its
+property — its one bless variable is `TM_FORK_BLESS`, and it holds no line (gap 4285).  `tm log`'s pin
+(`TM_LOG_BLESS`) names no fork and is a snapshot, not a bless here.  `the_class_test_tells_a_bless_by_its_shape` bites
+it both ways.  The reader itself, on repositories the tests build: `a_line_a_commit_deleted_is_still_held_at_its_latest_version`,
+`a_line_the_merge_brings_is_held_while_the_merge_is_in_progress`, `what_git_cannot_read_is_unchecked`,
+`the_base_is_the_ratchets`, and on this tree `every_frozen_comparand_reads_its_committed_history` (ten files; census:
+classes 100, batch 128, driven 1, P56 24, starts 2, TUI 13, plan-basic 147, conference 3, fixture days 4, grid 46 —
+every key at HEAD, none only in history).  **And every one of the eleven re-run on the final tree** (a clone at
+this tree, no reason given, `scratchpad/w42-c/rebless-all.sh`): each wrote its committed file byte for byte — the six
+with a `…_OUT` compared by `cmp`, the five that write in place leaving `git status --porcelain` unchanged — with `0 line(s)
+added, 0 changed, 0 refused` wherever it counts.
+
+### 4. D89 (gap 4133) — P69's day gets a comparand fork 4748911 can be asked (gap 4282)
+
+`forkplan::p69_state`: fork 4748911 reads `started` in `active_run` alone — its worked minutes come from the log's open
+block (the clock only as a fallback), and `current_block_end` is `started` plus whole blocks, so once `started ≤ now` it
+reads `started` modulo `block_min`.  A start ON THE PLAN'S DATE at one of the logged start's block boundaries, at or before
+`now` — the earliest such, spelled `HH:MM` — is a state the fork can be asked whose running block ends where the kernel's
+does.  On both P69 worlds it is `00:00` (logged `23:00`, `block_min` 60).  `None` where P69 does not depart, where the log
+holds no open block, and where the transformation cannot reach (no boundary on the plan's date at or before `now`, a logged
+start with seconds, a skipped or repeated local clock — gap 4287).  `forkplan::comparand_answers` — the one definition —
+plans the comparand, its what-if and the rows after a running break from that start, `p55_state` and `p46_state` composed
+over it, and sets `p69: {"p69": true}`; `p69` joins `forkclass::ANSWERS` (twelve), under the D64 gate with the rest.
+
+**Probed before anything was frozen**: over the transformed state both backends — the in-tree fork and the fresh oracle —
+plan the kernel's day EXACTLY on both worlds (`forkday::compare_day_with_fork`: no finding, hashes equal): seventeen rows
+on the start world, twenty on the TUI's.  And no other frozen line moved: the classes, batch, driven, P56 and runs suites
+held their in-tree comparands to the frozen lines unchanged (54, 12 and 18 passed).
+
+**The frozen lines touched, by name** (TM_ORACLE, the fresh oracle):
+
+* `tm/tests/fixtures/fork-4748911-planner-starts.jsonl`, **`p69 a block begun before midnight`** GAINS `d57` (`p46`
+  true, `p47` false), `d60` (`p51` false), `day` and `whatif` — D70, adds-only, `TM_STARTS_BLESS_BECAUSE=P69` (the start
+  gate, `starts_gate`: every moved key a comparand answer the committed line does not carry; a registered number named
+  whose flag the line carries SET).  Without a reason: refused by name.  `p68 a block started after now` byte-identical.
+  38,916 → 53,036 bytes.
+* `tm/tests/fixtures/fork-4748911-planner-tui.jsonl`, **`tui AfterMidnight(1, 0)`**: `day` and `whatif` MOVE — D64(a),
+  `TM_TUI_BLESS_BECAUSE=P69`, P69's flag set on the committed line; refused with no reason.  `shipped`, the world and the
+  other twelve lines byte-identical.  374,206 → 378,621 bytes.
+
+Each bless was dry-run to scratch first (`TM_*_BLESS_OUT`) and the written files are the dry runs byte for byte.  Every
+departure the new answers carry is registered: P69 and P46.
+
+**Compared, outside every region (outlives R3)**: `start_unmet` holds a line carrying the comparand to it whole
+(`forkclass::compare_line`), and requires the comparand exactly where `forkplan::p69_state` reaches the world; the TUI's
+`Live::Departs(69)` verdict now requires the comparison to find NOTHING beside P69's property against `shipped`.  Bites,
+in plain tests: `the_start_comparisons_bite_a_bent_line` and `the_frozen_tui_comparison_bites_a_bent_line` each bend the
+frozen comparand by the W-41 verifier's two bends — `work` (a step-5 row a minute longer) and `swap` (two step-5 rows'
+items swapped) — refused by name, and a start line stripped of its comparand is refused.  `the_start_gate_admits_d89s_comparand_and_nothing_else`
+holds the gate both ways.  `TM_ORACLE`: `the_frozen_start_days_are_the_forks_oracle_answer_today` (now the comparand too,
+18 requests) and `the_frozen_tui_days_are_the_forks_oracle_answer_today` (208 requests) pass.  In the region, the in-tree
+fork answers the frozen comparand key for key, and the line the bless writes (`add_comparand` over the in-tree fork) is
+the committed one; `a_comparand_that_is_not_the_forks_is_caught` bites that arm.
+
+### 5. The plants (`scratchpad/w42-c/plants-gate.sh`, a clone; each committed there, run, restored)
+
+`git status --porcelain` of the clone recorded before and after each plant: equal every time.
+
+| plant | what was committed in the clone | the bless's words |
+|---|---|---|
+| P-C1 | track H's TUI file (`2c40a49`), the working copy's file then deleted; the land's comparand | §2's table: refused, refused, **accepted under (c)** — the output `d577322`'s file byte for byte |
+| P-C2 | the committed `tui AfterMidnight(1, 0)` world moved (`now` a minute later); a (c) reason given | refused: `tui AfterMidnight(1, 0): its test builds another world now — a re-draw, which needs D64(b)'s reason in TM_TUI_BLESS_REDRAW` |
+| P-C3 | the committed line's `shipped` day moved (a row a minute longer); a (c) reason given | refused: `` `shipped` changed and the re-bless names no reason … and as D64(c): tui AfterMidnight(1, 0): the SHIPPED fork's day moved, and D64(c) corrects a harness reading, never the fork's day `` |
+| P-H1 | H's TUI file committed, then its DELETION committed | this bless: `held against 13 committed line(s) from 5 version(s) since the base (0 at HEAD, 13 only in history …)`, refused; the bless as it stood at `d577322`, over the same history: `13 line(s) added, 0 changed, 0 refused` — the fresh freeze |
+| P-H2 | `kernel/ratchet.py`'s `BASE` set to a sha that is no ancestor | `UNCHECKED: … the base 0000000000000000000000000000000000000001 is not an ancestor of HEAD … — a bless that cannot read the committed history writes nothing`; the fixture byte-identical |
+
+**Re-run on this commit's tree** (`scratchpad/w42-c/replants-gate.sh`, the clone's plant base reset to it): every plant
+gave the same verdict in the same words, and the clone's porcelain was equal before and after each.  The first run's
+base differed from this tree in doc comments and in what was added after it — `class_key` moved into `frozenhist`,
+`redrawn_since`'s message, three tests and assertions in two others — none of it on the TUI bless's path.
+
+### 6. R3, simulated: P69 named under the W-41 verifier's bends (`scratchpad/w42-c/r3sim.py`, a clone)
+
+Every fork region deleted by its banners — **19 regions, 5,961 lines** (5,852 at `d577322`, measured in the clone; this
+step's five files' regions grew by 109: `planner_classes.rs` 699 → 749, `planner_fixtures.rs` 76 → 94,
+`planner_p56_cut.rs` 183 → 192, `planner_w39_conference.rs` 56 → 65, `planner_w41_starts.rs` 15 → 38) — and tm-core's
+five fork planner entries panicking from any process but `tm`.  The KERNEL's answer bent in the clone's
+`support/planreq.rs` by the environment variable W42_BEND (a hook in the clone only), so every world with a row to bend
+is bent:
+
+| bend | `planner_w41_starts` | `tui_kernel_answers` |
+|---|---|---|
+| none | 15 passed | 36 passed |
+| `work` | 3 failed — `p69 a block begun before midnight (overtime/late): the rows differ at 1 (fork 17 rows, kernel 17)` beside P68's | 3 failed — twelve worlds named, `tui AfterMidnight(1, 0) (overtime/lounge): the rows differ at 5 (fork 20 rows, kernel 20)` among them |
+| `swap` | the same three, P69 named the same way | the same three — eleven worlds (`tui MeetingNow`'s day gives the swap no second item), `tui AfterMidnight(1, 0)` among them |
+
+At the W-41 repair the same two bends named P68 only (README gap 4133's §5 table).  The failing tests:
+`the_kernel_departs_from_every_frozen_start_day_by_its_number_alone`, `the_start_comparisons_bite_a_bent_line`,
+`p68s_two_readings_are_told_apart`; `the_kernel_plans_every_frozen_tui_world_as_fork_4748911_planned_it`,
+`the_kernel_answers_every_fork_planned_tui_world`, `the_frozen_tui_comparison_bites_a_bent_line`.  **Re-run on this
+commit's tree** (`scratchpad/w42-c/sim2-run.sh`, the sim clone reset to it; the same 19 regions and 5,961 lines): the same
+table — none 15 and 36 passed; `work` and `swap` 3 failed in each suite, the two P69 worlds named at the same rows.  The
+clone's porcelain was clean before and held the simulation's own 21 edits after (the two in tm-core's planner and
+`support/planreq.rs`, and the 19 deleted regions).
+
+### 7. D40 — every new definition bent, one at a time (`scratchpad/w42-c/mutants.py`, the clone)
+
+Each mutant bends ONE definition this step added, runs the ONE test that must see it, and counts KILLED only when that
+test FAILS with the named words; the file is restored with `git checkout`, and the clone's `git status --porcelain` was
+equal before and after every one; the clone's tree differed from this commit's in two lines of one doc comment
+(`forkplan.rs`).  **34 mutants: 33 KILLED, one equivalent on this tree (M23).**  One was first written
+wrong and is recorded as such: M8 (`String::new() + &format!(…)`) changed nothing and survived; rewritten to count
+nothing, KILLED.  And three — M15, M29, M33 — were killed by another assertion than the one the script first named, so
+it printed `FAILED, words not found` for them; their logs (`mut-M15.log`, `mut-M29.log`, `mut-M33.log`) carry the words
+quoted below, each an assertion the bend must break (M15 the shipped day moved on the line; M29 `test_fns`' own
+line-count guard, which an empty walk trips before the census does; M33 the prose case).
+
+| # | the definition, bent | the test that saw it | its words |
+|---|---|---|---|
+| M1 | `frozenhist::base_of` → none | `the_base_is_the_ratchets` | `the base reads: "UNCHECKED: …` |
+| M2 | `frozenhist::show` → never the file | `a_line_a_commit_deleted_is_still_held_at_its_latest_version` | `a is held at its LATEST committed version` |
+| M3 | `frozenhist::held_since` → HEAD's version alone | the same | the same |
+| M4 | `frozenhist::held_since` → no ancestor check | `what_git_cannot_read_is_unchecked` | `… git rev-list failed — a bless that cannot read the committed history writes nothing` |
+| M5 | `frozenhist::merge_heads` → none | `a_line_the_merge_brings_is_held_while_the_merge_is_in_progress` | `` assertion `left == right` failed `` |
+| M6 | `Held::get` → none | `a_line_a_commit_deleted_is_still_held_at_its_latest_version` | `a is held at its LATEST committed version` |
+| M7 | `Held::only_in_history` → empty | the same | `` `left == right` `` |
+| M8 | `Held::census` → counts nothing | the same | `held against 0 committed line(s) from 3 version(s)` |
+| M9 | `frozenhist::key_of` → no key | the same | `the history reads: "UNCHECKED: … has no key` |
+| M10 | `frozenhist::held` → another base | `every_frozen_comparand_reads_its_committed_history` | `UNCHECKED: …` |
+| M11 | `frozenhist::ratchet_path` → another file | `the_base_is_the_ratchets` | `kernel/ratchet.py: … NotFound` |
+| M12 | `frozenhist::class_key` → one key for all | `every_frozen_comparand_reads_its_committed_history` | `two lines at … carry the key` |
+| M13 | `forkclass::is_d64c_reason` → true | `the_d64c_rule_bites_and_does_not_over_bite` | `` `D64(c): undated (gap 3941)` read as a D64(c) reason `` |
+| M14 | `forkclass::harness_of` → read loosely | the same | `a malformed D64(c) reason was ignored` |
+| M15 | `forkclass::shipped_of` → the comparand's day | the same | `a shipped day moved on the line passed` |
+| M16 | `forkclass::bytes` → a constant | the same | `` `left == right` `` |
+| M17 | `forkclass::d64c_allows` → allows all | the same | `` `left == right` `` |
+| M18 | `forkclass::d64_allows` → no clause (c) | the same | `a corrected harness reading moving the recorded departures was refused` |
+| M19 | `forkclass::redrawn_since` → allows all | `a_world_redrawn_since_its_committed_line_is_held_to_d64b` | `assertion failed: forkclass::redrawn_since(&committed, &no_reason, …` |
+| M20 | `forkgrid::rebless_allows` → no clause (c) | `the_grid_rebless_gate_holds_d64` | `a corrected reading of the cells was refused` |
+| M21 | `forkplan::p69_state` → none | `the_kernel_departs_from_every_frozen_start_day_by_its_number_alone` | `p69 a block begun before midnight: the line carries a comparand on a world P69's transformation does not reach` |
+| M22 | `forkplan::comparand_with` (under `comparand_answers`) → P69's start unread | `the_frozen_start_days_are_the_in_tree_forks_answer_today` | `` "p69 a block begun before midnight": `day` is not the comparand's `` |
+| M23 | `forkplan::p45_rows_with` → P69's start unread | the same | **equivalent**: no frozen world holds a running break over a block begun before midnight (gap 4289) |
+| M24 | `add_comparand` → adds nothing | the same | `the bless would write another line` |
+| M25 | `starts_gate` → allows all | `the_start_gate_admits_d89s_comparand_and_nothing_else` | `` `left == right` `` |
+| M26 | `comparand_is_the_frozen_one` → compares nothing | `a_comparand_that_is_not_the_forks_is_caught` | `test did not panic as expected` |
+| M27 | `start_unmet` → the comparand unread | `the_start_comparisons_bite_a_bent_line` | `a step-5 row bent a minute passed: []` |
+| M28 | `verdict_unmet`'s P69 → the comparand unread | `the_frozen_tui_comparison_bites_a_bent_line` | `a bent step-5 row passed: []` |
+| M29 | `test_fns` → none | `every_bless_holds_its_lines_against_the_committed_history` | `blanking keeps the lines` |
+| M30 | `is_bless` → false | the same | `the_frozen_tui_days_are_blessed is not among the blesses found` |
+| M31 | `holds_history` → true | `the_class_test_tells_a_bless_by_its_shape` | `a working-copy bless was not caught` |
+| M32 | `blank_literals` → keeps literals | the same | `an escaped quote or a quote char ended a literal` |
+| M33 | `names_the_fork` → true | the same | `prose, or a name that only contains it, names no fork` |
+| M34 | `is_d21` → false | `every_bless_holds_its_lines_against_the_committed_history` | `blesses that hold their lines against the working copy, or against nothing` |
+
+The bless functions themselves are `#[ignore]`d; what holds their conversion is the class gate (§3), the plants (§5), and
+every one of the eleven re-run on the final tree in the clone with no reason given (§8).  Check 9 (`mutate.py`) has
+nothing to roster: this step adds no Lean definition.
+
+### 8. Acceptance, capped (`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`; 16 GB for the oracle)
+
+`git status --porcelain` was recorded before and after every measurement below and was equal each time.  The machine was
+shared throughout: the other tracks built Lean and ran their workspaces beside this track's, and another project's Lean
+process ran the whole time (load averages 10-31 at the ends of the runs, with the heaviest processes, in
+`scratchpad/w42-c/ws<n>.uptime`).  This track ran nothing else heavy beside runs 3, 5 and 6 or the oracle arms; run 2's
+first thirteen minutes overlapped this track's own eleven re-blesses in the clone (§3, 12:35-12:50), and run 4
+overlapped its class-lines oracle arm.  No `.lean` file and no file a test reads moved after the runs began: the Rust
+files and fixtures were checksummed (`measured-tree.sha256`) and are this commit's; the README, which no test reads, was
+finished during them.
+
+* **`check.sh`, all seventeen lines ok, exit 0** (28.2 s, the kernel built), on the final tree: lake build ok; totality
+  ok; axiom audit **6,171** theorems (Classical.choice 3,252, Quot.sound 4,742, propext 5,770; 398 on none);
+  Negative.lean rejected; FFI **95**; corpus **29/37 and 4/5**; stage goals **0**; prose citations 54,773 (52,491
+  resolved, 2,282 allowed), 0 allow entries unused, 343 files swept; new definitions mutated **613** rostered, **0**
+  owed; parity **P1-P79**, next free P80 (none issued here); no two names, 3,350 bodies, 0 UNANSWERED; every emitted
+  definition reached, **1,245** reachable, **1,199** exempt, 0 UNANSWERED; fields 17/17; inputs 33 of 37; sent 169 key
+  paths, 168 decoded, 1 exempt; written 220, 168 written; the kernel replays 93 modules.  Every Lean-side figure is
+  `d577322`'s: no `.lean` file moved.  That run of the final tree first failed check 10 on one line of this block, which
+  spelled track H's D84 number above the register's top; the line was reworded and the run repeated green.  Re-run after
+  this block's last notes (§5, §6, §7; documentation only): seventeen ok, prose citations **54,775** (52,493 resolved),
+  every other figure above unchanged.
+* **`cargo test --workspace --no-fail-fast` on this tree: THREE green runs (D46), one red, one cut short** — run 3 **129
+  result lines, 2,101 passed, 0 failed, 32 ignored** (40 min 31 s); run 5 — 129, 2,101, 0, 32 (35 min 53 s); run 6 —
+  129, 2,101, 0, 32 (35 min 10 s); **0 compiler warnings** in each; per-suite counts identical in the three.  **Run 2
+  was red and is part of this block's record**: 2,098 passed, 3 failed — `cli_latency`'s two three-year rows under a
+  load average of 15-25 (gap 4293) and the W-35 arm's P47 census floor (gap 4292, its seed deleted as D46 allows, said
+  in the commit).  Run 4 was cut short by this session's interruption at 94 of 129 result lines, 1,412 passed and 0
+  failed.  Run 1, on an earlier tree of this step, was 129, 2,097, 0, 32.  Against the brief's 2,090 / 0 / 32 over 128
+  at `d577322`: this step's eleven tests and its one new result line (§0).
+* **The named suites, inside each green run** (identical in all three): T5 `kernel_replay_parity` 31 (4 ignored), the
+  door `kernel_log_door` 26, `cli_switch_acceptance` 16, `cli_latency` 5 (1 ignored), `kernel_call_counts` 2,
+  `one_padder` 9, `one_renderer` 27, `kernel_row_cells` 28, `kernel_item_grammar` 6, `kernel_planner_wire` 27,
+  `planner_classes` 56 (6 ignored), `planner_invariants` 39 (2 ignored), `cli_conformance` 3, `cli_json_matrix` 8; and
+  this step's files: `fork_rebless_history` 7, `planner_w41_starts` 17 (2 ignored), `tui_kernel_answers` 37 (2 ignored),
+  `fork_week_grid` 14 (3 ignored), `planner_p56_cut` 12 (4 ignored), `planner_fixtures` 13 (1 ignored),
+  `planner_w39_conference` 8 (1 ignored).  The FFI suite is check 5.
+* **`TM_ORACLE`**, the oracle rebuilt by `build-oracle.sh` into `scratchpad/w42-c/oracle` before the arms (its stamp:
+  `4748911`, the seam patch, the runs patch), one arm at a time, alone: the start days **18** requests, the comparand
+  among them; the TUI days **208**; the class lines **229 of 229** (2,476 requests); the fresh draws **287 compared with
+  fork 4748911's planner out of the tree** (2,856 requests; its census does not count P69, and no frozen class or batch
+  world reaches P69's transformation — both re-blessed unchanged, §3); the in-tree fork against the oracle, **287 fresh
+  draws equal on every raw day, drawing, order and answer**.  `scratchpad/w42-c/oa-*.log`.
+* **Every one of the eleven blesses re-run on this tree in a clone, no reason given** (§3): each wrote its committed
+  file byte for byte.
+
+### 9. Gaps 4280-4294
+
+**Gap 4280 — every bless held its lines against the working copy (CLOSED here; README gap 4151).**  §3.
+
+**Gap 4281 — D64 had no clause for a corrected harness reading (CLOSED here; the owner's D85, README gap 4123).**  §1.
+
+**Gap 4282 — P69's day had no comparand (CLOSED here; the owner's D89, README gap 4133).**  §4.
+
+**Gap 4283 — `the_frozen_fork_days_are_reblessed` held no line at all (CLOSED here).**  It rewrote the four fixture
+days whole on `TM_PLANNER_BLESS`.  It now holds each against its committed self and refuses any change (its lines record
+no departure, so neither (a) nor (c) can license one), adds a day no committed version holds, and refuses a line HEAD holds
+that no day writes.
+
+**Gap 4284 — the class gate reads a bless by its shape.**  1. *What.*  `every_bless_holds_its_lines_against_the_committed_history`
+counts a `#[test]` that writes with `fs::write(`, reads a `TM_…BLESS…`/`TM_PLANNER_DRAW` literal and names an identifier
+beginning `fork`.  2. *Why.*  A property over the source, not a list of names (lesson 2).  3. *Cost.*  A bless written
+another way — `File::create`, a variable named in a constant, a helper outside the test function, a fork comparand outside
+`tm/tests` — is invisible to it.  4. *Clears it.*  Nothing owed; recorded for the next bless's author.
+
+**Gap 4285 — the D21 blesses hold no committed line.**  1. *What.*  `the_frozen_fork_answers_are_reblessed_from_the_oracle`
+and `the_frozen_fork_line_answers_are_reblessed_from_the_oracle` (`TM_FORK_BLESS`) rewrite the replay and log-line fixtures
+whole from the oracle.  2. *Why not changed.*  They are D21's, not D64's: no line records a departure, and the oracle over
+committed inputs is the fixture's definition.  3. *Cost.*  A re-bless that moves one of their lines is visible only in its
+diff.  4. *Clears it.*  The owner, if D64's discipline should reach the replay fixtures.
+
+**Gap 4286 — the first-parent walk does not reach a merge being resolved (CLOSED here for the window W-41's land used).**
+§0, §3.  *Residue:* during a merge, a key BOTH sides hold differently is held against the first-parent side only; once a
+merge is committed, a track's own commit off the line is judged by the merge (`ratchet.py`'s blind spot, the same walk).
+
+**Gap 4287 — P69's transformation has worlds it cannot reach.**  1. *What.*  `forkplan::p69_state` is `None` for a logged
+start with seconds (an `HH:MM` cannot carry them — gap 4134's worlds), for no boundary of the logged start on the plan's
+date at or before `now`, and for a local clock the zone skips or repeats.  2. *Why.*  Fork 4748911's `started` is a bare
+`HH:MM` on the plan's date; no state of it reaches those boundaries.  3. *Cost.*  Such a world would be held by P69's
+property alone, as both were before D89.  No frozen world is one; a fresh one with a start at `HH:MM:SS` would be.
+4. *Clears it.*  Nothing owed until such a world is frozen; then its line says which reading holds it.
+
+**Gap 4288 — the gate cannot tell a harness correction from any other comparand change that moves only recorded
+departures.**  1. *What.*  Under (c) the gate checks the world, the provenance and the shipped day by bytes and that only
+recorded departures moved; WHY they moved is the reason's word.  2. *Why.*  D85 makes the reason the license, as D64(a)'s
+number is (README gap 3331's residue, one clause on).  3. *Cost.*  A (c) reason stated falsely would pass; it names its
+README gap, so it is reviewed there.  4. *Clears it.*  Nothing; recorded.
+
+**Gap 4289 — `forkplan::p45_rows_with` reads P69's start on no frozen world.**  The rows after a running break plan from
+P69's start where it reaches, for one definition; no frozen world holds a running break over a block begun before midnight,
+so the mutant that drops it is equivalent on this tree (§7).
+
+**Gap 4290 — the brief's "P69's frozen line" was two.**  §0, §4: both compared whole.
+
+**Gap 4291 — R3's list, from this track.**  Gaps 4133, 4139 and 4151 are off it.  The TUI line `tui Midnight` still
+holds gap 3860's finding (gap 4124): track H's gap 4262 leaves its frozen-line half — D84's "then gains D81's day under
+D70" — to the Land, with this track's two files.  What the gate asks of it, unchanged here: the committed line carries no
+flag of P77 or of the number track H issues for D84, so an introduction may ADD that number's answer and move nothing it
+carries (its `day` included); the line is held against its committed version, and (c) does not reach a new departure.
+
+**Gap 4292 — the W-35 arm's P47 floor failed once, and its seed was a bystander.**  1. *What.*  In this step's second
+workspace run, `planner_invariants`' `the_kernel_keeps_the_break_the_overtime_block_and_the_wall_pause` drew **0** P47
+wall-on-now days in 255 cases and its floor ("no wall on now paused a running block (P47)") failed; proptest then wrote a
+"minimal failing input" — a one-item day with no wall — to `planner_invariants.proptest-regressions`.  The same arm drew
+**11, 11 and 6** such days in three further runs (two alone, one of the whole binary), and passed in the other workspace
+runs (§8).  2. *Why not changed.*  The arm draws its worlds from `plangen` (no clock, no state a concurrent test writes) and
+this step changed nothing it reads; no cause was found.  A census floor fails on whichever case is current once 256 have
+run, so the persisted case is no failure of its own: replayed, it passes (both lone runs replayed it first).  It was
+**deleted deliberately** (D46: "not reproducible … say so and delete it"), and the commit says so.  3. *Cost.*  At the
+measured rate (28 P47 days in 768 cases, 3.6%) a run draws none in 255 with probability about e^-9.3 — one run in some
+11,000 — so either the draw was that improbable or it has a cause this step did not find; the failing run's census also
+drew fewer P46 days (6) than the other three (13, 10, 9).  The floor is a probabilistic claim either way.  4. *Clears it.*
+Draw the class rather than meet it — a wall on `now` forced on a share of the arm's cases, as `World::force_overtime`
+forces P46 (README gap 2910); the file is track C's, the next step that touches the arm's draw.
+
+**Gap 4293 — `cli_latency` failed under load in the second workspace run.**  `a_verb_on_a_tree_with_three_years_of_log_takes_well_under_a_second`
+and `tm_log_on_three_years_of_log_stays_a_later_verb_and_returns_its_whole_tail`: `` `tm drop ^a1` was still running after
+5s ``, with the machine's load average 15-25 (two Lean builds and two other tracks' workspace runs, measured by `ps`) and
+this track's own re-blesses running in its clone beside the run's first minutes (§8) — so part of that load was this
+track's.  This step changes no `tm/src` file; the bands were not touched (D18).  README gap 1333's class; the three green
+runs passed it (§8).
+
+**Gap 4294 — track R's eight `(worked)` lines meet the gate's clause 2, which this step did not change.**  1. *What.*
+Track R's held-back D87 change (its gap 4240) moves `day`, `shipped` and `p55` of the classes file's eight `(worked)`
+lines, `shipped` because "the in-tree fork planner reads the kernel's replay" (R's §3).  The classes' re-bless asks the
+shipped day of the IN-TREE fork (`forkplan::InTree`), and D64(a)'s clause 2 refuses a moved shipped day whatever number
+is named — an introduction too, and (c) by its own clause 2 — so R's recipe ("move the eight `(worked)` frozen lines
+under D64 (a) … D70's introduction shape") is refused by name by the gate as it stood at `d577322` and as it stands here.
+2. *Why not changed.*  Which day `shipped` holds once the shipped binary's fork planner reads a replay the kernel has
+changed — the in-tree fork's (D53: the fork as the binary runs it) or fork 4748911's own (the oracle, which reads the log
+with its own replay; whether its day moves on the eight worlds was not measured here) — is a decision, not a repair.
+3. *Cost.*  The integrator of gap 4240 meets a refusal at the re-bless.  4. *Clears it.*  The Land or W-43 applying gap
+4240, or the owner.  What THIS step changes for those lines: each is held against its committed version
+(`frozenhist::held`), so regenerating the file cannot route around the gate; (c) cannot reach them, their shipped day
+moving; and (a) and the introduction ask exactly what they asked before.

@@ -1,0 +1,350 @@
+//! **Every bless holds its lines against the COMMITTED history, and the history reader bites**
+//! (stage 6 W-42 track C; README gaps 4151, 4280 and 4284).
+//!
+//! `support/frozenhist.rs` is the one definition of what a bless of a frozen fork comparand holds
+//! each line it writes against: the line's latest version at HEAD or at any first-parent commit
+//! since `kernel/ratchet.py`'s base — never the working copy, so deleting a file or a line cannot
+//! turn a re-bless into a fresh freeze (README gaps 4139 and 4151). This file holds three things:
+//!
+//! * **the reader, both ways** (AGENTS §5.8), on a repository each test builds for itself: a line
+//!   a commit deleted is still held, at its latest committed version; a world git cannot read is
+//!   UNCHECKED and an `Err`, never an empty history;
+//! * **the reader on the real tree**: every frozen comparand file reads its committed history, and
+//!   the base is `ratchet.py`'s;
+//! * **the rule as a CLASS** (lesson 2): every bless of a fork comparand in `tm/tests` — a
+//!   `#[test]` function that writes a file, reads a `TM_…BLESS…` or `TM_PLANNER_DRAW` variable and
+//!   names the fork — calls `frozenhist::held`. The one family outside it is named by its property,
+//!   not listed by name: the D21 differential fixtures `TM_FORK_BLESS` rewrites from the oracle hold
+//!   no line (each run writes the oracle's answer over committed inputs, and no line records a
+//!   departure a gate could license), README gap 4285. A pin of the binary's OWN bytes (`tm log`'s,
+//!   `TM_LOG_BLESS`) names no fork and is a snapshot, which is never re-blessed: not a bless here.
+
+#[allow(dead_code)]
+#[path = "support/frozenhist.rs"]
+mod frozenhist;
+
+#[allow(dead_code)]
+#[path = "support/srcwalk.rs"]
+mod srcwalk;
+
+use std::path::Path;
+use std::process::Command;
+
+use serde_json::json;
+
+/// `git` in `dir`, with an identity and no signing, so a test's own repository commits anywhere.
+fn git(dir: &Path, args: &[&str]) -> String {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["-c", "user.name=w42c", "-c", "user.email=w42c@example.invalid", "-c", "commit.gpgsign=false"])
+        .args(args)
+        .output()
+        .expect("git runs");
+    assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+/// A repository with `frozen.jsonl` committed as each of `versions` in turn (`None`: deleted),
+/// the first commit the base. The directory, the file's path and every commit, oldest first.
+fn repo(versions: &[Option<&[serde_json::Value]>]) -> (tempfile::TempDir, std::path::PathBuf, Vec<String>) {
+    let dir = tempfile::TempDir::new().expect("a temp dir");
+    git(dir.path(), &["init", "-q"]);
+    let path = dir.path().join("frozen.jsonl");
+    let mut shas = Vec::new();
+    for (i, v) in versions.iter().enumerate() {
+        match v {
+            Some(lines) => {
+                let text: String = lines.iter().map(|l| format!("{l}\n")).collect();
+                std::fs::write(&path, text).expect("write");
+                git(dir.path(), &["add", "frozen.jsonl"]);
+            }
+            None => {
+                git(dir.path(), &["rm", "-q", "frozen.jsonl"]);
+            }
+        }
+        git(dir.path(), &["commit", "-q", "--allow-empty", "-m", &format!("version {i}")]);
+        shas.push(git(dir.path(), &["rev-parse", "HEAD"]));
+    }
+    (dir, path, shas)
+}
+
+/// **A line a commit deleted is still held, at its latest committed version** — and the file a
+/// later commit deleted outright is held whole: the two ways a re-bless used to become a fresh
+/// freeze (README gaps 4139, 4151).
+#[test]
+fn a_line_a_commit_deleted_is_still_held_at_its_latest_version() {
+    let a1 = json!({"name": "a", "v": 1});
+    let a2 = json!({"name": "a", "v": 2});
+    let b1 = json!({"name": "b", "v": 1});
+    let (_dir, path, shas) = repo(&[Some(&[a1.clone(), b1.clone()]), Some(&[a2.clone()]), None]);
+    let held = frozenhist::held_since(&path, &shas[0], frozenhist::key_of("name")).expect("the history reads");
+    assert!(held.head.is_empty(), "HEAD holds no file");
+    assert_eq!(held.get("a"), Some(&a2), "a is held at its LATEST committed version");
+    assert_eq!(held.ever["a"].sha, shas[1], "…which the second commit holds");
+    assert_eq!(held.get("b"), Some(&b1), "b, deleted by the second commit, is still held");
+    assert_eq!(held.only_in_history(), vec!["a", "b"]);
+    assert!(held.census("frozen.jsonl").contains("held against 2 committed line(s) from 3 version(s)") && held.census("x").contains("0 at HEAD, 2 only in history"), "{}", held.census("frozen.jsonl"));
+    assert_eq!(held.versions.iter().map(|(s, n)| (s.as_str(), *n)).collect::<Vec<_>>(), vec![(shas[0].as_str(), 2), (shas[1].as_str(), 1), (shas[2].as_str(), 0)]);
+    // And a working copy that brings the file back with one line changed is not what is held.
+    std::fs::write(&path, format!("{}\n", json!({"name": "a", "v": 99}))).expect("write");
+    let again = frozenhist::held_since(&path, &shas[0], frozenhist::key_of("name")).expect("the history reads");
+    assert_eq!(again.get("a"), Some(&a2), "the working copy is never what a bless holds");
+}
+
+/// **During a merge, a line the incoming commit holds is held** (README gap 4286) — the window W-41's
+/// land froze the TUI file fresh in: the first-parent side holds no file, the branch being merged
+/// does, and the working copy's file is gone. The incoming line is what a bless is held to.
+#[test]
+fn a_line_the_merge_brings_is_held_while_the_merge_is_in_progress() {
+    let dir = tempfile::TempDir::new().expect("a temp dir");
+    let d = dir.path();
+    git(d, &["init", "-q", "-b", "line"]);
+    git(d, &["commit", "-q", "--allow-empty", "-m", "base"]);
+    let base = git(d, &["rev-parse", "HEAD"]);
+    git(d, &["checkout", "-q", "-b", "track"]);
+    let path = d.join("frozen.jsonl");
+    let h = json!({"name": "tui AfterMidnight(1, 0)", "p55": {"p55": true}});
+    std::fs::write(&path, format!("{h}\n")).expect("write");
+    git(d, &["add", "frozen.jsonl"]);
+    git(d, &["commit", "-q", "-m", "the track's line"]);
+    let track = git(d, &["rev-parse", "HEAD"]);
+    git(d, &["checkout", "-q", "line"]);
+    git(d, &["commit", "-q", "--allow-empty", "-m", "the line moves on"]);
+    let before = frozenhist::held_since(&path, &base, frozenhist::key_of("name")).expect("the history reads");
+    assert!(before.ever.is_empty() && frozenhist::merge_heads(d).is_empty(), "no merge, no file on the line");
+    git(d, &["merge", "-q", "--no-commit", "--no-ff", "track"]);
+    assert_eq!(frozenhist::merge_heads(d), vec![track.clone()]);
+    std::fs::remove_file(&path).expect("the working copy's file deleted, as W-41's land did");
+    let during = frozenhist::held_since(&path, &base, frozenhist::key_of("name")).expect("the history reads");
+    assert_eq!(during.get("tui AfterMidnight(1, 0)"), Some(&h), "the incoming line is not held");
+    assert_eq!(during.ever["tui AfterMidnight(1, 0)"].sha, track);
+    assert!(during.head.is_empty(), "HEAD — the first parent — holds no file");
+}
+
+/// **What git cannot read is UNCHECKED, and an `Err` — never an empty history** (AGENTS §5.8, the
+/// other direction): a directory outside any repository; a base that is not an ancestor of HEAD; a
+/// committed version that holds two lines of one key, or a line with none.
+#[test]
+fn what_git_cannot_read_is_unchecked() {
+    let bare = tempfile::TempDir::new().expect("a temp dir");
+    let outside = bare.path().join("frozen.jsonl");
+    std::fs::write(&outside, "{\"name\":\"a\"}\n").expect("write");
+    let e = frozenhist::held_since(&outside, "17a13c234547a409a352d1ac15d2d62d2110f01c", frozenhist::key_of("name")).expect_err("no repository");
+    assert!(e.starts_with("UNCHECKED"), "{e}");
+    let a = json!({"name": "a"});
+    let (_dir, path, shas) = repo(&[Some(&[a.clone()])]);
+    let e = frozenhist::held_since(&path, &"0".repeat(40), frozenhist::key_of("name")).expect_err("a base that is no ancestor");
+    assert!(e.starts_with("UNCHECKED") && e.contains("not an ancestor"), "{e}");
+    let (_dir2, path2, shas2) = repo(&[Some(&[a.clone(), a.clone()])]);
+    let e = frozenhist::held_since(&path2, &shas2[0], frozenhist::key_of("name")).expect_err("two lines of one key");
+    assert!(e.contains("two lines") && e.contains(&shas2[0]), "{e}");
+    let (_dir3, path3, shas3) = repo(&[Some(&[json!({"other": 1})])]);
+    let e = frozenhist::held_since(&path3, &shas3[0], frozenhist::key_of("name")).expect_err("a line with no key");
+    assert!(e.contains("no key"), "{e}");
+    assert!(frozenhist::held_since(&path, &shas[0], frozenhist::key_of("name")).is_ok(), "the well-formed history reads");
+}
+
+/// **The base is `kernel/ratchet.py`'s, read from that file** — one home (the owner's D88 moved it
+/// there, to `17a13c2`), and `base_of` takes exactly a column-zero forty-digit sha.
+#[test]
+fn the_base_is_the_ratchets() {
+    let text = std::fs::read_to_string(frozenhist::ratchet_path()).expect("kernel/ratchet.py");
+    let base = frozenhist::base().expect("the base reads");
+    assert!(text.contains(&format!("BASE = \"{base}\"")), "{base}");
+    assert!(base.starts_with("17a13c2"), "D88's base: {base}");
+    assert_eq!(frozenhist::base_of("BASE = \"abc\"\n"), None, "a short sha is not a base");
+    assert_eq!(frozenhist::base_of("    BASE = \"17a13c234547a409a352d1ac15d2d62d2110f01c\"\n"), None, "an indented one is not the module's");
+}
+
+/// **Every frozen planner and grid comparand reads its committed history on this tree** — the
+/// reader every bless calls, over each file and its bless's key: the base is an ancestor of HEAD,
+/// every committed version parses, and HEAD holds at least one line. Printed: the census.
+#[test]
+fn every_frozen_comparand_reads_its_committed_history() {
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let files: [(&str, Box<dyn Fn(&serde_json::Value) -> Option<String>>); 10] = [
+        ("fork-4748911-planner-classes.jsonl", Box::new(frozenhist::class_key)),
+        ("fork-4748911-planner-batch.jsonl", Box::new(frozenhist::key_of("draw"))),
+        ("fork-4748911-planner-driven.jsonl", Box::new(frozenhist::key_of("name"))),
+        ("fork-4748911-planner-p56.jsonl", Box::new(frozenhist::key_of("draw"))),
+        ("fork-4748911-planner-starts.jsonl", Box::new(frozenhist::key_of("name"))),
+        ("fork-4748911-planner-tui.jsonl", Box::new(frozenhist::key_of("name"))),
+        ("fork-4748911-planner-basic-days.jsonl", Box::new(frozenhist::key_of("name"))),
+        ("fork-4748911-planner-conference.jsonl", Box::new(frozenhist::key_of("name"))),
+        ("fork-4748911-planner-days.jsonl", Box::new(frozenhist::key_of("name"))),
+        ("fork-4748911-week-grid.jsonl", Box::new(frozenhist::key_of("name"))),
+    ];
+    for (name, key) in files {
+        let held = frozenhist::held(&fixtures.join(name), key).unwrap_or_else(|e| panic!("{e}"));
+        assert!(!held.head.is_empty(), "{name}: HEAD holds no line");
+        println!("{}", held.census(name));
+    }
+}
+
+/// One `#[test]` function of a test file: its name and its code, comments stripped. Its braces
+/// are counted on the code with every string literal blanked ([`blank_literals`], over the whole
+/// file, so a literal continued across lines is still one literal).
+fn test_fns(text: &str) -> Vec<(String, String)> {
+    let lines: Vec<String> = srcwalk::code_lines(text).into_iter().map(|(_, c)| c).collect();
+    let blank: Vec<String> = blank_literals(&lines.join("\n")).split('\n').map(str::to_string).collect();
+    assert_eq!(blank.len(), lines.len(), "blanking keeps the lines");
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < lines.len() {
+        if blank[i].trim() != "#[test]" {
+            i += 1;
+            continue;
+        }
+        let Some(f) = (i..lines.len()).find(|j| blank[*j].contains("fn ")) else { break };
+        let name = blank[f].split("fn ").nth(1).and_then(|r| r.split('(').next()).unwrap_or_default().trim().to_string();
+        let (mut depth, mut opened, mut end) = (0i64, false, f);
+        for (j, l) in blank.iter().enumerate().skip(f) {
+            depth += l.matches('{').count() as i64 - l.matches('}').count() as i64;
+            opened |= l.contains('{');
+            if opened && depth <= 0 {
+                end = j;
+                break;
+            }
+        }
+        out.push((name, lines[f..=end].join("\n")));
+        i = end + 1;
+    }
+    out
+}
+
+/// **A bless of a FORK comparand, by its shape**: it writes a file, it reads a variable whose name
+/// is a bless's — `TM_` and `BLESS` in one literal, or the class lines' re-draw, `TM_PLANNER_DRAW` —
+/// and what it writes is the fork's: its code names a fork-side helper (an identifier that begins
+/// `fork` and continues as a name or a path, `forkclass::`, `forkplan::`, `fork_conference_day`…).
+/// A bless of the binary's OWN bytes — `cli_switch_acceptance`'s `tm log` pin, `TM_LOG_BLESS` — is
+/// a snapshot, which is never re-blessed against a committed answer, and names no fork.
+fn is_bless(body: &str) -> bool {
+    let code = blank_literals(body);
+    let reads = body.split('"').skip(1).step_by(2).any(|lit| (lit.starts_with("TM_") && lit.contains("BLESS")) || lit == "TM_PLANNER_DRAW");
+    code.contains("fs::write(") && reads && names_the_fork(&code)
+}
+
+/// Does the code — string literals blanked — call the history reader?
+fn holds_history(body: &str) -> bool {
+    blank_literals(body).contains("frozenhist::held(")
+}
+
+/// The code with every string literal's contents blanked (its quotes kept), so a call spelled
+/// inside a literal — a test's own example source — is not read as a call.
+fn blank_literals(code: &str) -> String {
+    let cs: Vec<char> = code.chars().collect();
+    let (mut out, mut in_str, mut escaped) = (String::new(), false, false);
+    for (i, &c) in cs.iter().enumerate() {
+        let char_literal = !in_str && c == '"' && i > 0 && cs[i - 1] == '\'' && cs.get(i + 1) == Some(&'\'');
+        if in_str && escaped {
+            escaped = false;
+            out.push(if c == '\n' { c } else { ' ' });
+        } else if in_str && c == '\\' {
+            escaped = true;
+            out.push(' ');
+        } else if c == '"' && !char_literal {
+            in_str = !in_str;
+            out.push(c);
+        } else {
+            out.push(if in_str && c != '\n' { ' ' } else { c });
+        }
+    }
+    out
+}
+
+/// Does the code name a fork-side helper — `fork` at the start of an identifier, followed by a name
+/// character or a path separator?
+fn names_the_fork(body: &str) -> bool {
+    body.match_indices("fork").any(|(i, _)| {
+        let before = body[..i].chars().next_back();
+        let after = &body[i + 4..];
+        !before.is_some_and(|c| c.is_alphanumeric() || c == '_') && (after.starts_with("::") || after.starts_with(|c: char| c.is_alphanumeric() || c == '_'))
+    })
+}
+
+/// **The D21 family, by its property**: a bless whose only bless variable is `TM_FORK_BLESS`
+/// rewrites the replay and log-line fixtures from the oracle over committed inputs — it holds no
+/// line and none records a departure, so there is nothing a committed version could be held to
+/// (README gap 4285 records it, and what it would take to hold them).
+fn is_d21(body: &str) -> bool {
+    let vars: Vec<&str> = body.split('"').skip(1).step_by(2).filter(|lit| lit.starts_with("TM_") && lit.contains("BLESS")).collect();
+    !vars.is_empty() && vars.iter().all(|v| *v == "TM_FORK_BLESS")
+}
+
+/// **Every bless of a frozen fork comparand holds its lines against the committed history** —
+/// README gap 4151 as a CLASS (lesson 2): every bless-shaped `#[test]` in `tm/tests` calls
+/// `frozenhist::held`, but the D21 family named by its property. The census is printed, and it may
+/// not be vacuous: the eleven W-42 converted are among them.
+#[test]
+fn every_bless_holds_its_lines_against_the_committed_history() {
+    let mut found = Vec::new();
+    let mut d21 = Vec::new();
+    let mut bad = Vec::new();
+    for (label, text) in srcwalk::every_rust_file() {
+        if !label.starts_with("tm/tests/") {
+            continue;
+        }
+        for (name, body) in test_fns(&text) {
+            if !is_bless(&body) {
+                continue;
+            }
+            if is_d21(&body) {
+                d21.push(format!("{label}::{name}"));
+            } else if holds_history(&body) {
+                found.push(format!("{label}::{name}"));
+            } else {
+                bad.push(format!("{label}::{name}"));
+            }
+        }
+    }
+    println!("blesses holding the committed history ({}):\n  {}", found.len(), found.join("\n  "));
+    println!("the D21 family, holding no line ({}):\n  {}", d21.len(), d21.join("\n  "));
+    assert!(bad.is_empty(), "blesses that hold their lines against the working copy, or against nothing (README gap 4151):\n  {}", bad.join("\n  "));
+    for want in [
+        "the_frozen_tui_days_are_blessed",
+        "the_frozen_start_days_are_blessed",
+        "the_frozen_week_grids_are_blessed",
+        "the_seeded_p56_days_are_blessed",
+        "the_frozen_plan_basic_days_are_blessed",
+        "the_frozen_fork_classes_are_reblessed",
+        "the_frozen_batch_is_blessed",
+        "the_frozen_driven_days_are_blessed",
+        "the_frozen_class_worlds_are_redrawn",
+        "the_frozen_conference_days_are_blessed",
+        "the_frozen_fork_days_are_reblessed",
+    ] {
+        assert!(found.iter().any(|f| f.ends_with(&format!("::{want}"))), "{want} is not among the blesses found — the walk is not reading what it claims");
+    }
+    assert!(d21.len() >= 2, "the D21 family was not found: {d21:?}");
+}
+
+/// **The class test bites** (AGENTS §5.8): a bless-shaped function that reads its held lines off the
+/// working copy is a bless the rule refuses; one that calls the reader is not; one that writes no
+/// file, or reads no bless variable, is no bless; and the D21 family is told apart by its variable.
+#[test]
+fn the_class_test_tells_a_bless_by_its_shape() {
+    let working_copy = "#[test]\nfn x() {\n    if std::env::var_os(\"TM_X_BLESS\").is_none() { return; }\n    let held = read(); let day = forkplan::plan();\n    std::fs::write(p, out).expect(\"w\");\n}\n";
+    let fns = test_fns(working_copy);
+    assert_eq!(fns.len(), 1);
+    assert!(is_bless(&fns[0].1) && !holds_history(&fns[0].1) && !is_d21(&fns[0].1), "a working-copy bless was not caught");
+    let history = working_copy.replace("let held = read();", "let held = frozenhist::held(&p, k);");
+    assert!(holds_history(&test_fns(&history)[0].1));
+    assert_eq!(blank_literals("a(\"x\\\"y\", '\"', \"z\")"), "a(\"    \", '\"', \" \")", "an escaped quote or a quote char ended a literal");
+    assert_eq!(blank_literals("f(\"a \\\n b\")\n}").lines().count(), 3, "a literal continued across a line lost the line");
+    let spelled = working_copy.replace("let held = read();", "let held = \"frozenhist::held(\";");
+    assert!(is_bless(&test_fns(&spelled)[0].1) && !holds_history(&test_fns(&spelled)[0].1), "a call spelled inside a literal passed as a call");
+    let no_write = working_copy.replace("std::fs::write(p, out)", "drop(out)");
+    assert!(!is_bless(&test_fns(&no_write)[0].1), "a function that writes nothing is no bless");
+    let no_var = working_copy.replace("TM_X_BLESS", "TM_X");
+    assert!(!is_bless(&test_fns(&no_var)[0].1), "a function that reads no bless variable is no bless");
+    let own_bytes = working_copy.replace("let day = forkplan::plan();", "let day = measured();");
+    assert!(!is_bless(&test_fns(&own_bytes)[0].1), "a pin of the binary's own bytes, naming no fork, is no fork bless");
+    assert!(!names_the_fork("let s = \"the fork plans\"; let x = unfork::y();"), "prose, or a name that only contains it, names no fork");
+    let d21 = working_copy.replace("TM_X_BLESS", "TM_FORK_BLESS");
+    assert!(is_bless(&test_fns(&d21)[0].1) && is_d21(&test_fns(&d21)[0].1), "the D21 family is not told apart");
+    let both = d21.replace("let held = read();", "let b = std::env::var(\"TM_Y_BLESS\");");
+    assert!(!is_d21(&test_fns(&both)[0].1), "a bless reading another bless variable beside TM_FORK_BLESS passed as D21");
+    let braces = working_copy.replace("let held = read();", "let held = \"}\"; let n = json!({\"a\": {}});");
+    assert_eq!(test_fns(&braces)[0].1.lines().count(), working_copy.lines().count() - 1, "a brace inside a literal ended the body");
+}
