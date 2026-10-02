@@ -684,3 +684,150 @@ fn tm_log_on_three_years_of_log_stays_a_later_verb_and_returns_its_whole_tail() 
     assert!(first_t < last_t, "the tail is not in order: {first_t} then {last_t}");
     eprintln!("latency{label}: --tail 200 returned 200 entries, total {total}, {first_t}..{last_t}");
 }
+
+// ---------------------------------------------------------------------------
+// T18 (stage 6 W-42 track S; the owner's D82, README gaps 4150 and 4152): the
+// PLANNER call itself.
+//
+// R3 puts one kernel call on `tm plan`, `tm now` and every TUI reload: the
+// ranked capacity request `tm plan` sends today with the `planner` section the
+// body swap adds — `kernel_capacity::planner_request`, which `tm check` already
+// sends (parity P78).  T17 (`kernel/tm-kernel-ffi/tests/stack.rs`) times the
+// capacity call and not this one, so nothing here measured the call R3 adds
+// until this row.  It is timed INSIDE THE BINARY, on the request the binary
+// itself builds — the planner call is `tm check`'s last kernel call, and the FFI
+// writes one `kernel call: <kinds>` line before every call
+// (`tm_kernel_ffi::TRACE_CALLS_ENV`), so the call is the stretch from its trace
+// line to the next one or, when it is the verb's last, to the end of the verb's
+// stderr.  That stretch also holds the bridge's parse of the response, which R3
+// pays as well.
+//
+// The trees are this file's own: §4.3's example tree (`tm init --example`), T11's
+// three-year tree (`history_tree` + `write_log(1_095)`, swept by its first verb)
+// and T14's two far-deadline trees (a due three and ten years out, so the
+// lookahead runs to 1,097 and 3,652 days).  `tm plan`'s own wall time is
+// printed beside each, because R3's `tm plan` is today's `tm plan` with its
+// capacity call carrying the planner section.
+
+/// What one traced verb did: its exit code and stdout, its wall time, the
+/// `kernel call:` lines it wrote, and the duration of each call that carried a
+/// `planner` section.
+struct Traced {
+    code: i32,
+    out: String,
+    wall: Duration,
+    calls: Vec<String>,
+    planner: Vec<Duration>,
+}
+
+/// Run the binary at `now` with `TM_TRACE_KERNEL_CALLS` set and its stderr read
+/// line by line as it is written, killing it once `limit` has passed (as
+/// [`timed_at`] does).
+fn traced_at(tm: &Tm, now: &str, args: &[&str], limit: Duration) -> Traced {
+    use std::io::BufRead;
+    let log = tm.tmp.path().join(format!("traced-{}-{now}.out", args.join("-").replace('^', "")));
+    let file = fs::File::create(&log).expect("output file");
+    let start = Instant::now();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_tm"))
+        .arg("--dir")
+        .arg(&tm.plan)
+        .arg("--now")
+        .arg(now)
+        .args(args)
+        .env(tm_kernel_ffi::TRACE_CALLS_ENV, "1")
+        .stdout(Stdio::from(file))
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn tm");
+    let stderr = child.stderr.take().expect("the child's stderr");
+    let reader = std::thread::spawn(move || {
+        let mut lines = Vec::new();
+        for line in std::io::BufReader::new(stderr).lines() {
+            match line {
+                Ok(l) => lines.push((Instant::now(), l)),
+                Err(_) => break,
+            }
+        }
+        (lines, Instant::now())
+    });
+    let code = loop {
+        if let Some(status) = child.try_wait().expect("wait") {
+            break status.code().unwrap_or(-1);
+        }
+        if start.elapsed() > limit {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("`tm {}` was still running after {limit:?}", args.join(" "));
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    };
+    let wall = start.elapsed();
+    let (lines, eof) = reader.join().expect("the stderr reader");
+    let calls: Vec<(Instant, String)> = lines
+        .into_iter()
+        .filter_map(|(t, l)| l.strip_prefix("kernel call: ").map(|k| (t, k.to_string())))
+        .collect();
+    let planner = calls
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, k))| k.split('+').any(|s| s == "planner"))
+        .map(|(i, (t, _))| calls.get(i + 1).map_or(eof, |(next, _)| *next).duration_since(*t))
+        .collect();
+    let out = fs::read_to_string(&log).unwrap_or_default();
+    Traced { code, out, wall, calls: calls.into_iter().map(|(_, k)| k).collect(), planner }
+}
+
+/// One tree's T18 figures: `tm check` (which carries the planner call) and
+/// `tm plan`, at `now`, printed under `label`.
+fn t18_row(tm: &Tm, now: &str, label: &str) -> (Duration, Duration, Duration) {
+    let (code, out, plan) = timed_at(tm, now, &["plan"], FIRST_VERB);
+    assert_eq!(code, 0, "{label}: `tm plan`: {out}");
+    let check = traced_at(tm, now, &["check"], Duration::from_secs(600));
+    assert_eq!(check.code, 0, "{label}: `tm check`: {}", check.out);
+    assert_eq!(check.out.trim(), "no problems", "{label}: {}", check.out);
+    // It IS the day R3 asks for: exactly one call carried a `planner` section,
+    // and it was the capacity call with its log (P78's request).
+    assert_eq!(check.planner.len(), 1, "{label}: kernel calls {:?}", check.calls);
+    assert!(
+        check.calls.iter().any(|k| k == "capacity+log+planner"),
+        "{label}: kernel calls {:?}",
+        check.calls
+    );
+    let planner = check.planner[0];
+    eprintln!(
+        "T18 {label}: the planner call {planner:?}; `tm check` {:?} over {} kernel call(s); `tm plan` {plan:?}",
+        check.wall,
+        check.calls.len()
+    );
+    (planner, check.wall, plan)
+}
+
+/// **T18: the planner call R3 adds, on the example tree and on T11's and T14's
+/// trees** (the owner's D82, README gaps 4150 and 4152).
+#[test]
+fn t18_the_planner_call_on_the_example_three_year_and_far_deadline_trees() {
+    let _serial = SERIAL.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    // §4.3's example tree, at the instant it is dated for.
+    let ex = Tm::empty();
+    let out = ex.run_at(cli_common::NOW, &["init", "--example"]);
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    t18_row(&ex, cli_common::NOW, "example tree");
+
+    // T11's tree: three years of log, swept by its first verb.
+    let t11 = history_tree();
+    let (lines, bytes) = write_log(&t11, 1_095);
+    let (code, out, _) = timed(&t11, &["drop", "^a1"], FIRST_VERB);
+    assert_eq!(code, 0, "{out}");
+    t18_row(&t11, AT, &format!("T11 tree (3y log: {lines} lines, {bytes} bytes)"));
+
+    // T14's trees: a due three and ten years out.
+    let t14 = history_tree();
+    let (code, out, _) = timed(&t14, &["drop", "^a1"], FIRST_VERB);
+    assert_eq!(code, 0, "{out}");
+    let backlog = fs::read_to_string(t14.plan.join("backlog.md")).expect("backlog");
+    for (years, due, days) in [(3, "2029-09-14", 1097), (10, "2036-09-12", 3652)] {
+        write(&t14, "backlog.md", &format!("{backlog}- [ ] 3 2h A deadline {years} years out due:{due} ^far{years}\n"));
+        t18_row(&t14, AT, &format!("T14 tree, a due {years} years out ({days} lookahead days)"));
+    }
+}
