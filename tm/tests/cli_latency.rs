@@ -799,6 +799,15 @@ fn t18_row(tm: &Tm, now: &str, label: &str) -> (Duration, Duration, Duration) {
         check.wall,
         check.calls.len()
     );
+    // **The owner's D82, held where R3 will pay it.**  R3's `tm plan` is today's
+    // `tm plan` with its capacity call carrying the `planner` section, so today's
+    // `tm plan` plus the planner call bounds it from above — and that sum must sit
+    // inside the band every later verb here is held to, `LATER_VERB`, UNCHANGED.
+    // A tree that cannot meet it is a measurement to report, never a band to move.
+    assert!(
+        plan + planner < LATER_VERB,
+        "{label}: `tm plan` {plan:?} plus the planner call {planner:?} is past {LATER_VERB:?} — R3's `tm plan` would be"
+    );
     (planner, check.wall, plan)
 }
 

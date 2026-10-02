@@ -8057,3 +8057,25 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Planner.PlanReq.the_whatif_keeps_the_evening
 #print axioms Tm.Planner.PlanReq.growing_keeps_the_ci_agreement
 #print axioms Tm.Planner.PlanReq.the_whatif_request_pays_d80
+
+/- ===================================================================
+   APPENDED 2026-10-02: stage 6 (the planner), run W-42, TRACK S —
+   the owner's D82 (README gaps 4150 and 4152): §8.2's day with every
+   view it reads more than once computed once (`PlanOnce.lean`), and
+   the `@[csimp]` lemma that makes `PlanWire.runPlanner` run it.
+   =================================================================== -/
+#print axioms Tm.Planner.walkRePlace_nil
+#print axioms Tm.Planner.walkRePlace_cons
+#print axioms Tm.Planner.walkRePlace_eq
+#print axioms Tm.Planner.walkDefer_nil
+#print axioms Tm.Planner.walkDefer_cons
+#print axioms Tm.Planner.walkDefer_eq
+#print axioms Tm.Planner.groupFitsAt_eq
+#print axioms Tm.Planner.assignStepAt_eq
+#print axioms Tm.Planner.Memo.of_eq
+#print axioms Tm.Planner.walkRePlace_at
+#print axioms Tm.Planner.deferOneAt_eq
+#print axioms Tm.Planner.deferOneAt_takes_the_lowest_free
+#print axioms Tm.Planner.dayPlanFrom_spec
+#print axioms Tm.Planner.dayPlanOnce_eq
+#print axioms Tm.Planner.dayPlan_eq_dayPlanOnce

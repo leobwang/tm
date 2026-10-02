@@ -82230,3 +82230,345 @@ function should take its held lines from the file at HEAD and at every commit si
 
 **Gap 4152 — the planner-refusal probe runs on every `tm check`.**  It is the whole day's request; `kernel_call_counts`
 pins one call.  Narrowing it (a flag, a cache) is the owner's call if gap 4150's second matters in a pre-commit hook.
+
+<!-- =====================================================================
+     APPENDED 2026-10-02: stage 6 (the planner), run **W-42**, **TRACK S** —
+     the owner's **D82**: the kernel planner made fast before R3.  Worktree
+     `.claude/worktrees/w42-s` (branch `w42-s`); scratch, clones and the
+     timing harnesses under `scratchpad/w42-s/` (`dev`, `bench`, `bench2`,
+     `before`, `mut`, `bench-before`, `bench-now`, `bench-mutp`); the main
+     checkout on `rebuild-on-lean` throughout.
+     Gap range **4200-4239**: 4200-4209 taken, 4210 free.  Parity: none
+     issued — no behaviour moves (the twin is proved equal to the
+     specification, and every response below was compared byte for byte).
+     Burn-down **0**, unchanged.  WRITTEN ACROSS TWO SESSIONS: the first was
+     cut off by an account usage limit after its workspace runs and before
+     its second commit; the second resumed it, re-measured every figure below
+     on the tree it commits (§4, §6, §7 are the second session's), corrected
+     two of the first session's sentences (§3's axiom sets, gap 4200's "per
+     keystroke") and added gap 4207.
+     ===================================================================== -->
+
+## Stage 6 — W-42 track S: the planner made fast before R3 (D82) — §8.2's day with every view computed once
+
+### 0. The brief, measured before it was acted on
+
+* HEAD `d577322`, the tree clean.  The W-41 repair's figure reproduced: `tm check` on §4.3's example tree (`tm init
+  --example`) 1.06-1.11 s over three capped runs, `tm plan` 0.05-0.11 s; the request `tm check` sends as its last
+  kernel call (`capacity+log+planner`, captured off the FFI with gdb) costs 1,018-1,031 ms through the FFI in-process,
+  and the same request with its `planner` key removed **3.7 ms**.  The second is the planner, all of it.
+* **The brief's candidates, ruled in or out by the profile (§2), not by guess**: the planner section's decode,
+  D80's `planReqRefusal` and the loader/`planWf` are inside the 3.7 ms the request costs without its planner key;
+  the hot spot is in `Planner.lean`'s own views — not in a file track G owns — so the fix needed no twin of
+  the loader.
+* **What the brief did not know**: the far-deadline trees were 3 and 9 times WORSE than the example (§1 — 3.1 s
+  and 9.6 s), because the planner recomputed the whole lookahead hundreds of times; and T11's `tm check` was
+  already past `LATER_VERB` before this step (1.17 s: the planner call plus a 20-call log sweep) — gap 4152's own
+  tree.
+* **And the planner section has been SENT by the shipped binary since P78, while check 12 still calls it unsent**
+  (gap 4207): `tm check` sends it through `kernel_capacity::planner_request`, whose `planner` key is spliced by
+  `planwire::with_planner` in `tm-core`, and check 12's `sections.py` reads `tm/src` alone — so the `CLASS unsent
+  planner` line of `reach-exempt.txt`, whose own EXIT is "when the binary sends `planner` … this line FAILS as
+  STALE", did not fail.  Found by the resumed session; measured by a probe in a clone (gap 4207).
+
+### 1. The instrument first (D21): T18
+
+`t18_the_planner_call_on_the_example_three_year_and_far_deadline_trees` (`tm/tests/cli_latency.rs`, a new test
+and no band moved) times **the planner call inside the binary, on the request the binary itself builds**: R3's
+request is `kernel_capacity::planner_request`, which `tm check` already sends (P78, `lifecycle::planner_problems`)
+as its last kernel call, and the FFI writes one `kernel call:` line before every call
+(`tm_kernel_ffi::TRACE_CALLS_ENV`), so `traced_at` reads the verb's stderr as it is written and the call is the
+stretch from its trace line to the end of the verb (the bridge's parse of the response included — R3 pays it).
+Four trees: §4.3's example tree; T11's three-year tree (`history_tree` + `write_log(1_095)`, swept by its first
+verb); T14's tree with a due three and ten years out (lookahead 1,097 and 3,652 days).  It was committed first
+(`38fb242`), measuring and asserting nothing about the time; it reported, on the unchanged kernel (load 7-8,
+other tracks building):
+
+| tree | the planner call | `tm check` (kernel calls) | `tm plan` |
+|---|---|---|---|
+| example | **1,180 ms** | 1,208 ms (4) | 121 ms |
+| T11, 3-year log | **419 ms** | 1,174 ms (20) | 187 ms |
+| T14, due 3 years out | **3,142 ms** | 3,221 ms (4) | 127 ms |
+| T14, due 10 years out | **9,581 ms** | 9,651 ms (4) | 284 ms |
+
+### 2. Where the second went — the profile
+
+callgrind over the captured request, the in-process harness (`scratchpad/w42-s/bench`), one call:
+
+* **Example tree: 28.39 G instructions.**  `Planner.dayPlan` 99.5% inclusive; inside it `PlanReq.deferFold` 95.5%,
+  `dayRows` 93.3%, `PlanReq.assignFold` 70.1%, `PlanReq.placementFold` 62.8%, `PlanReq.candAnswers` 28.9%.
+  Self cost: `Cal.hitStep` 30.4%, the allocator's free 18.2%, `Cal.Span.hit` 13.4%, reference counting 8.5%,
+  allocation 8.4%, `Cal.utcSecAt` 6.0% — **`Cal.localHits` 89.3% inclusive**, the zone's whole transition list
+  (358 here) folded once per local-to-instant conversion.
+* **The brief's candidates, each measured in the same call**: the capacity and log sections (`EmitWire.runRowsP`)
+  76 M (0.27%), the day's hash (`Planner.planDigest`) 67 M (0.24%), the loader (`loadPlan`, `planWf` inside it)
+  14 M (0.05%), the request's parse (`jparse`) 9 M, the request's assembly with D80's two refusals
+  (`PlanWire.planReqOf`) 5.6 M (0.02%), the response's emit 5 M, the day's own JSON (`PlanWire.planJson`) 0.2 M.
+* **The cause is the call COUNTS, not one slow step.**  `Planner.lean` states §8.2 as views of the request, every
+  reader calls the view it needs, and the readers nest: in one call `Look.lookahead` ran **805** times (each
+  `PlanReq.candAnswers`), `PlanReq.startGroups` 729, `PlanReq.assignFold` 711 (585 through `PlanReq.deferFold`,
+  126 through `PlanReq.keptBreaksToday` — once per deferred routine), `PlanReq.placementFold` about 4,500,
+  `PlanReq.todayCut` 3,666, `PlanReq.night` 17,661, `Cal.instantOf` 213,749.
+* **T11: 6.53 G.**  The same chain, and `PlanReq.rankedCands` rebuilt with every `PlanReq.startGroups` — its
+  `PlanReq.keyOf` reads each of 380 candidates' own and root sites off the store (`PlanReq.keyOf` 24.3% inclusive,
+  `List.lengthTR` alone 22.9% self).
+* **T14, a due 3 years out: 76.3 G.**  `Look.lookahead` 91.4% inclusive — 1,097 days, recomputed with every
+  `PlanReq.candAnswers` — and `Cal.localHits` 78.4%.
+
+### 3. The fix: `PlanOnce.lean`, the `@[csimp]` twin of `Planner.dayPlan`
+
+A new module (imported by `PlanWire.lean` and the root; no file of another track touched):
+
+* `Memo.of` computes, once and in §8.2's order, every view the day reads more than once — the wind-down, the
+  night, the window, the budget, the location, `PlanReq.candAnswers`, the priorities, the running block,
+  `PlanReq.rankedCands`, `PlanReq.buildGroups`, `PlanReq.startGroups`, `PlanReq.placementFold`,
+  `PlanReq.todayCut`, the energised slots, `PlanReq.assignFold` and the kept breaks — each binding the body of
+  the view it is, over the bindings above it.  `Memo.of_eq` is one `rfl`: the memo IS the views.
+* The three step functions whose only request reads are views are written once more over the memo:
+  `groupFitsAt` (`PlanReq.groupFitsSlot` with the location and the wind-down given — the original reads the
+  wind-down, a `Cal.instantOf`, once per group per slot), `assignStepAt` and `deferOneAt`; the two hand-written
+  recursions are their own recursion over a step, `walkRePlace` and `walkDefer`, each proved equal to the original
+  by induction (`walkRePlace_eq`, `walkDefer_eq`).
+* `dayPlanFrom` assembles `dayRows` and `dayDiagnostics` from the memo and step 6's result;
+  `dayPlanFrom_spec` is one `rfl` against `Planner.dayPlan`.  `dayPlanOnce` is the memo, then step 6 over it
+  (`walkDefer` of `deferOneAt`), then `dayPlanFrom`; **`dayPlanOnce_eq` proves it IS `Planner.dayPlan` on every
+  request**, and `dayPlan_eq_dayPlanOnce` is the `@[csimp]` lemma that hands the proof to the compiler.
+* **Where the compiler sees it.**  `PlanWire.lean` imports the module, so `PlanWire.runPlanner`'s day compiles to
+  the twin — read off the emitted C by the resumed session: `PlanWire.c` calls `lp_TmKernel_Tm_Planner_dayPlanOnce`
+  once (in `runPlanner`) and `lp_TmKernel_Tm_Planner_dayPlan` nowhere, `PlanDiff.c` calls
+  `lp_TmKernel_Tm_Planner_dayPlan` twice (in `overtimeDiff`).  `PlanDiff.lean` does not import the module, and
+  that is check 12's price — gap 4200.
+* **Fifteen theorems, all audited** (`Check.lean`'s W-42 track S banner): the four equations of the two walks,
+  their two laws, `groupFitsAt_eq`, `assignStepAt_eq`, `Memo.of_eq`, the re-place walk over the memo, the step-6
+  law `deferOneAt_eq`, `deferOneAt_takes_the_lowest_free`, `dayPlanFrom_spec`, `dayPlanOnce_eq` and the
+  `@[csimp]` lemma.  **Axiom sets, printed by the resumed session** (`#print axioms` of the fifteen against the
+  built library): the four walk equations on `propext` alone, the other eleven on `propext`, `Classical.choice`
+  and `Quot.sound`; none on `sorryAx`.  *(This bullet said "each on `propext`, `Classical.choice` and `Quot.sound`"
+  — a claim nobody had printed; four of the fifteen depend on less.)*
+
+### 4. Before and after, measured back to back
+
+The resumed session re-measured both sides on the binary, alternating, with nothing else of this track's running:
+BEFORE is a clone at `38fb242` (T18 on the specification), AFTER is this tree; two runs of each at load 15-19
+(four other tracks building), and one AFTER run at load 6.5 before they started.
+
+| tree | the planner call, before | after | after (load 6.5) | `tm check` before → after | `tm plan` + the call, after |
+|---|---|---|---|---|---|
+| example | 1,083 / 1,141 ms | **14.0 / 9.9 ms** | 7.6 ms | 1,111 / 1,171 → 32.9 / 23.3 ms | 130 / 116 ms |
+| T11, 3-year log | 568 / 424 ms | **71.1 / 69.7 ms** | 81.8 ms | 1,507 / 1,032 → 765 / 660 ms | 248 / 227 ms |
+| T14, due 3 years out | 3,997 / 3,485 ms | **164 / 95.3 ms** | 103 ms | 4,117 / 3,560 → 258 / 154 ms | 337 / 202 ms |
+| T14, due 10 years out | 11,895 / 10,342 ms | **251 / 224 ms** | 201 ms | 11,972 / 10,429 → 339 / 280 ms | 517 / 376 ms |
+
+**The owner's target, met on every tree, and asserted where R3 will pay it.**  T18 now asserts `tm plan` plus the
+planner call under `LATER_VERB` — the band every later verb in the file is held to, UNCHANGED — on all four trees
+(R3's `tm plan` is today's `tm plan` with its capacity call carrying the planner section, so the sum bounds it
+from above; the worst is 517 ms, T14's 10-year tree at load 18).  The planner call on the example tree is 7.6-14
+ms against the aim of 0.1 s, the same order as the capacity call it rides beside (3.7 ms in-process).
+
+In-process through the FFI over the captured requests — the resumed session's `scratchpad/w42-s/bench3.sh`, three
+kernels interleaved at load 11-15, three calls each, every response compared with `cmp`:
+
+| request | the specification (`38fb242`) | this step (the day on the twin) | gap 4200's probe (the twin everywhere) |
+|---|---|---|---|
+| example tree, the day | 1,054-1,098 ms | **7.6-7.7 ms** | 7.5-7.6 ms |
+| T11, the day | 376-398 ms | **61-65 ms** | 60-65 ms |
+| T14 3 years, the day | 3,152-3,215 ms | **84-88 ms** | 85-87 ms |
+| T14 10 years, the day | 9,327-9,498 ms | **182-205 ms** | 183-193 ms |
+| example tree, the what-if (`overtime`) | 3,064-3,134 ms | 2,031-2,060 ms | **12.8-13.7 ms** |
+| T14 10 years, the what-if | 29.0-31.6 s | 19.1-22.0 s | **354-369 ms** |
+
+**Every response byte-identical** across the three kernels — the six requests' answers, 16,230 to 438,130 bytes —
+and the proof says so for every request.
+
+**What is left, by profile** (callgrind on the twin, inclusive, one call; the first session's files, re-read by the
+resumed session): the example call 173 M instructions — the day 129 M (its memo 52 M, of which
+`PlanReq.candAnswers` 42 M; its hash `Planner.planDigest` 67 M), the capacity and log sections
+(`EmitWire.runRowsP`) 76 M, and `Cal.localHits` 89 M across both; T14 10 years out 4.62 G — `Look.lookahead` 3.78 G,
+**computed twice in one call**, once for the capacity section's `lookahead` response (`CapWire.lookaheadJsonWith`,
+1.92 G) and once for the day's `PlanReq.candAnswers` (1.91 G), and `Cal.localHits` 3.18 G inside them; T11 1.10 G —
+the capacity and log sections 0.65 G (the whole-tree load `runLoad` 0.29 G), the request's parse 0.14 G and the
+day 0.12 G.  Gaps 4201-4204.
+
+### 5. Gap 4152, re-measured
+
+The probe `tm check` runs is the call above: 7.6-14 ms on the example tree (`tm check` 1,111-1,171 → 20-33 ms),
+70-82 ms on T11's (1,032-1,507 → 660-765 ms; the rest is the 20-call log sweep, D18's reading of a three-year log),
+95-251 ms on T14's.  **Gap 4152 closes as measured**: its premise was gap 4150's second, which is gone, and nothing
+is left for a flag or a cache to save.
+
+### 6. Gates on the new module
+
+* **Check 9**: eight new definitions, rows written by `mutate.py --write` in the first session's clone and
+  **re-verified by the resumed session in its own clone** (`mutate.py --verify --only PlanOnce.lean`, 26 s, the
+  clone's `git status --porcelain` the same before and after): `re-running 8 rostered mutation(s)` … `0 rostered
+  definition(s) failed re-verification, 7 unfoldable, 0 row(s) whose recorded verdict or pin site had drifted`.
+  `walkRePlace`, `walkDefer`, `groupFitsAt` (`true` and `false`), `assignStepAt` and `deferOneAt` are PINNED, each
+  by two failing declarations (an identity on the accumulator and a synthesised constant for the four that take
+  one).  `Memo.of`, `dayPlanFrom` and `dayPlanOnce` have no constant to fold to (gap 4205), so **the resumed session
+  planted them by hand, one at a time, in the same clone** (`lake build TmKernel.PlanOnce`, the file restored and
+  compared after each):
+
+  | plant | rc | the first error |
+  |---|---|---|
+  | `dayPlanOnce := DayPlan.empty r.today r.window r.blockMin r.budgetBlocks` | 1 | `PlanOnce.lean:454:2` `'show' tactic failed` (`dayPlanOnce_eq`) |
+  | `dayPlanOnce` with step 6 skipped (`dayPlanFrom r m (m.pf.1.reverse, m.af)`) | 1 | `PlanOnce.lean:455:2` `'show' tactic failed` (`dayPlanOnce_eq`) |
+  | `dayPlanFrom := DayPlan.empty r.today m.win r.blockMin r.budgetBlocks` | 1 | `PlanOnce.lean:451:0` `Not a definitional equality` (`dayPlanFrom_spec`) |
+  | `dayPlanFrom` with `segments := []` | 1 | `PlanOnce.lean:449:0` `Not a definitional equality` (`dayPlanFrom_spec`) |
+  | `Memo.of` with `af := ⟨[], [], 0⟩` | 1 | `PlanOnce.lean:213:0` `Not a definitional equality` (`Memo.of_eq`; then `dayPlanOnce_eq` at :458) |
+  | `Memo.of` with `kb := []` | 1 | `PlanOnce.lean:213:0` `Not a definitional equality` (`Memo.of_eq`) |
+
+* **Check 11**: 3,358 bodies, 0 UNANSWERED — no twin forms a group with its original under either key (each
+  body reads the memo where the original reads a view).
+* **Check 12**: 0 UNANSWERED, `reach-exempt.txt` untouched; every new definition is reached through
+  `PlanWire.runPlanner`'s arm and answered by the declared `CLASS unsent planner` line — a line that is STALE and
+  that the gate cannot see is (gap 4207) — and the specification stays reached through `Planner.overtimeDiff`.
+* **Check 13**: unchanged (rooted at the specification's `Planner.dayPlan`, whose emitted code did not move).
+* **Check 14**: 94 modules replayed by the kernel, `PlanOnce` among them.
+* **No pin site moved**: `PlanWire.lean`'s edit is line-neutral (the import shares the module docstring's line
+  count, the runPlanner note one line), so no row of `mutations.txt` went stale.
+
+### 7. Acceptance, capped (`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`)
+
+Every command capped, in the worktree: the workspace runs on this commit's tree but for this block, `check.sh` on the
+committed tree.  Four other tracks shared the machine (loads 6-29 throughout).
+
+* `check.sh`: **17 lines, every one ok**, rc 0 — lake build; totality; axiom audit (6,186 theorems: the brief's
+  6,171 and this step's 15); Negative.lean rejected; FFI (95 tests); corpus (29/37 files, 4/5 plans); stage goals
+  (0 outstanding); prose citations (54,853 citations, 52,573 resolved, 2,280 allowed, 0 unresolved); new
+  definitions mutated (621 new or changed since `86c4dc6`, 621 rostered, 0 owed — this step's eight); parity
+  (P1-P79, next free P80); no two names (3,358 bodies, 0 UNANSWERED);
+  every emitted definition reached (1,245 reachable, 1,199 exempt, 0 UNANSWERED); every emitted field has a writer
+  (17/17); every decoded field has a reader (33 of 37, 4 exempt); every sent key has a reader (169 over 10
+  sections); every decoded key has a writer (220, 168 written); the kernel replays every module (94).
+* `cargo test --workspace`: **2,091 passed / 0 failed / 32 ignored across 128 result lines, 0 warnings, THREE
+  complete runs** (runs 1, 3 and 4: 919, 1,115 and 1,018 s wall) — the brief's 2,090 at `d577322` and T18.  **A
+  fourth, run 2, stopped at `cli_latency`**: T18's setup verb on T11's three-year tree past `FIRST_VERB` at load
+  29 (gap 4208, gap 1333's class).  No `.proptest-regressions` file moved in any of the four.
+* The suites the brief names, inside every complete run: T5 (`kernel_replay_parity`) 31 and 4 ignored, the door
+  suite (`kernel_log_door`) 26, `cli_switch_acceptance` 16, `cli_latency` 6 and 1 ignored, `kernel_call_counts` 2,
+  `one_padder` 9, `one_renderer` 27, `kernel_row_cells` 28, `kernel_item_grammar` 6, `kernel_planner_wire` 27,
+  `planner_classes` 54 and 6 ignored, `planner_invariants` 39 and 2 ignored, `cli_conformance` 3, `cli_json_matrix`
+  8; with their ignored arms once more: T5 **35 passed** (the `TM_ORACLE` arms inert), the door suite **26**,
+  `cli_switch_acceptance` **16**, `cli_latency` **7** (load 13; T18's rows 7.9, 77, 98 and 201 ms).  FFI: check
+  5's 95.
+* **And the workspace's planner suites got faster** with the twin, read off the logs (`finished in`), across
+  different loads — a direction, not a measurement of the step: `planner_invariants` 515-525 s on `38fb242`'s
+  tree (the first session's two runs) against 179-289 s in this step's three, `planner_w41_d80` 497-507 →
+  208-242 s, `planner_classes` 198-258 → 79-104 s, `planner_w37_rows` 148-170 → 11-11.5 s, `planner_w38_order`
+  109-171 → 19-24 s, `tui_kernel_answers` 201-202 → 99-125 s.
+
+### 8. Gaps 4200-4209
+
+**Gap 4150 — CLOSED here.**  The planner call is 7.6-14 ms on the example tree and inside `LATER_VERB` with `tm plan`
+on every tree T18 times (§4).
+
+**Gap 4152 — CLOSED here, as measured** (§5).
+
+**Gap 4200 — the what-if still runs the specification.**  1. *What.*  `Planner.overtimeDiff` (§9.1's "x extend +N
+block", two days) is compiled in `PlanDiff.lean`, which does not import `PlanOnce.lean`, so a request with an
+`overtime` key runs the fast day once and the specification twice: the example tree's what-if request 2,031-2,060 ms
+against 12.8-13.7 ms with the twin on both days, T14's 10-year one 19.1-22.0 s against 354-369 ms (§4's table). 2.
+*Why not changed.*  Check 12 (owner D51) requires every emitted definition to be reached from the export and
+`reach-exempt.txt` is strictly shrink-only — growth is "the owner's to grant, in the commit that changes this script"
+(`reach.py`'s header); `Planner.dayPlan` and every view below it are reached today only through `PlanWire.runPlanner`
+and `Planner.overtimeDiff`.  A `@[csimp]` lemma rewrites every call site that sees it, so with both seeing it the
+specification is emitted and called by nothing, and the gate fails with no lawful entry to add.  **Measured, not
+argued** (the resumed session's clone, its `git status --porcelain` the same before and after): with `PlanDiff.lean`
+importing `PlanOnce.lean`, the emitted C calls `dayPlanOnce` from `PlanWire.c` and `PlanDiff.c` and `dayPlan` from
+nowhere, and `reach.py` exits 1 with **66 UNANSWERED**, every one `NOT EXEMPT` and in `Planner.lean` —
+`Planner.dayPlan` and 65 views only it reaches (`PlanReq.assignFold`, `PlanReq.buildGroups`, `PlanReq.cutFrom`, …).
+Every `@[csimp]` original this kernel already has is either named in that file (grandfathered before W-41 made it
+strict) or still called by its own twin's slow branch (`foldTab`, `Store.mapEntities`, `foldCut`), so this is the
+first twin to meet the strict rule with neither.  A branch that calls the specification for no reason but to keep it
+reached was declined: it is a check no input can fail, by another name.  3. *Cost.*  After R3 the TUI's overtime box
+(`App::overtime_due`, raised by `App::raise_prompt` on a tick once the running block passes its estimate, and again
+every `overtime_reprompt_min`) pays two specification days each time it is raised.  *(This sentence said "per
+keystroke"; the box is computed when the prompt is raised, read off `tm/src/tui/app.rs` by the resumed session.)*  4.
+*Clears it.*  The owner: check 12 answering a `@[csimp]` original by the property its own header states ("a definition
+not used solely within proofs must be reachable") — the left side of a `@[csimp]` lemma whose right side is reached is
+used solely within proofs — and then `PlanDiff.lean` imports `PlanOnce.lean`.  Before R3.
+
+**Gap 4201 — one call computes the lookahead twice.**  1. *What.*  A planner request's capacity section answers
+`lookahead` with `Look.lookahead` (`CapWire.lookaheadJsonWith`), and the day's `PlanReq.candAnswers` computes the
+same lookahead again (`PlanReq.candAnswers_is_the_capacity_ops_own_grants` says the two are one expression).
+2. *Why not changed.*  Not needed for D82's target, and the reuse is a change to `PlanWire.runPlanner`'s body whose
+laws are stated over `Planner.dayPlan` — it wants the capacity op's grants carried out of `Boundary.CapParts` and
+a twin taking them, with those laws re-proved.  3. *Cost.*  40% of the call on T14's 10-year tree (1.91 of 4.71 G
+instructions), about 2-3 ms of the example's.  4. *Clears it.*  The next step that needs the headroom.
+
+**Gap 4202 — a local-to-instant conversion folds the zone's whole table.**  1. *What.*  `Cal.localHits` reads all
+358 transitions of the Chicago table for every conversion; after the twin it is still 51% of the example call and
+67% of T14's 10-year call, almost all inside `Look.lookahead` (`Look.dayCut`, `Look.windowFrom`,
+`Look.wakeInstantOf`).  2. *Why not changed.*  The fast form is an early-exit scan (the transitions strictly
+increase, `Cal.tz_transitions_strictly_increase`); as a `@[csimp]` twin it would have to be visible where
+`Lookahead.lean` compiles, which every module calling `Cal.instantOf` imports, so the original would lose its last
+compiled caller — gap 4200's wall again.  Changing `Lookahead.lean`'s definitions to call it directly re-proves
+their laws; not needed for the target.  3. *Cost.*  The capacity call `tm plan` makes today pays it too.  4. *Clears
+it.*  The owner's answer to gap 4200, or a step that takes the re-proof.
+
+**Gap 4203 — every process start evaluates the witness module's constants.**  1. *What.*  The profile's largest
+item outside the call on the example tree: library initialisation (the root module's emitted initialiser) runs 86.8 M
+instructions (~3 ms) per process, every `tm` verb, 77.8 M of them `PlannerWit`'s hoisted closed terms.  2. *Why not
+changed.*  Found, not this step's: the root module imports `PlannerWit` and the witness fixtures are constants.
+3. *Cost.*  ~3 ms per verb.  4. *Clears it.*  Whoever next touches the root's import list or check 12's load-time
+class.
+
+**Gap 4204 — on T11's tree the call is the request's own sections, not the day.**  Of the 1.10 G instructions the
+call costs there, the capacity and log sections (`EmitWire.runRowsP`) are 0.65 G — the whole-tree load (`runLoad`,
+227 documents) 0.29 G of it — and the request's parse 0.14 G; the day is 0.12 G.  Not a planner cost, and the same
+in `tm plan`'s capacity call today; named so that a reader of T18's T11 row knows where its 70-82 ms go.
+
+**Gap 4205 — three compositions are pinned by nothing check 9 can fold.**  `Memo.of`, `dayPlanFrom` and
+`dayPlanOnce` return `Memo` and `DayPlan`, which have no `Inhabited` instance (AGENTS 5.1), take no argument of
+their result type, and so have no constant to fold to; their rows say UNFOLDABLE and are counted among the 35 "pinned
+by nothing" check 9 prints.  What pins them is `dayPlanOnce_eq`, `dayPlanFrom_spec` and `Memo.of_eq` — a changed
+binding fails one of the three — and that is now SHOWN, not argued: six hand plants, each failing at its pin (§6).
+Adding instances to make the fold exist was declined (the W-20 land step's reason, `mutate.py`'s header); a hand
+transcript in this block is all the roster can carry for them until check 9 can synthesise a `DayPlan`.
+
+**Gap 4206 — what T18 cannot see.**  It times the binary's P78 request, which is R3's by construction
+(`kernel_capacity::planner_request`), on four trees; a tree shape none of them has (many routines deferred to
+step 6, a running block displacing a group) is measured by nothing, and the call's share of a verb is read off one
+trace line, so a verb that made a second planner call would be read as two (the test asserts there is one).
+
+**Gap 4207 — check 12 believes the planner section unsent; the shipped binary has sent it since P78.**  1. *What.* `tm
+check` (`lifecycle::planner_problems`) sends R3's request, built by `kernel_capacity::planner_request` with the
+`planner` key spliced by `planwire::with_planner` in `tm-core` — as text, by a `format!` — since the W-41 repair
+(`2cd7129`).  Check 12's root is `sections.py`'s scan of `tm/src` alone (`RUST_SRC`), and a region it reads must carry
+`docs` or be a fragment of known keys, so the send is invisible, the cut stays, and `CLASS unsent planner` — whose
+reason still says "`grep -rn '"planner"' tm/src` is empty" and whose EXIT is "when the binary sends `planner`,
+`sections.py` reports the key SENT, this line FAILS as STALE" — passes (and that grep is not empty either:
+`kernel_bridge::refusal` reads the section's refusals by that key since the same repair). Check 13's sent half reads
+the same section from `tm-core`'s codec, so two readers of "what the binary sends" disagree (§5.3, in the gates).
+**Probe, in the resumed session's clone** (`sections.cuts` made to count `planner` sent, nothing else changed, the
+file restored after, the clone's status the same): `STALE: reach-exempt.txt:102 CLASS unsent planner answers for a
+section that is SENT`, seven `CENSUS` reasons wrong (`Line.lean`, `Lookahead.lean`, `Plan.lean`, `PlanWire.lean`,
+`Planner.lean`, `Priority.lean`, `State.lean`), reachable 1,245 → **1,561**, answered by the unsent class 370 → 54,
+exempt 1,199 unchanged, no definition NOT EXEMPT — every one the class answered is reached through the arm, this
+step's eight among them.  2. *Why not changed.*  `sections.py` and `reach-exempt.txt` are no track's file this run,
+and teaching the scan to follow a request built as text in another crate is gap 2284's data-flow instrument. 3.
+*Cost.*  Check 12 has gated the planner section against a root that is false since `2cd7129`; a definition the arm
+reaches is "answered by property" where it is in fact reached, and the reverse direction is safe (nothing is called
+dead that is live).  4. *Clears it.*  The land step or the next owner of `sections.py`: count a section sent when the
+binary's request builder sends it wherever it is written (the W-40 `sentkeys.host_sections` walk already follows
+`tm-core`), delete the class line and correct the seven census reasons — all shrinkage, which the ratchet allows.
+Before R3, whose body swap would otherwise be the change that trips it.
+
+**Gap 4208 — T18 puts a second three-year genesis in the default suite, and it is exposed to load.**  1. *What.*
+T18's T11 row sweeps T11's three-year tree with its first verb (`tm drop ^a1`, genesis of 66,169 log lines and the
+automatic close, ~2.5-3 s at load 30 by `38fb242`'s own runs) under `FIRST_VERB`, as T11's row and T14's test do for
+theirs, so `cli_latency`'s default run holds that cost twice.  Measured here: one of this step's four workspace runs
+stopped at it — `tm drop ^a1 was still running after 5s`, load 29 (a minute later another track's `tui_kernel_answers`
+stood at 2,100% CPU and three `lean` processes of another track's clone beside it); the verb makes no planner call
+(`kernel_call_counts` pins `drop`'s at 0), and the run before it and the two after it passed.  2. *Why not changed.*
+Gap 1333's class, and the instrument must sweep the tree it times; relaxing the setup's limit would drop an assertion,
+and marking the row `#[ignore]` would take D82's one instrument out of the run that guards it. 3. *Cost.*  A loaded
+machine fails `cli_latency` one more way.  4. *Clears it.*  Whoever answers gap 1333 for the file — a shared swept
+three-year tree for T11 and T18, built once.
+
+**Gap 4209 — two sentences this step made stale, in a file it does not hold.**  `tm/tests/kernel_call_counts.rs` says
+a planner call is "about a second" twice — `expected_planner_calls`' doc comment ("the costliest the binary makes
+(about a second on the example tree, gap 4142)") and the planner column's assertion message ("about a second a call")
+— where it is 7.6-14 ms on that tree since this step (§4).  No track holds the file this run, so it is named and not
+edited; check 8 resolves identifiers, not figures, and cannot see it.  *Clears it:* the land step, in the same commit
+as this block.
