@@ -12,7 +12,7 @@ committed on a throwaway branch, gave `reach.py` rc=0 and `EXEMPT 1200` (was
 1199) -- so an auditor, or the next `check.sh` on the committed tree, could not
 see the growth the working-copy run refused.
 
-**THE RULE THIS ADDS.**  Since `BASE` -- `122e153`, the commit W-41's four
+**THE RULE THIS ADDS.**  Since `BASE` -- `17a13c2` (`122e153` before D88), the commit W-41's four
 tracks branched from, before the strict rule took effect -- every commit on HEAD's FIRST-PARENT line that
 changed the file is held against its own first parent by the gate's own key
 reader: a key the commit's file holds and its parent's did not is growth, and
@@ -33,9 +33,13 @@ exactly as its HEAD comparand already did.
 
 import subprocess
 
-#: `122e153`, the commit every W-41 track branched from: the strict rule (D81, gap
-#: 3953) took effect inside W-41, so the walk covers the whole of it.
-BASE = "122e15338440bf9689a01f968205de776a7f670e"
+#: `17a13c2`, the commit every W-41 track branched from: the strict rule (D81, gap
+#: 3953) took effect inside W-41, so the walk covers the whole of it.  It was
+#: `122e153` until the owner's D88 rewrote W-40's and W-41's lands into single
+#: measured commits (2026-10-02): `17a13c2` is that commit with its tree
+#: byte-identical, at the same place on the first-parent line, so the walk is the
+#: one it was -- the base is RE-POINTED, not moved past anything.
+BASE = "17a13c234547a409a352d1ac15d2d62d2110f01c"
 
 
 def _git(path, *args):
