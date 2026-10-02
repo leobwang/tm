@@ -519,9 +519,11 @@ fn p45_rows_with(
 ) -> Result<Option<(String, Vec<Value>)>, String> {
     let st = &b.world.state;
     let Some(brk) = st.break_.as_ref().filter(|x| x.started.is_some()) else { return Ok(None) };
-    let Some(started) = brk.started else { return Ok(None) };
     let tz = b.cfg.tz;
-    let t = tm_core::capacity::local_dt(tz, b.date(), started);
+    // The kernel's reading of the running break's start — the binary's (P73,
+    // `BreakState::started_at`), as the transformation stands for the kernel's departure
+    // (the W-41 repair, README gap 4143).
+    let Some(t) = brk.started_at(tz, b.world.now) else { return Ok(None) };
     let (_, day_end) = b.day_bounds();
     let e = (t + Duration::minutes(i64::from(brk.planned_min))).min(day_end).max(b.world.now);
     let taken = (e - t).num_minutes();

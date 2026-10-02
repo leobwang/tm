@@ -2890,78 +2890,9 @@ fn t5_a_changed_zone_key_is_refused_by_the_host_and_by_the_kernel_behind_it() {
 // in-tree reader (AGENTS §8.3, §7.3; design §14.6 item 4, §17).
 // ---------------------------------------------------------------------------
 
-/// **The oracle's own usage banner**, read from the binary itself.
-///
-/// Provenance is not freshness. W-11's audit followed the brief, verified that
-/// the scratch tree's `.oracle-ref` and extracted sources were fork point
-/// `4748911` — and the *binary* built from them was older than owner decision
-/// **D23**, so it had no `parse-entry` mode: every call printed this banner and
-/// exited 2, and the success assertion below reported `the fork oracle failed: `
-/// with an **empty** message, because that oracle printed its banner on stdout.
-/// So the mode is checked before it is used and named when it is missing, and
-/// both streams are quoted when a call fails.
-///
-/// Neither the exit code (2, no subcommand) nor the stream matters here; only
-/// the text does.
-fn oracle_banner(bin: &std::path::Path) -> String {
-    let out = std::process::Command::new(bin)
-        .stdin(std::process::Stdio::null())
-        .output()
-        .unwrap_or_else(|e| panic!("the fork oracle {}: {e}", bin.display()));
-    format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr))
-}
-
-/// Refuse a stale oracle **by name**, before it is fed anything.
-fn assert_oracle_mode(bin: &std::path::Path, mode: &str) {
-    let banner = oracle_banner(bin);
-    assert!(
-        banner.contains(&format!("tm-oracle {mode}")),
-        "the oracle at {} has no `{mode}` mode — it is STALE, whatever its `.oracle-ref` says. \
-         Rebuild it: kernel/tm-kernel-ffi/examples/oracle/build-oracle.sh. Its banner reads:\n{banner}",
-        bin.display()
-    );
-}
-
-/// Run one mode of the fork-point oracle over `texts`, one JSON string per line
-/// in, one JSON object per line out.
-fn fork_oracle(bin: &std::path::Path, args: &[&str], texts: &[String]) -> Vec<Value> {
-    use std::io::Write as _;
-    assert_oracle_mode(bin, args.first().expect("the oracle is run in a mode"));
-    let mut child = std::process::Command::new(bin)
-        .args(args)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .spawn()
-        .unwrap_or_else(|e| panic!("the fork oracle {}: {e}", bin.display()));
-    let mut input = String::new();
-    for t in texts {
-        input.push_str(&serde_json::to_string(t).expect("a JSON string"));
-        input.push('\n');
-    }
-    // The input is larger than a pipe buffer and so is the oracle's answer, so
-    // the write has to happen while this side is free to drain stdout — writing
-    // it all first deadlocks: the child blocks writing its reply, we block
-    // writing the request.
-    let mut stdin = child.stdin.take().expect("stdin");
-    let feeder = std::thread::spawn(move || stdin.write_all(input.as_bytes()).expect("write to the oracle"));
-    let out = child.wait_with_output().expect("the oracle runs");
-    feeder.join().expect("the feeding thread");
-    assert!(
-        out.status.success(),
-        "the fork oracle {} {:?} failed (exit {:?})\n--- stderr ---\n{}\n--- stdout ---\n{}",
-        bin.display(),
-        args,
-        out.status.code(),
-        String::from_utf8_lossy(&out.stderr),
-        String::from_utf8_lossy(&out.stdout)
-    );
-    String::from_utf8(out.stdout)
-        .expect("the oracle's output is UTF-8")
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .map(|l| serde_json::from_str(l).expect("the oracle prints JSON"))
-        .collect()
-}
+// The oracle's three helpers live in `support/fork.rs` since the W-41 repair
+// (README gap 4149), so `cli_end_at.rs` asks the fork with the same code.
+use fork::fork_oracle;
 
 /// **Stage 5's plan acceptance** (AGENTS §8.3): the kernel's replay and the fit
 /// that reads it, against **fork point `4748911`** over the fixture corpus.

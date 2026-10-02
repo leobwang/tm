@@ -395,9 +395,8 @@ fn swap_planner(r: &Read) -> Value {
 /// The binary's request text with its `planner` section, spliced as text so the
 /// log section keeps its build order (`kernel_capacity::request`'s own rule).
 fn with_planner(request: &str, planner: &Value) -> String {
-    let body = request.trim_end();
-    assert!(body.ends_with('}'), "a request is an object");
-    format!("{},\"planner\":{}}}", &body[..body.len() - 1], planner)
+    assert!(request.trim_end().ends_with('}'), "a request is an object");
+    planwire::with_planner(request, planner)
 }
 
 /// **Gap 3720.** On every world the binary's planner request and the harness's

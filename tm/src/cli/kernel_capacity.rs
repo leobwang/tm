@@ -320,6 +320,34 @@ pub fn rank(ctx: &Ctx, cands: &[Candidate], yesterday: &BTreeMap<Id, u8>, allow_
     ask(ctx, allow_home, want, Some(&Ranked { cands, yesterday }))
 }
 
+/// **R3's planner request, built by the binary today** (the W-41 repair, README
+/// gaps 4130 and 4142): the ranked capacity request `tm plan` sends ([`rank`]'s
+/// own [`request`], over [`Ctx::priorities`]' candidates and hysteresis input)
+/// with the `planner` section the body swap adds — `planwire::planner_json`
+/// over `.tm/state.json`, the replay and the plan date's routine instances,
+/// and the running block's worked minutes as the binary reads them
+/// (`day::worked_min`, gap 3043) — spliced by `planwire::with_planner`.
+///
+/// Its one caller today is `tm check`, which asks the kernel for this day and
+/// names every refusal of it (P78): a planner refusal stops `tm plan`, `tm now`
+/// and the TUI once R3 swaps the body, and D80 made two of them refusals BY
+/// NAME so they would be findable (D32's shape). R3's swap sends exactly this
+/// request from `planning::build_ranked`.
+pub fn planner_request(ctx: &Ctx, allow_home: bool) -> Result<String, CliError> {
+    let cands = priority::collect_candidates(&ctx.tree, &ctx.replay, &ctx.cfg, &ctx.model, ctx.today, ctx.now_tz);
+    let yesterday = ctx.hysteresis_input();
+    let (days, _) = planwire::horizon(ctx.today, priority::lookahead_days(&cands, ctx.today));
+    let (request, _) = request(ctx, allow_home, days, Some(&Ranked { cands: &cands, yesterday: &yesterday }))?;
+    let tz = ctx.cfg.tz;
+    let date = planwire::plan_date(&ctx.state, ctx.now_tz);
+    let routines = planwire::routine_instances(&cands, &ctx.tree, ctx.now_tz, date, tz);
+    let mut planner = planwire::planner_json(&ctx.state, &ctx.replay, ctx.now_tz, tz, &routines, None);
+    if let Some(worked) = super::day::worked_min(ctx) {
+        planwire::add_worked_min(&mut planner, worked);
+    }
+    Ok(planwire::with_planner(&request, &planner))
+}
+
 /// **`tm plan --week`'s seven days** from the kernel.
 pub fn week(ctx: &Ctx, allow_home: bool) -> Result<Vec<UnitCapacity>, CliError> {
     Ok(ask(ctx, allow_home, 7, None)?.days)

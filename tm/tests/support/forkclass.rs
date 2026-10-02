@@ -1391,10 +1391,12 @@ pub const OVERRUN_PAST: i64 = 30;
 /// class is the parent's: the class reads the run state, which carrying `now` does not move.
 pub fn overrun_worlds(parent: &ClassWorld) -> Vec<ClassWorld> {
     let b = Built::of(parent.clone());
-    let Some((started, planned)) = parent.state.break_.as_ref().and_then(|x| x.started.map(|s| (s, x.planned_min))) else {
+    // The break's start as the binary reads it (P73, `BreakState::started_at`) — the W-41
+    // repair (README gap 4143): a parent whose break began before midnight carries its
+    // overrun from the evening's start, not tonight's.
+    let Some((t, planned)) = parent.state.break_.as_ref().and_then(|x| x.started_at(b.cfg.tz, parent.now).map(|s| (s, x.planned_min))) else {
         return Vec::new();
     };
-    let t = local_dt(b.cfg.tz, b.date(), started);
     let now = t + Duration::minutes(i64::from(planned.max(b.cfg.day.break_min)) + OVERRUN_PAST);
     let (_, day_end) = b.day_bounds();
     if now <= parent.now || now >= day_end {
@@ -2075,7 +2077,10 @@ pub fn compare_line(line: &Value, t: &mut ClassTally) -> Vec<String> {
     let st = &b.world.state;
     if let Some(brk) = st.break_.as_ref().filter(|x| x.started.is_some()) {
         // P45: the rule, and what the fork's day still says by value.
-        let started = local_dt(tz, b.date(), brk.started.expect("filtered"));
+        // The binary's reading of the break's start (P73, `BreakState::started_at`), not the
+        // world's date — the W-41 repair (README gap 4143): a break across midnight is the
+        // evening's, and this rule is checked against the KERNEL's day.
+        let started = brk.started_at(tz, now).expect("filtered");
         match p45_rule(&k.day, started, brk.planned_min, brk.place.as_deref(), now, b.day_bounds()) {
             Err(e) => findings.push(format!("{key}: P45: {e}")),
             Ok((lo, hi, open)) => {

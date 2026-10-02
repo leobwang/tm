@@ -227,7 +227,7 @@ fn instance_key(ctx: &Ctx, item: &tm_core::model::Item, at: DateTime<chrono_tz::
 
 /// The features of the current instant (§8.5).
 fn features(ctx: &Ctx, at: DateTime<chrono_tz::Tz>) -> Features {
-    Features::at(at, ctx.wake_dt(), ctx.loc())
+    Features::at(at, ctx.woke_before_now(), ctx.loc())
         .with_slept(ctx.slept_min())
         .with_progress(ctx.replay.blocks_done(ctx.today), since_break_min(ctx))
 }
@@ -872,11 +872,15 @@ pub fn wake(g: &Globals, args: &super::WakeArgs) -> Result<i32, CliError> {
     if let Some(open) = super::ctx::open_interruption(&ctx.replay) {
         return Err(CliError::msg(wake_over_an_open_interruption(&ctx, open)));
     }
-    if let Some(began) = ctx.running_break() {
+    // The RECORD is what a wake would clear, so the record is what is asked
+    // (the W-41 repair, README gap 4141): a cached break whose `started` is
+    // null — a hand edit; `tm break` always sets it — has no instant
+    // (`Ctx::running_break` is `None`) and was cleared here with no line.
+    if ctx.state.break_.is_some() {
+        let since = ctx.running_break().map(|b| format!(" since {}", when(&ctx, b))).unwrap_or_default();
         return Err(CliError::msg(format!(
-            "a break is still running since {} — end it (`tm break`) before `tm wake`; the wake \
-             was not recorded",
-            when(&ctx, began)
+            "a break is still running{since} — end it (`tm break`) before `tm wake`; the wake \
+             was not recorded"
         )));
     }
     super::kernel_bridge::gate(&ctx, "wake")?;

@@ -94,7 +94,8 @@ fn the_p45_rule_counts_the_running_break_by_its_span_and_bites_a_second_one() {
         let b = forkclass::Built::of(w);
         let k = forkclass::kernel_answer(&b).expect("the kernel plans a break day");
         let now = b.world.now;
-        let started = tm_core::capacity::local_dt(b.cfg.tz, b.date(), brk.started.expect("filtered"));
+        // P73's reading, the binary's (the W-41 repair, README gap 4143).
+        let started = brk.started_at(b.cfg.tz, now).expect("filtered");
         let rule = |day: &tm_core::dayplan::DayPlan| {
             forkclass::p45_rule(day, started, brk.planned_min, brk.place.as_deref(), now, b.day_bounds())
         };

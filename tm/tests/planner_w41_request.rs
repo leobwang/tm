@@ -17,7 +17,7 @@
 //!   reads that state as `tm plan`'s roll leaves it (`Look.Today.forToday`: none
 //!   of its window, budget or arrival), where the fork planned the state's date —
 //!   and the request the TUI builds is not yet `tm plan`'s (README gap 4050):
-//!   [`p77_a_tui_left_open_past_midnight_plans_the_day_tm_plan_would_plan`].
+//!   [`p77_a_tui_past_midnight_is_read_as_the_roll_and_does_not_yet_send_tm_plans_request`].
 //! * **Gap 3941** (README gap 4042) — the harness's worked minutes are the
 //!   binary's (`day::worked_min`, D75):
 //!   [`gap_3941_the_harness_reads_the_logs_worked_minutes_across_midnight`].
@@ -331,6 +331,10 @@ fn routines_of(req: &Value) -> Vec<String> {
 /// leaves it** (P77, the campaign's D81 call on README gap 3860) **— and the request it would
 /// send is not yet `tm plan`'s** (README gap 4050).
 ///
+/// Its name said "plans the day `tm plan` would plan" until the W-41 repair (README gap 4144),
+/// while its last assertion is that the two days DIFFER — AGENTS §7.4 item 3. D81 decided the
+/// outcome (gap 3860); building it is gap 4050's, an owner choice, so this pins today's half.
+///
 /// The world is the TUI's own (`tui_common`: §4.3's day, `^t3` running since 09:32,
 /// `.tm/state.json` dated Monday with its window, budget and arrival), opened at 23:50 Monday
 /// and left open to 00:30 Tuesday: `App::tick` moves `now` and `today`, replans, and rolls
@@ -349,7 +353,7 @@ fn routines_of(req: &Value) -> Vec<String> {
 ///   mandatory, at 06:00) — and the two days differ. Pinned so the step that closes gap
 ///   4050 sees this flip.
 #[test]
-fn p77_a_tui_left_open_past_midnight_plans_the_day_tm_plan_would_plan() {
+fn p77_a_tui_past_midnight_is_read_as_the_roll_and_does_not_yet_send_tm_plans_request() {
     let cfg = tui_common::config();
     let tuesday = tui_common::date().succ_opt().expect("tomorrow");
     let now = local_dt(cfg.tz, tuesday, NaiveTime::from_hms_opt(0, 30, 0).expect("time"));

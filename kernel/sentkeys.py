@@ -61,7 +61,8 @@ WHAT IT CANNOT SEE, declared:
     under any other parameter name (`req: &mut Value` writing
     `req["planner"]`) is not found, and a found writer's chain link it cannot
     read is a complaint.  Whether the BINARY calls a writer is not asked:
-    `add_worked_min` has no caller in `tm/src` (README gap 3043).
+    `add_worked_min` had no caller in `tm/src` until the W-41 repair (README
+    gaps 3043 and 4142).
   * on the kernel side, a value that reaches a reader through a structure
     field (`parts.sec`) rather than a bound name: its reads are not
     attributed, and a host key under it reports UNREAD -- loud.  A binding the

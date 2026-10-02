@@ -1199,6 +1199,53 @@ fn kernel_problems(ctx: &Ctx) -> Result<Vec<validate::CheckProblem>, CliError> {
         .unwrap_or_default())
 }
 
+/// **The day `tm plan` asks the kernel for, asked by `tm check`** (the W-41
+/// repair, README gaps 4130 and 4142; parity P78).
+///
+/// [`kernel_problems`] asks the kernel to LOAD the tree; this asks it to PLAN
+/// the day — the request R3's `tm plan` sends
+/// (`kernel_capacity::planner_request`) — and names every refusal of it as a
+/// [`validate::PLANNER_REFUSAL`] error, at the item's line when the refusal
+/// names an item (`ciDisagrees`). Before it, the owner's D80 refusals were loud
+/// and not findable: a hand-edited tab after a line's `ci` digit made the
+/// kernel refuse the day while `tm check` printed "no problems".
+///
+/// Asked only of a tree the kernel loads (a load refusal is already named, and
+/// the day's request carries the same documents). A request the host cannot
+/// BUILD — a log no rebuild can window, a configured decimal the codec refuses
+/// — is not asked: those are the log's warnings (D18, which keeps `tm check`'s
+/// exit code on a damaged log) and P26's message on every planning verb, and
+/// this check does not add a second reading of either (README gap 4142 names
+/// what that leaves unseen) — and that includes a log the kernel refuses to
+/// window (`reachTooFar`, D18: `tm check` is the one verb that survives it). A
+/// kernel FAULT of the day's call is propagated, as [`kernel_problems`]
+/// propagates one.
+fn planner_problems(ctx: &Ctx) -> Result<Vec<validate::CheckProblem>, CliError> {
+    let request = match super::kernel_capacity::planner_request(ctx, false) {
+        Ok(r) => r,
+        Err(_) => return Ok(Vec::new()),
+    };
+    match super::kernel_bridge::call_text(&request) {
+        Ok(_) => Ok(Vec::new()),
+        Err(CliError::Kernel(issue)) if issue.name != "kernelFault" => {
+            let item = issue
+                .detail
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .map(Id::new)
+                .and_then(|id| ctx.tree.get(&id).map(|i| (id, i.src.file.clone(), i.src.line)));
+            let message = format!("{} — the day `tm plan` asks the kernel for is refused", issue.message);
+            Ok(vec![match item {
+                Some((id, file, line)) => {
+                    validate::CheckProblem::error(validate::PLANNER_REFUSAL, &file, line, Some(id), message)
+                }
+                None => validate::CheckProblem::error(validate::PLANNER_REFUSAL, "", 0, None, message),
+            }])
+        }
+        Err(e) => Err(e),
+    }
+}
+
 /// One kernel load refusal, as `tm check` problems.
 ///
 /// A **key collision** carries both colliding lines since D32 (gap 475), and
@@ -1339,7 +1386,22 @@ pub fn check(g: &Globals, args: &super::CheckArgs) -> Result<i32, CliError> {
     // D32, gap 476: and what the kernel says about the same tree — after
     // `--fix-ids` has written, so the kernel is asked about the tree that is
     // now on disk and not the one that was.
-    problems.extend(kernel_problems(&ctx)?);
+    let loaded = kernel_problems(&ctx)?;
+    // The W-41 repair (README gap 4142): and the DAY, on a tree the kernel loads.
+    // `--fix-ids` wrote ids `ctx` did not see (it is deliberately not reloaded,
+    // above), and the day's request reads the documents off the disk and the
+    // candidates off `ctx.tree`: so the day is asked of a tree loaded again.
+    if loaded.is_empty() && blocked.is_none() {
+        let reloaded;
+        let day_ctx = if fixed.is_empty() {
+            &ctx
+        } else {
+            reloaded = Ctx::load_tolerant(g)?;
+            &reloaded
+        };
+        problems.extend(planner_problems(day_ctx)?);
+    }
+    problems.extend(loaded);
     // **And the refusal that blocked `--fix-ids`, when it is not already
     // there** (gap 675). The kernel stops at its first refusal, so the tree on
     // disk can be refused for the very fault `--fix-ids` would have repaired

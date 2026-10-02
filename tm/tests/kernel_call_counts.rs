@@ -108,7 +108,10 @@ fn expected_log_calls(verb: &str) -> u32 {
         "undo" => 2,
         "review day" => 2,
         "log" => 2,
-        "check" => 2,
+        // 3 since the W-41 repair (README gap 4142): the day's request `tm check`
+        // now asks (`lifecycle::planner_problems`) carries the capacity section's
+        // `log` replay, as every capacity call does (gap 275).
+        "check" => 3,
         other => panic!("`tm {other}` is not in the measured table"),
     }
 }
@@ -176,8 +179,9 @@ fn expected_apply_calls(verb: &str) -> u32 {
 /// 275's denominator: one extra whole-log replay per capacity call.
 fn expected_capacity_calls(verb: &str) -> u32 {
     match verb {
-        "arrive" | "energy" | "review day" => 1,
-        "wake" | "start" | "pause" | "done" | "break" | "drop" | "undo" | "log" | "check" => 0,
+        // `check` since the W-41 repair: the day R3's `tm plan` asks for (gap 4142).
+        "arrive" | "energy" | "review day" | "check" => 1,
+        "wake" | "start" | "pause" | "done" | "break" | "drop" | "undo" | "log" => 0,
         other => panic!("`tm {other}` is not in the measured table"),
     }
 }
@@ -232,6 +236,21 @@ fn expected_walls_calls(verb: &str) -> u32 {
     }
 }
 
+/// **The per-verb `planner`-section count** — the day R3's `tm plan` asks the
+/// kernel for, pinned from its first sender (the W-41 repair, README gap 4142):
+/// `tm check` asks it so that a refusal of the day is named before R3 ships it
+/// (P78). No other verb sends it until the swap; a planner call is the costliest
+/// the binary makes (about a second on the example tree, gap 4142), so a verb
+/// that starts sending one fails here by name.
+fn expected_planner_calls(verb: &str) -> u32 {
+    match verb {
+        "check" => 1,
+        "wake" | "arrive" | "start" | "pause" | "done" | "energy" | "break" | "drop" | "undo"
+        | "review day" | "log" => 0,
+        other => panic!("`tm {other}` is not in the measured table"),
+    }
+}
+
 /// `tm/src/cli/ctx.rs`'s `TRACE_SCOPE_ENV`, spelled out rather than imported:
 /// `tm` is a **binary-only** package (its `Cargo.toml` declares `[[bin]]` and
 /// no `[lib]`), so an integration test cannot name anything inside it. The FFI
@@ -260,6 +279,8 @@ struct Counts {
     /// `walls` sections — the `emit` section's object form, D61's question
     /// (W-37 track T): a whole-tree load and a log replay in one call.
     walls: u32,
+    /// `planner` sections — the day R3's `tm plan` asks for (W-41 repair).
+    planner: u32,
     /// Any other request shape reaching the FFI.
     other: u32,
     /// **Calls**, not sections: one per `kernel call:` line.
@@ -278,7 +299,7 @@ struct Counts {
 impl Counts {
     /// Sections of every kind — deliberately **not** the call count any more.
     fn sections(&self) -> u32 {
-        self.log + self.apply + self.capacity + self.emit + self.walls + self.other
+        self.log + self.apply + self.capacity + self.emit + self.walls + self.planner + self.other
     }
 }
 
@@ -313,6 +334,7 @@ fn traced(tm: &Tm, now: &str, args: &[&str]) -> (i32, Counts) {
                     "capacity" => c.capacity += 1,
                     "emit" => c.emit += 1,
                     "walls" => c.walls += 1,
+                    "planner" => c.planner += 1,
                     _ => c.other += 1,
                 }
             }
@@ -355,13 +377,13 @@ fn every_verb_reads_the_log_through_the_kernel_after_the_switch() {
     // FFI crossings; every other column is **sections** (W-14, gap 278).
     eprintln!("per-verb kernel sections (switched binary)");
     eprintln!(
-        "{:<12} {:>4} {:>5} {:>6} {:>6} {:>9} {:>6} {:>6} {:>8}  scopes",
-        "verb", "log", "emit", "walls", "apply", "capacity", "other", "calls", "replays"
+        "{:<12} {:>4} {:>5} {:>6} {:>6} {:>9} {:>8} {:>6} {:>6} {:>8}  scopes",
+        "verb", "log", "emit", "walls", "apply", "capacity", "planner", "other", "calls", "replays"
     );
     for (name, c) in &table {
         eprintln!(
-            "{:<12} {:>4} {:>5} {:>6} {:>6} {:>9} {:>6} {:>6} {:>8}  {}",
-            name, c.log, c.emit, c.walls, c.apply, c.capacity, c.other, c.calls, c.replays,
+            "{:<12} {:>4} {:>5} {:>6} {:>6} {:>9} {:>8} {:>6} {:>6} {:>8}  {}",
+            name, c.log, c.emit, c.walls, c.apply, c.capacity, c.planner, c.other, c.calls, c.replays,
             c.scopes.join(",")
         );
     }
@@ -426,6 +448,17 @@ fn every_verb_reads_the_log_through_the_kernel_after_the_switch() {
              one is paying a second tree load, and a verb that lost one is writing without asking \
              whether the tree still loads (D35, gap 584)",
             c.apply
+        );
+    }
+
+    // **The planner column, pinned exactly** — the W-41 repair (README gap 4142).
+    for (name, c) in &table {
+        let want = expected_planner_calls(name);
+        assert_eq!(
+            c.planner, want,
+            "`tm {name}` sent {} kernel `planner` section(s), expected {want} — the day R3's \
+             `tm plan` asks for, about a second a call (gap 4142)",
+            c.planner
         );
     }
 

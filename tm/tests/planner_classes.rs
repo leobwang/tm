@@ -616,7 +616,8 @@ fn the_p45_rule_accepts_the_kernel_and_bites_a_perturbation() {
         let b = Built::of(w);
         let k = forkclass::kernel_answer(&b).expect("the kernel plans a break day");
         let now = b.world.now;
-        let started = tm_core::capacity::local_dt(b.cfg.tz, b.date(), brk.started.expect("filtered"));
+        // P73's reading, the binary's (the W-41 repair, README gap 4143).
+        let started = brk.started_at(b.cfg.tz, now).expect("filtered");
         let rule = |day: &tm_core::dayplan::DayPlan| {
             forkclass::p45_rule(day, started, brk.planned_min, brk.place.as_deref(), now, b.day_bounds())
         };
@@ -1257,7 +1258,7 @@ fn the_frozen_overrun_worlds_are_every_one_the_break_derives() {
             assert_eq!(class_of(&b).key(), line["class"].as_str().unwrap_or_default(), "carrying `now` moved a world's class");
             assert_eq!((&d.state, &d.log, &d.docs), (&w.state, &w.log, &w.docs), "an overrun world changed more than `now`");
             let brk = d.state.break_.as_ref().expect("a running break");
-            let t = tm_core::capacity::local_dt(tz, b.date(), brk.started.expect("started"));
+            let t = brk.started_at(tz, d.now).expect("started");
             assert!(d.now - t >= Duration::minutes(i64::from(b.cfg.day.break_min)), "the break has not run `break_min`");
             want.insert((line["class"].as_str().unwrap_or_default().to_string(), d.to_json().to_string()));
         }
@@ -1725,8 +1726,7 @@ fn p67s_answer_is_its_own_and_departs_only_where_its_rule_does() {
             continue;
         }
         let b = Built::of(ClassWorld::of_json(&l["world"], tz).expect("a stored world"));
-        let brk = b.world.state.break_.as_ref().and_then(|x| x.started).expect("a P45 line has a running break");
-        let t = tm_core::capacity::local_dt(tz, b.date(), brk);
+        let t = b.world.state.break_.as_ref().and_then(|x| x.started_at(tz, b.world.now)).expect("a P45 line has a running break");
         let from = |v: &Value| DateTime::parse_from_rfc3339(v["from"].as_str().unwrap_or_default()).expect("from").with_timezone(&tz);
         let taken = (from(&l["p45"]) - t).num_minutes();
         let short = taken < i64::from(b.cfg.day.break_min);

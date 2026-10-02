@@ -369,5 +369,41 @@ theorem the_extension_disagrees_past_the_width (r : PlanReq) (i : Id) (m : Nat) 
   simp only [decide_eq_false_iff_not]
   omega
 
+
+/-! ### The what-if's request pays D80 when the request does (W-41 repair, README gap 4147)
+
+`PlanWire.planReqOf` refuses by name the two requests D80 names (`eveningPastTheCalendar`, `ciDisagrees`), and the
+wind-down law is proved over the requests it accepts.  §9.1's what-if is planned off a request NO decoder reads —
+`(r.extending i m).growing i g` — so "the requests the decoder accepts" covered the day and not its what-if until these
+two: the extension and the growth each keep both clauses, so a what-if of an accepted request is a request the
+decoder's two clauses accept, and every law stated over them reaches the what-if's day. -/
+
+/-- **The evening is read off the lookahead and the run**, which neither the extension nor the growth touches. -/
+theorem PlanReq.the_whatif_keeps_the_evening (r : PlanReq) (i : Id) (m : Nat) (g : Option WfGrown) :
+    ((r.extending i m).growing i g).eveningInsideTheCalendar = r.eveningInsideTheCalendar := by
+  cases g <;> rfl
+
+/-- **Growing keeps every candidate's id and `ci`**, so D80 (b)'s clause holds after it when it held before. -/
+theorem PlanReq.growing_keeps_the_ci_agreement (r : PlanReq) (i : Id) (g : Option WfGrown)
+    (h : r.ciDisagreement = none) : (r.growing i g).ciDisagreement = none := by
+  cases g with
+  | none => exact h
+  | some g =>
+    rw [PlanReq.ciDisagreement_eq_none_iff] at h ⊢
+    intro p hp
+    obtain ⟨q, hq, rfl⟩ := List.mem_map.1 hp
+    have hv := h q hq
+    split
+    · exact hv
+    · exact hv
+
+/-- **The what-if's request pays D80's two clauses when the request does.** -/
+theorem PlanReq.the_whatif_request_pays_d80 (r : PlanReq) (i : Id) (m : Nat) (g : Option WfGrown)
+    (hev : r.eveningInsideTheCalendar = true) (hci : r.ciDisagreement = none) :
+    ((r.extending i m).growing i g).eveningInsideTheCalendar = true ∧
+      ((r.extending i m).growing i g).ciDisagreement = none :=
+  ⟨(r.the_whatif_keeps_the_evening i m g).trans hev,
+    (r.extending i m).growing_keeps_the_ci_agreement i g hci⟩
+
 end Planner
 end Tm

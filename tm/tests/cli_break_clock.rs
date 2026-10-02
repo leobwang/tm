@@ -132,7 +132,10 @@ fn every_reader_of_a_running_breaks_start_reads_one_function() {
     ];
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let mut found = Vec::new();
-    let mut stack = vec![root.join("tm/src"), root.join("tm-core/src")];
+    // And the HARNESS (the W-41 repair, README gap 4143): a reader that computes what the
+    // KERNEL should answer (P45's rule, P67's transformation) reads the binary's start, so a
+    // generated world that carries a break across midnight is asked the binary's question.
+    let mut stack = vec![root.join("tm/src"), root.join("tm-core/src"), root.join("tm/tests")];
     while let Some(dir) = stack.pop() {
         for e in std::fs::read_dir(&dir).expect("a source directory").flatten() {
             let p = e.path();

@@ -140,6 +140,7 @@ import sys
 import callgraph
 import leanfiles
 import mutate
+import ratchet
 import sections as reqsec
 
 EXEMPT_FILE = pathlib.Path(__file__).resolve().parent / "reach-exempt.txt"
@@ -399,7 +400,7 @@ def read_exemptions(path, text=None):
     return entries, sections, complaints, classes
 
 
-def committed_exemptions(path):
+def committed_exemptions(path, rev="HEAD"):
     """The exemption file's text as `git` has it at HEAD, or `None`.
 
     **THE RATCHET WAS A COMMENT** (W-31 repair, README gap 2259).  D51 asked for
@@ -420,14 +421,15 @@ def committed_exemptions(path):
     rather than a digit in it -- and D51 says this file only SHRINKS.
 
     WHAT IT STILL CANNOT SEE, declared: whether a REWRITTEN reason is TRUE (it
-    costs an ISO date, gap 2411).  No gate can read a sentence.  And it reads the
-    file at HEAD, so a commit that grows the file and changes nothing else passes
-    the NEXT run's comparand -- the gate holds the working copy, and the owner's
-    grant is the commit, which is the review's to read."""
+    costs an ISO date, gap 2411).  No gate can read a sentence.  It reads the
+    file at HEAD, so a commit that grew the file passed the NEXT run's comparand
+    -- until the W-41 repair (README gap 4132), which holds every commit since
+    `ratchet.BASE` against its first parent as well (`ratchet.grown`).  `rev`
+    reads another commit's copy (the history walk's structure lookups)."""
     import subprocess
     try:
         out = subprocess.run(["git", "-C", str(path.parent), "show",
-                              "HEAD:./" + path.name],
+                              rev + ":./" + path.name],
                              capture_output=True, text=True, timeout=60)
     except (OSError, subprocess.SubprocessError):
         return None
@@ -653,6 +655,22 @@ def main(argv):
                            "grandfathered entry auditable, so changing one costs "
                            "a date (gap 2411)"
                            % (EXEMPT_FILE.name, lineno, module, key[1]))
+
+    # AND AGAINST THE FILE'S COMMITTED HISTORY (the W-41 repair, README gap 4132):
+    # the comparand above is HEAD, so growth that reached a COMMIT was invisible
+    # to every later run -- driven by W-41's verifier, a committed entry gave
+    # rc=0 and `EXEMPT 1200`.  Every commit since `ratchet.BASE` is held against
+    # its first parent by this file's own reader.
+    def keys(text):
+        ents, _secs, _c, cls = read_exemptions(EXEMPT_FILE, text)
+        return {"%s %s" % k for k in ents} | {"CLASS %s" % k for k in cls}
+    hist = ratchet.grown(EXEMPT_FILE, keys)
+    if hist is None:
+        bad.append("RATCHET UNCHECKED: git cannot read %s's committed history since %s, so "
+                   "growth that reached a commit is invisible (README gap 4132)"
+                   % (EXEMPT_FILE.name, ratchet.BASE[:9]))
+    else:
+        bad.extend(hist)
 
     if audit:
         for line in wire:

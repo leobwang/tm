@@ -220,9 +220,22 @@ pub const LOG_CODES: &[&str] = &[LOG_LINE, LOG_FUTURE, LOG_STALL];
 /// it always was.
 pub const KERNEL_LOAD: &str = "kernel-load";
 
-/// The codes the **CLI** adds from the kernel's own load (D32). One, and an
-/// error — see [`KERNEL_LOAD`].
-pub const KERNEL_CODES: &[&str] = &[KERNEL_LOAD];
+/// **The kernel refused to plan the day** — the request R3's `tm plan` sends
+/// (the W-41 repair, README gaps 4130 and 4142; parity P78).
+///
+/// A planner refusal stops `tm plan`, `tm now` and the TUI once R3 swaps the
+/// planner's body, and the owner's D80 made two of them refusals BY NAME —
+/// `ciDisagrees` and `eveningPastTheCalendar` — so that a disagreement would be
+/// LOUD and findable (D32's shape). It was loud and not findable: `tm check`
+/// asked the kernel to LOAD the tree and never asked it for the DAY, so a tree
+/// whose day the kernel refuses printed "no problems". An `Error`, as
+/// [`KERNEL_LOAD`] is and for its reason, and at the item's line when the
+/// refusal names an item.
+pub const PLANNER_REFUSAL: &str = "planner-refusal";
+
+/// The codes the **CLI** adds from the kernel (D32, and the W-41 repair's
+/// [`PLANNER_REFUSAL`]). Both errors — see [`KERNEL_LOAD`].
+pub const KERNEL_CODES: &[&str] = &[KERNEL_LOAD, PLANNER_REFUSAL];
 
 // ---------------------------------------------------------------------------
 // Problems

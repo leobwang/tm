@@ -86,7 +86,7 @@ pub const TRACE_CALLS_ENV: &str = "TM_TRACE_KERNEL_CALLS";
 /// `+` on the one line it writes per call: a capacity verb traces
 /// `kernel call: capacity+log`.
 ///
-/// The order is fixed (capacity, log, emit, walls, apply) so the line is a
+/// The order is fixed (capacity, log, emit, walls, apply, planner) so the line is a
 /// stable key, and a request matching nothing is `other` — never the empty
 /// list, which would trace a blank name.
 ///
@@ -111,6 +111,12 @@ fn trace_kinds(request: &str) -> Vec<&'static str> {
     }
     if request.contains(r#""cmds":"#) {
         kinds.push("apply");
+    }
+    // The `planner` section — the day R3's `tm plan` asks for (W-41 repair,
+    // README gap 4142): `tm check` sends it today, and it is the costliest call
+    // the binary makes, so a verb that starts sending it shows up by name.
+    if request.contains(r#""planner":{"#) {
+        kinds.push("planner");
     }
     if kinds.is_empty() {
         kinds.push("other");

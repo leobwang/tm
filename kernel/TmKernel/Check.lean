@@ -8047,3 +8047,13 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.an_extension_past_the_day_agrees
 #print axioms Tm.PlannerWit.aBlockPastTheWidth_is_past_the_width
 #print axioms Tm.PlannerWit.the_start_after_now_log_holds_the_open_block
+
+/- ===================================================================
+   APPENDED 2026-10-01: stage 6 (the planner), run W-41, REPAIR STEP —
+   E1's lead on the running row alone (README gap 4136), and the
+   what-if's request paying D80's two clauses (gap 4147).
+   =================================================================== -/
+#print axioms Tm.Planner.plan_reserves_one_block_at_a_time_off_the_running_row
+#print axioms Tm.Planner.PlanReq.the_whatif_keeps_the_evening
+#print axioms Tm.Planner.PlanReq.growing_keeps_the_ci_agreement
+#print axioms Tm.Planner.PlanReq.the_whatif_request_pays_d80

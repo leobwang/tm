@@ -1585,6 +1585,34 @@ fn refusal(err: &Value) -> KernelIssue {
         ("itemCheck".into(), format!(
             "kernel refusal: itemCheck — the tree fails the kernel's item invariant ({f}){hint}; the kernel refuses a tree it cannot load whole{CHECK_HINT}"
         ))
+    } else if let Some(text) = err.get("planner").and_then(Value::as_str) {
+        // The `planner` section's refusal (`PlanWire.PlannerRefusal`, `<name> <key…>`).
+        // No shipped verb sends the section until R3's swap; `tm check` asks it
+        // since the W-41 repair (`kernel_capacity::planner_request`, README gap 4142),
+        // and a `ciDisagrees` names the item, so the problem can name its line.
+        let (name, rest) = match text.split_once(' ') {
+            Some((n, k)) => (n, Some(k)),
+            None => (text, None),
+        };
+        if let Some(k) = rest {
+            put("key", k.to_string());
+        }
+        if name == "ciDisagrees" {
+            if let Some(id) = rest.and_then(|k| k.split(' ').next()) {
+                put("id", id.to_string());
+            }
+        }
+        let why = match name {
+            "ciDisagrees" => "a candidate's `ci` as tm reads its line is not the `ci` the kernel reads on \
+                 the same line, so the kernel refuses to plan the day rather than plan it on one \
+                 reader's number (the owner's D80, parity P72) — a tab or another non-space \
+                 character between the line's leading fields is the known cause: the kernel reads \
+                 only a space as a separator (README gaps 32 and 4130)",
+            "eveningPastTheCalendar" => "the day's evening runs past the calendar's last second (the \
+                 owner's D80, parity P71)",
+            _ => "a value of the planner request is refused — see PlanWire.lean's `PlannerRefusal`",
+        };
+        (name.to_string(), format!("kernel refusal: {text} — {why}"))
     } else if let Some(w) = err.get("emit").and_then(|e| e.get("walls")).and_then(Value::as_str) {
         // W-37 (README gap 3139): the `emit` section's walls form, `WallTimer.Refusal`.
         let why = match w {

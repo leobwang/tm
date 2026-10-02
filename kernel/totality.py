@@ -47,6 +47,7 @@ exemption into a directory anybody could create.
 import bisect, re, sys, pathlib
 
 import leanfiles
+import ratchet
 
 # The one exemption, named file by file rather than by loosening a pattern.
 #
@@ -818,5 +819,16 @@ if committed is not None:
     for where in sorted(kernel_decide_exempt - committed):
         print("%s: GROWTH: %s is not in the committed file -- it may only shrink"
               % (KERNEL_DECIDE_FILE.name, where))
+        bad += 1
+# And every COMMITTED step since `ratchet.BASE` (the W-41 repair, README gap 4132):
+# the comparand above is HEAD, which holds growth once it is committed.
+hist = ratchet.grown(KERNEL_DECIDE_FILE, read_exempt)
+if hist is None:
+    print("%s: RATCHET UNCHECKED: git cannot read its committed history (README gap 4132)"
+          % KERNEL_DECIDE_FILE.name)
+    bad += 1
+else:
+    for line in hist:
+        print(line)
         bad += 1
 sys.exit(1 if bad else 0)

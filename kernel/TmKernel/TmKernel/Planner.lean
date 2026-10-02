@@ -8208,11 +8208,11 @@ after `now` adds its lead (its logged start less `now`) to the bound, where unti
 and `PlannerWit.the_reserved_day_assigns_the_running_block` exhibits one. -/
 
 /-- **§8.3's E1, over the rows §8.3 is about** — the goal `Goals.plan_reserves_one_block_at_a
-_time` leaves this file for; since W-41 a block's lead past `now` (D78) rides on the reservation. -/
+_time` leaves this file for; since W-41 a block's lead past `now` (D78) rides on the reservation, and since the W-41 repair on the reservation ALONE — the row flagged `current` that carries the running item (§8.2 choice 5b's reservation, `PlanReq.activeRow_is_an_energyless_block`): every other Block row from `now` is at most one block (README gap 4136; until then the whole lead rode on EVERY Block row, so no law bounded a step-5 row at one block on a request whose clock is behind the log, though the proof bounded it there directly; `plan_reserves_one_block_at_a_time_off_the_running_row` at the end of this file). -/
 theorem plan_reserves_one_block_at_a_time (r : PlanReq)
     (hday : r.dayAgrees = true) (s : WfSeg) (hs : s ∈ (dayPlan r).segments)
     (hk : s.val.kind = SegKind.block) (hnow : r.now.sec ≤ s.val.start) :
-    s.val.stop - s.val.start ≤ (dayPlan r).blockMin * 60 + (r.state.active.map (fun a => a.started.sec - r.now.sec)).getD 0 := by
+    s.val.stop - s.val.start ≤ (dayPlan r).blockMin * 60 + (if s.val.flags.current = true ∧ s.val.item = r.state.activeId then (r.state.active.map (fun a => a.started.sec - r.now.sec)).getD 0 else 0) := by
   rw [dayPlan_segments] at hs
   rcases a_block_row_is_replayed_reserved_or_assigned r s hs hk with
     ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩
@@ -8229,7 +8229,7 @@ theorem plan_reserves_one_block_at_a_time (r : PlanReq)
       show clampSec t.start = _; rw [hst]
     have hstop : (segOf t).val.stop = max (clampSec q.start) (clampSec q.stop) := by
       show max (clampSec t.start) (clampSec t.stop) = _; rw [hst, hsp]
-    rw [hbm, hstart, hstop]
+    rw [hbm, hstart, hstop, if_pos ⟨(r.activeRow_is_an_energyless_block t ht).2.2.1, by rw [segOf_item]; exact (r.activeRow_is_an_energyless_block t ht).2.2.2.1⟩]
     rw [hstart] at hnow
     simp only [clampSec, LogStamp.yearEnd] at hnow ⊢
     omega
@@ -9524,7 +9524,7 @@ theorem plan_reserves_one_block_at_a_time_when_the_block_started_by_now (r : Pla
     (hk : s.val.kind = SegKind.block) (hnow : r.now.sec ≤ s.val.start) :
     s.val.stop - s.val.start ≤ (dayPlan r).blockMin * 60 := by
   have := plan_reserves_one_block_at_a_time r hday s hs hk hnow
-  omega
+  split at this <;> omega
 
 /-- **Nothing running, no lead.** -/
 theorem PlanReq.no_lead_without_a_running_block (r : PlanReq) (h : r.state.active = none) :
@@ -9632,6 +9632,18 @@ theorem PlanReq.a_ci_disagreement_names_a_candidate (r : PlanReq) (i : Id) (w : 
   refine ⟨q.1, q.2, hmem, h1, h2, h1 ▸ h3, ?_⟩
   rw [← h3, ← h2]
   simpa using hne
+
+
+/-- **Every Block row from `now` but the running one is at most one block, whatever the running block's lead** (the
+W-41 repair, README gap 4136): the strength the restated E1 had dropped from its statement while its proof kept it. -/
+theorem plan_reserves_one_block_at_a_time_off_the_running_row (r : PlanReq)
+    (hday : r.dayAgrees = true) (s : WfSeg) (hs : s ∈ (dayPlan r).segments)
+    (hk : s.val.kind = SegKind.block) (hnow : r.now.sec ≤ s.val.start)
+    (hoff : ¬ (s.val.flags.current = true ∧ s.val.item = r.state.activeId)) :
+    s.val.stop - s.val.start ≤ (dayPlan r).blockMin * 60 := by
+  have := plan_reserves_one_block_at_a_time r hday s hs hk hnow
+  rw [if_neg hoff] at this
+  omega
 
 end Planner
 end Tm

@@ -110,6 +110,34 @@ fn tm_wake_over_a_running_break_is_refused() {
     assert_eq!(woke["wake"], "06:30", "{woke}");
 }
 
+/// **A cached break with no start is still a running break** (the W-41 repair,
+/// README gap 4141): `.tm/state.json`'s `break` hand-edited to `started: null`
+/// has no instant, and P74's refusal asked for the instant — so the wake went
+/// through and cleared the record with no `break` line. The refusal reads the
+/// RECORD, writes nothing, and `tm break` still ends it.
+#[test]
+fn tm_wake_over_a_break_with_no_start_is_refused() {
+    let tm = left_open("2026-09-08T23:50:00-05:00", &["break", "20m"]);
+    tm.ok_at(MORNING, &["now"]);
+    let path = tm.plan.join(".tm/state.json");
+    let mut state: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path).expect("state")).expect("JSON");
+    state["break"]["started"] = serde_json::Value::Null;
+    fs::write(&path, serde_json::to_string(&state).expect("JSON")).expect("write the hand edit");
+    let before = files(&tm.plan);
+    let out = tm.run_at(MORNING, &["wake", "06:30", "--slept", "7h"]);
+    assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
+    assert!(
+        out.stderr.contains("a break is still running — end it (`tm break`) before `tm wake`; the wake was not recorded"),
+        "{}",
+        out.stderr
+    );
+    assert_eq!(files(&tm.plan), before, "the refused wake wrote nothing");
+    tm.ok_at("2026-09-09T07:10:00-05:00", &["break"]);
+    assert!(tm.state()["break"].is_null(), "`tm break` ended it: {}", tm.state());
+    let woke = tm.json_at("2026-09-09T07:11:00-05:00", &["wake", "06:30", "--slept", "7h"]);
+    assert_eq!(woke["wake"], "06:30", "{woke}");
+}
+
 /// **D76's refusal names `--at`** (the owner's D79): the way to end a block
 /// forgotten overnight when it ended.
 #[test]

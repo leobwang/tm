@@ -1238,3 +1238,8 @@ with_minute
 1 the_swaps_request_is_refused_on_two_worlds_the_binary_builds
 3 d81s_location_is_read_here_until_track_e_reads_it
 5 forkplan::d81_loc
+
+# W-41 REPAIR STEP (README gaps 4130-4159).  Track E's P77 test was named for the opposite of what its last assertion
+# says (gap 4144: it asserts the TUI's request is NOT yet `tm plan`'s) and was renamed; the three earlier blocks that
+# cite it -- E's, the land's §8 and its gap 4128 -- name it as it stood.  This block names it without backticks.
+3 p77_a_tui_left_open_past_midnight_plans_the_day_tm_plan_would_plan

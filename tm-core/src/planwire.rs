@@ -1455,6 +1455,22 @@ pub fn planner_json(
     o
 }
 
+/// **A request text with its `planner` section** — R3's one splice (the W-41
+/// repair, README gap 4142): the section appended to the request object AS
+/// TEXT, so every section before it keeps its build order (the `log` section's
+/// checkpoint is read in build order, `kernel_capacity::request`'s own rule,
+/// and a `serde_json::Value` would alphabetise it). The binary's `tm check`
+/// (`kernel_capacity::planner_request`) and every harness that asks the kernel
+/// R3's request call this one function.
+pub fn with_planner(request: &str, planner: &Value) -> String {
+    let body = request.trim_end();
+    match body.strip_suffix('}') {
+        Some(head) if head.trim_end() != "{" => format!("{head},\"planner\":{planner}}}"),
+        Some(_) => format!("{{\"planner\":{planner}}}"),
+        None => body.to_string(),
+    }
+}
+
 /// **The running block's WORKED minutes into a `planner` section** (W-36
 /// track T, README gap 2920): `state.active.workedMin`, the host's ONE reading
 /// — [`crate::log::Replay::running_worked_min`], `day::worked_min`'s since

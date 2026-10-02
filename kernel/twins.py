@@ -342,6 +342,7 @@ import sys
 
 import callgraph
 import leanfiles
+import ratchet
 
 # A `def`'s name, as a keyword TOKEN (`leanfiles.THEOREM`'s discipline).
 DEF = re.compile(r"(?<![\w'?!.«])def[ \t\r\n]+([^\s(){}:]+)")
@@ -1596,6 +1597,17 @@ def main(argv):
                            "-- a debt leaves when its group does, not when its sentence is "
                            "rewritten: %s" % (EXEMPT_FILE.name, entries[names][1],
                                               " ".join(sorted(names))))
+    # And every COMMITTED step since `ratchet.BASE` (the W-41 repair, README gap
+    # 4132): a NOT ONE CONCEPT verdict a commit added is growth HEAD can no longer see.
+    def not_one(t):
+        return {" ".join(sorted(k)) for k, (v, _l) in read_verdicts(EXEMPT_FILE, t)[0].items()
+                if v.startswith("NOT ONE CONCEPT")}
+    hist = ratchet.grown(EXEMPT_FILE, not_one)
+    if hist is None:
+        bad.append("RATCHET UNCHECKED: git cannot read %s's committed history (README gap 4132)"
+                   % EXEMPT_FILE.name)
+    else:
+        bad.extend(hist)
     if audit:
         for line in gen_lines:
             print(line)

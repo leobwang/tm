@@ -82,3 +82,31 @@ fn the_help_lists_the_tables_words() {
     }
     assert!(listed.contains(&BreakPlace::words()), "{listed:?}");
 }
+
+/// **Every word of the host's table is a word the kernel's planner reads** —
+/// the claim `tm_core::store::BreakPlace`'s doc makes ("a word the verb wrote is
+/// a word the planner reads"), held by nothing until the W-41 repair (README gap
+/// 4145). `tm check` asks the kernel for the day R3's `tm plan` sends
+/// (`kernel_capacity::planner_request`, P78), whose `planner.state.break.place`
+/// is the cache's word: for each of the table's words, with the break running,
+/// the day is planned (`no problems`). And it bites: the same cache hand-edited
+/// to a word outside the table is named `badBreak place` at exit 2.
+#[test]
+fn every_place_of_the_table_is_one_the_planner_reads() {
+    let at = "2026-09-08T10:05:00-05:00";
+    for place in BreakPlace::all() {
+        let tm = woken();
+        tm.ok_at(AT, &["break", "20m", "--where", place.as_str()]);
+        let out = tm.run_at(at, &["check"]);
+        assert_eq!((out.code, out.stdout.trim()), (0, "no problems"), "`{}`: {}{}", place.as_str(), out.stdout, out.stderr);
+    }
+    let tm = woken();
+    tm.ok_at(AT, &["break", "20m", "--where", "walk"]);
+    let path = tm.plan.join(".tm/state.json");
+    let mut state: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).expect("state")).expect("JSON");
+    state["break"]["where"] = serde_json::Value::from("hammock");
+    std::fs::write(&path, serde_json::to_string(&state).expect("JSON")).expect("the hand edit");
+    let out = tm.run_at(at, &["check"]);
+    assert_eq!(out.code, 2, "{}{}", out.stdout, out.stderr);
+    assert!(out.stdout.contains("error[planner-refusal]: kernel refusal: badBreak place"), "{}", out.stdout);
+}

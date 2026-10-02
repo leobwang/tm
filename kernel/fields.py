@@ -68,6 +68,7 @@ import sys
 
 import callgraph
 import leanfiles
+import ratchet
 from reach import committed_exemptions
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -385,6 +386,23 @@ def main(argv):
                                "existed at HEAD -- this file may only SHRINK, and a field "
                                "that was written does not go back to unwritten (gap 2403's "
                                "own regression)" % (EXEMPT_FILE.name, entries[f][1], tname, f))
+    # And every COMMITTED step since `ratchet.BASE` (the W-41 repair, README gap
+    # 4132), by this rule: a field the structure already had at the commit's parent.
+    def had_field(sha, f, _held):
+        src = committed_exemptions(pathlib.Path(spath), sha + "^1")
+        if src is None:
+            return False
+        try:
+            _p, fs = structure_fields({spath: leanfiles.strip_comments(src)}, tname.split(".")[-1])
+        except SystemExit:
+            return True  # the structure is new at that commit
+        return f not in fs
+    hist = ratchet.grown(EXEMPT_FILE, lambda t: set(read_exemptions(EXEMPT_FILE, t)[0]), had_field)
+    if hist is None:
+        bad.append("RATCHET UNCHECKED: git cannot read %s's committed history (README gap 4132)"
+                   % EXEMPT_FILE.name)
+    else:
+        bad.extend(hist)
     if audit:
         for f in fields:
             print("  %-16s %-14s %s" % (f, next((k for k, fs in keys.items() if f in fs), "-"),
@@ -589,6 +607,15 @@ def inputs_main(audit, files, codes):
         for key in sorted(set(entries) - prev_keys):
             bad.append("RATCHET: %s:%d  %s.%s is a NEW exemption -- this file may only SHRINK"
                        % (IN_EXEMPT_FILE.name, entries[key], key[0], key[1]))
+    # And every COMMITTED step since `ratchet.BASE` (the W-41 repair, README gap 4132).
+    hist = ratchet.grown(IN_EXEMPT_FILE, lambda t: {
+        ".".join(ln.strip().partition(" -- ")[0].split(".")[-2:])
+        for ln in t.splitlines() if ln.strip() and not ln.strip().startswith("#")})
+    if hist is None:
+        bad.append("RATCHET UNCHECKED: git cannot read %s's committed history (README gap 4132)"
+                   % IN_EXEMPT_FILE.name)
+    else:
+        bad.extend(hist)
     if audit:
         for t in sorted(seen):
             for f, _ty in fields_of.get(t, []):
@@ -678,8 +705,9 @@ SENT_EXEMPT_FILE = HERE / "sent-exempt.txt"
 # shape, the file may only SHRINK.
 #
 # WHAT IT CANNOT SEE: whether the binary CALLS the writer.  `add_worked_min`
-# writes `state.active.workedMin` and has no caller in `tm/src` (README gap
-# 3043, R3's): "written by the codec" is a floor under "sent by the binary",
+# writes `state.active.workedMin`, and until the W-41 repair had no caller in
+# `tm/src` (README gap 3043; its first is `tm check`'s planner request, gap
+# 4142): "written by the codec" is a floor under "sent by the binary",
 # the same sentence as the input half's read-is-a-floor-under-used.
 # ===========================================================================
 WRITTEN_EXEMPT_FILE = HERE / "written-exempt.txt"
@@ -749,6 +777,17 @@ def ratchet_file(path, shallow, under, why_stale, bad, sections):
             bad.append("RATCHET: %s:%d  `%s` is a NEW exemption, under no key exempt at HEAD -- "
                        "this file may only SHRINK (D51), whatever heading it sits under "
                        "(README gap 3953)" % (path.name, entries[e], e))
+    # And every COMMITTED step since `ratchet.BASE` (the W-41 repair, README gap 4132),
+    # by this rule: a line under a key its parent already exempted is not growth.
+    def held_keys(t):
+        return {ln.strip().partition(" -- ")[0] for ln in t.splitlines()
+                if ln.strip() and not ln.strip().startswith("#") and not HEADING.match(ln.strip())}
+    hist = ratchet.grown(path, held_keys, lambda _sha, e, held: any(under(e, q) for q in held))
+    if hist is None:
+        bad.append("RATCHET UNCHECKED: git cannot read %s's committed history (README gap 4132)"
+                   % path.name)
+    else:
+        bad.extend(hist)
     return entries
 
 

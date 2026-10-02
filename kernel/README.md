@@ -81918,3 +81918,315 @@ simulation sees a new member; adding the test to `TUI_TESTS` would freeze a four
 change this land did not owe.  3. *Cost.*  Its assertions are the TUI's own readings of its state (a tick rolls
 nothing), which pass on either planner; what the swap changes is that it then asks the kernel.  4. *Clears it.*  R3's
 body swap (gap 3476), counting seventeen; or the next track that touches `TUI_TESTS` freezing its world.
+
+<!-- =====================================================================
+     APPENDED 2026-10-01: stage 6 (the planner), run **W-41**, **REPAIR STEP**
+     — the defects W-41's two independent auditors (the verifier and the
+     reuse critic) found in the land commit `710c090`, most severe first,
+     each reproduced before it was touched.  Plants in clones under
+     `scratchpad/repair-w41/` (`clone`, `clone2`), never in the shared tree;
+     the main checkout on `rebuild-on-lean` throughout.  Gap range
+     **4130-4159**: 4130-4152 taken, 4153 free.  Parity: **P78, P79**
+     taken (the register runs P1-P79 with no hole; next free P80).
+     Burn-down **0**, unchanged.
+     ===================================================================== -->
+
+## Stage 6 — W-41 repair: the day `tm plan` will ask for is asked by `tm check`, hours since wake count from the wake that happened, E1's lead rides on the running row alone, and the exemption ratchets read the history
+
+### 0. The brief, measured before it was acted on
+
+* HEAD `710c090`, the tree clean, `git worktree list` the one checkout and `stage5-lookahead`.  Every finding of both
+  auditors was reproduced first (§1); none failed to reproduce, and one the critic stated as a premise was measured
+  more sharply than it was stated (§1, the TUI comparand line: the land's re-bless is not only unlicensed, the gate
+  REFUSES it when asked — driven).
+* **`origin/rebuild-on-lean` is `3d2959b`** — the branch has not been pushed since AGENTS' `c8f3a38` era, so "the
+  shared branch's history" is this clone's.  It was NOT rewritten (§1, gap 4131).
+* A measurement the brief did not ask for and the repair met on its first drive: **the kernel planner costs about a
+  second a call on the example tree** — the day R3's `tm plan` will ask for (gap 4150).
+
+### 1. The defects, most severe first
+
+| # | defect (auditor) | reproduced | what this step did | gap |
+|---|---|---|---|---|
+| 1 | D80 (b) refuses a day the binary builds and the fork plans: a tab or no-break space after the box or the `ci` digit (verifier, major) | `tm check` "no problems" exit 0; the swap's request `{"err":{"planner":"ciDisagrees t4 wire 3 plan 4"}}` on all three spellings, a tab in the title and the control planned (a clone-only test, repair_w41_d80_tab_variants) | **`tm check` asks the kernel for the DAY** (§2, P78) and names the refusal at the item's line, exit 2; the premise is an owner question | 4130, 4142 |
+| 2 | three red merge commits on the branch (verifier, critic; major) | `fadff8e`, `7f2c144`, `5070801` are first-parent ancestors of `710c090` (`git merge-base --is-ancestor`) | NOT rewritten — destructive, unauthorised; AGENTS §6.5 gains item 8, the octopus-commit recipe that keeps them off the branch | 4131 |
+| 3 | the land re-blessed a COMMITTED frozen line on a false premise (critic, major) | `2c40a49` is in HEAD's history; its `tui AfterMidnight(1, 0)` differs from HEAD's in `d57`, `day`, `p55`, `whatif`; asked of the gate (§3) it is REFUSED | the line kept, the premise corrected here, the owner asked | 4139 |
+| 4 | `state.wake` after midnight wrote `hsw: -6.5` into the log (critic, major) | old binary: `tm energy 3` at 00:30 → `"hsw":-6.5` | hours since wake count from `Ctx::woke_before_now`, the latest instant at or before now (P79) → `17.5` | 4140 |
+| 5 | check 12's ratchet green on the commit that grows the file (verifier) | the verifier's committed plant (`EXEMPT 1200`) | every ratchet (checks 2, 11, 12, 13) also holds each commit since `122e153` against its first parent, `kernel/ratchet.py` | 4132 |
+| 6 | P69's world held by its property alone after R3 (verifier) | `work` and `swap` bends: `planner_w41_starts` fails on the P68 line only | recorded with the shape the fix must take | 4133 |
+| 7 | P68's "no divergence remains" false at second resolution (verifier) | the auditor's ten-second world, by reading the rows | the row's sentence corrected here; the departure is P69's | 4134 |
+| 8 | `tm energy --at` in the future after midnight (verifier) | `--at 23:40` at 00:40 → `"t":"2026-09-08T23:40:00-05:00"` | NOT changed — a pinned fork test and its snapshot hold the same-day forward `--at`; the owner's call | 4135 |
+| 9 | E1's lead on every Block row (verifier) | by reading the statement | restated: the lead on the running row alone; strength stated back as a theorem | 4136 |
+| 10 | block minutes vs worked minutes with a break inside (verifier) | both binaries: `tm stop` "after 40m", review `load 60.0` | recorded, an owner question (§5.3, fork-faithful) | 4137 |
+| 11 | R3 is not only the swap (verifier) | re-derived from code (§6) | the list, below | 4138 |
+| 12 | P74 tests the break's instant, not the record (critic) | `started: null` → `tm wake` exit 0, the break cleared, no line | the record is asked | 4141 |
+| 13 | P45 comparand places a running break on the world's date (critic) | by reading; no world crosses midnight | the harness reads `BreakState::started_at`; the class gate scans `tm/tests` | 4143 |
+| 14 | P77's test named for the opposite of what it asserts (critic) | by reading | renamed | 4144 |
+| 15 | the break-place table's kernel twin unpinned; a fork citation to a type the fork lacked (critic) | by reading | every word sent through `tm check`'s planner request; the citation corrected | 4145 |
+| 16 | `planCi` and `candPlanView` two bodies and a bridge (critic) | by reading | `candPlanView` calls `planCi` | 4146 |
+| 17 | the what-if day planned off a request no decoder reads (critic) | by reading | `PlanReq.the_whatif_request_pays_d80` | 4147 |
+| 18 | track H's bent-answer plants not re-run on the merged comparand (critic) | the land re-ran only A-C | re-run (§5) | 4148 |
+| 19 | no fork reader of a back-dated end (critic) | no fixture holds one (grep) | a `TM_ORACLE` arm, run (§5) | 4149 |
+
+### 2. P78 — `tm check` asks the kernel for the day
+
+`lifecycle::planner_problems` builds R3's request with the binary's own code — `kernel_capacity::planner_request`: the
+ranked capacity request `tm plan` sends, `planwire::planner_json` over the state, the replay and the plan date's
+routine instances, the running block's worked minutes (`day::worked_min`, gap 3043), spliced by ONE function
+`planwire::with_planner` (the harness's copy in `planner_request_keys.rs` now calls it) — and names every kernel
+refusal of it `planner-refusal`, an error, at the item's line when the refusal names one (`ciDisagrees`).
+`kernel_bridge::refusal` reads the `planner` section's refusals by name (it read them as "unrecognised shape").
+
+**Parity P78 taken**: `tm check` names every refusal of the day R3's `tm plan` asks the kernel for — `planner-refusal`, an error at the item's line for `ciDisagrees` (exit 2), on a tree the kernel loads — where fork 4748911's `tm check` asked no planner and printed "no problems": a hand-edited tab or no-break space after a line's state box or `ci` digit, which the host reads as a separator and the kernel does not (README gap 32), is named at its line; the planner-section refusals are findable before R3 ships them (the owner's D80, D32's shape; the W-41 repair, README gaps 4130 and 4142)
+
+Driven on the example tree with `- [ ] 3\t1b Claude Code drafts tests     @m2 ^t4`:
+`week/2026-W37.md:19: error[planner-refusal]: kernel refusal: ciDisagrees t4 wire 3 plan 4 — …`, `1 error, 0 warnings`,
+exit 2; the unedited tree `no problems`, exit 0.  The call is pinned in `kernel_call_counts.rs`' new `planner` column
+(`check` 1, every other verb 0; `check`'s `log` 2 → 3 and `capacity` 0 → 1: the capacity section carries its replay,
+gap 275).  Its cost is gap 4150's.
+
+### 3. The TUI comparand line, asked of the gate (gap 4139)
+
+In `clone2`: H's committed file (`git show 2c40a49:…`) put back, the bless asked with the numbers that moved
+(`TM_TUI_BLESS=1 TM_TUI_BLESS_BECAUSE=P46,P55 TM_TUI_BLESS_OUT=…`, a fresh oracle): **refused, nothing written** —
+`overtime/lounge at 2026-09-08T01:00:00-05:00: `d57` changed, which P55 does not govern (a number governs the object
+its flag lives in, `day` and `whatif`)`.  `git status --porcelain` the same before and after.  So the line HEAD holds is
+a re-bless the gate refuses, made by deleting the file and freezing it as new — the land's "the TUI file does not exist
+at `122e153`" is true of the first parent and false of the history: `2c40a49`, H's commit, is the merge's second parent.
+
+### 4. E1 restated (gap 4136)
+
+| | statement |
+|---|---|
+| W-41 (`Planner.plan_reserves_one_block_at_a_time`) | every Block row from `now`: `stop − start ≤ block_min·60 + lead` |
+| this step | the same row: `≤ block_min·60 + (if current ∧ item = the running item then lead else 0)` |
+| added | `Planner.plan_reserves_one_block_at_a_time_off_the_running_row`: off that row, `≤ block_min·60` |
+
+The new form implies W-41's (the `if` is at most the lead); `PlanCheck.oneBlockAtATime` and
+`one_block_from_the_battery` read the same per-row bound, and `oneBlockAtATime_can_fail` lost its hypothesis `hlead`
+(the hour-long row is not the running row) — stronger.  The running row is §8.2 choice 5b's reservation
+(`PlanReq.activeRow_is_an_energyless_block`: `current`, the running item, from `now`).  No definition was added: a
+leadAt was tried, and check 12 refused it (emitted, reached by nothing, and `reach-exempt.txt` only shrinks) — so
+the bound is written where it is stated.
+
+### 5. Plants and the arms this step ran
+
+* **D40, the Rust**, each in `clone2` with the fix reverted and the named test FAILING:
+
+| plant (reverted in `clone2`) | what failed, its own words |
+|---|---|
+| A `tm check`'s `planner_problems` call removed | `cli_check_planner` (`left: 0`, exit 0 where 2 was owed); `every_place_of_the_table_is_one_the_planner_reads` (`no problems` for `hammock`); `kernel_call_counts` (`tm check made 2 kernel log call(s), expected 3`) |
+| B the bridge's `planner` refusal branch removed | `a_ci_the_kernel_reads_otherwise_is_named_at_its_line`: `error[planner-refusal]: kernel refusal (unrecognised shape): {"planner":"ciDisagrees t4 wire 3 plan 4"}` with no line |
+| C `planwire::with_planner` splicing nothing | `the_json_carries_the_planner_refusal` (`left: 0`); `the_binarys_request_with_the_swaps_planner_section_is_planned` |
+| D `day::features` counting from `Ctx::wake_dt` again | `hours_since_wake_after_midnight_count_from_the_wake_that_happened`: `left: (Some("2026-09-08T00:30:00-05:00"), Some(-6.5))` |
+| G `tm wake` asking the break's instant | `tm_wake_over_a_break_with_no_start_is_refused`: `wake 06:30 · slept 420m`, `left: 0` |
+| H `forkclass`' P45 rule on the world's date | `every_reader_of_a_running_breaks_start_reads_one_function` names `tm/tests/support/forkclass.rs` |
+| I the FFI's `planner` trace kind removed | `kernel_call_counts`: `tm check sent 0 kernel planner section(s), expected 1` |
+
+`git status --porcelain` of `clone2` recorded before each and equal after (each file written back from its saved bytes).
+* **Check 9**: no definition added; the two whose bodies changed re-verified in `clone`
+  (`mutate.py --verify --write --only`): `PlanCheck.candPlanView` PINNED `a_candidates_ci_is_its_items_ci` also
+  `candPlanView_ci_is_planCi`; `PlanCheck.oneBlockAtATime` PINNED `oneBlockAtATime_iff` also
+  `oneBlockAtATime_can_fail`.  The Lean edits are line-neutral above every pin (the new theorems at the ends of
+  `Planner.lean` and `PlanDiff.lean`), so no other row drifted — a first attempt shifted 139 rows' pins and its full
+  re-verify (613 rows) was stopped, restoring the clone's source.
+* **Gap 4148, H's bent answers on the merged comparand** (`clone2`, a hook in `support/planreq.rs` only, the oracle
+  built fresh into `scratchpad/repair-w41/oracle`; unbent: all three tests pass):
+
+
+| bent | `tui_kernel_answers` (frozen TUI) | `planner_w41_starts` (frozen starts) | `planner_classes` (generated classes) |
+|---|---|---|---|
+| none | pass | pass | pass |
+| `row1` | `tui At(12, 51) (wall-on-now/lounge): the rows differ at 1` | fails (P68's whole-day comparison) | `idle/lounge: the rows differ at 1` |
+| `current` | `tui Tight (overtime/lounge): the rows differ at 4` | `p69 a block begun before midnight: the kernel's running row is not the block's from now to 2026-09-08 01:00:00 CDT` | `running/lounge: the rows differ at 3` |
+| `work` (a non-running Block row a minute longer) | `tui At(12, 51): the rows differ at 0` | `p68 a block started after now: the rows differ at 6` — **P69 not named** (gap 4133) | `idle/lounge: the rows differ at 6` |
+| `swap` (two Block rows' items) | `tui At(12, 51): the rows differ at 0` | fails on P68 only — P69 not named | `idle/home: the rows differ at 0` |
+| `last` | `tui At(12, 51): the rows differ at 14` | `p69 …: the fixed frame (walls, wind-down, sleep) moved` | `idle/lounge: the rows differ at 15` |
+
+H's `refusal` plant targets the reading the land replaced (`P68Reading::AsTheFork`, land plant B is its successor); its
+`current` plant on `tui AfterMidnight(1, 0)` is the `current` row above.
+* **Gap 4149**: `the_fork_replays_a_back_dated_end_as_the_kernel_does` (`cli_end_at.rs`, `TM_ORACLE`, the
+  fresh oracle): three logs — `tm stop --at 23:40`, `tm done --at 23:40`, `tm done --partial --at 23:40`, each typed at
+  07:06 after a `tm plan` at 07:05, so the stated end sits below a later-stamped line — replayed by fork 4748911 and the
+  kernel: **3 inputs, 54 `Replay` keys, 293 scalar values, 3 entry counts, 0 disagreements**.  Bent (the fork handed
+  the logs with `stop` spelled `pause`, `clone2`): `3 disagreements with fork point 4748911`.
+* **Gap 4132's ratchets**, planted in `clone2` and COMMITTED there:
+
+| file | gate | its words, the plant committed |
+|---|---|---|
+| `reach-exempt.txt` | `reach.py` | `RATCHET (committed): reach-exempt.txt grew at 9ff42f21c -- `Planner.lean repairPlantW41` is held by no entry of its first parent` |
+| `kernel-decide-exempt.txt` | `totality.py` | `… grew at 5d4051fe0 -- `TmKernel/TmKernel/Planner.lean:repairPlantW41` …` |
+| `written-exempt.txt` | `fields.py` | `… grew at 1ed333d1a -- `planner.state.repairPlant` …` |
+| `twins-exempt.txt` | `twins.py` | `… grew at 66bd6f0a0 -- `repairPlantA repairPlantB` …` |
+
+Each committed on `clone2` (the plant only), the gate run, the commit reset with the file restored; `git status
+--porcelain` equal before and after.  The HEAD comparand is silent on each (the growth IS HEAD) — the verifier's
+finding, and the line printed is the new one.
+
+### 6. R3, re-derived
+
+Re-derived from this repair's code:
+
+* **`tm/src` still plans with the fork: 8 `planner::` lines** — `cli/planning.rs`' `use` and its `planner::plan`
+  (`build_ranked`), `tui/app.rs`' `use`, its replan and the overtime what-if's four — unchanged.
+* **R3's planner request now has a `tm/src` builder**, `kernel_capacity::planner_request` (P78's): it passes
+  `ctx.replay` to `planwire::planner_json` and adds `day::worked_min` with `planwire::add_worked_min` — **gaps 3962 and
+  3043 are built**; the swap calls it from `planning::build_ranked` and reads the answer with `planwire::read_plan`.
+* **Is R3 only the body swap and the deletion?  NO.**  Before the swap, by name: gap **4050** with **4124** (an owner
+  choice: re-collect a TUI's inputs at a date change, or roll its state — and its build); gap **4150** (the planner
+  call costs about a second: a measurement row and the owner's word, before `tm plan` pays it); gap **4130** (an owner
+  question R3 would otherwise ship: keep refusing a hand-edited separator, or close gap 32); gap **4139** (the owner on
+  the TUI line re-blessed past the gate); gap **4133** (a comparand for P69's rows, or the owner's word that the
+  property suffices).  In the swap: **3476** (the seventeen tests of gap 4128) and **3583** with **4046** (a log run
+  holding today's day record whole).  Off the list here: 3043 and 3962 (built, above).
+
+### 7. Acceptance, capped (`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`)
+
+`git status --porcelain` recorded before and after every measurement below and equal each time; no other track ran.
+
+* **`check.sh`, all seventeen lines ok, exit 0** (4 min 47 s, the kernel built), on this tree: lake build ok; totality
+  ok; axiom audit **6,171** theorems (Classical.choice 3,252, Quot.sound 4,742, propext 5,770; 398 on none: the land's
+  6,167 and this step's four); Negative.lean rejected; FFI **95**; corpus **29/37 and 4/5**; stage goals **0**; prose
+  citations 54,484 (52,204 resolved, 2,280 allowed, 468 counted), 0 allow entries unused; new definitions mutated
+  **613** rostered, **0** owed; parity **P1-P79**, no hole, next free P80; no two names, 3,350 bodies, 0 UNANSWERED;
+  every emitted definition reached, **1,245** reachable, **1,199** exempt, 0 UNANSWERED; fields 17/17; inputs 33 of
+  37; sent 169 key paths, 168 decoded, 1 exempt; written 220, 168 written; the kernel replays 93 modules.  Re-run
+  after this block was written (documentation only, 26.6 s): seventeen ok, prose citations 54,511 (52,231 resolved).
+* **`cargo test --workspace --no-fail-fast`, THREE runs (D46), one tree**: run 1 — **128 result lines, 2,090 passed,
+  0 failed, 32 ignored** (31 min 45 s); run 2 — 128, 2,090, 0, 32 (30 min 42 s); run 3 — 128, 2,090, 0, 32 (31 min
+  16 s); per-suite counts identical; **0 compiler warnings** in all three; no `.proptest-regressions` file moved.
+  Against the land's 2,079 / 0 / 31 over 126: two result lines (`cli_check_planner`, `cli_stated_clocks`), eleven
+  tests and the one ignored oracle arm.  **A first run on an earlier tree was red and is part of this block's record**:
+  four failures named the scope this step first gave P79 and an `energy --at` rule it then withdrew (§8, gaps 4135 and 4140) and two defects of the
+  first P78 (`tm check --fix-ids` asked the day of a context it had not reloaded; a `reachTooFar` log made `tm check`
+  exit 1, against D18) — each fixed or withdrawn before the three runs above.
+* **The named suites, inside each run** (identical in all three): T5 `kernel_replay_parity` 31 (4 ignored), the door
+  `kernel_log_door` 26, `cli_switch_acceptance` 16, `cli_latency` 5 (1 ignored), `kernel_call_counts` 2, `one_padder`
+  9, `one_renderer` 27, `kernel_row_cells` 28, `kernel_item_grammar` 6, `kernel_planner_wire` 27, `planner_classes` 54
+  (6 ignored), `planner_invariants` 39 (2 ignored), `cli_conformance` 3, `cli_json_matrix` 8; and this step's
+  `cli_check_planner` 2, `cli_stated_clocks` 1, `cli_wake_open` 5, `cli_break_place` 4, `cli_break_clock` 4,
+  `cli_end_at` 16 (1 ignored), `tui_kernel_answers` 37 (2 ignored), `planner_w41_starts` 15 (2 ignored),
+  `fork_week_grid` 14 (3 ignored).  The FFI suite is check 5.
+* **`TM_ORACLE`** (the fresh oracle): the back-dated-end arm (§5) and the gate's refusal (§3); the oracle's other sets
+  were not re-run by this step.
+
+### 8. Gaps 4130-4152
+
+**Gap 4130 — D80's premise is false for a hand-edited separator, and a refusal stands on gap 32.**  1. *What.*  D80
+(b) refuses "a request fork 4748911 can never produce"; a tab or no-break space after a line's box or `ci` digit is a
+request the binary builds and the fork plans (`ci` 3, the host's whitespace split), and the kernel — which reads only a
+space as a separator (gap 32) — reads no `ci` there and inherits `@m2`'s 4.  The wind-down law is proved over
+`ciDisagreement = none`, which on this input excludes the request because of the kernel's tokenizer (lesson 4: the
+law is not refuted, its hypothesis stands on a kernel defect).  2. *Why not changed.*  D80 says refuse, and the
+refusal is now findable (P78); planning it would be a plan built on one reader's number, which D80 declined; reading
+the line the host's way is gap 32, plan-tier.  3. *Cost.*  At R3 such a tree's `tm plan` is refused by name, and `tm
+check` names the line.  4. *Clears it.*  The owner: keep refusing, or close gap 32 (one separator rule).
+
+**Gap 4131 — the red merges stay on the branch.**  1. *What.*  `fadff8e`, `7f2c144`, `5070801` (W-41) and gap 3957's
+(W-40) are first-parent commits of `rebuild-on-lean`.  2. *Why not changed.*  Rewriting a shared branch's history is
+destructive and no agent's to authorise; `origin` is at `3d2959b`, so a rewrite is possible and is the owner's call.
+3. *Cost.*  A bisect skips them.  4. *Clears it.*  AGENTS §6.5 item 8 for the next land; the owner for these.
+
+**Gap 4132 — every exemption ratchet compared with HEAD, which holds a committed growth (CLOSED here).**  `ratchet.py`
+walks the first-parent commits since `122e153` — before W-41's strict rule took effect, so its window is covered —
+holding each against its parent with the gate's own key reader: `reach.py`, `fields.py` (fields, inputs, sent and
+written, each by its own rule), `twins.py` (a new NOT ONE CONCEPT) and `totality.py` (`decide +kernel`).  Measured
+over `122e153..710c090`: no file grew (`reach-exempt.txt` changed at `4a6a0ac` and `7f2c144`, 1,202 keys before and
+after each).  *Blind spot:* a track's own commit off the line is judged by its merge.
+
+**Gap 4133 — P69's day is held by its property alone after R3.**  1. *What.*  `forkplan::p69_day_unmet` holds the date,
+window, budget, ranking, frame and running row; the other fourteen rows are compared with nothing that outlives R3, so a
+bent step-5 row passes it (the verifier's `work` and `swap`, re-run in §5).  2. *Why not changed.*  Fork 4748911
+cannot be ASKED with the logged start (its `started` is a bare `HH:MM` on the plan's date), and the running row moves
+everything after it; freezing the kernel's own day would be a self-comparison after R3 (lesson 5).  3. *Cost.*  P69's
+fourteen rows after R3 are held by the proved L26 laws on the kernel's side and nothing on the decoder's.  4. *Clears
+it.*  A P69 transformation the fork CAN be asked — a start on the plan's date with the logged start's boundary, the
+host's worked minutes and P46's reservation composed — introduced under D70; or the owner's word that the property
+suffices.
+
+**Gap 4134 — P68's restated row says "no divergence remains" (CORRECTED here).**  At `HH:MM` resolution it is true;
+a start with seconds (`tm start` at 10:00:10, planned at 10:00:00) still departs in the seconds of the running row and
+every row after it — P69's log-instant rule, which P68's row did not cite.  Read P68's row with this sentence.
+
+**Gap 4135 — `tm energy --at` is a second reading of `--at`, and the fork pins it.**  1. *What.*  `tm energy 3 --at
+23:40` typed at 00:40 logs a report dated 23 hours ahead (today's date), where `tm stop --at`/`tm done --at` read the
+latest such time at or before now (D79).  2. *Why not changed.*  It was built (D79's rule) and the workspace run
+refused it by name: `cli_day.rs`' `energy_logs_a_report_against_the_prediction` pins a SAME-DAY forward report (`--at
+10:30` at 09:00 → today's 10:30) with its insta snapshot `energy_json`, the fork's behaviour, and a snapshot is never
+re-blessed by a repair.  3. *Cost.*  A report typed after midnight for the evening before is dated tomorrow evening.
+4. *Clears it.*  The owner: D79's rule for `energy` too (the pinned test and snapshot move with a behaviour row), or a
+narrower one (a clock after now that is more than N hours ahead is yesterday's).
+
+**Gap 4136 — E1's lead rode on every Block row (CLOSED here).**  §4.
+
+**Gap 4137 — a block's worked minutes and its review minutes are two readings when a break falls inside it.**
+1. *What.*  `tm stop` nets the break out ("after 40m"); `tm review day` and the TUI's week pane count the block's span
+("load 60.0", "3/5 blocks"), the heat grid counting the break as break too.  2. *Why not changed.*  Fork-faithful on
+both binaries (verifier, `drive/q2e.sh`); which reading is the day's is a product decision, §5.3.  3. *Cost.*  One span,
+two numbers.  4. *Clears it.*  The owner.
+
+**Gap 4138 — R3's list.**  §6.
+
+**Gap 4139 — a committed frozen line was re-blessed past the gate.**  1. *What.*  §3.  2. *Why not changed.*
+Restoring H's line makes the TUI comparison fail (the corrected harness reading, gap 3941, moves the comparand), and a
+red commit is forbidden; the gate's refusal is D64 working, so the line comes back to the owner (D64's last sentence),
+now with the true premise.  3. *Cost.*  One line's `d57`, `p55` and `whatif` stand unlicensed; `shipped` is equal by
+value.  4. *Clears it.*  The owner (gap 4123's question, restated: a harness correction over a COMMITTED line); and
+the bless reading the file at every commit since `122e153`, not only the working copy, so deleting a file cannot turn
+a re-bless into a freeze — `ratchet.py`'s walk, owed to the bless functions (gap 4151).
+
+**Gap 4140 — a stored wake on today's date wrote a wrong fact into the log (CLOSED here for the log, P79).**  Hours
+since wake on every `energy` and `start` line count from `Ctx::woke_before_now`.  The day bar (`render::svg`'s origin,
+`Ctx::wake_dt`) and the TUI's `App::wake` (its energy pane and day bar) keep the PLANNED day's wake: that is a
+different instant (the bar draws the day being planned), and moving it moved the frozen week-grid worlds' `day/*.svg`
+(`fork_week_grid.rs`' `every_frozen_week_is_the_world_its_steps_build`, five draws, measured in this step's first
+workspace run) — a comparand change no number licenses.  Whether a TUI or a bar drawn past midnight should start from
+the last wake is the owner's, with gap 4050.
+
+**Parity P79 taken**: hours since wake on every `energy` and `start` line the binary logs count from the wake that HAPPENED — the LATEST instant at or before now whose clock is the wake (`.tm/state.json`'s, else the day's logged wake, else the expected arrival; `Ctx::woke_before_now`), the rule P73 reads a running break by (the campaign's D81 call, README gap 3820); fork 4748911 counted from the clock on TODAY's date and the midnight roll keeps `wake`, so `tm energy` at 00:30 logged `hsw: -6.5` for a day woken at 07:00 (17.5 now) (the W-41 repair, README gap 4140)
+
+**Gap 4141 — P74 asked for the break's instant, not the record (CLOSED here).**  `ctx.state.break_.is_some()`;
+`tm_wake_over_a_break_with_no_start_is_refused`.
+
+**Gap 4142 — `tm check` could not see a planner refusal (CLOSED here, P78).**  §2.  *What it still cannot see:* a
+request the host cannot BUILD (a log no rebuild can window, a configured decimal the codec refuses) is not asked —
+D18 keeps `tm check`'s exit code on a damaged log, and P26 names a bad decimal on every planning verb; `tm check` does
+not add a second reading of either.
+
+**Gap 4143 — the P45/P67 harness placed a running break on the world's date (CLOSED here).**  `forkclass`' P45 rule and
+`overrun_worlds`, `forkplan`'s P67 transformation, `planner_classes.rs` (three sites) and `planner_w37_rows.rs` read
+`BreakState::started_at`; `cli_break_clock`'s class gate scans `tm/tests` too and found the last two.  No frozen line
+moved (no world's break crosses midnight).
+
+**Gap 4144 — P77's test was named for the opposite of its last assertion (CLOSED here).**  Now
+`p77_a_tui_past_midnight_is_read_as_the_roll_and_does_not_yet_send_tm_plans_request`; the old name,
+p77_a_tui_left_open_past_midnight_plans_the_day_tm_plan_would_plan, is cited by three earlier blocks.
+
+**Gap 4145 — the break-place table's kernel twin (CLOSED here).**  `every_place_of_the_table_is_one_the_planner_reads`:
+each word through `tm check`'s planner request, planned; `hammock` hand-edited, `badBreak place` at exit 2.
+`PlanWire.placeOf?`'s doc cites fork 4748911's TUI `BreakPlace`, not a `store::` type it never had.
+
+**Gap 4146 — `candPlanView` re-derived `planCi`'s value (CLOSED here).**  It calls `PlanReq.planCi`; the bridge is now
+the definition read back.
+
+**Gap 4147 — the what-if's request was outside "the requests the decoder accepts" (CLOSED here).**
+`PlanReq.the_whatif_keeps_the_evening`, `PlanReq.growing_keeps_the_ci_agreement`, `PlanReq.the_whatif_request_pays_d80`.
+
+**Gap 4148 — H's bent answers re-run on the merged comparand (CLOSED here).**  §5.
+
+**Gap 4149 — a back-dated end had no fork reader (CLOSED here).**  §5; the oracle helpers moved to
+`support/fork.rs` so both arms call one.
+
+**Gap 4150 — the kernel planner costs about a second a call, and R3 puts it on `tm plan`.**  1. *What.*  Measured:
+`tm check` 0.04-0.05 s before P78 and 1.04-1.05 s after on the example tree (two runs each), the
+`capacity+log+planner` call alone ~1.0 s (`TM_TRACE_KERNEL_CALLS` timestamps), where `tm plan`'s `capacity+log` call is
+~0.04 s and `tm plan` 0.08 s.  T17 (D38) times the capacity call, not the planner.  2. *Why not changed.*  Not this
+step's defect; it is R3's latency.  3. *Cost.*  `tm check` +1 s; at R3 `tm plan`, `tm now` and the TUI's reload ~1 s
+each, past `cli_latency`'s bands.  4. *Clears it.*  A measurement row for the planner call (T-numbered) before R3, and
+the owner's word on the cost.
+
+**Gap 4151 — a frozen file's bless reads the working copy.**  The shape gap 4139 names: every `*_are_blessed`
+function should take its held lines from the file at HEAD and at every commit since `122e153` as well.
+
+**Gap 4152 — the planner-refusal probe runs on every `tm check`.**  It is the whole day's request; `kernel_call_counts`
+pins one call.  Narrowing it (a flag, a cache) is the owner's call if gap 4150's second matters in a pre-commit hook.

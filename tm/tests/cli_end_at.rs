@@ -21,6 +21,14 @@
 
 mod cli_common;
 
+#[allow(dead_code)]
+#[path = "support/replay.rs"]
+mod replay;
+
+#[allow(dead_code)]
+#[path = "support/fork.rs"]
+mod fork;
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -351,4 +359,56 @@ fn an_on_event_item_done_at_a_stated_end_waits_from_that_day() {
         tm.line("backlog.md", "a4"),
         "- [?] 2 15m Ask Prof. Lee about the reading group  on-event:reply/7d waiting:2026-09-08 ^a4"
     );
+}
+
+/// **Fork 4748911 reads a back-dated end as the kernel does** (the W-41 repair, README gap
+/// 4149): a log `tm stop --at`, `tm done --at` and `tm done --partial --at` wrote — its last
+/// line stamped BEFORE the lines the morning's housekeeping appended — replayed by the fork's
+/// own `log::replay` (`tm-oracle replay`) and by the kernel (`support/replay.rs`'s chokepoint),
+/// key for key over `fork::FORK_REPLAY_KEYS`, with every recorded exception by name. Until the
+/// repair no fork reader had ever been handed such a line: T5's 469 logs, the frozen fork log
+/// fixtures and `parse-entry`'s 8,273 verdicts hold none, and `a_stated_end_reads_as_the_same_end_logged_in_time`
+/// compares the binary with itself. `#[ignore]`d and inert without `TM_ORACLE` (AGENTS §7.3).
+#[test]
+#[ignore]
+fn the_fork_replays_a_back_dated_end_as_the_kernel_does() {
+    let Some(bin) = std::env::var_os("TM_ORACLE") else {
+        eprintln!("back-dated ends: INERT — set TM_ORACLE to the fork-point oracle binary");
+        return;
+    };
+    let bin = std::path::PathBuf::from(bin);
+    let tz = tm_core::config::Config::default().tz;
+    let mut names = Vec::new();
+    let mut texts = Vec::new();
+    for (name, verb) in [
+        ("stop --at", &["stop", "--at", "23:40"][..]),
+        ("done --at", &["done", "--at", "23:40"][..]),
+        ("done --partial --at", &["done", "--partial", "--at", "23:40"][..]),
+    ] {
+        // The morning's `tm plan` logs its `plan` line at 07:05, so the end stated after it is
+        // logged BELOW a line stamped later than it — the back-dated case.
+        let tm = left_running();
+        tm.ok_at(MORNING, &["plan"]);
+        tm.ok_at(AFTER, verb);
+        let text = tm.read(".tm/log.jsonl");
+        let lines: Vec<Value> = text.lines().map(|l| serde_json::from_str(l).expect("a log line")).collect();
+        let last = lines.last().expect("a line");
+        assert!(
+            lines.iter().any(|l| l["t"].as_str() > last["t"].as_str()),
+            "{name}: the stated end is not back-dated past an earlier line: {text}"
+        );
+        names.push(name);
+        texts.push(text);
+    }
+    let answers = fork::fork_oracle(&bin, &["replay", tz.name()], &texts);
+    assert_eq!(answers.len(), texts.len(), "one fork replay per log");
+    let mut t = fork::ForkTally::default();
+    let mut findings = Vec::new();
+    for ((name, text), a) in names.iter().zip(&texts).zip(&answers) {
+        let kr = replay::replay_of_text(text, tz);
+        findings.extend(fork::compare_replay_with_fork(name, &kr, kr.entry_count() as u64, &[], a, &mut t));
+    }
+    println!("back-dated ends against fork 4748911: {}", t.line("replays"));
+    fork::no_disagreement(&findings);
+    assert_eq!(t.logs, 3, "three logs compared");
 }

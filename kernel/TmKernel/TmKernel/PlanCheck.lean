@@ -190,15 +190,15 @@ theorem noOverbook_iff (r : PlanReq) (d : DayPlan) :
 
 /-- **In seconds** (W-14 repair, gap 392): `s.val.minutes ≤ d.blockMin` floors, and so admits a Block of `blockMin`
 minutes **and 59 seconds**.  **Plus the running block's lead** since W-41 (D78): a block logged as begun after `now` is
-reserved from `now` to `block_min` after its start, as the fork reserves it: the block's logged start less `now`. -/
+reserved from `now` to `block_min` after its start, as the fork reserves it: the block's logged start less `now` — on the RUNNING row alone since the W-41 repair, the row flagged `current` that carries the running item (README gap 4136), where W-41 gave it to every Block row. -/
 def oneBlockAtATime (r : PlanReq) (d : DayPlan) : Bool :=
   d.segments.all
-    (fun s => decide (s.val.kind = SegKind.block → s.val.stop - s.val.start ≤ d.blockMin * 60 + (r.state.active.map (fun a => a.started.sec - r.now.sec)).getD 0))
+    (fun s => decide (s.val.kind = SegKind.block → s.val.stop - s.val.start ≤ d.blockMin * 60 + (if s.val.flags.current = true ∧ s.val.item = r.state.activeId then (r.state.active.map (fun a => a.started.sec - r.now.sec)).getD 0 else 0)))
 
 theorem oneBlockAtATime_iff (r : PlanReq) (d : DayPlan) :
     oneBlockAtATime r d = true ↔
       ∀ s ∈ d.segments, s.val.kind = SegKind.block →
-        s.val.stop - s.val.start ≤ d.blockMin * 60 + (r.state.active.map (fun a => a.started.sec - r.now.sec)).getD 0 := by
+        s.val.stop - s.val.start ≤ d.blockMin * 60 + (if s.val.flags.current = true ∧ s.val.item = r.state.activeId then (r.state.active.map (fun a => a.started.sec - r.now.sec)).getD 0 else 0) := by
   simp only [oneBlockAtATime, List.all_eq_true, decide_eq_true_eq]
 
 /-! ## 3. `energyFilter` — every block has `item.ci ≤ slot.energy`
@@ -586,7 +586,7 @@ theorem overbook_from_the_battery (r : PlanReq) (d : DayPlan) (h : planOkCore r 
 
 theorem one_block_from_the_battery (r : PlanReq) (d : DayPlan) (h : planOkCore r d = true) :
     ∀ s ∈ d.segments, s.val.kind = SegKind.block →
-      s.val.stop - s.val.start ≤ d.blockMin * 60 + (r.state.active.map (fun a => a.started.sec - r.now.sec)).getD 0 :=
+      s.val.stop - s.val.start ≤ d.blockMin * 60 + (if s.val.flags.current = true ∧ s.val.item = r.state.activeId then (r.state.active.map (fun a => a.started.sec - r.now.sec)).getD 0 else 0) :=
   (oneBlockAtATime_iff r d).mp
     (checksCore_all r d h ⟨.oneBlock, oneBlockAtATime⟩ (by simp [checksCore]))
 
@@ -1381,9 +1381,9 @@ theorem noOverbook_can_fail (r : PlanReq) : noOverbook r theOverbookedDay = fals
 
 def theOverlongBlockDay : DayPlan := wDay [aBlockOfAnHour] 30 4 Capped.nil
 
-theorem oneBlockAtATime_can_fail (r : PlanReq) (hlead : (r.state.active.map (fun a => a.started.sec - r.now.sec)).getD 0 = 0) :
+theorem oneBlockAtATime_can_fail (r : PlanReq) :
     oneBlockAtATime r theOverlongBlockDay = false := by
-  simp [oneBlockAtATime, theOverlongBlockDay, wDay, aBlockOfAnHour, wSeg, hlead]
+  simp [oneBlockAtATime, theOverlongBlockDay, wDay, aBlockOfAnHour, wSeg, SegFlags.none]  -- no `hlead` since the W-41 repair (README gap 4136): the hour-long row is not the running row, so no lead rides on it; W-41's checker gave the lead to every Block row
 
 /-! ### 3. `energyFilter` — a `ci = 3` item in a level-0 slot -/
 
@@ -3983,7 +3983,7 @@ theorem dayPlan_ok_core_of_plain_walls_on_an_unassigned_day
   have hres : ∀ s ∈ (dayPlan r).segments, s.val.kind = SegKind.block →
       (∃ t ∈ replayedRows r, s.val = t) ∨
       (∃ q, r.activeRun = some q ∧ s.val.start = r.now.sec ∧ r.now.sec < s.val.stop ∧
-        s.val.stop ≤ q.stop ∧ s.val.stop < LogStamp.yearEnd) := by
+        s.val.stop ≤ q.stop ∧ s.val.stop < LogStamp.yearEnd ∧ (s.val.flags.current = true ∧ s.val.item = r.state.activeId)) := by
     intro s hs hk
     rcases dayPlan_block_rows_are_replayed_reserved_or_assigned r s hs hk with
       ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩ | ⟨t, ht, -⟩
@@ -3991,21 +3991,21 @@ theorem dayPlan_ok_core_of_plain_walls_on_an_unassigned_day
     · exact Or.inl ⟨t, ht, segOf_replayed r hnowcal t ht⟩
     · obtain ⟨q, hq, -, -, -, -, -, -⟩ := r.mem_activeRow t ht
       obtain ⟨e1, e2, e3, e4⟩ := the_reservation_row_is_exact r q hq hnowcal t ht
-      exact Or.inr ⟨q, hq, e1, e2, e3, e4⟩
+      exact Or.inr ⟨q, hq, e1, e2, e3, e4, (r.activeRow_is_an_energyless_block t ht).2.2.1, by rw [segOf_item]; exact (r.activeRow_is_an_energyless_block t ht).2.2.2.1⟩
   have h1 : noOverbook r (dayPlan r) = true :=
     (noOverbook_iff r _).mpr
       (Nat.le_trans (blockSeconds_withoutActive_le_pastHalf_on_an_unassigned_day r hnoassign) hpast.budget)
   have h2 : oneBlockAtATime r (dayPlan r) = true := by
     refine (oneBlockAtATime_iff r _).mpr (fun s hs hk => ?_)
     have hbm : (dayPlan r).blockMin = r.blockMin := rfl
-    rcases hres s hs hk with ⟨t, ht, hst⟩ | ⟨q, hq, e1, e2, e3, -⟩
+    rcases hres s hs hk with ⟨t, ht, hst⟩ | ⟨q, hq, e1, e2, e3, -, hif⟩
     · have hkt : t.kind = SegKind.block := by rw [← hst]; exact hk
       have := hpast.oneBlock t ht hkt
       rw [hbm, hst]
       exact Nat.le_trans this (Nat.le_add_right _ _)
     · have hone := r.the_reservation_reaches_at_most_one_block_past_its_start q (r.blockMin_pos hday) hq
       obtain ⟨-, -, -, -, hs0, -⟩ := r.activeRun_spec q hq
-      rw [hbm]
+      rw [hbm, if_pos hif]
       omega
   have h3 : energyFilterOk r (dayPlan r) = true :=
     energyFilterOk_is_true_because_its_subject_is_empty_on_an_unassigned_day r hnoassign
@@ -4013,7 +4013,7 @@ theorem dayPlan_ok_core_of_plain_walls_on_an_unassigned_day
     refine (noBlockOverAWall_iff r _).mpr (fun b hb w hw hbk hwk => ?_)
     obtain ⟨v, hv, hvlt, hv1, hv2⟩ :=
       a_wall_row_sits_in_a_blocked_span r w (dayPlan_segments r ▸ hw) hwk
-    rcases hres b hb hbk with ⟨t, ht, hst⟩ | ⟨q, hq, e1, e2, e3, e4⟩
+    rcases hres b hb hbk with ⟨t, ht, hst⟩ | ⟨q, hq, e1, e2, e3, e4, -⟩
     · have hkt : t.kind = SegKind.block := by rw [← hst]; exact hbk
       obtain ⟨-, -, hstop⟩ := replayedRows_end_at_now r t ht
       have hd := hpast.offWall t ht hkt v hv
@@ -4688,12 +4688,12 @@ does not hold, `none = some _` is false, and the clause therefore **fails by nam
 candidate rather than passing it on a default.  There is no allow-list. -/
 
 /-- **The plan's reading of a candidate**: the three values this battery reads off the store
-when it asks about an item.  `none` when the store does not hold the id at all. -/
+when it asks about an item.  `none` when the store does not hold the id at all.  Its `ci` IS `Planner.PlanReq.planCi` —
+D80 (b)'s reading, called rather than re-derived since the W-41 repair (README gap 4146; AGENTS §5.3: deletion, not a bridge). -/
 def candPlanView (r : PlanReq) (i : Id) : Option (Fin 6 × Option (Fin 4) × Bool) :=
-  match r.plan.val.store.get i with
-  | none => none
-  | some e => some (effectiveCi r.plan.val i, rootPrio r.plan.val i,
-      decide (Flag.hot ∈ e.val.flags))
+  match r.planCi i, r.plan.val.store.get i with
+  | some c, some e => some (c, rootPrio r.plan.val i, decide (Flag.hot ∈ e.val.flags))
+  | _, _ => none
 
 /-- **The wire's reading of the same three**, as `Look.Cand` carries them and §8.2 step 5's
 fold reads them. -/
@@ -4733,12 +4733,12 @@ theorem a_candidates_ci_is_its_items_ci (r : PlanReq) (h : candsAgree r = true)
     (c : Look.Cand) (f : Option Look.Floor) (hc : (c, f) ∈ r.cands.val) :
     effectiveCi r.plan.val c.id = c.ci := by
   have hv := (candsAgree_iff r).1 h (c, f) hc
-  unfold candPlanView at hv
+  unfold candPlanView PlanReq.planCi at hv
   cases hs : r.plan.val.store.get c.id with
   | none => rw [hs] at hv; exact absurd hv (by simp)
   | some e =>
     rw [hs] at hv
-    simp only [Option.some.injEq, candWireView, Prod.mk.injEq] at hv
+    simp only [Option.map_some, Option.some.injEq, candWireView, Prod.mk.injEq] at hv
     exact hv.1
 
 /-- **And the other direction** (AGENTS §5.8): one candidate whose two readings differ makes

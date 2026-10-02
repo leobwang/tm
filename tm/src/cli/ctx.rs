@@ -1591,9 +1591,27 @@ impl Ctx {
         })
     }
 
-    /// Today's wake instant in `cfg.tz`.
+    /// Today's wake instant in `cfg.tz` — the PLANNED day's wake, the day bar's
+    /// origin (`render::svg`).
     pub fn wake_dt(&self) -> DateTime<Tz> {
         capacity::local_dt(self.cfg.tz, self.today, self.wake_time())
+    }
+
+    /// **The wake that has HAPPENED**: the LATEST instant at or before now
+    /// whose local clock is [`Ctx::wake_time`]'s ([`capacity::latest_at_or_before`])
+    /// — what hours since wake counts from on every `energy` and `start` line
+    /// the binary logs (`day::features`; the W-41 repair, README gap 4140;
+    /// parity P79), by the rule P73 reads a running break's start by (the
+    /// campaign's D81 call on README gap 3820). Fork 4748911 counted from
+    /// [`Ctx::wake_dt`], the clock on TODAY's date, and `.tm/state.json`'s
+    /// `wake` survives the midnight roll (`RuntimeState::roll_to`), so after
+    /// local midnight `tm energy` at 00:30 logged `hsw: -6.5` for a day woken
+    /// at 07:00 — a wrong fact in the log the fit reads, D75's reason. It is
+    /// not `wake_dt`: the day bar draws the PLANNED day from that day's wake,
+    /// a different instant from the last wake before now (README gap 4140 says
+    /// why the bar was left alone).
+    pub fn woke_before_now(&self) -> DateTime<Tz> {
+        capacity::latest_at_or_before(self.cfg.tz, self.now_tz, self.wake_time())
     }
 
     /// Minutes slept last night, when `tm wake` recorded them.

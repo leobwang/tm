@@ -1291,6 +1291,18 @@ banner which range is yours and fix it at the merge (§6.5).
    **P36 lives only in a comment in `Replay.lean`**. Gap 1417 concluded that 17
    numbers were "not locatable mechanically"; all 39 are located and anchored,
    and what was missing was a list of where to look.
+8. **Put ONE measured commit on `rebuild-on-lean`, never the merges that built
+   it** (the W-41 repair, README gap 4131). W-40's land (gap 3957) and W-41's
+   (gaps 4125 and 4131) each committed every conflict resolution as its own
+   merge in the land worktree and then fast-forwarded the branch over all of
+   them, so three unmeasured or red trees sit on the branch's first-parent line
+   and a bisect must skip them. Merge and compose in the land worktree as
+   before; when the final tree is measured green, make the commit the branch
+   moves to with `git commit-tree <the measured tree> -p <the branch tip>
+   -p <each track tip>`, its message the land's, and fast-forward the branch to
+   THAT — an octopus commit that names every track as a parent and whose one
+   tree is the measured one. The land branch keeps its intermediate merges;
+   the shared branch never sees them.
 
 ---
 

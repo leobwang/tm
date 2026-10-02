@@ -291,8 +291,8 @@ def readOptActive (v : JVal) : Except PlannerRefusal (Option ActiveBlock) :=
   | .ok none => .ok none
   | .ok (some w) => (readActive w).map some
 
-/-- Fork `store::BreakPlace`'s four serde names.  An unknown word is refused by name, never
-defaulted (AGENTS §5.7). -/
+/-- The four `--where` words of fork 4748911's `BreakPlace` (`tm/src/tui/app.rs`'s; since W-41 track T the host's one table is `tm_core::store::BreakPlace`,
+and `tm/tests/cli_break_place.rs` sends every one of its words through this reader — the W-41 repair, README gap 4145).  An unknown word is refused by name, never defaulted (AGENTS §5.7). -/
 def placeOf? (s : List Char) : Option BreakPlace :=
   if s = "walk".toList then some .walk
   else if s = "seat".toList then some .seat
