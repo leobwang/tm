@@ -2859,4 +2859,46 @@ theorem aBreaksArmIsItsDayArm :
           (⟨63924370200, 0⟩, ⟨false, 0⟩) 739865 := by
   decide
 
+-- ===========================================================================
+-- APPENDED 2026-10-03 (stage 6, run W-43, track G — README gap 4346: an item line reads a date
+-- through chrono's readers, `Log.instDate?` and `Field.parseDT`, the one reading of a date).
+-- Appended at the end (§6.2: append, never renumber).  Labels 266-270, numbered from the highest
+-- in the checkout (265); the land step renumbers if another track of W-43 took the same numbers.
+-- ===========================================================================
+
+/- CHEAT 266 — the item line's old date reader.  Until W-43 `due:` read `Field.parseDate` (four
+   digits, two, two), so `due:+026-09-09` was no date to the kernel while `tm-core`'s `parse_date`
+   read the year 26.  This block claims the line still reads no date there; `decide` computes the
+   year-26 day and refuses. -/
+theorem aSignedYearIsNoDateOnTheLine :
+    Field.parseMoment ['+','0','2','6','-','0','9','-','0','9'] = none := by
+  decide
+
+/- CHEAT 267 — a date before 0001-01-01 read as a day.  chrono reads `0000-01-01` (year 0) and
+   `-001-01-01` (year −1); `Day := Nat` starts at 0001-01-01 (AGENTS §4), so the kernel reads no
+   date there (parity P88).  This block claims `instDate?` answers for year 0; `decide` refuses. -/
+theorem aYearZeroDateIsADay :
+    (Log.instDate? ['0','0','0','0','-','0','1','-','0','1']).isSome = true := by
+  decide
+
+/- CHEAT 268 — `parse_datetime` without its sixteen bytes.  chrono reads `+2026-9-7T08:15`
+   (fifteen bytes) as 2026-09-07 08:15, and `model::parse_datetime` refuses it on its length before
+   chrono runs.  This block claims the line reads it; `decide` refuses. -/
+theorem aFifteenByteDateTimeIsRead :
+    (Field.parseDT ['+','2','0','2','6','-','9','-','7','T','0','8',':','1','5']).isSome = true := by
+  decide
+
+/- CHEAT 269 — `parse_time` read as RFC 3339's clock.  chrono's `%H` skips whitespace, so
+   ` 9:05` is 09:05 to `model::parse_time` (five bytes), where RFC 3339's `HH:MM` (`parseClock`)
+   reads nothing.  This block claims the line's time reader refuses it; `decide` refuses. -/
+theorem aSpacedClockIsNoTime : Field.parseTime [' ','9',':','0','5'] = none := by
+  decide
+
+/- CHEAT 270 — a date past 9999 written back by an edit.  The line reads `due:+10000-1-7` as the
+   host does, and no render writes a five-digit year in `parse_date`'s ten bytes, so the edit path's
+   `guardWf` refuses it by name.  This block claims the edit takes it; `decide` refuses. -/
+theorem aYearPast9999IsEdited :
+    (editValOf .due ['+','1','0','0','0','0','-','1','-','7']).isSome = true := by
+  decide
+
 end Tm

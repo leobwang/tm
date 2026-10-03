@@ -237,15 +237,23 @@ imports `Priority` only, and `Boundary` imports it likewise; `Lookahead` since s
 step 2, and `Close` before step 5). **No module imports `Lean.Data.Json` any more** — the wire is the
 kernel's own (§2.4).
 
+*Re-derived at W-43 track G from `TmKernel.lean` (README gap 4325) — the order above is stage 5's.  The
+root module is **94** `import` lines: the 58 of the `Seal*` group, imported between `Replay` and
+`State`, and these 36, in order: `Arith Cal Grain Text Json Line Stamp Log Replay State Plan Tree Recur
+Priority Capacity Lookahead Width PastCut WallTimer Planner GridCut MidnightCut PlanDiff PlanOnce PlanFold
+PlanCheck Emit Fast Cmd Close Report Boundary PlannerWit EmitWire PlanWire PlanStable`.  The bullets below
+named nineteen of them and the `Seal*` group; the sixteen stage 6 added, and `Fast`, which no bullet ever
+named, follow `Arith`.*
+
 - `Cal` — the calendar. Days since 0001-01-01, proleptic Gregorian. ISO weeks.
 - `Grain` — the horizon order, all of it derived from `coarsen`.
 - `Text` — tokens, numerals, list surgery, `freshId`, the structural `splitOn`/`joinWith`. A token carries its own separator.
 - `Json` — the kernel-owned JSON fragment: `JVal`, `jescape`/`junescape`, `jemit`, the fuel-structural `jparse`, `jget`, and `jparse_jemit`. 3,726 lines (2,641 at stage 4's close; A2 widened `JVal` with `dec` for D9's log).
-- `Line` — the item line and the whole of §4.1's field grammar, with the parse ⇒ wf bridges. 6,829 lines.
+- `Line` — the item line and the whole of §4.1's field grammar, with the parse ⇒ wf bridges. 6,829 lines. *Since W-43 track G (README gap 4346) it also holds chrono's readers — `LogStamp.trimWs`, `LogStamp.lit`, `LogStamp.numIn` and `StampErr` moved from `Stamp`, `Log.chronoYear`, `Log.chronoDateParts`, `Log.chronoDateValid`, `Log.utf8Len` and `Log.instDate?` moved from `Log`, with their names — and the item line reads its dates and times through them: `due:`'s date and `waiting:` through `Log.instDate?` (`parse_date`), a date-time through `Field.parseDT` (`parse_datetime`, sixteen bytes), a clock through `Field.parseTime` (`parse_time`); `Field.parseDate` and `Field.parseClock` are RFC 3339's, for a log stamp and the wire. 8,667 lines at W-43 track G.*
 - `State` — entity versus observation. `Core`, `wf`, `Entity`, `render`.
 - `Plan` — `Store`, `Doc`, `PlanCore`, `planWf`, `WfPlan`, and the comment rule (`commentAfter`).
-- `Stamp` — the log's `"t"` field, namespace `Tm.LogStamp` (never `Tm.Stamp`: `Field.Stamp` is the `demoted:` stamp; write the names qualified and never `open LogStamp` beside `Field`): `parseStamp` (chrono 0.4.45's `parse_rfc3339`, then the fork's `%Y-%m-%dT%H:%M%:z` fallback; `StampErr`), `renderStamp` (`fmt_timestamp`), `displayStamp` (the `tm log` column), `stampBefore` (chrono's order: the instant's, never `nanos`), and `parseStamp_renderStamp`. Stage 5 D9 step B2.
-- `Log` — the typed event grammar of `.tm/log.jsonl`, namespace `Tm.Log` (write `LogStamp` names qualified here too): `Event` (the 26 `define_events!` kinds and `unknown tag rest`), `Entry`, the field table `Kind.schema` with one reader `readF` and one writer `renderF` per serde field type, `readLine` (a `Verdict`: `blank`, an entry, or a named `LWarn`, in `Log::parse_bytes`' order), `renderLine` (`LogEntry::to_json`), `finiteF64` (serde_json's own "number out of range", applied to every numeral in the line), the small grammars `parseInstanceStatus`, `instDate?` and `stampFromKey`, and the goals `the_log_reads_what_it_renders`, `a_known_event_is_never_read_as_unknown`, `an_unknown_tag_is_never_a_warning` and `lineTooLong_bounds_every_string`. Stage 5 D9 step B3. **Since step S2 (D16) it also WRITES**: `emitEvent` reads the host's values with the reader's own `readArgs` and `emitLine` renders them with `renderLine`, so the log's format has one definition and not two held together by T2 — and `Event.primaryId` of a `close` is `period:key` since quirk Q6(f) (parity **P36**, gap 86).
+- `Stamp` — the log's `"t"` field, namespace `Tm.LogStamp` (never `Tm.Stamp`: `Field.Stamp` is the `demoted:` stamp; write the names qualified and never `open LogStamp` beside `Field`): `parseStamp` (chrono 0.4.45's `parse_rfc3339`, then the fork's `%Y-%m-%dT%H:%M%:z` fallback; `StampErr`), `renderStamp` (`fmt_timestamp`), `displayStamp` (the `tm log` column), `stampBefore` (chrono's order: the instant's, never `nanos`), and `parseStamp_renderStamp`. Stage 5 D9 step B2. *Since W-43 track G `StampErr` and the fallback's item readers (`trimWs`, `lit`, `numIn`) are defined in `Line`, under these names, because the item line reads its dates through them (README gap 4346).*
+- `Log` — the typed event grammar of `.tm/log.jsonl`, namespace `Tm.Log` (write `LogStamp` names qualified here too): `Event` (the 26 `define_events!` kinds and `unknown tag rest`), `Entry`, the field table `Kind.schema` with one reader `readF` and one writer `renderF` per serde field type, `readLine` (a `Verdict`: `blank`, an entry, or a named `LWarn`, in `Log::parse_bytes`' order), `renderLine` (`LogEntry::to_json`), `finiteF64` (serde_json's own "number out of range", applied to every numeral in the line), the small grammars `parseInstanceStatus`, `instDate?` and `stampFromKey`, and the goals `the_log_reads_what_it_renders`, `a_known_event_is_never_read_as_unknown`, `an_unknown_tag_is_never_a_warning` and `lineTooLong_bounds_every_string`. Stage 5 D9 step B3. **Since step S2 (D16) it also WRITES**: `emitEvent` reads the host's values with the reader's own `readArgs` and `emitLine` renders them with `renderLine`, so the log's format has one definition and not two held together by T2 — and `Event.primaryId` of a `close` is `period:key` since quirk Q6(f) (parity **P36**, gap 86). *Since W-43 track G `instDate?` (`parse_date`), `chronoYear`, `chronoDateParts`, `chronoDateValid` and `utf8Len` are defined in `Line`, under these names: an item line's `due:` and `waiting:` read through `instDate?` too, so a date has one reading in the kernel (README gap 4346).*
 - `Replay` — the kernel's replay of the log (design §7, §8; phase C), namespace `Tm.Replay`. Step C1: the undo mask as a left fold over a survivor stack (`matches`, written `«matches»` at its definition because `matches` is a keyword; `maskStep`, `survivors`, `dangles`), positions (`stackI`, `cancelledAt`, `cancelledLines`), `Log.linesIncreasing`, the goals `survivors_snoc_event`, `survivors_snoc_undo`, `a_cancelled_event_is_never_revived`, `a_dangling_undo_dangles_in_every_extension`, and the `@[csimp]` fast twins `survivorsFast`/`cancelledLinesFast` (per-tag and per-(tag, id) stacks of positions in `PosMap`, lazy deletion; `maskFast_inv` is the simulation). Stage 5 D9 step C1. Step C2: the day index, fork `DayIndex`, in chrono's order (`sortWakes`, `keptStep`/`dedupFrom`/`keptFrom`/`keptWakes`: consecutive dedup on the local date, not earliest per date; `lastWakeLe`, `dayOf` with chrono's `durationBetween` under 24 h; `dayIndexOf`, `entryDays` for every entry), quirk Q6(a)'s two first-wake rules (`keptWakeOn`, `firstLoggedWakeOn`, separated and bounded by `the_kept_wake_is_not_the_first_logged_wake` and `the_kept_wake_is_the_first_logged_wake_when_wakes_are_logged_in_order`), the goals `dayOf_is_the_wake_date_within_a_day`, `a_wake_day_is_shorter_than_a_day`, `keptWakes_append_of_later` restated in chrono's order (the design's nanosecond forms refuted by `…_by_nanos_is_refuted`), and the `@[csimp]` twins `sortWakesFast` (core `mergeSort`) and `entryDaysFast` (bisection, `lePoint`).
 - `Seal` **and 57 `Seal*` proof modules — 58 files, 15,494 lines, 762 theorem declarations** — the
   window: a checkpoint plus sealed day and window records that answer exactly what replaying the whole
@@ -273,6 +281,26 @@ kernel's own (§2.4).
 - `Boundary` — `String → String`: the request readers, `parseCmd`, the loader, `runLoad`/`run`, `respond`, `call`, `callExport`. Since stage 5 D9 step B4 `respond` runs `runWithLog`: the request's `tz` section (`readTz`, the zone table `tm/src/cli/tz_table.rs` probes, built only by `Cal.mkTz?`; **the one reader of `tz`** since the merge that closed gap 108) and `log` section (`readLogReq`, `mkLogReq?`, `logAnswer`: every line read by `Log.readLine`, its warnings by name, headers `[line, tag, id]`, renderings; since step C1 `want.facts`, answered as `facts.cancelled` for a tail from line 1, `Replay.cancelledLines`; since step C2 also `facts.days`, `[line, day]` for every entry, `Replay.entryDays` in the request's zone, which `LogReq.tz` carries from `zoneOf`), then `run`; a request with neither is `run`. Since stage 5 D10 step L6 the `capacity` section (`CapWire`, refusals `{"err":{"capacity":"<name> <key>"}}`; `CapWire.readTz` is `tzAbsent` or B4's `readTz`), `runCap`/`respondCap`/`callCap` (the `lookahead` response key, unit counts as digit strings), and `callExport`, which runs `callCap`: `runWithLog` on every request without `capacity` (`runCap_without_capacity_is_runWithEmit` since S2, `callExport_without_capacity_is_call`), and with it the `tz`/`log` sections first, then the documents, the capacity section and the commands, answering `docs`, `report`, `log`, `lookahead` (`runCap_answers_docs_report_log_lookahead`). Since stage 5 D10 step L8: the zone is read once (`zoneOf`, feeding `logSectionWith` and `readCapacityZ`; `the_zone_is_read_once_and_feeds_both_sections`), `runCap` answers through `runCapZ`, the optional `capacity.candidates` (`readCands`; `badCandidate <i> <key>`, `tooManyCandidates`) adds `lookahead.grants` (`grantJson`, `lookaheadJsonWith`), and a capacity request with commands is refused, `capacityWithCommands` (`runCap_refuses_commands_beside_capacity`, `an_answered_capacity_request_has_no_commands`). L8's host half: a candidate record's optional `floor` (`readFloor`, `badCandidate <i> floor`) and the floor answer's grant (`grantJsonF`, class `floor`; `grantJsonF_without_a_floor`); the binary's one encoder of this request is `tm/src/cli/kernel_capacity.rs`. Since stage 5 step **S2** (D16) the **`emit` section**: `{"emit":[{"at":[sec,ns,west,offSec],"ev":<tag>,"f":{…}}]}` in, the exact bytes to append out, through `Log.emitEvent`/`emitLine`; `runWithEmit` wraps `runWithLog`, so every theorem proved about `run` and the `log` section holds unchanged. Since stage 6 **W-13 track B** (D24) the **seam** is open: `logOpZ` answers a `LogAnswer` — the bytes `logOp` always answered, and the `Seal.Answer` they were rendered from (`LogReq.seamFacts`, `some` when the request resumed and asked for facts) — `logAnswerOf`/`readLogSection`/`logSectionWith` carry it, and `runCapZ` hands it to `readCapacityZ`, whose first consumer is `"wake": "log"` (`CapWire.WakeSrc`, `wakeClockOf`, `dayRecordOn`; refused `wakeWithoutLog` without a replay). `logOp` is kept as a **view** of `logOpZ`, so every law stated about it is unchanged (`the_capacity_section_reads_the_log_sections_own_replay`, `runCap_reads_the_capacity_section_against_its_own_log_answer`, `the_capacity_input_is_the_replays_wake`; README **gap 210 closed**). Since stage 6 **step L9** (gap 93 closed) the seam has its second consumer, **day 0**: the section gains `at` (a stamp through B2's one reader), `state` (`date`, `window`, `budget`, `arrival`, `loc`, `allowHome`), `posterior` (`fullHours`, `zeroHours`) and `sleep` (`shiftModel`, `shiftConfig`, `underHours` — the shifts **signed**), read by `readAt`, `readState`, `readPosterior`, `readSleep` through `boundedPos`/`signedOf` (`den ≤ 10^6`, value `≤ 10^6`, with rejection theorems), and `CapWire.todayFromLog` projects today's `DayRecord` into `Look.Today`. `day0` and `badDay0` are **gone**; the new refusals are `badAt`, `nowDisagrees`, `badState <key>`, `badPosterior <key>`, `badSleep <key>` and **`day0WithoutLog`** (a capacity request with no replay has no day 0 and is refused, never answered with an empty day). Phase F's F2/F3 spend the same seam.
 - `Arith` — exact rational arithmetic. Its consumers are `Report` (minutes as an `Arith.Pos`) and, since stage 5 step 2, `Priority` (the ladder, `safety`, a rational availability).
 
+*Added at W-43 track G, each line read off the module's own header (README gap 4325):*
+
+- `Fast` — the fast checker behind `planWf`'s interface: `@[csimp]` twins the compiler runs while every theorem reads the original (README gap 62).
+- `Recur` — §5's occurrences inside the kernel: the recurrence family fork `recur.rs` computes (`instances`, `is_mandatory`, the windows and statuses), over the plan and the log's replay. Stage 6 track K, step K3b.
+- `Width` — a duration a line carries is refused past the host's `u32` width, by name, at the loader (the campaign's D69 call on README gap 3345). W-38.
+- `PastCut` — D65's cut: the part of a paused row a wall of the day covers is not drawn, over plain spans of seconds. W-37.
+- `WallTimer` — D61 decided by the kernel: the `pause` and `unpause` a calendar wall writes over a running block, from the replay's own facts. W-37.
+- `Planner` — §8's vocabulary (`Seg`, `DayPlan`, `PlanReq`) and §8.2's steps; `Planner.dayPlan` is the day the kernel answers with. Stage 6, P0 onward.
+- `GridCut` — the week grid cuts a pause with the planner's own cut (`segSpans` is `Planner.pastSpans` at a day it is not planning). W-39.
+- `MidnightCut` — a Pause past local midnight is cut by each calendar day's own walls (`daySpans`; D77). W-40.
+- `PlanDiff` — fork `planner::diff` and §9.1's overtime what-if (`overtimeDiff`), the TUI's `→ drops:` line; it plans over `PlanOnce`'s twin since the W-42 repair. W-34.
+- `PlanOnce` — `dayPlanOnce`, §8.2's day with every view computed once: the `@[csimp]` twin of `Planner.dayPlan` that the compiled code runs (D82). W-42 track S.
+- `PlanFold` — what §8.2's steps 5 and 6 do to a day that assigns nothing, and the restated L24/L25 (`PlanFold.plan_tail_drop`, `PlanFold.plan_is_stable_across_a_replan`). W-37 onward.
+- `PlanCheck` — L26's eleven single-run laws as one checker battery with their reflection lemmas; imported by no library module (check 12 answers it as a proof class). Stage 6 track G.
+- `Emit` — the day section as CELLS (`Row`, §4.3's nine), never padded text; one Rust function pads (D30 Q6). P8.
+- `PlannerWit` — a `PlanReq` that can be written down, and the planner's end-to-end witnesses. W-15 onward.
+- `EmitWire` — an `Emit.Row` crosses the wire: the request's `plan` section and its rows (W-24); the `@[export]` it carried then moved on to `PlanWire`.
+- `PlanWire` — the planner's inputs cross the wire, the `planner` section (D48; W-27), and `PlanWire.callExport` is the package's one `@[export]` since.
+- `PlanStable` — three stability laws of the planner's day (D77's break counter among them), theorems only. W-40.
+
 **A new module is not built until it is imported.** `kernel/TmKernel/TmKernel.lean`
 is **78** `import TmKernel.<Mod>` lines at stage 5's close (twenty at D9 step C1, nineteen at
 D9 step B3, eighteen at D9 step B2, seventeen at D10 step L1, sixteen at step 3, fifteen at step 2,
@@ -288,6 +316,12 @@ that created it), and the remaining stages propose more (§8.3, §8.4). Add the 
 ```bash
 cd /Users/psixyzt/code/planner/kernel/TmKernel && cat TmKernel.lean
 ```
+
+*At W-43 track G it is **94** lines (`grep -c '^import' TmKernel.lean`): the 58 of the `Seal*` group and
+36 others, stage 6 having added sixteen, every one in the commit that created it (`git log --diff-filter=A`
+on each file, and that commit's `TmKernel.lean`).  Since the W-31
+repair a library file that emitted no C fails check 12 (`reach.py`, README gap 2149), so a module nobody
+imports is no longer invisible to `check.sh`; it is still not in the archive, and the rule stands.*
 
 `Goals.lean` is the deliberate exception — it is *not* imported, and §3.2 says
 why that is what makes it safe.
@@ -390,6 +424,13 @@ constructor. `alreadyDemoted` is the one most often left out — §6.3 gives an 
 standing tombstone. Note that `danglingDep`/`depCycle` appear under **both**
 `kernel` (a command) and `itemCheck` (the loader): a host must not match on the
 string alone.
+
+*Re-derived at W-43 track G from `kerrName` (`Boundary.lean`) and the four sites that write the
+`"kernel"` key (README gap 4325): **twelve** strings, **eleven** of them `KErr` — `occupied`,
+`noSuchId`, `notDemoted`, `alreadyDemoted`, `badHorizon`, `badItem`, `keyAbsent`, `danglingDep`,
+`depCycle`, `noTarget`, `noSection` — and `siteOutOfRange` from `loadPlan`.  The edit path's tab
+refusal (tabbedLine) is gone since W-42 track G: the owner's D83 made a tab a separator the kernel
+reads as the host does, and the refusal went with its reason.*
 
 The free-text `err` is not one thing either. It carries: `bad json: <JErr>` (the
 parser's thirteen names, `jerrText`); `property not found: <k>`, `String
@@ -1668,7 +1709,8 @@ and the sources already match.
 
 **Re-run AFTER the switch, at stage 5's closing commit (2026-09-16), with `512 4`
 and a REBUILT oracle** — this is stage 5's plan acceptance (§8.3) and the run to
-quote: **138 corpus lines compared, 77 with nothing to report; 2,048 generated
+quote *(at stage 5's close; the figures to quote today are W-43 track G's, at the end of this
+section)*: **138 corpus lines compared, 77 with nothing to report; 2,048 generated
 lines compared, 470 with nothing to report** — both **byte-for-byte** the
 `017ead3` and stage-5-close figures, so the grammar surface did not move while
 the in-tree reader was deleted, the writer was replaced by the kernel's (S2) and
@@ -1704,6 +1746,18 @@ corpus lines have something to report against the old side's 12, so 49 are new,
 and because a line may disagree in more than one comparison the corpus rows sum
 to 199. The README's `129`/`479` were taken before the demotion model changed;
 that is the whole point of §5.11.
+
+*Re-measured at W-43 track G, 2026-10-03 (README gap 4325), through an oracle extracted from `4748911`
+and built fresh for the step (`build-oracle.sh` into a scratch directory; §7.3's freshness rule), input
+sets 1 and 2 with `512 4`: **138 corpus lines compared, 43 with nothing to report; 2,048 generated
+lines compared, 1,395 with nothing to report** — at `0984304` and on W-43 track G's tree alike, the two
+reports byte-identical but for their headers (neither input set carries a signed date, so the step that
+taught the line chrono's dates moved no row of either).  The figures above are earlier stamps and
+are kept as history; W-42 track G's block measured the generated set's move across the owner's D83 (the
+kernel's separator made the host's) on both of its sides, and this step did not re-derive when the corpus
+set's 77 became 43.  The largest rows now: corpus `itemCheck/danglingParent` 55 and `est edit — different
+line` 37; generated `id — Rust reads none, kernel reads one` 485, `missing state` 347, and `manyIds` 26
+(gap 33, §8.1).*
 
 ### 7.4 The self-check an audit will apply to your theorem statements
 
@@ -2045,15 +2099,30 @@ corpus and CLI suites — never a theorem.
   `tabbedLine` (`edit_of_a_tabbed_line_is_refused`,
   `the_tab_guard_is_not_vacuous`); `add` refuses a tab in a title. Gap 32 itself
   (`isSp`) stays open and plan-tier.*
+  *Status at W-43 track G (README gap 4325): **closed** at W-42 track G (`26058cf`) by the
+  owner's D83 — `Text.isSp` is Rust's `char::is_whitespace`, the 25 `White_Space` code points
+  (`isSp_eq_whiteSpace`); a box ends only where fork 4748911's `state_at` ends one (`isBoxEnd`,
+  `a_box_needs_its_end`); and the edit path's tab refusal is deleted with its four laws, a tabbed
+  line being edited as the host edits it (`a_tabbed_line_is_edited_as_the_host_edits_it`).  `add`
+  still refuses a tab in a title, by policy now and not by necessity (`titleTab`, README gap
+  4164).  The oracle's figures after the change are §7.3's.*
 - **Every `^`-leading word is an id** (gap 33). A bare `^` names
   the empty id; `^%` names `%`; a corpus line is refused as `manyIds` where the
   shipped parser reads `q7`. *Status: open, unchanged.*
+  *Status at W-43 track G (README gap 4325): still open — `isIdWord` is any word led by `^`.
+  Through a freshly built oracle, 1 of the 138 corpus lines and 26 of the 2,048 generated lines are
+  refused `manyIds` where fork 4748911 reads one id (the corpus line is still
+  `plan-conflicts/week/2026-W37.md`'s `^%`); the 26 were 13 before W-42 track G's separator rule
+  (the owner's D83), whose block records the move in its §7.*
 - **Routines and optional items are invisible** (gap 5). §4.1 says
   `routines.md` and `optional.md` omit the state box; `parseItem` requires
   `- [<glyph>]`, so those lines are prose. The seven verbs cannot address them.
   Fixing it needs a `RawItem` that records whether the box was there — a type
   change across `State`/`Plan`/`Cmd`/`Boundary`. *Status: open; the host keeps
   every id-less line on the old Rust path, by name.*
+  *Status at W-43 track G (README gap 4325): **closed** by K3a (`f2225ec`, the owner's D31) by
+  exactly the means named here — `RawItem.boxed` — and a box-less, id-less line is keyed by its
+  title (D31, D33's `^id` for a boxed one).*
 - **`Id`'s shape is a human decision** (gap 13, plan §6.2 q2). §3.1 says
   4 chars of `[a-z0-9]`; the Rust enforces nothing; the spec's own fixtures ship
   `^O1`. The recorded resolution is *weaken the spec, not tighten the data* — but
@@ -3181,6 +3250,60 @@ as 'tm becomes verified' is overstating it by a factor of three."*
 ## 10. Reference
 
 ### 10.1 The package, re-measured at stage 5's CLOSING commit, 2026-09-16 (after `2b26be3`, `47a0443`, `760ead6`)
+
+*Re-measured at W-43 track G, 2026-10-03, on the tree this step commits (README gap 4325): per module,
+`wc -l`, and the names `leanfiles.qualified_theorem_names` returns for that file — the roster
+`python3 leanfiles.py --theorems TmKernel` prints whole and check 3 reads.  The table after this one is
+stage 5's close, kept as it was.*
+
+| module | lines | theorem declarations |
+|---|---:|---:|
+| `Boundary.lean` | 13,189 | 528 |
+| `PlannerWit.lean` | 12,754 | 590 |
+| `Planner.lean` | 9,649 | 558 |
+| `Line.lean` | 8,667 | 588 |
+| `Replay.lean` | 8,237 | 409 |
+| `PlanCheck.lean` | 6,421 | 281 |
+| `Lookahead.lean` | 6,309 | 386 |
+| `Close.lean` | 5,833 | 258 |
+| `Json.lean` | 3,735 | 185 |
+| `PlanFold.lean` | 2,986 | 125 |
+| `Cmd.lean` | 2,830 | 148 |
+| `Log.lean` | 2,783 | 119 |
+| `Plan.lean` | 2,738 | 148 |
+| `PlanWire.lean` | 2,200 | 136 |
+| `Cal.lean` | 1,734 | 169 |
+| `Capacity.lean` | 1,419 | 107 |
+| `Arith.lean` | 1,188 | 98 |
+| `EmitWire.lean` | 1,104 | 63 |
+| `Text.lean` | 1,010 | 55 |
+| `Recur.lean` | 976 | 29 |
+| `PlanStable.lean` | 931 | 35 |
+| `Report.lean` | 889 | 35 |
+| `State.lean` | 882 | 54 |
+| `Priority.lean` | 868 | 88 |
+| `Fast.lean` | 858 | 55 |
+| `WallTimer.lean` | 716 | 31 |
+| `Stamp.lean` | 644 | 22 |
+| `Emit.lean` | 609 | 30 |
+| `Tree.lean` | 541 | 37 |
+| `GridCut.lean` | 521 | 17 |
+| `PlanOnce.lean` | 466 | 15 |
+| `MidnightCut.lean` | 448 | 22 |
+| `PlanDiff.lean` | 423 | 27 |
+| `Grain.lean` | 321 | 31 |
+| `PastCut.lean` | 201 | 13 |
+| `Width.lean` | 198 | 12 |
+| `Seal.lean` + 57 `Seal*` modules | 15,659 | 767 |
+| **94 modules** | **120,937** | **6,271** |
+| `TmKernel.lean` | 94 | — |
+| `Check.lean` | 8,211 | — |
+| `Negative.lean` | 2,904 | — |
+| `Goals.lean` | 1,437 | — |
+
+*The 94 modules' theorem declarations are **6,271**, and the axiom audit prints **6,279** lines: every one of the 6,271 and the eight definitions §6.3 names (`comm -13`).  Archive `libTmKernel_TmKernel.a`: **24,720,800 bytes** (24,691,320 at `0984304`).  `check.sh` prints seventeen lines (fourteen checks; check 13 prints four), FFI **95** tests, corpus **29/37 files and 4/5 whole plans**, stage goals **0**, check 12 **1,506** reachable and **1,099** exempt — the W-43 track G block of `kernel/README.md` carries the run, and the workspace's totals.*
+
+*Stage 5's close, as it was measured then:*
 
 The theorem column counts declarations including `@[simp] theorem`, which is what
 §6.3's third command counts and what reconciles with the audit. The right-hand

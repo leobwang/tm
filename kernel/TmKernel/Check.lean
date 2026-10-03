@@ -38,11 +38,11 @@ open Tm
 #print axioms Tm.tokenize_raw
 #print axioms Tm.tokenize_toks
 #print axioms Tm.serialize_parse
-#print axioms Tm.parse_serialize
+#print axioms Tm.parse_serialize_box_ended
 #print axioms Tm.renderSplit_splitDoc
 #print axioms Tm.view_set_is_not_silent
 #print axioms Tm.lead_edit_is_silent
-#print axioms Tm.setEst_canonical
+#print axioms Tm.setEst_canonical_box_ended
 #print axioms Tm.setEst_line_reparses
 
 -- the commands
@@ -780,7 +780,7 @@ open Tm
 #print axioms Tm.Field.toksWf_insertBeforeId_gen
 #print axioms Tm.Field.idWords_setKeyIn
 #print axioms Tm.Field.idWords_insertBeforeId_gen
-#print axioms Tm.Field.setKey_canonical
+#print axioms Tm.Field.setKey_canonical_box_ended
 #print axioms Tm.Field.setKey_line_reparses
 #print axioms Tm.Field.isIdWord_startsToken
 #print axioms Tm.Field.classifyWord_flag
@@ -952,7 +952,7 @@ open Tm
 #print axioms Tm.Field.renderWords_wordWf
 #print axioms Tm.Field.filter_isIdWord_render
 #print axioms Tm.Field.idToks_render
-#print axioms Tm.Field.renderItem_canonical
+#print axioms Tm.Field.renderItem_canonical_box_ended
 #print axioms Tm.Field.render_round_trip
 #print axioms Tm.Field.demo_wf
 #print axioms Tm.Field.demo_round_trips
@@ -1005,7 +1005,7 @@ open Tm
 #print axioms Tm.Field.toksWf_filter
 #print axioms Tm.Field.isKeyTok_false_of_isIdWord
 #print axioms Tm.Field.idWords_filter_notKey
-#print axioms Tm.Field.unsetKey_canonical
+#print axioms Tm.Field.unsetKey_canonical_box_ended
 #print axioms Tm.Field.unsetKey_line_reparses
 #print axioms Tm.Field.setFlag_on_the_spec_line
 
@@ -1427,12 +1427,6 @@ open Tm
 #print axioms Tm.Field.readNat_lt_pow_length
 #print axioms Tm.Field.mkDate?_some
 #print axioms Tm.Field.parseDate_dayWf
-#print axioms Tm.Field.parseDT_wf
-#print axioms Tm.Field.parseMoment_wf
-#print axioms Tm.Field.parseEnd_spec
-#print axioms Tm.Field.parseInterval_spec
-#print axioms Tm.Field.parseInterval_wf_unless_rollover
-#print axioms Tm.Field.parseWindow_wf_unless_rollover
 #print axioms Tm.Field.parseRule_wf
 #print axioms Tm.Field.parseOnEvent_wf
 #print axioms Tm.Field.parseDep_wf
@@ -1441,15 +1435,11 @@ open Tm
 #print axioms Tm.Field.parseLoc_wf
 #print axioms Tm.guardWf_isSome
 #print axioms Tm.guardWf_none_iff
-#print axioms Tm.editValOf_due_refuses_only_what_parseMoment_refuses
 #print axioms Tm.editValOf_every_refuses_only_what_parseRule_refuses
 #print axioms Tm.editValOf_onEvent_refuses_only_what_parseOnEvent_refuses
 #print axioms Tm.editValOf_after_refuses_only_what_parseDeps_refuses
-#print axioms Tm.editValOf_waiting_refuses_only_what_parseDate_refuses
 #print axioms Tm.renderLoc_parseLoc
 #print axioms Tm.editValOf_loc_refuses_only_a_bad_or_unworded_value
-#print axioms Tm.editValOf_interval_refuses_only_a_bad_value_or_the_rollover
-#print axioms Tm.editValOf_window_refuses_only_a_bad_value_or_the_rollover
 #print axioms Tm.the_eight_bridged_keys_accept_their_spec_values
 #print axioms Tm.the_year_9999_rollover_parses_but_the_edit_refuses_it
 #print axioms Tm.wordLoc_renders_a_word
@@ -4998,7 +4988,7 @@ open Tm
 #print axioms Tm.bareOk_any
 #print axioms Tm.boxAt_eq_some
 #print axioms Tm.boxAt_none_of_head
-#print axioms Tm.canonicalKeyed_of_canonical
+#print axioms Tm.canonicalKeyed_of_canonical_box_ended
 #print axioms Tm.Field.findSome_kParent_phase0
 #print axioms Tm.Field.kinds_bare
 #print axioms Tm.Field.kinds_boxed
@@ -7160,7 +7150,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Field.toksWf_head_word
 #print axioms Tm.Field.toksWf_setLeadToks
 #print axioms Tm.Field.idWords_setLeadToks
-#print axioms Tm.Field.setLead_canonical
+#print axioms Tm.Field.setLead_canonical_box_ended
 #print axioms Tm.Field.setRemaining_canonical
 #print axioms Tm.Field.setRemaining_line_reparses
 #print axioms Tm.Field.the_leading_estimate_is_rewritten_in_place
@@ -8153,3 +8143,69 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Field.ci_reads_a_signed_value
 #print axioms Tm.Field.rule_month_signed
 #print axioms Tm.parseCmd_refuses_every_separator_at_a_titles_edge
+
+/-
+   APPENDED 2026-10-03: stage 6, run W-43, TRACK G — an item line reads a date through
+   chrono's readers (README gap 4346): `Log.instDate?`, `Field.parseDT` (`parse_datetime`) and
+   `Field.parseTime` (`parse_time`), with chrono's item readers MOVED to Line.lean.  Ten
+   stage-3 bridge and edit laws that held because the line refused a signed year are refuted
+   by one and restated beside it; their lines are removed above.  And gap 4344: seven laws
+   over W-42's narrower CanonicalItem carry the suffix _box_ended (their lines renamed above).
+-/
+#print axioms Tm.LogStamp.trimWs_cons
+#print axioms Tm.LogStamp.lit_cons
+#print axioms Tm.LogStamp.numIn_digits
+#print axioms Tm.LogStamp.numIn_ok_range
+#print axioms Tm.Log.utf8Len_of_ascii
+#print axioms Tm.Log.utf8Size_of_digit
+#print axioms Tm.Log.isLeap_cycle
+#print axioms Tm.Log.chronoDateValid_of_valid
+#print axioms Tm.Log.valid_of_chronoDateValid
+#print axioms Tm.Log.dayOfParts?_some
+#print axioms Tm.Log.chronoYear_le_unless_plus
+#print axioms Tm.Log.chronoYmd_year
+#print axioms Tm.Log.dayOfParts?_of_valid
+#print axioms Tm.Field.renderClock_utf8Len
+#print axioms Tm.Field.parse_render_time
+#print axioms Tm.Field.renderDate_utf8Len
+#print axioms Tm.Field.the_line_reads_back_the_date_it_writes
+#print axioms Tm.Field.parseDT_render
+#print axioms Tm.Field.dayWf_of_le
+#print axioms Tm.Field.instDate?_dayWf_unless_signed
+#print axioms Tm.Field.parseDT_wf_unless_signed
+#print axioms Tm.Field.parseMoment_wf_unless_signed
+#print axioms Tm.Field.parseDT_wf_is_refuted
+#print axioms Tm.Field.parseMoment_wf_is_refuted
+#print axioms Tm.Field.parseEnd_orders_its_ends
+#print axioms Tm.Field.parseEnd_spec_is_refuted
+#print axioms Tm.Field.parseInterval_orders_its_ends
+#print axioms Tm.Field.parseInterval_wf_unless_its_end_is_past_9999
+#print axioms Tm.Field.parseInterval_spec_is_refuted
+#print axioms Tm.Field.parseInterval_wf_unless_rollover_is_refuted
+#print axioms Tm.Field.parseWindow_wf_unless_its_end_is_past_9999
+#print axioms Tm.Field.parseWindow_wf_unless_rollover_is_refuted
+#print axioms Tm.Field.the_line_reads_a_signed_year_as_chrono_does
+#print axioms Tm.Field.a_date_before_year_one_is_no_date_on_the_line
+#print axioms Tm.Field.the_line_refuses_a_date_chrono_refuses
+#print axioms Tm.Field.parseTime_is_chronos_not_rfc3339s
+#print axioms Tm.editValOf_due_refuses_only_a_bad_value_or_a_signed_year
+#print axioms Tm.editValOf_due_refuses_only_what_parseMoment_refuses_is_refuted
+#print axioms Tm.editValOf_waiting_refuses_only_a_bad_value_or_a_signed_year
+#print axioms Tm.editValOf_waiting_refuses_only_what_parseDate_refuses_is_refuted
+#print axioms Tm.editValOf_interval_refuses_only_a_bad_value_or_an_end_past_9999
+#print axioms Tm.editValOf_interval_refuses_only_a_bad_value_or_the_rollover_is_refuted
+#print axioms Tm.editValOf_window_refuses_only_a_bad_value_or_an_end_past_9999
+#print axioms Tm.editValOf_window_refuses_only_a_bad_value_or_the_rollover_is_refuted
+#print axioms Tm.a_signed_year_is_edited_as_the_host_reads_it
+#print axioms Tm.Field.readNat_foldl_digits
+#print axioms Tm.Field.readNat_all_digits
+#print axioms Tm.Log.chronoYmd_digits
+#print axioms Tm.Log.chronoHM_digits
+#print axioms Tm.Log.utf8Len_of_dateish
+#print axioms Tm.Field.parseDate_shape
+#print axioms Tm.Field.parseClock_shape
+#print axioms Tm.Field.chronoYmd_of_parseDate
+#print axioms Tm.Field.instDate?_is_chronos_parse_date
+#print axioms Tm.Field.parseDT_is_chronos_parse_datetime
+#print axioms Tm.Field.parseTime_is_chronos_parse_time
+#print axioms Tm.LogStamp.trimWs_eq_dropWhile

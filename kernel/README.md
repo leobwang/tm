@@ -84828,3 +84828,292 @@ divergences the swap would ship.  The exact remaining list before the swap:
 And WITH the swap, by name: gaps 3476 and 4327, now **twenty** tests (gap 4347), 3583, 4046, and 4321.  Gap 4340 (an
 interruption inside a running break, read two ways) is the owner's and moves no planner row, so it does not block the
 swap.
+
+<!-- =====================================================================
+     APPENDED 2026-10-03: stage 6 (the planner), run **W-43**, **TRACK G**
+     — one reading of a date (README gap 4346), honest theorem names (gap
+     4344) and the process document caught up (gap 4325).  Worktree
+     `.claude/worktrees/w43-g` (branch `w43-g`, off `0984304`); mutations,
+     plants and drives in clones and scratch trees under
+     `scratchpad/w43-g/`, never in the shared tree; the main checkout on
+     `rebuild-on-lean` throughout.  Gap range **4430-4459**.  Parity:
+     **P88** (pre-allocated to this track).
+     ===================================================================== -->
+
+## Stage 6 — W-43 track G: one reading of a date, honest theorem names, and the ledger caught up
+
+*The record: an item line reads a date as the host reads it (§1; P88 for what it still reads otherwise, §3), seven names say what they state (§2), and AGENTS.md is re-measured (§6). Gaps 4346, 4344 and 4325 close; 4430-4432 open (§7).*
+
+### 0. The brief, measured before it was acted on
+
+**The date readers, by function name** — `scratchpad/w43-g/probe-main.rs`, one program built twice, against the
+worktree's `tm-core` and against fork 4748911's (extracted fresh by `build-oracle.sh`), output byte-identical
+(`probe-host.out` = `probe-fork.out`); the kernel's column read off `#eval` at `0984304`
+(`scratchpad/w43-g/kernel-readers.lean`).  `model.rs`' readers are byte-identical at `4748911` and `0984304`
+(`awk` over both `git show`s), and both lock files pin chrono 0.4.45.
+
+| field | host = fork 4748911 | kernel at `0984304` |
+|---|---|---|
+| `due:` date | `Moment::parse` → `model::parse_date`: 10 UTF-8 bytes, chrono `%Y-%m-%d` (`%Y` signed) | `Field.parseMoment` → `Field.parseDate`: four digits, two, two |
+| `due:` date-time | `Moment::parse` → `model::parse_datetime`: 16 bytes, `%Y-%m-%dT%H:%M` | `Field.parseMomentDT`: split at `T`, `parseDate` + `parseClock` |
+| `waiting:` | `col.parse("waiting", parse_date)` | `Field.viewWaiting` → `Field.parseDate` |
+| `at:` | `model::parse_interval`: `parse_datetime` start; end `parse_datetime` if it holds a `T`, else `parse_time` (5 bytes, `%H:%M`) | `Field.parseInterval` → `parseDT`, `parseEnd`/`parseEndShort` (`parseClock`) |
+| `win:` | `WindowRange::parse`: a `T` → `parse_interval`; else split at `-`, `parse_time` twice | `Field.parseWindow` → `parseInterval`, else `parseWindowDaily` (`parseClock` twice) |
+| `pref:` | `Pref::parse` → `parse_time` | `Field.parsePref` → `parseClock` |
+| `demoted:` | `Stamp::parse_list`: split `,`, trim, `W`/`D` + ASCII digits, `u32` | `Field.parseStamps` → `readNat`, unbounded |
+| `every:` | `Rule::parse`: no date anchor (`month:N` through `u8`) | `Field.parseRule` (`readRustNat` since the W-42 repair) |
+| log `inst=`, a stamp key's date | fork `log.rs` `parse_date(inst)`, `parse_date(from)`; `recur::parse_instance_key` | `Log.instDate?`, `Log.stampFromKey` — exact ports |
+
+Measured on both binaries' readers (`probe-*.out`, `kernel-readers.lean`):
+
+| input | host = fork | kernel at `0984304`: line / `Log.instDate?` |
+|---|---|---|
+| `+026-09-09` | 0026-09-09 | none / 0026-09-09 |
+| `+2026-9-09`, `+2026-09-9`, `+0026-9-09` | 2026-09-09, 2026-09-09, 0026-09-09 | none / the same |
+| `+10000-1-7`, `+20260-1-7` | 10000-01-07, 20260-01-07 | none / the same |
+| `0000-01-01`, `-000-01-01`, `-001-01-01` | year 0, year 0, year −1 | none / none |
+| `+2026-09-09` (11 bytes), `2026-9-09` (9) | refused | refused |
+| `+026-09-07T12:50`, `+2026-09-07T8:15`, `+2026-9-07T08:15`, `+10000-1-7T08:15` | read | none |
+| `0000-01-01T09:00`, `-001-01-01T09:00` | read (year 0, −1) | none |
+| `D4294967296` (`demoted:`) | refused (`u32` overflow) | `[day 4294967296]` |
+| every `HH:MM` probe (`12:50`, `1:50`, `+1:50`, `12:5`, `24:00`) | `parse_time` | `parseClock`: the same answers |
+
+### 1. Gap 4346: one reading of a date
+
+**What the item line reads with now** (`Line.lean`; the readers' header is the argument):
+
+| field | the kernel since W-43 | is chrono's because |
+|---|---|---|
+| `due:` date, `waiting:` | `Log.instDate?` — `parse_date`: RFC 3339's four-two-two through `Field.parseDate` first, then 10 UTF-8 bytes and chrono's `%Y-%m-%d` items | `Field.instDate?_is_chronos_parse_date`, on every input |
+| `due:` date-time, `at:`, absolute `win:` | `Field.parseDT` — `parse_datetime`: the old split at `T` first, then 16 bytes and `%Y-%m-%dT%H:%M` (`Log.chronoYmd`, `LogStamp.lit`, `Log.chronoHM`) | `Field.parseDT_is_chronos_parse_datetime` |
+| `at:`'s short end, daily `win:`, `pref:` | `Field.parseTime` — `parse_time`: `parseClock` first, then 5 bytes and `%H:%M` | `Field.parseTime_is_chronos_parse_time` |
+| the log's `inst=` and a stamp key's date | `Log.instDate?`, unchanged in what it answers | the same theorem: one definition, two callers |
+
+**One definition, moved below the line.**  `Log.instDate?` is fork `model::parse_date`, the function the fork's
+line grammar AND its log replay read a date with, and until W-43 the kernel had two readings of it: the log's
+(chrono's, D9 C5) and the line's (`Field.parseDate`, four-two-two).  The log's readers lived above `Line.lean`
+in the import order (`Stamp.lean`, `Log.lean`), so they MOVED into `Line.lean` with their names and bodies —
+`LogStamp.StampErr`, `LogStamp.trimWs` (but for its body, below), `LogStamp.lit`, `LogStamp.numIn`,
+`Log.chronoYear`, `Log.chronoDateParts` (now through the shared prefix `Log.chronoYmd`), `Log.chronoDateValid`,
+`Log.utf8Len`, `Log.instDate?` (now with the RFC 3339 branch first, below) — and every line that cites them reads
+them by the name it always did: **75 lines of eleven modules** at `0984304` besides `Stamp.lean` and `Log.lean`
+themselves (`Replay.lean` 16, the `Seal*` group 56 over eight files, `Recur.lean` 2, `Boundary.lean` 1;
+`git grep` of the nine names), so no file of another track moved but for the deletion of the moved definitions
+from `Log.lean` (one contiguous block and the note left in its place, nothing else in that file).  New: `Log.chronoYmd`
+(the `%Y-%m-%d` items and what they leave, read once for `parse_date` and `parse_datetime`), `Log.chronoHM`
+(the `%H:%M` items), `Log.dayOfParts?` (chrono's date as a `Cal.Day`), `Field.parseTime`.  One body changed in
+the move: `LogStamp.trimWs` is `str::trim_start` written as its own recursion.  Its one-line body
+(`s.dropWhile isSp`) was inlined at every call, so it was emitted and reached by none — it stood in
+`reach-exempt.txt` under `## Stamp.lean` — and an unreached definition in `Line.lean` would be a new exemption
+that check 12's shrink-only file refuses (its key is the module and the name).  Recursive, it is called; the
+entry is deleted and the file shrinks, 1,100 → 1,099.  `LogStamp.trimWs_eq_dropWhile` proves the recursion
+drops what `s.dropWhile isSp` dropped, on every input (appended at the end of `Line.lean`, so no line a check-9
+pin names moves, README gap 2136).
+
+**The RFC 3339 branch, and why it is there (§5.10a's finding).**  Built through chrono's items alone, the
+first full build was killed at the 40 GB cap while elaborating `PlannerWit.lean` (`scratchpad/w43-g/build3.log`,
+rc 143; `journalctl`: "A process of this unit has been killed by the OOM killer"), whose `decide` witnesses load
+plans and read their dates; at `0984304` the same file takes 7.57 GB and 6:00 (`plannerwit-head.err`, the clone,
+`/usr/bin/time -v`).  Each of the three readers now reads RFC 3339's shape first — the reader it was — and
+chrono's items only where that fails, and each carries a theorem saying the result IS chrono's on every input,
+so the branch is an evaluation order and not a second reading: the strict reader answers only what chrono
+answers the same way (`Field.chronoYmd_of_parseDate`, `Log.chronoYmd_digits`, `Log.chronoHM_digits`).
+`PlannerWit.lean` with the branch: **7.97 GB, 6:08** (`plannerwit-new.err`, 16 GB cap).  The cap was never
+raised and no witness was touched.
+
+**Laws restated** (old ⇒ new?):
+
+| law as stage 3 stated it | why it is false since W-43 | refuted by | the law beside it |
+|---|---|---|---|
+| parseDT_wf: a date-time the line reads is `dayWf` | chrono reads `+10000-1-7T08:15` | `Field.parseDT_wf_is_refuted` | `Field.parseDT_wf_unless_signed` (new ⇒ old on a word with no `+`) |
+| parseMoment_wf | `due:+10000-1-7` | `Field.parseMoment_wf_is_refuted` | `Field.parseMoment_wf_unless_signed`, `Field.instDate?_dayWf_unless_signed` |
+| parseEnd_spec: from a writable start, the end is writable or the rolled day | a long end past 9999 | `Field.parseEnd_spec_is_refuted` | `Field.parseEnd_orders_its_ends` (its first conjunct, which still holds; no wf hypothesis) |
+| parseInterval_spec: a parsed start is writable | `at:+10000-1-7T08:15/09:00` | `Field.parseInterval_spec_is_refuted` | `Field.parseInterval_orders_its_ends` |
+| parseInterval_wf_unless_rollover: the rollover is the only failure | the same interval, its end on its start's day | `Field.parseInterval_wf_unless_rollover_is_refuted` | `Field.parseInterval_wf_unless_its_end_is_past_9999` (the rollover is one way an end gets past 9999) |
+| parseWindow_wf_unless_rollover | `win:+10000-1-7T08:15/09:00` | `Field.parseWindow_wf_unless_rollover_is_refuted` | `Field.parseWindow_wf_unless_its_end_is_past_9999` |
+| editValOf_due_refuses_only_what_parseMoment_refuses | the edit refuses `+10000-1-7`, which the line reads | `editValOf_due_refuses_only_what_parseMoment_refuses_is_refuted` | `editValOf_due_refuses_only_a_bad_value_or_a_signed_year` |
+| editValOf_waiting_refuses_only_what_parseDate_refuses | the edit reads `+026-09-01` (the line's reader since W-43), `parseDate` does not | `editValOf_waiting_refuses_only_what_parseDate_refuses_is_refuted` | `editValOf_waiting_refuses_only_a_bad_value_or_a_signed_year` |
+| editValOf_interval_refuses_only_a_bad_value_or_the_rollover | `at:+10000-1-7T08:15/09:00` | `editValOf_interval_refuses_only_a_bad_value_or_the_rollover_is_refuted` | `editValOf_interval_refuses_only_a_bad_value_or_an_end_past_9999` |
+| editValOf_window_refuses_only_a_bad_value_or_the_rollover | `win:+10000-1-7T08:15/09:00` | `editValOf_window_refuses_only_a_bad_value_or_the_rollover_is_refuted` | `editValOf_window_refuses_only_a_bad_value_or_an_end_past_9999` |
+
+Each was a law about a hole — it held because the line refused every signed spelling — so D5's rule is the
+refute-and-rename, with the law stated on the subdomain where it holds and the subdomain in its name (§3.1
+item 4).  `Field.parseDate_dayWf` is unchanged and still true: `parseDate` is RFC 3339's reader, kept for a log
+stamp's date (`Stamp.lean`'s `rfc3339`) and the kernel's own wire (`now`, a candidate's `due`).  Re-proved
+over the new definitions with their statements unchanged: `Field.parse_render_DT`, `Field.parseDT_clock_none`,
+`Field.parse_render_moment`, `Field.parse_render_interval`, `Field.parse_render_window`, `Field.parse_render_pref`,
+`Field.view_set_waiting`, `Field.view_render_waiting`, `Field.row_waiting_date`, `Field.moment_date_form`,
+`Field.moment_datetime_form`, `Field.overnight_window_roundtrips`; new: the round trips
+`Field.the_line_reads_back_the_date_it_writes` and `Field.parse_render_time`, and the witnesses
+`Field.the_line_reads_a_signed_year_as_chrono_does`, `Field.a_date_before_year_one_is_no_date_on_the_line`,
+`Field.the_line_refuses_a_date_chrono_refuses`, `Field.parseTime_is_chronos_not_rfc3339s`,
+`a_signed_year_is_edited_as_the_host_reads_it` (Cmd.lean: the edit writes `due:+026-09-09` as `0026-09-09`,
+`renderDate`'s spelling — D49's one writer — and refuses `+10000-1-7` and `0000-01-01` by name).
+
+### 2. Gap 4344: seven names say what they state
+
+W-42 narrowed `CanonicalItem` (a box ENDED by its first token's separator) and kept seven names.  Each is
+renamed with the suffix `_box_ended` — `Tm.parse_serialize_box_ended`, `Tm.setEst_canonical_box_ended`,
+`Tm.Field.setKey_canonical_box_ended`, `Tm.Field.unsetKey_canonical_box_ended`,
+`Tm.Field.setLead_canonical_box_ended`, `Tm.Field.renderItem_canonical_box_ended`,
+`Tm.canonicalKeyed_of_canonical_box_ended` — and nothing else changed: statements and proofs are byte-identical
+but for the name, every Lean citation moved (`Line.lean`, `Cmd.lean`, `Check.lean`, and one doc citation each in
+`Boundary.lean` and `Lookahead.lean`), and the append-only README blocks that cite the old names are counted in
+`citations-allow.txt`.  `CanonicalItem`'s docstring says so.
+
+### 3. Parity
+
+The change REMOVES a departure from fork 4748911 — every signed spelling of a date the host reads (`+026-09-09`,
+`+2026-9-09`, `+2026-9-07T12:50`, `+10000-1-7`) is now read by the kernel as the host reads it — and leaves one,
+which is registered: the kernel's calendar starts at 0001-01-01.
+
+**Parity P88 taken**: an item line's date outside the kernel's calendar — before 0001-01-01 (`due:0000-01-01`, `due:-001-01-01`, a `waiting:`, an `at:` or `win:` date-time in year 0 or before) or past 9999 (`due:+10000-1-7`, which the line reads since W-43) — is refused where fork 4748911 reads chrono's year: the kernel's line reads no date before 0001-01-01 (`Log.instDate?`, `Field.parseDT`; `Day := Nat` from 0001-01-01, AGENTS §4), the planner's wire refuses by name a candidate the host built with such a deadline (`badCandidate <i> due`, the RFC 3339 reader the wire reads a date with), so `tm check` exits 2 naming the day R3's `tm plan` would refuse, and `tm edit` refuses by name (`badValue`) to write such a date, which no ten-byte render writes back, and writes a signed spelling it reads in `renderDate`'s (`due=+026-09-09` writes `due:0026-09-09`, D49's one writer); the fork says "no problems", plans the day and writes the value as typed (W-43 track G, README gap 4346; P33's residue on the item line)
+
+| parity | what diverges | this branch | fork 4748911 | decided by |
+|---|---|---|---|---|
+| **P88** | an item line's date before 0001-01-01 or past 9999 | no date on the line before 0001-01-01 (`Field.a_date_before_year_one_is_no_date_on_the_line`); the host's candidate refused on the wire (`badCandidate <i> due`, `tm check` exit 2); the edit refused by name past 9999, and a signed spelling written as `renderDate` spells it (`a_signed_year_is_edited_as_the_host_reads_it`) | chrono's year; the day planned; the value written as typed | §4's `Day := Nat`; the wire's RFC 3339 date; `renderDate`'s ten bytes |
+
+### 4. Driven on three binaries
+
+`scratchpad/w43-g/drive/drive.sh` on `plan-basic` at `2026-09-07T09:00-05:00`, against fork 4748911's `tm`
+(built from the oracle's extraction, `fork.out`), `0984304`'s (built in the clone, `head.out`) and this branch's
+(`branch.out`):
+
+| world | fork 4748911 | `0984304` | this branch |
+|---|---|---|---|
+| `tm edit ^d2 due=+026-09-09` | `due:+026-09-09` written as typed, exit 0 | `kernel refusal: badValue`, exit 1 | `due:0026-09-09` written (`renderDate`'s spelling, D49), exit 0 |
+| `tm edit ^d2 due=+2026-9-09` | written as typed, exit 0 | `badValue`, exit 1 | `due:2026-09-09` written, exit 0 |
+| `tm edit ^d2 due=+10000-1-7` | written as typed, exit 0 | `badValue`, exit 1 | `badValue`, exit 1 (read, and no ten-byte render writes it back) |
+| `tm edit ^d2 due=0000-01-01` | written as typed, exit 0 | `badValue`, exit 1 | `badValue`, exit 1 (no `Cal.Day`) |
+| `^g1` respelled `at:+2026-9-07T12:50/13:50`, `tm check` | `no problems`, exit 0 | `error[kernel-load] … itemCheck … (fileKindShape)`, exit 2: the kernel read no `at:` on a calendar line and refused the WHOLE TREE | `no problems`, exit 0 |
+| the same tree, `tm drop ^a1` | `dropped ^a1`, exit 0 | the automatic close refused, `nothing was written`, exit 1 | `dropped ^a1`, exit 0 |
+| `^d2` respelled `due:0000-01-01`, `tm check` | `no problems`, exit 0 | `error[planner-refusal] … badCandidate 0 due`, exit 2 | `badCandidate 0 due`, exit 2 (P88) |
+| `^d2` respelled `due:+10000-1-7`, `tm check` | `no problems`, exit 0 | `badCandidate 13 due`, exit 2 | `badCandidate 13 due`, exit 2 (P88: the line reads it now, the wire does not) |
+| all four lines of `kernel_date_worlds.rs` signed, `tm check` and `tm plan` | `no problems`; the day | `fileKindShape`, exit 2; `tm plan` exit 1, nothing written | `no problems`; **the day byte-identical to the fork's** |
+
+The fifth and sixth rows are gap 4346 at its worst, and stronger than the gap said: not a day planned
+otherwise after R3 but every kernel-backed verb refused today, on a tree the fork reads, because a calendar
+line's `at:` is its shape (`shapesWf`'s file-kind rule) and the kernel read none.
+
+### 5. Plants, each in the clone `scratchpad/w43-g/clone`, `git status --porcelain` and `git diff` hashed before and after (equal for every plant but the last row, below)
+
+| plant | where | caught by |
+|---|---|---|
+| `due:`'s date read with `Field.parseDate` again | `Line.lean` `parseMoment` | `parseMoment_wf_is_refuted`, `the_line_reads_a_signed_year_as_chrono_does`, `the_line_refuses_a_date_chrono_refuses` (each a `decide` proving its statement false), and two proofs (`parse_render_moment`, `parseMoment_wf_unless_signed`) |
+| `parseDT` without chrono's items (the RFC 3339 branch alone) | `Line.lean` | `parseDT_is_chronos_parse_datetime`, `parseDT_wf_is_refuted`, `parseEnd_spec_is_refuted`, `parseInterval_spec_is_refuted`, `parseInterval_wf_unless_rollover_is_refuted`, `parseWindow_wf_unless_rollover_is_refuted`, `the_line_reads_a_signed_year_as_chrono_does`, and two proofs |
+| `waiting:` read with `Field.parseDate` again | `Line.lean` `viewWaiting` | `view_set_waiting`, `view_render_waiting` |
+| the `waiting:` edit read with `Field.parseDate` again | `Cmd.lean` `editValOf` | `editValOf_waiting_refuses_only_a_bad_value_or_a_signed_year`, the refutation `editValOf_waiting_refuses_only_what_parseDate_refuses_is_refuted` (the old law holds of the plant, so its refutation fails), `a_signed_year_is_edited_as_the_host_reads_it` |
+| the readers through chrono's items alone (no RFC 3339 branch) | the whole kernel, built | `PlannerWit.lean` killed at the 40 GB cap (§1) — the finding the branch answers |
+| `kernel_date_worlds.rs` against `0984304`'s code | the clone, every tracked file checked out at `0984304` and this step's test beside them | **9 passed, 2 failed**: `the_kernel_plans_the_signed_world_as_its_unsigned_twin` (`the kernel refused the request: {"err":{"itemCheck":"fileKindShape"}}`) and `tm_check_says_nothing_on_the_signed_world` (`tm check` exit 2, `error[kernel-load] … (fileKindShape)`); the host's reader and both P88 tests pass there, as they should, the residue being `0984304`'s too.  A first run, before the test's own defect was fixed (an edit applied twice to `backlog.md`), is not counted |
+
+The last row's restore copied the worktree as it stood when the plant ended, and this block's §8 had been written in
+the worktree meanwhile: the porcelain listing hashed equal (`e59fce7a7693`), the diff hash moved `776405e73e67` →
+`a43461bc0937`, and the clone then equalled the worktree (`a43461bc0937`), so the move is this README's and AGENTS.md's
+text and nothing the plant wrote.  The same run read cheats 266-270 against `0984304`'s kernel: 266 COMPILES there (the
+line read no date from `+026-09-09`), so the change is what refuses it; 267, 268 and 270 are refused there too (they
+guard readings the change kept — year 0, the sixteen bytes, the edit past 9999), and 269 names `Field.parseTime`, which
+`0984304` lacks.  The archive there: 24,691,320 bytes.
+
+And D40, run in the clone only (`scratchpad/w43-g/mutations-run.sh`; `mut-*.log`): the twenty definitions this step
+added, moved or changed — `LogStamp.trimWs`, `LogStamp.lit`, `LogStamp.numIn`, `Log.chronoYear`, `Log.chronoYmd`,
+`Log.chronoDateParts`, `Log.chronoHM`, `Log.chronoDateValid`, `Log.dayOfParts?`, `Log.utf8Len`, `Log.instDate?`,
+`Field.parseTime`, `Field.parseDT`, `Field.parseMomentDT`, `Field.parseMoment`, `Field.parseEndShort`,
+`Field.parseWindowDaily`, `Field.parsePref`, `Field.viewWaiting` and `editValOf` — **every one PINNED** (sixteen
+of them by a synthesised constant, `lit` and `numIn` among them, whose `Except StampErr` has no `default`), and
+`trimWs` again after its body became a recursion (three constants, the identity among them, PINNED); the moved
+definitions' rows are keyed to `Line.lean`, and the one row they orphaned (`trimWs` under `Stamp.lean`) is deleted.
+The pin sites this step's edits moved were re-run and rewritten, not edited (`--verify --write`): 17 rows of
+`Line.lean`, `Tm.isIndent`'s, and four of `Cmd.lean`'s (`carryEst`, `EditVal.rendered`, `locWordOk`, `setEstTo`).
+The gate: **694 new or changed since `86c4dc6`, 694 rostered, 0 owed** (236 unfoldable, 160 witness fixtures,
+40 pinned by nothing, 2 literal — none of the 40 this step's).
+
+### 6. Gap 4325: AGENTS.md caught up, by re-measurement
+
+Sections touched, none of them §4, each change an italic status note beside the sentence it supersedes and no
+sentence deleted:
+
+* **§2.3** — the root import order re-derived from `TmKernel.lean` (94 lines: 36 modules and the 58 of the
+  `Seal*` group); bullets for the seventeen modules no bullet named (`Fast`, and the sixteen stage 6 added —
+  `PlanOnce` among them, each imported in the commit that created it); W-43 notes on the `Line`, `Stamp` and
+  `Log` bullets; the import count (78 at stage 5's close, 94 now).
+* **§2.4** — `kernel`'s names re-derived from `kerrName`: twelve strings, eleven `KErr`; tabbedLine gone since
+  W-42 track G.
+* **§7.3** — the grammar figures through a freshly built oracle: 138/43 and 2,048/1,395 at `0984304` and on this
+  tree, byte-identical reports; the stage-5 "run to quote" marked as of its date.
+* **§8.1** — gap 32's trap closed (W-42 track G, D83); gap 5's closed (K3a, D31); gap 33's measured and open.
+* **§10.1** — the package table re-measured over the 94 modules (`wc -l` and `leanfiles.qualified_theorem_names`
+  per file, the roster check 3 reads), the audit, the archive, `check.sh`'s lines.
+
+### 7. Gaps 4430-4459
+
+**Gap 4346 — CLOSED here** (§1): the line reads every date the host reads but the ones P88 names.  **Gap 4344 —
+CLOSED here** (§2).  **Gap 4325 — CLOSED here** (§6), with W-42's gap 4160, its AGENTS.md half.
+
+**Gap 4430 — a `demoted:` stamp past `u32`.**  1. *What.*  Fork `Stamp::parse` reads the number after `D`/`W`
+into a `u32`, so `demoted:D4294967296` fails the key (a `tm check` problem, no stamps); `Field.parseStamp` reads
+it with `readNat`, unbounded, and holds `[day 4294967296]` (measured, §0).  2. *Why not changed.*  It is a width
+(R10), not a date; bounding the reader puts a hypothesis on `Field.parse_render_stamp` that every writer of a stamp
+— the close's `D<dd>`/`W<ww>` in `Close.lean`, `Report.lean` and `Cmd.lean` — must then discharge, files of no
+track this run.  3. *Cost.*  A hand-typed stamp past `u32` counts toward the month review's "≥ 2 stamps" to the
+kernel and not to the host.  4. *Clears it.*  `Field.parseStamp` bounded by `u32::MAX`, with the round trip's
+bound threaded through the stamp writers (all of whose stamps are below 54).
+
+**Gap 4431 — `LogStamp.yearOf` is a second reader of chrono's `%Y`.**  1. *What.*  The log stamp's fallback reads
+its year with `yearOf` (B2), which classifies a sign (`beforeOrigin`, `pastYear9999`) where `Log.chronoYear` (C5)
+returns the year; both read chrono's `Numeric(Year)`.  The classification is unobservable — `parseStamp` returns
+`rfc3339`'s error and discards the fallback's.  And `yearOf` refuses every signed year past 9999 although
+the instant can be inside `Cal.Instant`'s range: MEASURED, fork 4748911's `parse-entry` reads
+`"t":"+10000-01-01T00:30+01:00"` as epoch 253402299000 (9999-12-31T23:30Z) and the kernel's `LogStamp.parseStamp`
+refuses it (`scratchpad/w43-g/stamp-probe.lean`); P23's text names "a year ≥ 10000" among its refusals, so the
+class is registered in words, though its instant is not past the origin's other end.  2. *Why not changed.*  One
+reader would put `chronoYear` under the fallback, which would read that stamp — a change to what the log reads,
+held to fork 4748911's frozen per-line verdicts (T1-T3), which are not this track's.  3. *Cost.*  §5.3's class in
+the log grammar, held by nothing.  4. *Clears it.*  The step that holds the log grammar: `fallback` reads `chronoYmd`'s
+prefix, its frozen verdicts re-asked of the fork.
+
+**Gap 4432 — two docstrings call `Field.parseDate` "the one date grammar".**  1. *What.*  `GridCut.lean`'s
+`emit.walls.week` reader and `Boundary.lean`'s optional-date reader say so; since D9 C5 the kernel has had a second
+(chrono's, `Log.instDate?`), and since W-43 the item line reads it.  2. *Why not changed.*  Neither file is this
+track's beyond renames.  3. *Cost.*  A reader of the wire's code meets a claim that is no longer the whole truth
+(the wire's reader is RFC 3339's, as it should be).  4. *Clears it.*  The step holding either file: "RFC 3339's
+date grammar, the wire's".
+
+### 8. Acceptance, capped
+
+`git status --porcelain` and the code's `git diff` hashed before and after every measurement and equal each time; the
+other tracks of W-43 ran on this machine throughout, so every log carries `uptime` at its start and end.
+
+* **`check.sh`, seventeen lines, all ok, exit 0** — in `scratchpad/w43-g/clone`, on this commit's tree, 9 min 3 s (the
+  kernel rebuilt from the plant's build of `0984304`, §5): lake build ok; totality ok; axiom audit **6,279**
+  theorems (6,232 at `0984304`, 57 new, 10 retired by their refutations; the seven renames renamed in place);
+  Negative.lean rejected (cheats 266-270, each `decide` proving its statement false); FFI **95**; corpus **29/37 files
+  and 4/5 whole plans** (unchanged); stage goals **0**; prose citations 57,103 (54,693 resolved, 2,410 allowed, 503
+  counted), 0 allow entries unused; new definitions mutated **694** new or changed since 86c4dc6, 694 rostered, **0
+  owed**; parity **P1-P88**, three declared holes (P85-P87, tracks K and H), next free P89; no two names, 3,376
+  bodies, 0 UNANSWERED; every emitted definition reached, **1,506** reachable over 9 sent sections (1,501 at
+  `0984304`: `chronoYmd`, `chronoHM`, `dayOfParts?`, `parseTime` and the recursive `trimWs`), **1,099** exempt
+  (1,100), 0 UNANSWERED; fields 17/17; inputs 33 of 37; sent 169 key paths over 10 sections; written 220; the kernel
+  replays 94 modules.  The run before it, on the same code, was green on every line but parity (P88's anchor had moved
+  with this block's text).
+* **`cargo test --workspace --no-fail-fast`, THREE complete runs (D46) on this commit's code** (runs 3-5 of
+  `scratchpad/w43-g/ws-run*.log`; the code's hash `3d2da4e8c0dd` at each start and end): each **134 result lines,
+  2,146 passed, 0 failed, 32 ignored, 0 warnings** (18 min 26 s for the first, which rebuilt the kernel; 8 min 34 s
+  for each of the others), no `.proptest-regressions` file changed — W-42's repair's 2,135 plus `kernel_date_worlds`'
+  11.  Runs 1 and 2, on earlier states of this tree (their code changed between start and end), were green too and are
+  not counted.
+* **The named suites, inside each run**: T5 `kernel_replay_parity` 32 (4 ignored), the door `kernel_log_door` 26,
+  `cli_switch_acceptance` 16, `cli_latency` 6 (1 ignored), `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 27,
+  `kernel_row_cells` 28, `kernel_item_grammar` 6, `kernel_planner_wire` 27, `planner_classes` 56 (6 ignored),
+  `planner_invariants` 39 (2 ignored), `cli_conformance` 5, `cli_json_matrix` 8; and `kernel_log_grammar` 17 (2
+  ignored), `kernel_separator_worlds` 12, `cli_break_in_block` 5, and this step's `kernel_date_worlds` 11 (its five,
+  and the six `kernel_log` unit tests its `#[path]` include brings).  FFI: check 5's 95, check 6's corpus.
+* **`cli_latency --include-ignored`, three runs, nothing else of this track running** (load 1.4-1.7): 7 passed each,
+  24.8-25.1 s.  T18's day: the planner call 7.7-8.1 ms (example), 63.6-64.2 ms (T11), 89.9-91.0 ms and 185.6-193.7 ms
+  (T14); `tm check` 19.1-19.3 ms, 581-589 ms, 142-145 ms, 239-248 ms; the what-if 12.7-12.9 ms, 62.9-64.3 ms,
+  125.6-129.9 ms, 319.7-347.7 ms.  No band was touched.
+* **The oracle's input sets 1 and 2** through fork 4748911's oracle, extracted and built fresh this step: 138 corpus
+  lines, 43 with nothing to report; 2,048 generated lines, 1,395 — on this commit's tree, the report identical line
+  for line to `0984304`'s (AGENTS §7.3's note).
+* **Not run, by name**: the `TM_ORACLE` arms of T1-T3 and T5 (their frozen arms ran in every run above; what the log
+  reads with `Log.instDate?` is unchanged on every input, `Field.instDate?_is_chronos_parse_date`); the §5.13 drive of
+  the TUI (the CLI drives are §4's).
