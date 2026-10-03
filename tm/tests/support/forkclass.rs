@@ -1533,7 +1533,14 @@ pub fn order_worlds(parent: &ClassWorld) -> Vec<ClassWorld> {
 /// **W-41 track H adds `p67`** (README gap 3958): P67's comparand after a running break — the
 /// break logged at any length (the owner's D77) — present only where it departs from `p45`,
 /// P45's rest reading, which it had replaced under P45's flag from W-40 track P until W-41.
-pub const ANSWERS: [&str; 11] = ["day", "shipped", "d57", "d60", "whatif", "p45", "p52", "p55", "p56", "p64", "p67"];
+///
+/// **W-42 track C adds `p69`** (the owner's D89, README gap 4133): `{"p69": true}` on a line
+/// whose comparand plans with P69's transformation (`forkplan::p69_state`: a start on the plan's
+/// date at one of the LOGGED start's block boundaries, the one start fork 4748911 can be asked
+/// with that ends the running block where the kernel's log reading does). Its flag lived on the
+/// two P69 lines before D89, written beside the answers as the number no fork input carried;
+/// listing it here puts it under the D64 gate with every other answer.
+pub const ANSWERS: [&str; 12] = ["day", "shipped", "d57", "d60", "whatif", "p45", "p52", "p55", "p56", "p64", "p67", "p69"];
 
 /// **The answers every line carries, `null` where there is none** — the five a
 /// line has carried since W-36. The rest of [`ANSWERS`] are present only where
@@ -1594,6 +1601,89 @@ pub fn is_d64b_reason(why: &str) -> bool {
     why.starts_with("20") && why.contains("D64(b)")
 }
 
+/// **A D64(c) re-bless's reason, as the owner's D85 demands it** (W-42 track C, README gap
+/// 4281): dated (`20…`), naming `D64(c)`, and naming the README gap that records the harness
+/// correction (`gap <n>`) — a corrected reading is a fact about the HARNESS, and the gap is
+/// where that fact is written down, so the license points at it.
+pub fn is_d64c_reason(why: &str) -> bool {
+    let names_a_gap = why.match_indices("gap ").any(|(i, g)| why[i + g.len()..].starts_with(|c: char| c.is_ascii_digit()));
+    why.starts_with("20") && why.contains("D64(c)") && names_a_gap
+}
+
+/// **A re-bless's D64(c) reason, read strictly** (W-42 track C): the environment variable
+/// `var`, absent → `None`; present and not a D64(c) reason ([`is_d64c_reason`]) FAILS rather
+/// than being ignored, as [`because_of`] fails on a token that is not a parity number.
+pub fn harness_of(var: &str) -> Option<String> {
+    let why = std::env::var(var).ok()?;
+    assert!(
+        is_d64c_reason(&why),
+        "{var}: `{why}` is not a D64(c) reason — dated (20…), naming D64(c) and the README gap of the harness correction (gap <n>)"
+    );
+    Some(why)
+}
+
+/// **The shipped fork's day a line holds**: its `shipped` day where the comparand departs from
+/// it, its `day`'s day otherwise — one reading for every gate clause that holds it by value.
+pub fn shipped_of(line: &Value) -> &Value {
+    if line["shipped"].is_null() {
+        &line["day"]["day"]
+    } else {
+        &line["shipped"]["day"]
+    }
+}
+
+/// **A value's bytes**, as every frozen line is written (`serde_json::to_string`, keys sorted):
+/// what D85's "byte-identical" compares.
+pub fn bytes(v: &Value) -> String {
+    serde_json::to_string(v).expect("a value serialises")
+}
+
+/// **The owner's D85: D64(c), a corrected HARNESS reading** (W-42 track C, README gaps 4123,
+/// 4139 and 4281). A committed frozen line may be recomputed when the harness's reading of its
+/// world is corrected to the binary's — ONLY IF, each checked here by bytes:
+///
+/// 1. **the world is the committed line's** — and so is every key that is not a departure the
+///    committed line records: its name, class, tests, seed, draw, derivation and the rest of its
+///    provenance (a moved world is a re-draw, D64(b), never (c));
+/// 2. **the shipped fork's day is the committed line's and the live one's** ([`shipped_of`]):
+///    a harness correction is a fact about how the comparand reads the world, so it moves no
+///    day fork 4748911 plans (`shipped` itself may come or go only as the comparand starts or
+///    stops departing from that same day);
+/// 3. **only the departures the committed line RECORDS move**: the comparand's own `day` and
+///    `whatif`, and every object the committed line carries a parity flag in
+///    ([`flag_homes`]) — its flags may flip and its answers move or go, since a corrected
+///    reading can move a departure off a world (gap 4123's P55) or onto it (its P46). A
+///    departure the committed line does NOT record is an introduction, D70's, under (a).
+///
+/// and `why` is a D64(c) reason ([`is_d64c_reason`]). `Ok` names every key that moved.
+pub fn d64c_allows(old: &Value, new: &Value, shipped_day: &Value, why: &str) -> Result<Vec<String>, String> {
+    let who = old["name"].as_str().or_else(|| old["class"].as_str()).unwrap_or("<unnamed>");
+    if !is_d64c_reason(why) {
+        return Err(format!("{who}: `{why}` is not a D64(c) reason (dated, naming D64(c) and the harness correction's gap)"));
+    }
+    let shipped = bytes(shipped_of(old));
+    if shipped != bytes(shipped_of(new)) || shipped != bytes(shipped_day) {
+        return Err(format!("{who}: the SHIPPED fork's day moved, and D64(c) corrects a harness reading, never the fork's day"));
+    }
+    let recorded: BTreeSet<String> =
+        ["day", "whatif", "shipped"].into_iter().map(str::to_string).chain(flag_homes(old).into_iter().map(|(_, _, home)| home)).collect();
+    let keys: BTreeSet<&String> = old.as_object().into_iter().flatten().chain(new.as_object().into_iter().flatten()).map(|(k, _)| k).collect();
+    let mut moved = Vec::new();
+    for k in keys {
+        if bytes(&old[k.as_str()]) == bytes(&new[k.as_str()]) {
+            continue;
+        }
+        if !recorded.contains(k) {
+            return Err(format!(
+                "{who}: `{k}` moved, which is not a departure the committed line records — D64(c) moves the comparand's \
+                 `day`, `whatif` and the objects the line carries a flag in, nothing of its world or provenance"
+            ));
+        }
+        moved.push(k.clone());
+    }
+    Ok(moved)
+}
+
 /// **What one frozen line's re-bless changed, and whether D64 allows it** —
 /// the rule the re-bless path is held to. `old` is the committed line, `new`
 /// the line with the fork's answers recomputed; `shipped_day` the shipped
@@ -1633,9 +1723,62 @@ pub fn is_d64b_reason(why: &str) -> bool {
 ///   the number's. The one thing this cannot see is an edit to a governed
 ///   transformation's OWN code that is not that parity rule (README gap 3331,
 ///   residue): that is a code change, reviewed in its diff.
+/// * **D64(c), since the owner's D85** (W-42 track C): when the re-bless names a corrected
+///   HARNESS reading (`harness`, a [`is_d64c_reason`]), [`d64c_allows`] licenses the change on
+///   its own — the world, the provenance and the shipped fork's day byte-identical, only the
+///   departures the committed line records moved. Where it does not, (a) and the introduction
+///   are still asked, so one run may carry both kinds of reason; a refusal quotes both.
 /// * In every case the shipped fork's day stays by value: where the comparand
 ///   departs from it, `shipped` holds it.
 pub fn d64_allows(
+    old: &Value,
+    new: &Value,
+    shipped_day: &Value,
+    because: &[u32],
+    harness: Option<&str>,
+    registered: &BTreeSet<u32>,
+) -> Result<Vec<String>, String> {
+    let c = harness.map(|why| d64c_allows(old, new, shipped_day, why));
+    if let Some(Ok(_)) = &c {
+        if !old["day"].is_null() {
+            return Ok(ANSWERS.iter().filter(|k| old[**k] != new[**k]).map(|k| (*k).to_string()).collect());
+        }
+    }
+    d64_allows_a(old, new, shipped_day, because, registered).map_err(|e| match &c {
+        Some(Err(ce)) => format!("{e}; and as D64(c): {ce}"),
+        _ => e,
+    })
+}
+
+/// **A world re-drawn since its committed line, as the owner's D64(b) allows it** (W-42 track C,
+/// README gap 4151) — asked of the COMMITTED line, where `planner_classes.rs`' re-draw asked it
+/// of the working copy: the re-drawn line carries a `d64b` the committed one does not, its reason
+/// dated and naming D64(b) ([`is_d64b_reason`]); the committed world is one the shipped binary
+/// cannot hold and the re-drawn one is one it can ([`binary_holds`]); and the class is kept. So a
+/// world edited in the working copy cannot pass for a re-draw at the re-bless that fills it.
+pub fn redrawn_since(old: &Value, new: &Value, tz: Tz) -> Result<(), String> {
+    let who = format!("{}{}", old["class"].as_str().unwrap_or("<no class>"), old["secondary"].as_str().map(|s| format!(" ({s})")).unwrap_or_default());
+    let why = new["d64b"]["why"].as_str().or_else(|| new["d64b"].as_str()).unwrap_or_default();
+    if new["d64b"] == old["d64b"] || !is_d64b_reason(why) {
+        return Err(format!("{who}: its world moved since the committed line and it carries no new D64(b) reason (`d64b`)"));
+    }
+    let built = |l: &Value| ClassWorld::of_json(&l["world"], tz).map(Built::of);
+    let (was, now) = (built(old).map_err(|e| format!("{who}: {e}"))?, built(new).map_err(|e| format!("{who}: {e}"))?);
+    if binary_holds(&was).is_ok() {
+        return Err(format!("{who}: its committed world is one the binary can hold, so D64(b) does not reach it"));
+    }
+    if let Err(e) = binary_holds(&now) {
+        return Err(format!("{who}: the re-drawn world is not one the binary can hold either: {}", e.join("; ")));
+    }
+    if class_of(&now).key() != old["class"].as_str().unwrap_or_default() {
+        return Err(format!("{who}: the re-drawn world is a `{}` world", class_of(&now).key()));
+    }
+    Ok(())
+}
+
+/// [`d64_allows`] without a harness reason: D64(a), the introduction, and a D64(b) re-draw's
+/// cleared answers — the gate as it stood before the owner's D85.
+fn d64_allows_a(
     old: &Value,
     new: &Value,
     shipped_day: &Value,

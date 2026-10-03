@@ -855,7 +855,7 @@ tm tui
 
 `tm plan --explain ^id` prints why an item is where it is: `p = k(3) + bin(u=0.31 → +1) = 4; slot 11:50 energy 4, ci 3, gap 1; deps ok; cap 2b/d: 1b used`.
 
-`tm stop --at HH:MM` and `tm done --at HH:MM` end the running block when it ended — the latest such time at or before now, so `--at 23:40` typed in the morning is last night — and log that instant; the minutes are worked up to it. An end before the block's start, or before a pause, interruption or running break the log or `state.json` already holds after it, is refused by name, and so is `--at` on a retro `tm done ^id`. `tm wake` is refused while a block, an interruption or a break is still running; `tm break --where` takes one of the four places of §12.6.
+`tm stop --at HH:MM` and `tm done --at HH:MM` end the running block when it ended — the latest such time at or before now, so `--at 23:40` typed in the morning is last night — and log that instant; the minutes are worked up to it. An end before the block's start, or before a pause, interruption or running break the log or `state.json` already holds after it, is refused by name, and so is `--at` on a retro `tm done ^id`. `tm energy 0-5 --at HH:MM` reports energy at today's HH:MM, unless that is more than 12 hours after now (elapsed time, so a DST change moves the edge by its hour), when it is yesterday's — `--at 23:40` typed at 00:40 is last night, `--at 10:30` at 09:00 is today — and the report's hours since wake and night slept are that day's. `tm wake` is refused while a block, an interruption or a break is still running; `tm break --where` takes one of the four places of §12.6.
 
 ---
 

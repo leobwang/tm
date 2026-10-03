@@ -792,13 +792,16 @@ fn demote_with_a_standing_record_merges_into_it() {
     assert_eq!(tm.events(), vec!["demote".to_string()]);
 }
 
-/// Gap 32's guard, in the shipped binary: a tab is a word character to the
-/// kernel and whitespace to the old Rust tokenizer, so an `est=` written
-/// against a tabbed line could land on the wrong token. The kernel refuses
-/// the whole edit path by name (`tabbedLine`) instead — kernel/README.md,
-/// 2026-09-12 "the five lifecycle verbs" block.
+/// **Gap 32, closed in the shipped binary** (the owner's D83, W-42 track G).
+/// Until W-42 a tab was a word character to the kernel and whitespace to the
+/// host's tokenizer, so an `est=` written against a tabbed line could land on
+/// the wrong token, and the kernel refused the whole edit path by name instead
+/// (kernel/README.md, 2026-09-12 "the five lifecycle verbs" block). A tab is
+/// the kernel's separator now, as it is the host's, so the edit writes what the
+/// host would write: the leading estimate is the slot (D56), rewritten in place
+/// as typed, and the tab inside the title is kept.
 #[test]
-fn est_edit_of_a_tabbed_line_is_refused_by_name() {
+fn est_edit_of_a_tabbed_line_writes_what_the_host_writes() {
     let tm = Tm::new();
     let path = tm.plan.join("backlog.md");
     let text = std::fs::read_to_string(&path)
@@ -806,9 +809,12 @@ fn est_edit_of_a_tabbed_line_is_refused_by_name() {
         .replace("Insurance claim", "Insurance\tclaim");
     std::fs::write(&path, &text).expect("write backlog");
     let out = tm.run(&["edit", "^a1", "est=45m"]);
-    assert_ne!(out.code, 0, "{}{}", out.stdout, out.stderr);
-    assert!(out.stderr.contains("tabbedLine"), "{}", out.stderr);
-    assert_eq!(std::fs::read_to_string(&path).expect("re-read"), text);
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("re-read"),
+        text.replace("- [ ] 2 30m Insurance\tclaim", "- [ ] 2 45m Insurance\tclaim"),
+        "only the slot moved"
+    );
 }
 
 /// Kernel-backed verbs demand a loadable tree: a corrupted id **anywhere**
@@ -1950,16 +1956,17 @@ fn edit_refuses_by_name_where_the_host_wrote_or_said_nothing() {
         assert_eq!(tm.run(&["check"]).code, 0, "`tm check` after a refused edit");
     }
 
-    // `tabbedLine` needs a line that already carries a tab (gap 32), which no
-    // fixture does: the old path wrote `loc:out` onto it and exited 0.
+    // A line that carries a tab was refused here too until W-42 (gap 32's
+    // guard, tabbedLine); the owner's D83 made a tab the kernel's separator,
+    // and the edit lands as on any line — the old path's write, `loc:out`,
+    // before the `^id`.
     let tm = Tm::new();
     let backlog = tm.read("backlog.md");
     fs::write(tm.plan.join("backlog.md"), format!("{backlog}- [ ] 3\t1b Tabbed line ^tb1\n"))
         .expect("write backlog.md");
     let out = tm.run(&["edit", "^tb1", "loc=out"]);
-    assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
-    assert!(out.stderr.contains("tabbedLine"), "{}", out.stderr);
-    assert!(!tm.read("backlog.md").contains("loc:out"), "the tabbed line was written");
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    assert!(tm.read("backlog.md").contains("- [ ] 3\t1b Tabbed line loc:out ^tb1\n"), "{}", tm.read("backlog.md"));
 }
 
 /// **What routing does NOT reach, pinned so it is a recorded cost and not a

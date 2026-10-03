@@ -116,6 +116,14 @@ def isRustSpace (c : Char) : Bool :=
     c.toNat == 0x1680 || (0x2000 ≤ c.toNat && c.toNat ≤ 0x200A) || c.toNat == 0x2028 ||
     c.toNat == 0x2029 || c.toNat == 0x202F || c.toNat == 0x205F || c.toNat == 0x3000
 
+/-- **The log's Rust whitespace is the item line's separator** (owner D83, W-42 track G):
+`Text.isSp`, which since W-42 is `char::is_whitespace` too, is this predicate character for
+character.  Two definitions of one concept, held together by this theorem until the step that
+holds `Log.lean` points its eleven readers at `isSp` and deletes this one (README gap 4161);
+the theorem is why they cannot drift meanwhile. -/
+theorem isRustSpace_eq_isSp (c : Char) : isRustSpace c = isSp c := by
+  rw [isSp_eq_whiteSpace]; rfl
+
 /-- An offset's sign, `true` west of UTC: chrono's `timezone_offset` accepts `+`, `-` and
 U+2212 MINUS SIGN. -/
 def signOf : Char → Option Bool

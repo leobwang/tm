@@ -334,14 +334,88 @@ deriving DecidableEq, Repr, Inhabited
 
 def Tok.raw (t : Tok) : List Char := t.sep ++ t.word
 
-def isSp (c : Char) : Bool := c == ' '
+/-- **The separator: Rust's `char::is_whitespace`**, the Unicode `White_Space` property, and the
+ONE definition of a separator in this kernel (owner D83, README gap 32, closed at W-42 track G).
+
+The host reads an item line's words exactly so: fork 4748911's `grammar.rs` splits them on
+`char::is_whitespace` (`split_words`, `skip_ws`), and `tm-core` at HEAD carries those two
+functions unchanged.  So a tab, a no-break space or any other `White_Space` character between
+two words separates them here as it does there; until W-42 this was `c == ' '`, a tab was a
+word character to the kernel and whitespace to the host, and one line read two ways (gap 32,
+gap 4130).  `LogStamp.isRustSpace`, where this disjunction was first written for the log's
+grammar (stage 5 D9 step B2), is this predicate under the name the log's grammar cites.
+
+Written as a ladder rather than one disjunction so that a printable ASCII character — nearly
+every character a decided witness reads — costs two comparisons; `isSp_eq_whiteSpace` is the
+disjunction it was moved from.  The leading spaces of an indented line and of a comment opener
+are NOT this predicate: they are `isIndent`, the space alone, because neither is a separator
+and the host's two readers of them (`ItemLine::parse`'s column-0 bullet, `opens_comment`'s
+`trim_start_matches(' ')`) read no tab there. -/
+def isSp (c : Char) : Bool :=
+  if c.toNat ≤ 32 then c.toNat == 32 || (9 ≤ c.toNat && c.toNat ≤ 13)
+  else if c.toNat < 0x85 then false
+  else c.toNat == 0x85 || c.toNat == 0xA0 || c.toNat == 0x1680 ||
+    (0x2000 ≤ c.toNat && c.toNat ≤ 0x200A) || c.toNat == 0x2028 ||
+    c.toNat == 0x2029 || c.toNat == 0x202F || c.toNat == 0x205F || c.toNat == 0x3000
+
+/-- **The ladder is the `White_Space` disjunction** — the comparison chain stage 5 D9 step B2
+wrote as `LogStamp.isRustSpace`, character for character. -/
+theorem isSp_eq_whiteSpace (c : Char) : isSp c =
+    (c.toNat == 32 || (9 ≤ c.toNat && c.toNat ≤ 13) || c.toNat == 0x85 || c.toNat == 0xA0 ||
+      c.toNat == 0x1680 || (0x2000 ≤ c.toNat && c.toNat ≤ 0x200A) || c.toNat == 0x2028 ||
+      c.toNat == 0x2029 || c.toNat == 0x202F || c.toNat == 0x205F || c.toNat == 0x3000) := by
+  unfold isSp
+  by_cases h1 : c.toNat ≤ 32
+  · rw [if_pos h1]
+    have a : (c.toNat == 0x85) = false := by simp; omega
+    have b : (c.toNat == 0xA0) = false := by simp; omega
+    have d : (c.toNat == 0x1680) = false := by simp; omega
+    have e : (decide (0x2000 ≤ c.toNat) && decide (c.toNat ≤ 0x200A)) = false := by simp; omega
+    have f : (c.toNat == 0x2028) = false := by simp; omega
+    have g : (c.toNat == 0x2029) = false := by simp; omega
+    have k : (c.toNat == 0x202F) = false := by simp; omega
+    have l : (c.toNat == 0x205F) = false := by simp; omega
+    have m : (c.toNat == 0x3000) = false := by simp; omega
+    simp only [a, b, d, e, f, g, k, l, m, Bool.or_false]
+  · rw [if_neg h1]
+    have a : (c.toNat == 32) = false := by simp; omega
+    have b : (decide (9 ≤ c.toNat) && decide (c.toNat ≤ 13)) = false := by simp; omega
+    by_cases h2 : c.toNat < 0x85
+    · rw [if_pos h2]
+      have d : (c.toNat == 0x85) = false := by simp; omega
+      have e : (c.toNat == 0xA0) = false := by simp; omega
+      have f : (c.toNat == 0x1680) = false := by simp; omega
+      have g : (decide (0x2000 ≤ c.toNat) && decide (c.toNat ≤ 0x200A)) = false := by simp; omega
+      have k : (c.toNat == 0x2028) = false := by simp; omega
+      have l : (c.toNat == 0x2029) = false := by simp; omega
+      have m : (c.toNat == 0x202F) = false := by simp; omega
+      have n : (c.toNat == 0x205F) = false := by simp; omega
+      have o : (c.toNat == 0x3000) = false := by simp; omega
+      simp only [a, b, d, e, f, g, k, l, m, n, o, Bool.or_false]
+    · rw [if_neg h2]
+      simp only [a, b, Bool.false_or, Bool.or_assoc]
+
+/-- **The space alone**: the leading spaces an indented item line and a comment opener may
+carry.  Not a separator — `isSp` is — and deliberately narrower than one: the host reads no
+indentation on an item at all (`ItemLine::parse` wants `- ` at column 0; the kernel's wider
+reading of spaces is README gap 46's), and its comment rule trims spaces only
+(`grammar::opens_comment`, which mirrors `Plan.opensComment`).  Widening either with D83's
+separator would have widened two divergences D83 is not about. -/
+def isIndent (c : Char) : Bool := c == ' '
+
+/-- A space is a separator; the indent is a narrower reading of the same character. -/
+theorem isSp_of_isIndent {c : Char} (h : isIndent c = true) : isSp c = true := by
+  simp only [isIndent, beq_iff_eq] at h
+  subst h; rfl
 
 /-- Right-to-left chunking.  Structurally recursive, so it is total with no
-termination argument and no `partial`. -/
+termination argument and no `partial`.  A character that is not a separator, in front of a
+chunk that begins with one, starts a chunk of its own: every chunk is a separator run and the
+word after it. -/
 def chunk (c : Char) (gs : List (List Char)) : List (List Char) :=
   match gs with
   | []      => [[c]]
-  | g :: gs' => if !isSp c && g.head? == some ' ' then [c] :: g :: gs' else (c :: g) :: gs'
+  | g :: gs' => if !isSp c && g.head?.any isSp then [c] :: g :: gs' else (c :: g) :: gs'
 
 def group : List Char → List (List Char)
   | []      => []
@@ -358,7 +432,7 @@ theorem chunk_flatten (c : Char) (gs : List (List Char)) :
     (chunk c gs).flatten = c :: gs.flatten := by
   cases gs with
   | nil => simp [chunk]
-  | cons g gs' => by_cases h : (!isSp c && g.head? == some ' ') = true <;> simp [chunk, h]
+  | cons g gs' => by_cases h : (!isSp c && g.head?.any isSp) = true <;> simp [chunk, h]
 
 theorem group_flatten (cs : List Char) : (group cs).flatten = cs := by
   induction cs with
@@ -404,10 +478,10 @@ theorem chunk_head (c : Char) (gs : List (List Char)) :
   cases gs with
   | nil => simp [chunk]
   | cons g gs' =>
-      by_cases h : (!isSp c && g.head? == some ' ') = true <;> simp [chunk, h]
+      by_cases h : (!isSp c && g.head?.any isSp) = true <;> simp [chunk, h]
 
 theorem chunk_merge (c : Char) (g : List Char) (gs : List (List Char))
-    (h : (g.head? == some ' ') = false) : chunk c (g :: gs) = (c :: g) :: gs := by
+    (h : g.head?.any isSp = false) : chunk c (g :: gs) = (c :: g) :: gs := by
   simp [chunk, h]
 
 theorem group_head (cs : List Char) : ((group cs).head?).bind List.head? = cs.head? := by
@@ -438,21 +512,16 @@ theorem group_word (w ys : List Char) (hw : w ≠ []) (hws : ∀ c ∈ w, isSp c
             | cons g gs =>
                 have hgh : g.head? = ys.head? := by
                   have := group_head ys; rw [hg] at this; simpa using this
-                have : g.head? = some ' ' := by
-                  rw [hgh, hy1]
-                  have : y = ' ' := by
-                    simpa [isSp] using hy2
-                  rw [this]
+                have : g.head?.any isSp = true := by
+                  rw [hgh, hy1]; simpa using hy2
                 simp [group, chunk, hc, hg, this]
       | cons d w'' =>
           have hne : (d :: w'') ≠ [] := by simp
           have hsub : ∀ x ∈ d :: w'', isSp x = false := fun x hx => hws x (by simp [hx])
           have hIH := ih hne hsub
           have hd : isSp d = false := hsub d (by simp)
-          have hne2 : ((d :: w'').head? == some ' ') = false := by
-            simp only [List.head?_cons, beq_iff_eq, Option.some.injEq]
-            simp only [isSp, beq_iff_eq] at hd
-            simp [hd]
+          have hne2 : (d :: w'').head?.any isSp = false := by
+            simpa using hd
           have step : group (c :: ((d :: w'') ++ ys)) = chunk c (group ((d :: w'') ++ ys)) := rfl
           rw [show (c :: d :: w'') ++ ys = c :: ((d :: w'') ++ ys) from rfl, step, hIH,
             chunk_merge c (d :: w'') (group ys) hne2]
@@ -559,12 +628,20 @@ theorem tokenize_toks : ∀ ts : List Tok, toksWf ts = true → tokenize (ts.fla
       rw [this]
 
 
-theorem digitsOf_noSpace (v : Nat) : ∀ c ∈ digitsOf v, isSp c = false := by
-  intro c hc
-  have hd := digitsOf_all_digits v c hc
-  by_cases h : c = ' '
-  · subst h; simp [charDigit] at hd
-  · simpa [isSp] using h
+/-- A decimal digit is not a separator. -/
+theorem isSp_of_digit (c : Char) (h : (charDigit c).isSome = true) : isSp c = false := by
+  unfold charDigit at h
+  split at h <;> first | rfl | simp at h
+
+/-- **Cheat 122 is closed** (owner D83, README gap 32): a tab and a no-break space separate two
+words, as the host's `split_words` separates them; a zero-width space is no `White_Space`
+character, so it joins them, to both readers — the separator is the host's set and no wider. -/
+theorem the_separator_is_white_space :
+    (tokenize "a\tb".toList).length = 2 ∧ (tokenize "a\u00A0b".toList).length = 2 ∧
+      (tokenize "a\u200Bb".toList).length = 1 := by decide
+
+theorem digitsOf_noSpace (v : Nat) : ∀ c ∈ digitsOf v, isSp c = false :=
+  fun c hc => isSp_of_digit c (digitsOf_all_digits v c hc)
 
 /-! ## Fixed-width numerals
 

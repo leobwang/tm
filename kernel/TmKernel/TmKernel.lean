@@ -79,6 +79,7 @@ import TmKernel.Planner
 import TmKernel.GridCut
 import TmKernel.MidnightCut
 import TmKernel.PlanDiff
+import TmKernel.PlanOnce
 import TmKernel.PlanFold
 import TmKernel.PlanCheck
 import TmKernel.Emit

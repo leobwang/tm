@@ -1184,19 +1184,12 @@ open Tm
 #print axioms Tm.the_nine_wired_keys_accept_their_spec_values
 #print axioms Tm.key_of_map
 #print axioms Tm.editValOf_key
-#print axioms Tm.editE_refuses_a_tabbed_line
-#print axioms Tm.editE_ok_of_tabless
 #print axioms Tm.the_edit_path_writes_what_the_field_path_reads
-#print axioms Tm.unsetE_refuses_a_tabbed_line
 #print axioms Tm.unset_of_a_key_the_line_does_not_carry_is_refused
 #print axioms Tm.unsetE_ok_of_present
 #print axioms Tm.the_unset_path_removes_what_the_field_path_reads
 #print axioms Tm.the_est_op_is_the_keyed_est_edit
-#print axioms Tm.edit_of_a_tabbed_line_is_refused
-#print axioms Tm.est_of_a_tabbed_line_is_refused
-#print axioms Tm.unset_of_a_tabbed_line_is_refused
 #print axioms Tm.unset_of_an_absent_key_is_refused
-#print axioms Tm.the_tab_guard_is_not_vacuous
 #print axioms Tm.applyCmd_edit_succeeds
 #print axioms Tm.applyCmd_est_succeeds
 #print axioms Tm.applyCmd_unset_succeeds
@@ -5003,10 +4996,7 @@ open Tm
 -- `Tm.parseLine` is the store's reading; `Tm.parseItem` stays the file's.
 #print axioms Tm.an_unflagged_optional_is_open
 #print axioms Tm.an_unflagged_routine_is_open
-#print axioms Tm.bareOk_all
 #print axioms Tm.bareOk_any
-#print axioms Tm.bareOk_mk
-#print axioms Tm.boxAt_box
 #print axioms Tm.boxAt_eq_some
 #print axioms Tm.boxAt_none_of_head
 #print axioms Tm.canonicalKeyed_of_canonical
@@ -5014,9 +5004,6 @@ open Tm
 #print axioms Tm.Field.kinds_bare
 #print axioms Tm.Field.kinds_boxed
 #print axioms Tm.parseBody_bare
-#print axioms Tm.parseBody_bare_head
-#print axioms Tm.parseBody_bare_of_noBox
-#print axioms Tm.parseBody_boxed
 #print axioms Tm.parseLine_ok
 #print axioms Tm.parseToks_ok
 #print axioms Tm.serialize_parse_id
@@ -5025,8 +5012,6 @@ open Tm
 #print axioms Tm.the_spec_routine_line_is_a_title_keyed_item
 #print axioms Tm.the_spec_routine_line_round_trips
 #print axioms Tm.Field.titleKey_congr
-#print axioms Tm.tokBare_head
-#print axioms Tm.tokBare_sep
 #print axioms Tm.a_boxless_line_cannot_carry_a_state
 #print axioms Tm.a_boxless_todo_line_is_well_formed
 #print axioms Tm.boxesWf_set
@@ -5038,7 +5023,6 @@ open Tm
 #print axioms Tm.a_bare_line_has_no_positional_slots
 #print axioms Tm.an_empty_bullet_is_prose
 #print axioms Tm.a_front_matter_rule_is_prose
-#print axioms Tm.a_line_with_a_bracket_is_not_a_bare_item
 #print axioms Tm.a_bare_line_may_carry_its_id
 #print axioms Tm.the_three_refusals_are_unchanged
 #print axioms Tm.effectiveScope
@@ -8057,3 +8041,102 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Planner.PlanReq.the_whatif_keeps_the_evening
 #print axioms Tm.Planner.PlanReq.growing_keeps_the_ci_agreement
 #print axioms Tm.Planner.PlanReq.the_whatif_request_pays_d80
+
+-- ===========================================================================
+-- APPENDED 2026-10-02 (stage 6, run W-42, track G — owner D83, README gap 32 closed: the
+-- kernel reads as a separator exactly what the host reads).  Thirty-eight new theorems (among the
+-- last five, the D40 witnesses `setLeadWord`'s touched body, the new `Field.afterSlots` and the
+-- touched `kerrName` needed -- the last two in PlannerWit.lean -- and P80's positive witness), and
+-- sixteen RETIRED names whose lines are deleted above, each refuted where it stood or restated
+-- under a new name (README "W-42 track G", the retirement table): a_line_with_a_bracket_is_not_a_bare_item,
+-- bareOk_all, bareOk_mk, boxAt_box, editE_ok_of_tabless, editE_refuses_a_tabbed_line,
+-- edit_of_a_tabbed_line_is_refused, est_of_a_tabbed_line_is_refused, parseBody_bare_head,
+-- parseBody_bare_of_noBox, parseBody_boxed, the_tab_guard_is_not_vacuous, tokBare_head,
+-- tokBare_sep, unsetE_refuses_a_tabbed_line, unset_of_a_tabbed_line_is_refused.
+-- ===========================================================================
+#print axioms Tm.isSp_eq_whiteSpace
+#print axioms Tm.isSp_of_isIndent
+#print axioms Tm.isSp_of_digit
+#print axioms Tm.the_separator_is_white_space
+#print axioms Tm.isSp_of_isBoxEnd
+#print axioms Tm.isBoxEnd_space
+#print axioms Tm.boxAt_box_of_end
+#print axioms Tm.a_box_needs_its_end
+#print axioms Tm.bareOk_iff
+#print axioms Tm.parseBody_cons
+#print axioms Tm.parseBody_boxed_of_end
+#print axioms Tm.parseBody_bare_of_no_box_after_seps
+#print axioms Tm.endsBox_of_head_sep
+#print axioms Tm.round_trip_B_without_the_box_end_is_refuted
+#print axioms Tm.setEstIn_head_sep
+#print axioms Tm.insertBeforeId_endsBox
+#print axioms Tm.Field.isSp_of_printable
+#print axioms Tm.Field.isSp_of_isNameC
+#print axioms Tm.Field.isSp_of_isKeyC
+#print axioms Tm.Field.setKeyIn_head_sep
+#print axioms Tm.Field.the_title_key_is_the_hosts_span
+#print axioms Tm.Field.endBox_words
+#print axioms Tm.Field.endBox_filterMap_word
+#print axioms Tm.Field.toksWf_endBox
+#print axioms Tm.Field.endBox_endsBox
+#print axioms Tm.Field.idWords_endBox
+#print axioms Tm.a_line_spaced_from_its_box_is_boxed
+#print axioms Tm.a_bracket_in_a_bare_line_is_title_text
+#print axioms Tm.a_tab_separates_the_id
+#print axioms Tm.LogStamp.isRustSpace_eq_isSp
+#print axioms Tm.editE_ok
+#print axioms Tm.Field.setLeadToks_head_sep
+#print axioms Tm.a_tabbed_line_is_edited_as_the_host_edits_it
+#print axioms Tm.setLeadWord_writes_the_leading_word
+#print axioms Tm.the_title_key_of_a_boxed_line_skips_its_slots
+#print axioms Tm.an_unset_keeps_the_box_ended
+#print axioms Tm.PlannerWit.kerrName_names_each_refusal
+#print axioms Tm.PlannerWit.kerrName_injective
+/- ===================================================================
+   APPENDED 2026-10-02: stage 6 (the planner), run W-42, TRACK S —
+   the owner's D82 (README gaps 4150 and 4152): §8.2's day with every
+   view it reads more than once computed once (`PlanOnce.lean`), and
+   the `@[csimp]` lemma that makes `PlanWire.runPlanner` run it.
+   =================================================================== -/
+#print axioms Tm.Planner.walkRePlace_nil
+#print axioms Tm.Planner.walkRePlace_cons
+#print axioms Tm.Planner.walkRePlace_eq
+#print axioms Tm.Planner.walkDefer_nil
+#print axioms Tm.Planner.walkDefer_cons
+#print axioms Tm.Planner.walkDefer_eq
+#print axioms Tm.Planner.groupFitsAt_eq
+#print axioms Tm.Planner.assignStepAt_eq
+#print axioms Tm.Planner.Memo.of_eq
+#print axioms Tm.Planner.walkRePlace_at
+#print axioms Tm.Planner.deferOneAt_eq
+#print axioms Tm.Planner.deferOneAt_takes_the_lowest_free
+#print axioms Tm.Planner.dayPlanFrom_spec
+#print axioms Tm.Planner.dayPlanOnce_eq
+#print axioms Tm.Planner.dayPlan_eq_dayPlanOnce
+/- ===================================================================
+   APPENDED 2026-10-02: stage 6, run W-42, TRACK R — the owner's D87, a
+   break taken inside a block is not block time (README gap 4137, parity
+   P81).  `Replay.brkFx` and its laws, C5's `arm_split` and W2's
+   `arm_mi`/`stepWith_mi` restated with their old statements refuted by
+   name, the replay's break witnesses, and PlannerWit's section 31.
+   =================================================================== -/
+#print axioms Tm.Replay.brkFx_cases
+#print axioms Tm.Replay.arm_split_of_not_brk
+#print axioms Tm.Replay.brkFx_blockOnly
+#print axioms Tm.Replay.brkFx_machine
+#print axioms Tm.Replay.brkFx_obs
+#print axioms Tm.Replay.a_break_inside_a_stopped_block_is_not_block_time
+#print axioms Tm.Replay.a_done_after_a_break_credits_its_minutes_and_splits_its_block
+#print axioms Tm.Replay.the_open_block_restarts_at_the_breaks_end
+#print axioms Tm.Replay.a_break_with_no_actual_nets_its_planned_minutes
+#print axioms Tm.Replay.a_break_while_the_block_is_paused_changes_nothing
+#print axioms Tm.Replay.a_break_logged_before_its_blocks_start_is_not_netted
+#print axioms Tm.Replay.arm_split_as_c5_stated_it_is_refuted
+#print axioms Tm.Seal.brkFx_mi
+#print axioms Tm.Seal.arm_mi_of_not_brk
+#print axioms Tm.Seal.arm_mi_as_w2_stated_it_is_refuted
+#print axioms Tm.Seal.stepWith_mi_as_w2_stated_it_is_refuted
+#print axioms Tm.PlannerWit.insideBreakRun_resumes_ok
+#print axioms Tm.PlannerWit.the_inside_break_day_splits_the_block_at_the_break
+#print axioms Tm.PlannerWit.insideOpenBreakRun_resumes_ok
+#print axioms Tm.PlannerWit.the_open_row_starts_at_the_breaks_end

@@ -16,8 +16,9 @@
 //!   local midnight replans with the state it loaded, dated yesterday; the kernel
 //!   reads that state as `tm plan`'s roll leaves it (`Look.Today.forToday`: none
 //!   of its window, budget or arrival), where the fork planned the state's date —
-//!   and the request the TUI builds is not yet `tm plan`'s (README gap 4050):
-//!   [`p77_a_tui_past_midnight_is_read_as_the_roll_and_does_not_yet_send_tm_plans_request`].
+//!   and since the owner's D84 (W-42 track H, parity P83) the TUI re-collects in
+//!   memory at the date change, so the request it sends IS `tm plan`'s:
+//!   [`p77_a_tui_past_midnight_is_read_as_the_roll_and_sends_tm_plans_request`].
 //! * **Gap 3941** (README gap 4042) — the harness's worked minutes are the
 //!   binary's (`day::worked_min`, D75):
 //!   [`gap_3941_the_harness_reads_the_logs_worked_minutes_across_midnight`].
@@ -328,32 +329,38 @@ fn routines_of(req: &Value) -> Vec<String> {
 }
 
 /// **A TUI left open past local midnight: the kernel reads its stale state as `tm plan`'s roll
-/// leaves it** (P77, the campaign's D81 call on README gap 3860) **— and the request it would
-/// send is not yet `tm plan`'s** (README gap 4050).
+/// leaves it** (P77, the campaign's D81 call on README gap 3860) **— and since the owner's D84 the
+/// request the TUI sends is `tm plan`'s** (W-42 track H, README gaps 4050 and 4124, parity P83).
 ///
-/// Its name said "plans the day `tm plan` would plan" until the W-41 repair (README gap 4144),
-/// while its last assertion is that the two days DIFFER — AGENTS §7.4 item 3. D81 decided the
-/// outcome (gap 3860); building it is gap 4050's, an owner choice, so this pins today's half.
+/// Named p77_a_tui_past_midnight_is_read_as_the_roll_and_does_not_yet_send_tm_plans_request until
+/// W-42, when its last assertions flipped with the owner's choice (AGENTS §7.4 item 3: the name says
+/// what the test asserts).
 ///
 /// The world is the TUI's own (`tui_common`: §4.3's day, `^t3` running since 09:32,
 /// `.tm/state.json` dated Monday with its window, budget and arrival), opened at 23:50 Monday
-/// and left open to 00:30 Tuesday: `App::tick` moves `now` and `today`, replans, and rolls
-/// nothing. Through the request R3's host sends:
+/// and left open to 00:30 Tuesday: `App::tick` moves `now` and `today` and rolls nothing; the
+/// date change is the driver's (`tui::advance_clock`), which re-collects IN MEMORY and writes
+/// nothing (`tui::recollect`). Through the request R3's host sends:
 ///
-/// * **the kernel's reading, registered**: the kernel's day for the stale request IS its day
-///   for the same request with both `state` objects (the capacity section's and the planner
+/// * **the kernel's reading, registered (P77)**: the kernel's day for the stale request IS its
+///   day for the same request with both `state` objects (the capacity section's and the planner
 ///   section's) rolled as the binary's housekeeping rolls them (`RuntimeState::roll_to`,
 ///   `ctx.rs`' `roll_day`) — Tuesday's day, from 00:30; and the date gate is what makes them
 ///   one (Monday's window kept on a state dated Tuesday plans another day), while the fork
 ///   plans the state's date, Monday (`planwire::plan_date`);
-/// * **the request is not `tm plan`'s**: the harness — as the TUI does between reloads —
-///   collects the candidates and §8.2 step 2's routine instances on the PLANNED date,
-///   `planwire::plan_date`, the stale state's Monday, so the request misses Tuesday's
-///   instances that `tm plan`'s request, built over the rolled state, carries (`breakfast`,
-///   mandatory, at 06:00) — and the two days differ. Pinned so the step that closes gap
-///   4050 sees this flip.
+/// * **the TUI sends `tm plan`'s request (D84, P83)**: at the date change the TUI reads its
+///   state as the roll leaves it — the one rule, `RuntimeState::roll_to`, which
+///   `tui::read_as_tm_plan` applies in memory — so the candidates and §8.2 step 2's routine
+///   instances are collected on `planwire::plan_date` of THAT state, Tuesday: the request is the
+///   rolled world's key for key, it carries Tuesday's mandatory `breakfast` at 06:00, and the
+///   kernel plans `tm plan`'s day from it (one hash). The stale world's request — what the TUI
+///   sent between reloads until D84 — still carries Monday's instances and plans another day;
+///   no TUI sends it now. The binary's own half, on the world as the binary builds it, is
+///   `tui::tests::d84_a_tui_left_open_past_midnight_recollects_in_memory_and_sends_tm_plans_request`
+///   (R3's builder over the TUI's re-collected context against `tm plan`'s, key for key, and
+///   nothing written).
 #[test]
-fn p77_a_tui_past_midnight_is_read_as_the_roll_and_does_not_yet_send_tm_plans_request() {
+fn p77_a_tui_past_midnight_is_read_as_the_roll_and_sends_tm_plans_request() {
     let cfg = tui_common::config();
     let tuesday = tui_common::date().succ_opt().expect("tomorrow");
     let now = local_dt(cfg.tz, tuesday, NaiveTime::from_hms_opt(0, 30, 0).expect("time"));
@@ -361,7 +368,7 @@ fn p77_a_tui_past_midnight_is_read_as_the_roll_and_does_not_yet_send_tm_plans_re
     let mut app = tui_common::app_with_log_text(tui_common::at(&cfg, 23, 50), tui_common::state(), &log);
     let loaded = app.state.clone();
     app.tick(now);
-    assert_eq!((app.today, app.state.date), (tuesday, Some(tui_common::date())), "the TUI holds Monday's state on Tuesday");
+    assert_eq!((app.today, app.state.date), (tuesday, Some(tui_common::date())), "a tick alone holds Monday's state on Tuesday");
     assert_eq!(app.state, loaded, "a tick rolls nothing");
     let stale = app.state.clone();
     assert!(stale.window.is_some() && stale.budget.is_some() && stale.arrival.is_some(), "the stale state's day facts are set");
@@ -369,7 +376,7 @@ fn p77_a_tui_past_midnight_is_read_as_the_roll_and_does_not_yet_send_tm_plans_re
     assert!(rolled.roll_to(tuesday), "the binary's housekeeping rolls this state");
 
     let built = |state: RuntimeState| Built::of(ClassWorld { docs: tui_common::tree_texts(), log: log.clone(), state, now, mult: None, ratio: None });
-    let (b_stale, b_rolled) = (built(stale.clone()), built(rolled));
+    let (b_stale, b_rolled) = (built(stale.clone()), built(rolled.clone()));
     let (req_stale, order) = r3_request(&b_stale);
     let (req_rolled, order_rolled) = r3_request(&b_rolled);
     let k_stale = r3_day(&req_stale, &b_stale, &order);
@@ -377,7 +384,7 @@ fn p77_a_tui_past_midnight_is_read_as_the_roll_and_does_not_yet_send_tm_plans_re
     assert_eq!(k_stale.day.window.0, now, "the day runs from now: Monday's 07:00 arrival is not Tuesday's");
     assert!(k_stale.day.segments.iter().any(|s| s.flags.current), "the running block is the current row");
 
-    // The kernel's reading: the same request, its two `state` objects rolled.
+    // The kernel's reading (P77): the same request, its two `state` objects rolled.
     let mut req_read = req_stale.clone();
     req_read["capacity"]["state"] = req_rolled["capacity"]["state"].clone();
     req_read["planner"]["state"] = req_rolled["planner"]["state"].clone();
@@ -391,23 +398,32 @@ fn p77_a_tui_past_midnight_is_read_as_the_roll_and_does_not_yet_send_tm_plans_re
     req_today["capacity"]["state"]["date"] = json!(tuesday.to_string());
     assert_ne!(r3_day(&req_today, &b_stale, &order).day.window, k_stale.day.window, "a state dated today is read whole");
 
-    // Gap 4050: the request `tm plan` would send after its roll carries Tuesday's routine
-    // instances, and the stale world's does not.
-    let (r_stale, r_rolled) = (routines_of(&req_stale), routines_of(&req_rolled));
-    println!("routine instances: stale world {r_stale:?}; rolled world {r_rolled:?}");
-    assert!(r_rolled.iter().any(|r| r == "breakfast@2026-09-08"), "tm plan's request carries Tuesday's breakfast: {r_rolled:?}");
-    assert!(!r_stale.iter().any(|r| r.ends_with("@2026-09-08")), "the stale world's request carries no Tuesday instance: {r_stale:?}");
+    // D84 (P83): the TUI re-collects at the date change with its state read as the roll leaves
+    // it (`tui::read_as_tm_plan`, the one rule) — its request is `tm plan`'s, key for key.
+    let mut read = app.state.clone();
+    read.roll_to(app.today);
+    assert_eq!(read, rolled, "the TUI's read of its state at the date change is the roll's");
+    let b_tui = built(read);
+    let (req_tui, order_tui) = r3_request(&b_tui);
+    assert_eq!(req_tui, req_rolled, "the request the TUI sends past midnight is tm plan's, key for key");
+    let (r_tui, r_stale) = (routines_of(&req_tui), routines_of(&req_stale));
+    println!("routine instances: the TUI's {r_tui:?}; the stale world's {r_stale:?}");
+    assert!(r_tui.iter().any(|r| r == "breakfast@2026-09-08"), "the TUI's request carries Tuesday's breakfast: {r_tui:?}");
+    let k_tui = r3_day(&req_tui, &b_tui, &order_tui);
     let k_rolled = r3_day(&req_rolled, &b_rolled, &order_rolled);
-    assert_eq!(k_rolled.day.date, tuesday);
-    assert_ne!(k_rolled.hash, k_stale.hash, "so the TUI's day is not yet tm plan's (gap 4050)");
-    assert!(
-        k_rolled.day.segments.iter().any(|s| s.item.as_ref().is_some_and(|i| i.as_str() == "breakfast"))
-            && !k_stale.day.segments.iter().any(|s| s.item.as_ref().is_some_and(|i| i.as_str() == "breakfast")),
-        "the difference is Tuesday's breakfast"
-    );
+    assert_eq!((k_tui.day.date, k_tui.hash.clone()), (tuesday, k_rolled.hash.clone()), "the TUI plans tm plan's day");
+    assert!(k_tui.day.segments.iter().any(|s| s.item.as_ref().is_some_and(|i| i.as_str() == "breakfast")), "Tuesday's breakfast is planned");
 
-    // The fork's half, while it is here: it plans the STATE's date (`planwire::plan_date`).
-    assert_eq!(planwire::plan_date(&stale, now), tui_common::date(), "the fork plans Monday on this state");
+    // The stale world's request — the TUI's between reloads until D84, and no longer sent —
+    // carries Monday's instances and plans another day (the gap D84 closed).
+    assert!(!r_stale.iter().any(|r| r.ends_with("@2026-09-08")), "the stale world's request carries no Tuesday instance: {r_stale:?}");
+    assert_ne!(k_stale.hash, k_tui.hash, "the stale request plans another day");
+    assert!(!k_stale.day.segments.iter().any(|s| s.item.as_ref().is_some_and(|i| i.as_str() == "breakfast")), "without Tuesday's breakfast");
+
+    // The fork's half, while it is here: it plans the STATE's date (`planwire::plan_date`) —
+    // Monday on the stale state, Tuesday on the state the TUI now reads.
+    assert_eq!(planwire::plan_date(&stale, now), tui_common::date(), "the fork plans Monday on the stale state");
+    assert_eq!(planwire::plan_date(&rolled, now), tuesday, "and Tuesday on the TUI's read");
 }
 
 // ---------------------------------------------------------------------------

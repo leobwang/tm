@@ -85,7 +85,7 @@ pub enum CliError {
     /// The Lean kernel refused a kernel-backed verb, or the FFI faulted.
     /// Every kernel refusal is **named** (`occupied`, `noSuchId`,
     /// `notDemoted`, `alreadyDemoted`, `badHorizon`, `badItem`,
-    /// `tabbedLine`, `keyAbsent`, `danglingDep`, `depCycle`, `siteOutOfRange`,
+    /// `keyAbsent`, `danglingDep`, `depCycle`, `siteOutOfRange`,
     /// `dupId`, `notADemotion`,
     /// `ambiguousDemotion`, `duplicatePath`, `badLine`, `unterminatedComment`,
     /// `itemCheck`) and the

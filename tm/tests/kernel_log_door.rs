@@ -39,6 +39,12 @@ mod replay;
 #[path = "support/fork.rs"]
 mod fork;
 
+// Parity P81 (the owner's D87, README gap 4137), carried by value as `kernel_replay_parity.rs` carries it;
+// this suite's arms are frozen, so the fork-asked half of the module is `kernel_replay_parity.rs`'s alone.
+#[allow(dead_code)]
+#[path = "support/p81.rs"]
+mod p81;
+
 #[allow(dead_code)]
 #[path = "support/loggen.rs"]
 mod loggen;
@@ -120,6 +126,7 @@ fn the_door_is_the_reader_it_replaces() {
     let frozen = fork::frozen_fork_answers();
     let mut t = fork::ForkTally::default();
     let mut findings: Vec<String> = Vec::new();
+    let (mut p81_breaks, mut p81_minutes) = (0usize, 0u64);
     for (name, text) in &logs {
         let (dir, bytes) = tree(text);
         let today = day_after(text);
@@ -137,14 +144,22 @@ fn the_door_is_the_reader_it_replaces() {
                     let swept = kernel_log::line_warnings(&bytes, &today.to_string(), &wire(dir.path()))
                         .expect("the sweep answers");
                     let refused: Vec<u64> = swept.iter().map(|w| w.line as u64).collect();
-                    findings.extend(fork::compare_replay_with_fork(
-                        &format!("{name} ({pass})"),
-                        &read.replay,
-                        read.replay.entry_count() as u64,
-                        &refused,
-                        f,
-                        &mut t,
-                    ));
+                    // Parity P81 by value: the fork's answer moved by P81's rule alone (`support/p81.rs`).
+                    match p81::carry(f) {
+                        Ok((f81, t81)) => {
+                            p81_breaks += t81.breaks;
+                            p81_minutes += t81.minutes;
+                            findings.extend(fork::compare_replay_with_fork(
+                                &format!("{name} ({pass})"),
+                                &read.replay,
+                                read.replay.entry_count() as u64,
+                                &refused,
+                                &f81,
+                                &mut t,
+                            ));
+                        }
+                        Err(why) => findings.push(format!("{name} ({pass}): {why}")),
+                    }
                 }
                 None => t.skipped += 1,
             }
@@ -160,6 +175,7 @@ fn the_door_is_the_reader_it_replaces() {
     assert!(t.values > 8_000, "the fork denominator is too small to mean anything: {}", t.values);
     eprintln!("the door: {} logs, {compared} scoped reads, {days} days compared, 0 differences", logs.len());
     eprintln!("  the door's {}", t.line("the `All` scope against the frozen fork"));
+    eprintln!("  parity P81 carried by value: {p81_breaks} break(s) inside a block, {p81_minutes} minute(s) netted off cut credits");
     fork::no_disagreement(&findings);
 }
 

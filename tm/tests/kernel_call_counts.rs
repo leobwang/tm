@@ -240,8 +240,9 @@ fn expected_walls_calls(verb: &str) -> u32 {
 /// kernel for, pinned from its first sender (the W-41 repair, README gap 4142):
 /// `tm check` asks it so that a refusal of the day is named before R3 ships it
 /// (P78). No other verb sends it until the swap; a planner call is the costliest
-/// the binary makes (about a second on the example tree, gap 4142), so a verb
-/// that starts sending one fails here by name.
+/// the binary makes (about a second on the example tree at gap 4142; 7.6-14 ms
+/// since W-42 track S's `@[csimp]` twin, README gap 4150, and still the most a
+/// verb pays), so a verb that starts sending one fails here by name.
 fn expected_planner_calls(verb: &str) -> u32 {
     match verb {
         "check" => 1,
@@ -457,7 +458,7 @@ fn every_verb_reads_the_log_through_the_kernel_after_the_switch() {
         assert_eq!(
             c.planner, want,
             "`tm {name}` sent {} kernel `planner` section(s), expected {want} — the day R3's \
-             `tm plan` asks for, about a second a call (gap 4142)",
+             `tm plan` asks for, the costliest call the binary makes (gaps 4142, 4150)",
             c.planner
         );
     }

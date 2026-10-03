@@ -70,7 +70,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::Mutex;
 
-use chrono::{DateTime, Duration, FixedOffset};
+use chrono::{DateTime, Duration, FixedOffset, Timelike};
 use chrono_tz::Tz;
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -321,6 +321,51 @@ pub fn logged_start(b: &Built) -> Option<DateTime<Tz>> {
     b.replay.open_block.as_ref().filter(|o| o.id == a.id.as_str()).map(|o| o.started.with_timezone(&b.cfg.tz))
 }
 
+/// **P69's comparand state — a start fork 4748911 CAN be asked** (the owner's D89, W-42 track C;
+/// README gaps 4133 and 4282). Fork 4748911 puts `.tm/state.json`'s bare `HH:MM` on the plan's
+/// date, so it cannot be handed the LOGGED start of a block begun before midnight (parity P69).
+/// But it reads `started` in two places only, both in `active_run`: the worked minutes, which it
+/// takes from the log's open block whenever the log holds this item's (the clock is its fallback),
+/// and `current_block_end`, which is `started` plus whole blocks — so once `started ≤ now` it
+/// reads `started` only modulo `block_min`. A start ON THE PLAN'S DATE at one of the logged
+/// start's block boundaries, at or before `now`, is therefore a state the fork can be asked whose
+/// running block ends where the kernel's — the logged start's first boundary after `now` — does.
+/// This is the earliest such boundary at or after the plan's local midnight, spelled as the
+/// `HH:MM` the cache holds.
+///
+/// `None` where P69 does not depart (the cache's clock on the plan's date IS the logged start),
+/// where the log holds no open block for the running item (both sides then read the cache's clock on
+/// the plan's date: `planwire::state_json`), and where the transformation cannot reach — no boundary on the plan's date at
+/// or before `now`, a logged start with seconds (an `HH:MM` cannot carry them: README gap 4134's
+/// worlds), or a local clock the zone skips or repeats. Those worlds are held by P69's property
+/// ([`p69_day_unmet`]) alone, said rather than forced.
+pub fn p69_state(b: &Built, st: &RuntimeState) -> Option<RuntimeState> {
+    let a = st.active.as_ref()?;
+    let logged = logged_start(b)?;
+    let (tz, date) = (b.cfg.tz, b.date());
+    if tm_core::capacity::local_dt(tz, date, a.started) == logged {
+        return None;
+    }
+    let bm = i64::from(b.cfg.block_min()) * 60;
+    if bm <= 0 {
+        return None;
+    }
+    let (midnight, _) = b.day_bounds();
+    let behind = (midnight - logged).num_seconds();
+    let blocks = if behind <= 0 { 0 } else { (behind + bm - 1) / bm };
+    let at = logged + Duration::seconds(blocks * bm);
+    if at > b.world.now || at.second() != 0 || at.nanosecond() != 0 {
+        return None;
+    }
+    let clock = at.time();
+    if tm_core::capacity::local_dt(tz, date, clock) != at {
+        return None;
+    }
+    let mut out = st.clone();
+    out.active.as_mut()?.started = clock;
+    Some(out)
+}
+
 /// **P69, by its property, on the kernel's day `k`** (README gaps 3964 and 4090): a running record's
 /// start is read from the LOG (parity P69), where fork 4748911 put `.tm/state.json`'s bare `HH:MM` on
 /// the plan's date — so no fork input carries P69, and the kernel is held to its property against
@@ -517,7 +562,9 @@ fn p45_rows_with(
     logged: Option<bool>,
     runs: bool,
 ) -> Result<Option<(String, Vec<Value>)>, String> {
-    let st = &b.world.state;
+    // The comparand plans from P69's start wherever it does (`comparand_with`, the owner's D89).
+    let p69 = p69_state(b, &b.world.state);
+    let st = p69.as_ref().unwrap_or(&b.world.state);
     let Some(brk) = st.break_.as_ref().filter(|x| x.started.is_some()) else { return Ok(None) };
     let tz = b.cfg.tz;
     // The kernel's reading of the running break's start — the binary's (P73,
@@ -555,6 +602,12 @@ fn p45_rows_with(
 /// the runs MOVE an answer — the same world planned with the fork's group-by gives a different
 /// `day`, `whatif` or `p45` — the line carries `p64: {"p64": true}`, the flag D64's gate reads
 /// (`forkclass::d64_allows`), as `d60: {"p51": …}` is P51's.
+///
+/// **Since the owner's D89 (W-42 track C, README gaps 4133 and 4282) the comparand carries P69**:
+/// where the kernel reads a running block's start off the log and [`p69_state`] reaches the
+/// world, the comparand, its what-if and the rows after a running break plan from that start —
+/// P55's and P46's states composed over it as everywhere — and the line carries `p69:
+/// {"p69": true}`; the shipped day never does.
 pub fn comparand_answers(b: &Built, prios: &[Prio], fp: &dyn ForkPlan) -> Result<Value, String> {
     let mut with = comparand_with(b, prios, fp, true)?;
     let without = comparand_with(b, prios, fp, false)?;
@@ -575,6 +628,11 @@ fn comparand_with(b: &Built, prios: &[Prio], fp: &dyn ForkPlan, runs: bool) -> R
     let shipped_p = fp.plan(b, &ForkAsk { state: st, now, d60: false, p64: false, prios, extend: None, log_line: None })?;
     let shipped = shipped_p.fork_day.clone();
     let p56 = shipped != shipped_p.day;
+    // P69 (the owner's D89): where the kernel reads the running block's start off the log and
+    // the fork can be asked with a start on the plan's date at one of its boundaries, the
+    // comparand — and its what-if — plan from THAT start (`p69_state`); the shipped day never.
+    let p69 = p69_state(b, st);
+    let st = p69.as_ref().unwrap_or(st);
     // P55: on a day whose host reading of the running block's worked minutes is not the
     // log's, the comparand reads the host's (`p55_state`).
     let p55 = p55_state(b, st);
@@ -642,6 +700,7 @@ fn comparand_with(b: &Built, prios: &[Prio], fp: &dyn ForkPlan, runs: bool) -> R
         "p52": flag(p52, "p52"),
         "p55": flag(p55.is_some(), "p55"),
         "p56": flag(p56, "p56"),
+        "p69": flag(p69.is_some(), "p69"),
     }))
 }
 

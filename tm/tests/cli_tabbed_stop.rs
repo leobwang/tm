@@ -1,12 +1,17 @@
-//! **`tm stop` and `tm done --partial` on a line that carries a tab END THE
-//! BLOCK and say the estimate was not written; `tm extend` keeps refusing** —
-//! the campaign's D66 call on README gap 3047 (stage 6 W-37 track T).
+//! **`tm stop`, `tm done --partial` and `tm extend` on a line that carries a tab write the
+//! estimate as on any other line** — the owner's D83 (stage 6 W-42 track G, README gap 32
+//! closed), restating what the campaign's D66 call on README gap 3047 (W-37 track T) held here.
 //!
-//! D62 routes the three estimate writers through the kernel's `est` op, and
-//! every edit op refuses a line carrying a tab (`tabbedLine`, gap 32). Until
-//! W-37 that refusal failed `tm stop` whole: nothing written and the block
-//! still RUNNING — a stop that could not stop. The estimate is the secondary
-//! write; the stop is the verb.
+//! D62 routes the three estimate writers through the kernel's `est` op.  Until W-42 every edit op
+//! refused a line carrying a tab by name, because a tab was a word character to the kernel and a
+//! separator to the host, so an edit could land on a token the host never read; D66 then made
+//! `tm stop` and `tm done --partial` END THE BLOCK anyway and say the estimate was not written,
+//! and kept `tm extend` refusing.  D83 made a tab the kernel's separator, the refusal's reason went
+//! with it, and the refusal is lifted: on a tabbed line the three verbs do what they do on any line
+//! — the leading estimate, the slot, rewritten in place with the value as the verb spells it
+//! (P54) — and the tab between the title words is kept.  The D66 sentence ("the estimate was not
+//! written") can no longer be printed; `tm/src/cli/day.rs`' branch that prints it is dead, owed
+//! to the step that holds that file (README gap 4165).
 
 mod cli_common;
 
@@ -33,45 +38,38 @@ fn t4(tm: &Tm) -> String {
 }
 
 #[test]
-fn tm_stop_on_a_tabbed_line_ends_the_block_and_says_the_estimate_was_not_written() {
+fn tm_stop_on_a_tabbed_line_writes_the_estimate_as_on_any_line() {
     let tm = tabbed_and_running();
-    let before = t4(&tm);
     let out = tm.run_at("2026-09-07T09:20:00-05:00", &["stop"]);
     assert_eq!(out.code, 0, "the stop stops: {}{}", out.stdout, out.stderr);
-    assert!(out.stderr.contains("^t4's estimate was not written"), "it says so: {:?}", out.stderr);
-    let after = t4(&tm);
-    assert!(after.starts_with("- [ ] 3 1b Claude\tCode"), "the box moved, the estimate stood: {after:?} (was {before:?})");
-    assert!(!after.contains("est:"), "no estimate was written: {after:?}");
+    assert_eq!(out.stdout.trim(), "stopped ^t4 after 20m · 40m left", "{}", out.stderr);
+    assert!(!out.stderr.contains("was not written"), "D66's sentence is gone: {:?}", out.stderr);
+    assert_eq!(t4(&tm), "- [ ] 3 40m Claude\tCode drafts tests     @m2 ^t4", "the slot rewritten, the tab kept");
     assert_eq!(tm.last_ev("stop")["id"], "t4", "the stop is logged");
     let now = tm.json_at("2026-09-07T09:21:00-05:00", &["now"]);
     assert!(now["active"].is_null(), "nothing is running: {now}");
 }
 
 #[test]
-fn tm_done_partial_on_a_tabbed_line_ends_the_block_and_says_so_in_json() {
+fn tm_done_partial_on_a_tabbed_line_writes_the_estimate_and_says_nothing_new() {
     let tm = tabbed_and_running();
     let out = tm.json_at("2026-09-07T09:25:00-05:00", &["done", "--partial"]);
-    assert_eq!(out["partial"], true, "{out}");
-    assert!(
-        out["estimate_not_written"].as_str().is_some_and(|w| w.contains("carries a tab")),
-        "the reason is carried: {out}"
-    );
-    let after = t4(&tm);
-    assert!(after.starts_with("- [ ] 3 1b Claude\tCode"), "{after:?}");
+    assert_eq!((&out["partial"], &out["remaining_min"]), (&serde_json::json!(true), &serde_json::json!(35)), "{out}");
+    assert!(out.get("estimate_not_written").is_none(), "D66's field is gone: {out}");
+    assert_eq!(out["title"], "Claude\tCode drafts tests", "the host's title, the tab kept: {out}");
+    assert_eq!(t4(&tm), "- [ ] 3 35m Claude\tCode drafts tests     @m2 ^t4", "the slot rewritten");
     let now = tm.json_at("2026-09-07T09:26:00-05:00", &["now"]);
     assert!(now["active"].is_null(), "nothing is running: {now}");
 }
 
 #[test]
-fn tm_extend_on_a_tabbed_line_keeps_refusing_and_writes_nothing() {
+fn tm_extend_on_a_tabbed_line_extends_it() {
     let tm = tabbed_and_running();
-    let before = tm.read(WEEK);
-    let log_before = tm.log().len();
     let out = tm.run_at("2026-09-07T09:10:00-05:00", &["extend", "1b"]);
-    assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
-    assert!(format!("{}{}", out.stdout, out.stderr).contains("tabbedLine"), "{}", out.stderr);
-    assert_eq!(tm.read(WEEK), before, "nothing written");
-    assert_eq!(tm.log().len(), log_before, "nothing logged");
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    assert_eq!(out.stdout.trim(), "+60m on ^t4 · now 120m", "{}", out.stderr);
+    assert_eq!(t4(&tm), "- [>] 3 2b Claude\tCode drafts tests     @m2 ^t4", "the slot as the verb spells it");
+    assert_eq!(tm.last_ev("extend")["by_min"], 60, "the extension is logged");
 }
 
 #[test]

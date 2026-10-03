@@ -28,7 +28,7 @@
 use std::collections::BTreeSet;
 use std::io::{self, BufRead, IsTerminal, Write};
 
-use chrono::{DateTime, FixedOffset, NaiveTime};
+use chrono::{DateTime, FixedOffset};
 use serde::Serialize;
 
 use tm_core::energy::{self, Features};
@@ -117,45 +117,6 @@ fn write_estimate(
         })
 }
 
-/// **`tm stop` and `tm done --partial` on a line that carries a tab** — the
-/// campaign's D66 call on README gap 3047. The estimate is written by the
-/// kernel's `est` op ([`write_estimate`]), and every edit op refuses a tabbed
-/// line by name (`tabbedLine`, gap 32: the kernel does not read a tab as a
-/// separator, so it will not write a slot it may have mis-tokenised). Until W-37
-/// that refusal failed the whole verb and left the block RUNNING — a stop that
-/// cannot stop is worse than an estimate left as it was. These two verbs now
-/// END THE BLOCK anyway and say on stderr that the estimate was not written;
-/// `tm extend`, whose whole job is the estimate, keeps refusing (it does not
-/// call this). `Ok(None)` is that case; any other refusal is the verb's.
-fn estimate_unless_tabbed(
-    ctx: &Ctx,
-    verb: &str,
-    id: &Id,
-    minutes: u64,
-) -> Result<Option<tm_core::grammar::ItemLine>, CliError> {
-    match write_estimate(ctx, verb, id, minutes) {
-        Ok(line) => Ok(Some(line)),
-        Err(CliError::Kernel(issue)) if issue.name == "tabbedLine" => {
-            if !super::kernel_bridge::capturing_kernel_stderr() {
-                eprintln!("tm: {}", estimate_not_written(id, minutes));
-            }
-            Ok(None)
-        }
-        Err(e) => Err(e),
-    }
-}
-
-/// The sentence [`estimate_unless_tabbed`] prints, and `--json` carries.
-fn estimate_not_written(id: &Id, minutes: u64) -> String {
-    format!(
-        "{}'s estimate was not written ({minutes}m left): its line carries a tab, which the \
-         kernel does not read as a separator (gap 32) — the block is ended; remove the tab and \
-         set it with `tm edit {} est=…`",
-        id.token(),
-        id.token()
-    )
-}
-
 /// Parse a duration argument (`20m`, `1b`, `1h30m`).
 fn dur(arg: &str, block_min: u32) -> Result<Dur, CliError> {
     Ok(Dur::parse(arg, block_min)?)
@@ -225,11 +186,16 @@ fn instance_key(ctx: &Ctx, item: &tm_core::model::Item, at: DateTime<chrono_tz::
         .unwrap_or_else(|| at.date_naive().to_string())
 }
 
-/// The features of the current instant (§8.5).
+/// The features of the instant `at` (§8.5): `now` for `tm start`, the instant
+/// `tm energy --at` names otherwise. Hours since wake count from the wake that
+/// had happened by `at` ([`Ctx::woke_before`], P79), and the night slept and
+/// the blocks done are `at`'s day's — today's, except for a report the owner's
+/// D86 dates yesterday (README gap 4260, parity P82), which reads yesterday's.
 fn features(ctx: &Ctx, at: DateTime<chrono_tz::Tz>) -> Features {
-    Features::at(at, ctx.woke_before_now(), ctx.loc())
-        .with_slept(ctx.slept_min())
-        .with_progress(ctx.replay.blocks_done(ctx.today), since_break_min(ctx))
+    let day = at.date_naive();
+    Features::at(at, ctx.woke_before(at), ctx.loc())
+        .with_slept(ctx.slept_on(day))
+        .with_progress(ctx.replay.blocks_done(day), since_break_min(ctx))
 }
 
 /// End the running break NOW, appending its §10.1 `break` event with the
@@ -1347,10 +1313,6 @@ pub struct DoneOut {
     pub state: String,
     /// The remaining estimate written back, when partial.
     pub remaining_min: Option<u32>,
-    /// Why a partial's remaining estimate was NOT written back, when it was not
-    /// (a tabbed line, D66's call on README gap 3047). Absent otherwise.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub estimate_not_written: Option<String>,
     /// The end `--at` stated (D79), `HH:MM`, dated when not today's. Absent
     /// otherwise: the block ended now.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1437,11 +1399,10 @@ pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
     };
     let stateless = item.as_ref().is_some_and(is_stateless);
     // **D62**: a partial's remainder is written by the kernel's `est` op FIRST —
-    // before the break is ended or the box is moved — so a refusal (a tabbed
-    // line, a value past the host's width) leaves nothing written at all.
+    // before the break is ended or the box is moved — so a refusal (a value
+    // past the host's width) leaves nothing written at all.
     let mut remaining_min = None;
     let mut written = None;
-    let mut not_written = None;
     if args.partial && item.is_some() && !stateless {
         let left = ctx
             .tree
@@ -1449,8 +1410,7 @@ pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
             .unwrap_or(est_min)
             .saturating_sub(actual_min)
             .max(MIN_REMAINING_MIN);
-        written = estimate_unless_tabbed(&ctx, "done", &id, u64::from(left))?;
-        not_written = written.is_none().then(|| estimate_not_written(&id, u64::from(left)));
+        written = Some(write_estimate(&ctx, "done", &id, u64::from(left))?);
         remaining_min = Some(left);
     }
     end_break_at(&mut ctx, end)?;
@@ -1528,7 +1488,6 @@ pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
         partial: args.partial,
         state,
         remaining_min,
-        estimate_not_written: not_written,
         ended: stated.map(|e| when(&ctx, e)),
     };
     emit(
@@ -1646,10 +1605,6 @@ pub struct StopOut {
     pub worked_min: u32,
     /// The remaining estimate written back.
     pub remaining_min: u32,
-    /// Why the remaining estimate was NOT written back, when it was not (a
-    /// tabbed line, D66's call on README gap 3047). Absent otherwise.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub estimate_not_written: Option<String>,
     /// The end `--at` stated (D79), `HH:MM`, dated when not today's. Absent
     /// otherwise: the block ended now.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1700,17 +1655,10 @@ pub fn stop(g: &Globals, args: &super::StopArgs) -> Result<i32, CliError> {
     // **D62**: the remainder is written by the kernel's `est` op FIRST, so a
     // refusal leaves nothing written — not the break's end, not the box. The
     // box moves on the line the kernel returned (`write_estimate`).
-    // A tabbed line (D66, gap 3047): the estimate is not written, the block is
-    // ended all the same, and the box moves on the line as it stands.
-    let mut not_written = None;
+    // A tabbed line is written as any line since the owner's D83 (README gap 32
+    // closed): D66's branch for a refused estimate went with the refusal (gap 4165).
     let written = match ctx.tree.get(&id).filter(|i| !is_stateless(i)) {
-        Some(_) => match estimate_unless_tabbed(&ctx, "stop", &id, u64::from(remaining))? {
-            Some(line) => Some(line),
-            None => {
-                not_written = Some(estimate_not_written(&id, u64::from(remaining)));
-                Some(ctx.line(&id)?)
-            }
-        },
+        Some(_) => Some(write_estimate(&ctx, "stop", &id, u64::from(remaining))?),
         None => None,
     };
     // §11's break integrity: a break still running when the block stops is
@@ -1740,7 +1688,6 @@ pub fn stop(g: &Globals, args: &super::StopArgs) -> Result<i32, CliError> {
         id: id.clone(),
         worked_min: worked,
         remaining_min: remaining,
-        estimate_not_written: not_written,
         ended: stated.map(|e| when(&ctx, e)),
     };
     emit(
@@ -2118,7 +2065,7 @@ fn pause_inside_an_interruption(ctx: &Ctx, open: &tm_core::log::Interruption) ->
 /// `tm energy --json`.
 #[derive(Debug, Serialize)]
 pub struct EnergyOut {
-    /// `HH:MM`.
+    /// `HH:MM`, dated (`2026-09-07 23:40`) when the report is yesterday's (D86).
     pub at: String,
     /// What was predicted.
     pub pred: u8,
@@ -2142,16 +2089,19 @@ pub fn energy(g: &Globals, args: &super::EnergyArgs) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
     preflight(&ctx, "energy")?;
     let rec = Recorder::start(&ctx, "energy")?;
-    let at: NaiveTime = match &args.at {
-        Some(t) => parse_time(t)?,
-        None => ctx.now_tz.time(),
+    // **The owner's D86** (README gap 4135, parity P82): the clock is read by
+    // the one parser every `--at` shares, and names today's instant unless that
+    // is more than twelve hours after now, then yesterday's — one definition,
+    // `tm_core::capacity::report_at`. `tm stop --at`/`tm done --at` keep D79's.
+    let reported = match &args.at {
+        Some(t) => tm_core::capacity::report_at(ctx.cfg.tz, ctx.now_tz, parse_time(t)?),
+        None => ctx.now_tz,
     };
-    let when = ctx.at(at);
-    let f = features(&ctx, when);
+    let f = features(&ctx, reported);
     let pred = energy::predict(&ctx.model, &ctx.cfg, &f);
     let loc = ctx.state.loc.clone().unwrap_or_else(|| "lounge".to_string());
     let entry = log::LogEntry::new(
-        when.fixed_offset(),
+        reported.fixed_offset(),
         Event::Energy {
             pred,
             rep: args.level,
@@ -2183,7 +2133,8 @@ pub fn energy(g: &Globals, args: &super::EnergyArgs) -> Result<i32, CliError> {
     rec.finish(&ctx, format!("energy {}", args.level))?;
 
     let out = EnergyOut {
-        at: fmt_time(at),
+        // `HH:MM`, dated when the report is not today's (D86), as `tm stop`'s `ended` is.
+        at: when(&ctx, reported),
         pred,
         rep: args.level,
         delta,

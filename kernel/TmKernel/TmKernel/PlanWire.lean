@@ -1,7 +1,7 @@
 import TmKernel.EmitWire
 import TmKernel.PlanDiff
-/-!
-# `PlanWire.lean` — the PLANNER's inputs cross the wire (stage 6, W-27, D48, README gaps 1431/801)
+import TmKernel.PlanOnce
+/-! # `PlanWire.lean` — the PLANNER's inputs cross the wire (stage 6, W-27, D48, README gaps 1431/801)
 
 W-24's `EmitWire.lean` put an `Emit.Row` on the wire and said, in its own header, that the
 planner's inputs *"belong with step R3, where `tm-core/src/planner.rs` dies"*.  W-25 doing R2
@@ -1209,7 +1209,7 @@ def overtimeJson (r : Planner.PlanReq) : Option (Id × Nat × Option Planner.WfG
 /-- **The request, with its `planner` section.**  Without one this is `EmitWire.runRows`, byte
 for byte.  With one: `runRows` answers first, so every refusal that stood before this step still
 comes first and in the same order; then the section, then §16's `batchMaxMin`, then the request,
-then **the day** — `Planner.dayPlan`'s seven keys, into the same `plan` object `rows` is in.
+then **the day** — `Planner.dayPlan`'s seven keys (compiled: `Planner.dayPlanOnce`, W-42's `@[csimp]` twin), into the same `plan` object `rows` is in.
 
 **`now` is the capacity section's `at`, and is not read again** (README gap 1672, CLOSED).  W-27
 called `CapWire.readAt` a second time here and recorded that its refusal branch was unreachable

@@ -1614,9 +1614,37 @@ impl Ctx {
         capacity::latest_at_or_before(self.cfg.tz, self.now_tz, self.wake_time())
     }
 
+    /// **The wake that had happened by `at`** — [`Ctx::woke_before_now`] for an
+    /// instant on today's date (P79, unchanged), and for one on an EARLIER date
+    /// — the one line counted to such an instant is a `tm energy --at` report the
+    /// owner's D86 dates yesterday (W-42 track H, README gap 4260, parity P82) —
+    /// THAT day's own wake, the instant the log holds (D75's clock), when it is
+    /// at or before `at`, else the latest instant at or before `at` with
+    /// [`Ctx::wake_time`]'s clock. P79's reading there, today's wake, is AFTER the
+    /// report: `--at 22:00` typed at 09:00 the next morning counted `hsw: -9.0`,
+    /// the wrong fact P79 removed.
+    pub fn woke_before(&self, at: DateTime<Tz>) -> DateTime<Tz> {
+        let day = at.date_naive();
+        if day >= self.today {
+            return self.woke_before_now();
+        }
+        let logged = self.replay.day(day).and_then(|d| d.wake).map(|w| w.with_timezone(&self.cfg.tz));
+        match logged.filter(|w| *w <= at) {
+            Some(w) => w,
+            None => capacity::latest_at_or_before(self.cfg.tz, at, self.wake_time()),
+        }
+    }
+
+    /// Minutes slept the night before `day`, when `tm wake` recorded them —
+    /// [`Ctx::slept_min`] on any date (a `tm energy --at` report D86 dates
+    /// yesterday reads yesterday's night).
+    pub fn slept_on(&self, day: NaiveDate) -> Option<u32> {
+        self.replay.day(day).and_then(|d| d.slept_min)
+    }
+
     /// Minutes slept last night, when `tm wake` recorded them.
     pub fn slept_min(&self) -> Option<u32> {
-        self.replay.day(self.today).and_then(|d| d.slept_min)
+        self.slept_on(self.today)
     }
 
     /// A local time on today's date, in `cfg.tz`.

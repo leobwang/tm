@@ -42,15 +42,22 @@
 //!   sends the instant of the block's own `start` line, the kernel plans the frozen day's date,
 //!   window, budget and fixed frame (walls, wind-down, sleep) by value, its running row is the
 //!   block's from `now` to the first block boundary of the LOGGED start after `now`, and the frozen
-//!   fork day holds no such row — so the departure is real on this world.
+//!   fork day holds no such row — so the departure is real on this world. **And since the owner's
+//!   D89 (W-42 track C, README gaps 4133 and 4282) the line also carries the COMPARAND** — fork
+//!   4748911 asked with a start on the plan's date at one of the logged start's boundaries
+//!   (`forkplan::p69_state`: `00:00`, whose first boundary after `00:40` is the logged start's
+//!   `01:00`), P46's reservation composed (the block is in overtime by the log's 100 minutes) — and
+//!   the kernel's whole day and what-if are held to it by the class lines' comparison: all
+//!   seventeen rows, the fourteen after the running one among them.
 //!
 //! # What it does not compare, said out loud
 //!
-//! P69's step-5 rows, optionals and deferred routines: they move with P46's reservation (the block
-//! is in overtime by the log's 100 minutes), P69's boundary, the harness's worked minutes (README
-//! gap 3941, track E's this run) and the location's reading (D81) — and fork 4748911 cannot be
-//! ASKED with the logged start (its `started` is a bare `HH:MM` on the plan's date), so no
-//! comparand day carries P69 by its property. P68's day is compared whole only once D78 lands.
+//! Until D89, P69's step-5 rows, optionals and deferred routines — fork 4748911 could not be ASKED
+//! with the logged start (its `started` is a bare `HH:MM` on the plan's date), so no comparand day
+//! carried P69, and a bent row after the running one passed (the W-41 verifier's `work` and `swap`,
+//! README gap 4133). Now: a world P69's transformation cannot reach — a logged start with seconds,
+//! no boundary of it on the plan's date at or before `now` — would be held by the property alone,
+//! and no frozen world is one (`forkplan::p69_state`'s header).
 
 #[path = "support/replay.rs"]
 #[allow(dead_code)]
@@ -79,6 +86,11 @@ mod forkplan;
 #[allow(dead_code)]
 #[path = "support/forkgrid.rs"]
 mod forkgrid;
+
+/// The committed history a bless holds its lines against (README gap 4151).
+#[allow(dead_code)]
+#[path = "support/frozenhist.rs"]
+mod frozenhist;
 
 use std::collections::BTreeSet;
 
@@ -314,14 +326,27 @@ fn p69_unmet(line: &Value, b: &Built) -> Vec<String> {
     out
 }
 
-/// **A start line against the kernel, by its flag's property.**
+/// **A start line against the kernel, by its flag's property — and, where the line carries the
+/// comparand, by the comparand whole** (the owner's D89, README gap 4133): P69's transformation
+/// (`forkplan::p69_state`) reaches a world exactly when the line carries the comparand's answers,
+/// and those are held to the kernel's day and what-if by the frozen lines' one comparison
+/// (`forkclass::compare_line`) — every row, so P69's fourteen rows after the running one are
+/// compared by value after R3, not by the property alone.
 fn start_unmet(line: &Value) -> Vec<String> {
     let b = built(line);
-    match (line["p68"]["p68"] == true, line["p69"]["p69"] == true) {
+    let who = line["name"].as_str().unwrap_or("?");
+    let mut out = match (line["p68"]["p68"] == true, line["p69"]["p69"] == true) {
         (true, false) => p68_unmet(line, &b, P68_READING),
         (false, true) => p69_unmet(line, &b),
-        _ => vec![format!("{}: a start line carries exactly one of P68's and P69's flags", line["name"])],
+        _ => vec![format!("{who}: a start line carries exactly one of P68's and P69's flags")],
+    };
+    match (forkplan::p69_state(&b, &b.world.state).is_some(), line["day"].is_null()) {
+        (true, true) => out.push(format!("{who}: P69's transformation reaches this world and the line carries no comparand (D89)")),
+        (false, false) => out.push(format!("{who}: the line carries a comparand on a world P69's transformation does not reach")),
+        (true, false) => out.extend(forkclass::compare_line(line, &mut forkclass::ClassTally::default())),
+        (false, true) => {}
     }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -330,15 +355,20 @@ fn start_unmet(line: &Value) -> Vec<String> {
 
 /// **The kernel departs from every frozen start day by its number, and by its number alone** —
 /// README gap 3964: P68's line by [`P68_READING`], P69's by its property, each against fork
-/// 4748911's day frozen by value; and every flag a registered number.
+/// 4748911's day frozen by value — and since the owner's D89 P69's by its comparand whole as well;
+/// every flag a registered number, and the line's own number's flag SET. (Until D89 every flag a
+/// start line carried was its own number's; the comparand carries the class lines' flags beside
+/// it, `d57` and `d60`, each set where its rule departs and `false` where it was asked and does
+/// not — W-42 track C, README gap 4282.)
 #[test]
 fn the_kernel_departs_from_every_frozen_start_day_by_its_number_alone() {
     let lines = starts_lines();
     let registered = forkclass::registered_parity();
     let mut unmet = Vec::new();
     for l in &lines {
+        let own = start_named(l["name"].as_str().unwrap_or_default()).map(|s| s.flag);
         for (n, set, _) in forkclass::flag_homes(l) {
-            if !set || !registered.contains(&n) {
+            if !registered.contains(&n) || (Some(n) == own && !set) {
                 unmet.push(format!("{}: the flag P{n} is {set} and registered {}", l["name"], registered.contains(&n)));
             }
         }
@@ -372,10 +402,17 @@ fn every_frozen_start_world_is_the_binarys_own_output() {
         if forkclass::class_of(&built(l)).key() != l["class"] {
             bad.push(format!("{}: the world classifies as `{}`, the line says {}", s.name, forkclass::class_of(&built(l)).key(), l["class"]));
         }
-        // The line the bless writes from its own day is the committed line, byte for byte.
+        // The line the bless writes from its own day is the committed line, byte for byte — its
+        // comparand's answers, where it carries them, taken from the line (the bless asks them of
+        // the oracle, `add_comparand`; the oracle arm below asks them again).
         let mut again = start_line(s, &built(l), &ran, &l["shipped"]["day"]);
         if let Some(why) = l.get("d64b") {
             again["d64b"] = why.clone();
+        }
+        if !l["day"].is_null() {
+            for key in forkclass::ANSWERS.iter().filter(|k| **k != "shipped") {
+                forkclass::set_answer(&mut again, key, l[*key].clone());
+            }
         }
         if again != *l {
             bad.push(format!("{}: the bless would write another line ({})", s.name, forkplan::first_difference("line", l, &again).unwrap_or_default()));
@@ -456,11 +493,67 @@ fn the_start_comparisons_bite_a_bent_line() {
         p.1.p = p.1.p.wrapping_add(1);
     }
     assert!(forkplan::p69_day_unmet(who, fork, &b, logged, &reranked).iter().any(|f| f.contains("priorities: kernel")), "another ranking passed");
+    // — and since the owner's D89, P69's comparand WHOLE (README gap 4133): a step-5 row a minute
+    // longer (`work`) and two step-5 rows' items swapped (`swap`) in the frozen comparand — the
+    // W-41 verifier's two bends, which P69's property alone let through — refused by name.
+    let step5 = |r: &Value| r["kind"] == "block" && r["flags"]["current"] != true;
+    let mut work = p69.clone();
+    let rows = work["day"]["day"]["segments"].as_array_mut().expect("P69's comparand rows (D89)");
+    let r = rows.iter_mut().find(|r| step5(r)).expect("a step-5 row on P69's day");
+    r["end"] = json!((forkplan::at(&r["end"]).expect("an end") + Duration::minutes(1)).to_rfc3339());
+    assert!(start_unmet(&work).iter().any(|f| f.starts_with(who) && f.contains("the rows differ at")), "a step-5 row bent a minute passed: {:?}", start_unmet(&work));
+    let mut swap = p69.clone();
+    let rows = swap["day"]["day"]["segments"].as_array_mut().expect("P69's comparand rows (D89)");
+    let i = rows.iter().position(|r| step5(r)).expect("a step-5 row");
+    let j = rows.iter().position(|r| step5(r) && r["item"] != rows[i]["item"]).expect("a second step-5 item");
+    let (a, z) = (rows[i]["item"].clone(), rows[j]["item"].clone());
+    rows[i]["item"] = z;
+    rows[j]["item"] = a;
+    assert!(start_unmet(&swap).iter().any(|f| f.starts_with(who) && f.contains("the rows differ at")), "two step-5 rows swapped passed: {:?}", start_unmet(&swap));
+    // A line that drops its comparand on a world P69's transformation reaches is refused too.
+    let mut bare = p69.clone();
+    for key in forkclass::ANSWERS.iter().filter(|k| **k != "shipped" && **k != "p69") {
+        bare.as_object_mut().expect("a line").remove(*key);
+    }
+    assert!(start_unmet(&bare).iter().any(|f| f.contains("carries no comparand (D89)")), "a P69 line without its comparand passed");
     // P68's refusal, asked of a world the kernel PLANS (P69's), is refused by name.
     assert!(
         p68_unmet(&p69, &b, P68Reading::Refused).iter().any(|f| f.contains("P68 says the kernel refuses")),
         "a planned world passed as P68's refusal"
     );
+}
+
+/// **The start lines' gate admits D89's comparand and nothing else** (W-42 track C, README gap 4282;
+/// AGENTS §5.8): the frozen P69 line with its comparand stripped GAINS it under D70 when P69 — the
+/// number whose flag it carries — is named, and is refused with no number, with a number it carries
+/// no flag of, or when anything it already carries moves beside the gain; a line with a comparand is
+/// then held to `forkclass::d64_allows`; and a line with none that gains none may change nothing.
+#[test]
+fn the_start_gate_admits_d89s_comparand_and_nothing_else() {
+    let registered = forkclass::registered_parity();
+    let p69 = starts_lines().into_iter().find(|l| l["p69"]["p69"] == true).expect("the P69 line");
+    assert!(!p69["day"].is_null(), "the P69 line carries its comparand (D89)");
+    let shipped = p69["shipped"]["day"].clone();
+    let mut bare = p69.clone();
+    for key in forkclass::ANSWERS.iter().filter(|k| **k != "shipped" && **k != "p69") {
+        bare.as_object_mut().expect("a line").remove(*key);
+    }
+    let gained = starts_gate(&bare, &p69, &shipped, &[69], None, &registered).expect("D89's introduction was refused");
+    assert_eq!(gained, vec!["d57", "d60", "day", "whatif"]);
+    assert!(starts_gate(&bare, &p69, &shipped, &[], None, &registered).is_err_and(|e| e.contains("names no registered number")));
+    assert!(starts_gate(&bare, &p69, &shipped, &[68], None, &registered).is_err(), "P68, whose flag the line does not carry, introduced P69's comparand");
+    let mut moved_now = p69.clone();
+    moved_now["now"] = json!("2026-09-08T00:41:00-05:00");
+    assert!(starts_gate(&bare, &moved_now, &shipped, &[69], None, &registered).is_err_and(|e| e.contains("`now` moved")), "a gain that moved the line passed");
+    let mut bent = p69.clone();
+    bent["day"]["hash"] = json!("bent");
+    assert!(starts_gate(&p69, &bent, &shipped, &[], None, &registered).is_err(), "a comparand bent with no reason passed");
+    assert_eq!(starts_gate(&p69, &bent, &shipped, &[69], None, &registered), Ok(vec!["day".to_string()]), "P69 may move its own comparand's day (D64(a))");
+    let p68 = starts_lines().into_iter().find(|l| l["p68"]["p68"] == true).expect("the P68 line");
+    let mut p68_moved = p68.clone();
+    p68_moved["class"] = json!("idle/elsewhere");
+    assert!(starts_gate(&p68, &p68_moved, &p68["shipped"]["day"], &[68], None, &registered).is_err_and(|e| e.contains("no comparand")));
+    assert_eq!(starts_gate(&p68, &p68, &p68["shipped"]["day"], &[], None, &registered), Ok(Vec::new()));
 }
 
 /// **A bless's reasons are read strictly** (AGENTS §5.8, `forkclass::because_of` and
@@ -518,17 +611,40 @@ fn the_frozen_start_days_are_the_forks_oracle_answer_today() {
         let b = built(&l);
         let day = shipped_day(&b, &oracle).unwrap_or_else(|e| panic!("{}: {e}", l["name"]));
         assert_eq!(day, l["shipped"]["day"], "{}: the fork oracle does not plan the frozen day ({:?})", l["name"], forkplan::first_difference("day", &l["shipped"]["day"], &day));
+        comparand_is_the_frozen_one(&l, &b, &oracle);
     }
     println!("tm-oracle plan asked {} time(s)", *oracle.asked.lock().expect("census"));
 }
 
+/// **A line's comparand is `fp`'s answer today** (the owner's D89): where the line carries the
+/// comparand's answers, `forkplan::comparand_answers` over the shipped binary's grants answers
+/// every one of them, key for key — so the frozen P69 comparand is fork 4748911's (the oracle
+/// arm) and, while it is here, the in-tree fork's.
+fn comparand_is_the_frozen_one(l: &Value, b: &Built, fp: &dyn forkplan::ForkPlan) {
+    if l["day"].is_null() {
+        return;
+    }
+    let prios = forkplan::capacity_grants(b, None).unwrap_or_else(|e| panic!("{}: {e}", l["name"]));
+    let answers = forkplan::comparand_answers(b, &prios, fp).unwrap_or_else(|e| panic!("{}: {e}", l["name"]));
+    for key in forkclass::ANSWERS {
+        assert_eq!(answers[key], l[key], "{}: `{key}` is not the comparand's ({:?})", l["name"], forkplan::first_difference(key, &l[key], &answers[key]));
+    }
+}
+
 /// **Freeze the start days** — inert without `TM_STARTS_BLESS`, and it asks `TM_ORACLE`. Every
-/// [`STARTS`] entry is driven with the shipped binary and written with fork 4748911's day. A line
-/// the file holds may not move: its world moving is a re-draw, allowed only with D64(b)'s reason in
-/// `TM_STARTS_BLESS_REDRAW` (dated, naming `D64(b)`), which the line then carries as `d64b`; its
-/// fork day moving over the same world is the SHIPPED fork's day moving, which no comparand number
-/// moves (the owner's D64, clause 2) — refused by name. A held line no entry builds is refused.
-/// `TM_STARTS_BLESS_OUT` writes elsewhere, for a dry run.
+/// [`STARTS`] entry is driven with the shipped binary and written with fork 4748911's day — and,
+/// on a world P69's transformation reaches (`forkplan::p69_state`, the owner's D89), with the
+/// comparand's answers over the same grants (`forkplan::comparand_answers`), so P69's day is
+/// compared by value after R3. A line the file holds may not move but by the owner's D64: its
+/// world moving is a re-draw, allowed only with D64(b)'s reason in `TM_STARTS_BLESS_REDRAW`
+/// (dated, naming `D64(b)`), which the line then carries as `d64b`; its fork day moving over the
+/// same world is the SHIPPED fork's day moving, which no comparand number moves (D64, clause 2) —
+/// refused by name; and its answers moving is [`starts_gate`]'s to allow. A line HEAD holds that no
+/// entry builds is refused. `TM_STARTS_BLESS_OUT` writes elsewhere, for a dry run.
+///
+/// **What a line is held against is the file's COMMITTED history** (W-42 track C, README gap 4151;
+/// `frozenhist::held`): its latest version at HEAD or at any first-parent commit since
+/// `kernel/ratchet.py`'s base — never the working copy, so deleting the file is not a fresh freeze.
 #[test]
 #[ignore]
 fn the_frozen_start_days_are_blessed() {
@@ -538,14 +654,21 @@ fn the_frozen_start_days_are_blessed() {
     }
     let oracle = the_oracle().expect("TM_STARTS_BLESS asks the fork: set TM_ORACLE");
     let redraw = std::env::var("TM_STARTS_BLESS_REDRAW").ok();
-    let held = if starts_path().exists() { starts_lines() } else { Vec::new() };
+    let because = forkclass::because_of("TM_STARTS_BLESS_BECAUSE");
+    let harness = forkclass::harness_of("TM_STARTS_BLESS_HARNESS");
+    let registered = forkclass::registered_parity();
+    let held = frozenhist::held(&starts_path(), frozenhist::key_of("name")).unwrap_or_else(|e| panic!("{e}"));
+    eprintln!("{}", held.census(FROZEN_STARTS));
     let (mut out, mut refused, mut changed, mut added) = (String::new(), Vec::new(), Vec::new(), 0usize);
     for s in &STARTS {
         let (world, ran) = build(s).unwrap_or_else(|e| panic!("{}: {e}", s.name));
         let b = Built::of(world);
         let shipped = shipped_day(&b, &oracle).unwrap_or_else(|e| panic!("{}: {e}", s.name));
         let mut line = start_line(s, &b, &ran, &shipped);
-        match held.iter().find(|o| o["name"] == s.name) {
+        if let Err(e) = add_comparand(&mut line, &b, &oracle) {
+            refused.push(format!("{}: {e}", s.name));
+        }
+        match held.get(s.name) {
             None => added += 1,
             Some(old) if old["world"] != line["world"] || old["steps"] != line["steps"] => match redraw.as_deref() {
                 Some(why) if forkclass::is_d64b_reason(why) => {
@@ -562,20 +685,95 @@ fn the_frozen_start_days_are_blessed() {
                 if let Some(why) = old.get("d64b") {
                     line["d64b"] = why.clone();
                 }
+                match starts_gate(old, &line, &shipped, &because, harness.as_deref(), &registered) {
+                    Err(e) => refused.push(e),
+                    Ok(keys) if !keys.is_empty() => changed.push(format!("{} `{}`", s.name, keys.join("`, `"))),
+                    Ok(_) => {}
+                }
             }
         }
         out.push_str(&serde_json::to_string(&line).expect("a line serialises"));
         out.push('\n');
     }
-    for o in &held {
-        if start_named(o["name"].as_str().unwrap_or_default()).is_none() {
-            refused.push(format!("{}: a frozen line no entry builds any more", o["name"]));
+    for name in &held.head {
+        if start_named(name).is_none() {
+            refused.push(format!("{name}: a frozen line no entry builds any more"));
         }
     }
     eprintln!("start days: {added} line(s) added, {} changed ({}), {} refused", changed.len(), changed.join("; "), refused.len());
     assert!(refused.is_empty(), "the start re-bless is refused and wrote nothing:\n  {}", refused.join("\n  "));
     let path = std::env::var_os("TM_STARTS_BLESS_OUT").map(std::path::PathBuf::from).unwrap_or_else(starts_path);
     std::fs::write(path, out).expect("the frozen start days are written");
+}
+
+/// **The comparand's answers on a start line, where P69's transformation reaches its world** (the
+/// owner's D89; README gap 4133): `forkplan::comparand_answers` over the grants the shipped binary
+/// ranks the fork's candidates by (`forkplan::capacity_grants`, the line's own `shipped` day's), each
+/// written as the class lines write theirs. The comparand's `shipped` IS the line's — fork 4748911's
+/// day over the same grants — and anything else is refused. A world P69's transformation does not
+/// reach (P68's) gains nothing.
+fn add_comparand(line: &mut Value, b: &Built, fp: &dyn forkplan::ForkPlan) -> Result<(), String> {
+    if forkplan::p69_state(b, &b.world.state).is_none() {
+        return Ok(());
+    }
+    let prios = forkplan::capacity_grants(b, None)?;
+    let answers = forkplan::comparand_answers(b, &prios, fp)?;
+    if forkclass::bytes(&answers["shipped"]) != forkclass::bytes(&line["shipped"]) {
+        return Err(format!(
+            "the comparand's shipped day is not the line's ({})",
+            forkplan::first_difference("shipped", &line["shipped"], &answers["shipped"]).unwrap_or_default()
+        ));
+    }
+    for key in forkclass::ANSWERS {
+        forkclass::set_answer(line, key, answers[key].clone());
+    }
+    Ok(())
+}
+
+/// **What a start line's re-bless may change** (the owner's D64, as the start lines carry it; W-42
+/// track C). The caller has held the world and the shipped fork's day by value. What is left:
+///
+/// * **a line frozen with no comparand GAINS one** — the owner's D89, under D70: every key that
+///   moved is a comparand answer (`forkclass::ANSWERS`) the committed line does not carry
+///   (adds-only: nothing it carries moves), and the re-bless names a registered number whose flag
+///   the committed line carries SET — the number whose comparand did not exist when it was frozen
+///   (P69's, since its transformation landed);
+/// * **a line with a comparand** is held to `forkclass::d64_allows` — (a), the introduction, and
+///   since the owner's D85 a corrected harness reading, (c) — as every class line is;
+/// * **a line with none that gains none** may change nothing.
+///
+/// `Ok` names what changed.
+fn starts_gate(
+    old: &Value,
+    new: &Value,
+    shipped: &Value,
+    because: &[u32],
+    harness: Option<&str>,
+    registered: &BTreeSet<u32>,
+) -> Result<Vec<String>, String> {
+    let who = old["name"].as_str().unwrap_or("?");
+    let keys: BTreeSet<&String> = old.as_object().into_iter().flatten().chain(new.as_object().into_iter().flatten()).map(|(k, _)| k).collect();
+    let moved: Vec<String> = keys.into_iter().filter(|k| forkclass::bytes(&old[k.as_str()]) != forkclass::bytes(&new[k.as_str()])).cloned().collect();
+    if moved.is_empty() {
+        return Ok(moved);
+    }
+    if !old["day"].is_null() {
+        return forkclass::d64_allows(old, new, shipped, because, harness, registered);
+    }
+    if new["day"].is_null() {
+        return Err(format!("{who}: `{}` moved on a line with no comparand, which nothing licenses", moved.join("`, `")));
+    }
+    if let Some(k) = moved.iter().find(|k| old.get(k.as_str()).is_some() || !forkclass::ANSWERS.contains(&k.as_str())) {
+        return Err(format!("{who}: `{k}` moved — a line gaining its comparand (D70) may only ADD the comparand's answers"));
+    }
+    let licensed = forkclass::flag_homes(old).into_iter().any(|(n, set, _)| set && because.contains(&n) && registered.contains(&n));
+    if !licensed {
+        return Err(format!(
+            "{who}: the line gains a comparand and the re-bless names no registered number whose flag the line carries \
+             (TM_STARTS_BLESS_BECAUSE; D70)"
+        ));
+    }
+    Ok(moved)
 }
 
 // BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gap 3964)
@@ -590,6 +788,29 @@ fn the_frozen_start_days_are_the_in_tree_forks_answer_today() {
         let b = built(&l);
         let day = shipped_day(&b, &forkplan::InTree).unwrap_or_else(|e| panic!("{}: {e}", l["name"]));
         assert_eq!(day, l["shipped"]["day"], "{}: the in-tree fork does not plan the frozen day ({:?})", l["name"], forkplan::first_difference("day", &l["shipped"]["day"], &day));
+        comparand_is_the_frozen_one(&l, &b, &forkplan::InTree);
+        // The line the bless writes, comparand and all (`add_comparand`, the owner's D89), from the
+        // in-tree fork, is the committed line.
+        let s = start_named(l["name"].as_str().unwrap_or_default()).expect("a STARTS entry");
+        let ran: Vec<forkgrid::Step> = l["steps"].as_array().map(Vec::as_slice).unwrap_or_default().iter().map(|v| forkgrid::Step::of_json(v).expect("a step")).collect();
+        let mut again = start_line(s, &b, &ran, &day);
+        add_comparand(&mut again, &b, &forkplan::InTree).unwrap_or_else(|e| panic!("{}: {e}", l["name"]));
+        if let Some(why) = l.get("d64b") {
+            again["d64b"] = why.clone();
+        }
+        assert_eq!(again, l, "{}: the bless would write another line ({:?})", l["name"], forkplan::first_difference("line", &l, &again));
     }
+}
+
+/// **A comparand that is not the fork's is caught** (AGENTS §5.8, the arm above bites): the frozen
+/// P69 line with a step-5 row a minute longer is not the in-tree fork's comparand.
+#[test]
+#[should_panic(expected = "is not the comparand's")]
+fn a_comparand_that_is_not_the_forks_is_caught() {
+    let mut l = starts_lines().into_iter().find(|l| l["p69"]["p69"] == true).expect("the P69 line");
+    let rows = l["day"]["day"]["segments"].as_array_mut().expect("the comparand's rows");
+    let r = rows.iter_mut().find(|r| r["kind"] == "block" && r["flags"]["current"] != true).expect("a step-5 row");
+    r["end"] = json!((forkplan::at(&r["end"]).expect("an end") + Duration::minutes(1)).to_rfc3339());
+    comparand_is_the_frozen_one(&l, &built(&l), &forkplan::InTree);
 }
 // END THE FORK PLANNER

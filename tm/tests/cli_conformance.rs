@@ -261,3 +261,125 @@ fn section_13_and_the_help_agree_on_the_end_time_and_the_places() {
         assert!(section.contains(synopsis), "§13 does not write {synopsis:?}");
     }
 }
+
+/// **§13, `--help` and the runtime agree on `tm energy --at`'s rule** — the
+/// owner's D86 (W-42 track H, README gap 4135, parity P82): the spec writes
+/// the twelve-hour rule beside D79's, `tm energy --help` says it on the flag
+/// (with the `HH:MM` value D79's flags show), and `tm stop`/`tm done` still say
+/// theirs — two rules, each said where its flag is.
+#[test]
+fn section_13_and_the_help_agree_on_energys_twelve_hour_rule() {
+    let dir = TempDir::new().expect("temp dir");
+    let energy = help_of(&dir, &["energy".to_string()]);
+    let fs = flags(&energy);
+    assert!(fs.contains(&Flag { name: "at".into(), takes_value: true }), "{fs:?}");
+    assert!(energy.contains("--at <HH:MM>"), "{energy}");
+    let flat = energy.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(flat.contains("more than 12 hours after now, then yesterday's"), "{flat}");
+    for verb in ["stop", "done"] {
+        let help = help_of(&dir, &[verb.to_string()]).split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(help.contains("the latest such time at or before now"), "`tm {verb}` keeps D79's: {help}");
+        assert!(!help.contains("12 hours"), "`tm {verb}` does not take energy's rule: {help}");
+    }
+    let spec = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tm-spec-v1.md"),
+    )
+    .expect("the spec");
+    let section = spec.split("## 13. CLI").nth(1).and_then(|s| s.split("\n## 14.").next()).expect("§13");
+    assert!(section.contains("tm energy 0-5 [--at HH:MM]"), "§13's synopsis");
+    assert!(
+        section.contains("`tm energy 0-5 --at HH:MM` reports energy at today's HH:MM, unless that is more than 12 hours after now"),
+        "§13 says D86's rule"
+    );
+}
+
+/// **Every `--at` the help pages advertise is read by the ONE parser** — D86's
+/// "one parser for both flags" (W-42 track H), as a property over the walked
+/// verb tree rather than a list of verbs: on a tree with a block running, each
+/// such verb refuses each malformed clock with the one parser's sentence
+/// (`tm_core::model::parse_time`), exit 1, and writes nothing. A verb that
+/// gains an `--at` joins the walk by itself; the set is asserted so a new one is
+/// seen, and its required positionals are filled from its own `Usage:` line.
+#[test]
+fn every_at_flag_is_read_by_the_one_parser() {
+    use std::collections::BTreeMap;
+    use std::path::Path;
+
+    fn copy(from: &Path, to: &Path) {
+        std::fs::create_dir_all(to).expect("dir");
+        for e in std::fs::read_dir(from).expect("read") {
+            let e = e.expect("entry");
+            let target = to.join(e.file_name());
+            if e.file_type().expect("type").is_dir() {
+                copy(&e.path(), &target);
+            } else {
+                std::fs::copy(e.path(), &target).expect("copy");
+            }
+        }
+    }
+    fn files(root: &Path, dir: &Path, out: &mut BTreeMap<String, Vec<u8>>) {
+        for e in std::fs::read_dir(dir).expect("read") {
+            let p = e.expect("entry").path();
+            if p.is_dir() {
+                files(root, &p, out);
+            } else {
+                out.insert(p.strip_prefix(root).expect("inside").display().to_string(), std::fs::read(&p).expect("bytes"));
+            }
+        }
+    }
+    let now = "2026-09-07T09:00:00-05:00";
+    let run = |plan: &Path, args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_tm"))
+            .arg("--dir")
+            .arg(plan)
+            .arg("--now")
+            .arg(now)
+            .args(args)
+            .output()
+            .expect("run tm");
+        (out.status.code().unwrap_or(-1), String::from_utf8_lossy(&out.stderr).into_owned())
+    };
+
+    let dir = TempDir::new().expect("temp dir");
+    let mut at_pages: Vec<(Vec<String>, Vec<String>)> = Vec::new();
+    for page in walk(&dir) {
+        if page.flags.iter().any(|f| f.name == "at" && f.takes_value) {
+            let usage = help_of(&dir, &page.path);
+            let usage = usage.lines().find(|l| l.starts_with("Usage:")).unwrap_or_default().to_string();
+            let positionals: Vec<String> = usage
+                .split_whitespace()
+                .filter(|w| w.starts_with('<') && w.ends_with('>'))
+                .map(|_| "3".to_string())
+                .collect();
+            at_pages.push((page.path.clone(), positionals));
+        }
+    }
+    let verbs: Vec<String> = at_pages.iter().map(|(p, _)| p.join(" ")).collect();
+    let mut sorted = verbs.clone();
+    sorted.sort();
+    assert_eq!(sorted, ["arrive", "done", "energy", "stop"], "the verbs that take `--at`");
+
+    let tree = TempDir::new().expect("temp dir");
+    let plan = tree.path().join("plan");
+    copy(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../tm-core/tests/fixtures/plan-basic"), &plan);
+    assert_eq!(run(&plan, &["wake", "07:00"]).0, 0);
+    assert_eq!(run(&plan, &["start", "^t4", "--energy", "4"]).0, 0, "a block runs, so `stop`/`done` reach their `--at`");
+    let mut refused = 0;
+    for bad in ["7:5", "24:00", "07:60", "07:05:00", "0705", ""] {
+        for (path, positionals) in &at_pages {
+            let mut before = BTreeMap::new();
+            files(&plan, &plan, &mut before);
+            let mut args: Vec<&str> = path.iter().map(String::as_str).collect();
+            args.extend(positionals.iter().map(String::as_str));
+            args.extend(["--at", bad]);
+            let (code, stderr) = run(&plan, &args);
+            assert_eq!(code, 1, "`tm {}`: {stderr}", args.join(" "));
+            assert_eq!(stderr.trim(), format!("tm: invalid time: {bad:?}"), "`tm {}` reads the clock by the one parser", args.join(" "));
+            let mut after = BTreeMap::new();
+            files(&plan, &plan, &mut after);
+            assert!(before == after, "`tm {}` wrote on a refused clock", args.join(" "));
+            refused += 1;
+        }
+    }
+    assert_eq!(refused, 6 * 4);
+}

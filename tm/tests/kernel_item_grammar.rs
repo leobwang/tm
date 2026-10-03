@@ -32,10 +32,13 @@
 //!
 //! * [`the_kernel_round_trips_every_line_the_fork_round_trips`] — the fork's
 //!   `parse_serialize_is_byte_identical` with a third reader in it.
-//! * [`the_two_readers_agree_on_which_lines_are_items`] — **cheats 122 and 123,
-//!   pinned by machine for the first time.** The kernel reads `-  [ ] A ^a1`
-//!   (two spaces) and `- <TAB>[ ] …` as **prose**; the fork reads them as items.
-//!   This arm asserts the divergence is *exactly* that class and nothing wider.
+//! * [`the_two_readers_agree_on_which_lines_are_items`] — **the item-ness rule,
+//!   pinned in both directions on every draw.** Until W-42 it pinned cheats 122
+//!   and 123: the kernel read `-  [ ] A ^a1` (two spaces) and `- <TAB>[ ] …` as
+//!   **prose** where the fork reads items. The owner's D83 closed that class —
+//!   the kernel reads separators as the host reads them (README gap 32) — and
+//!   the arm now asserts the two readers agree on every drawn line, tabbed ones
+//!   included, but for the kernel's named refusals.
 //! * [`the_two_editors_write_the_same_drop`] — the kernel's `drop` op against
 //!   `ItemLine::set_state(State::Dropped)`, the fork's own editor for the verb
 //!   (`tm-core/src/horizon.rs:1285`), byte for byte — and, on a box-less line,
@@ -61,9 +64,9 @@
 //!   It is kept because the alternative is no assertion at all about the cheats'
 //!   boundary, and it is pinned in both directions on every draw: a kernel that
 //!   widens *or* narrows what it reads as an item fails this file immediately.
-//! * **Tabs are out of the item-ness arm's reach** (gap 32's `tabbedLine` guard
-//!   and cheat 122 between them), and the arm says so where it assumes them
-//!   away. Every other arm still draws them.
+//! * **Tabs were out of the item-ness arm's reach until W-42** (gap 32's tab
+//!   guard and cheat 122 between them). D83 lifted both, so every arm draws
+//!   them and compares them.
 //! * **No binary is driven**, so nothing here sees the CLI's own choice between
 //!   its kernel path and its Rust path for a verb — README gap **1430** is about
 //!   exactly that and was found from this file's evidence, not by this file.
@@ -151,9 +154,10 @@ const DECLARED_REFUSALS: &[(&str, &str)] = &[
     (
         "noSuchId",
         "The command's id is not a live key. On a generated line this means the \
-         kernel read the line as PROSE where the fork read an item — cheats 122 \
-         and 123 — and `the_two_readers_agree_on_which_lines_are_items` is the \
-         arm that pins that class exactly rather than tolerating it.",
+         kernel read the line as PROSE where the fork read an item — until W-42 \
+         cheats 122 and 123's class, closed by D83 — and \
+         `the_two_readers_agree_on_which_lines_are_items` is the arm that pins \
+         it exactly rather than tolerating it.",
     ),
     (
         "badHorizon",
@@ -163,15 +167,6 @@ const DECLARED_REFUSALS: &[(&str, &str)] = &[
          would vanish on the next read. The fork's `ItemLine::set_state` writes \
          the box in. `the_two_editors_write_the_same_drop` asserts this refusal \
          rather than skipping it.",
-    ),
-    (
-        "tabbedLine",
-        "**Gap 32's guard**: `Cmd.editE`/`unsetE` refuse a line carrying a tab \
-         anywhere in its raw bytes, whatever the key and value \
-         (`editE_refuses_a_tabbed_line`). The fork's `set_token` writes into it. \
-         The guard fires BEFORE item-ness is reached, so a tabbed line teaches \
-         `the_two_readers_agree_on_which_lines_are_items` nothing and that is \
-         why the arm ends on a declared refusal rather than concluding.",
     ),
     (
         "fileKindShape",
@@ -246,10 +241,13 @@ fn note_case(arm: &'static str, reached: usize) -> [u64; 3] {
 /// cases it must have compared at least `FLOOR_NUM/FLOOR_DEN` of them.
 ///
 /// The rate is not a guess: the generator puts `""`, `" "` or `"\t"` between the
-/// bullet and the box with equal weight, so two draws in three are cheat
-/// 122/123's class and the editing arms assume them away. MEASURED at
-/// `TM_PROPTEST_CASES=4096`, `--test-threads=1 --nocapture`, from the census
-/// this file prints — `[drawn, addressable, compared]`:
+/// bullet and the box with equal weight, so — until W-42 — two draws in three
+/// were cheat 122/123's class and the editing arms assumed them away. MEASURED
+/// at `TM_PROPTEST_CASES=4096`, `--test-threads=1 --nocapture`, from the census
+/// this file prints — `[drawn, addressable, compared]` — BEFORE the owner's D83
+/// made those lines items to the kernel; they are compared since, so the rates
+/// only rose and the floor below is no tighter than it was (README "W-42 track
+/// G" carries the census re-taken after the change):
 ///
 /// ```text
 /// the_two_editors_write_the_same_drop            [8176, 4104, 1561]   19.1%
@@ -361,12 +359,18 @@ fn ctx_of(text: &str) -> ParseCtx<'static> {
 }
 
 /// Does the **fork** read a state box on this line? `ItemLine`'s bullet token is
-/// the box when there is one, and `grammar.rs`'s `state_at` skips whitespace to
-/// find it — which is the half of cheat 123 that makes the two readers differ.
+/// the box when there is one: `grammar.rs`'s `state_at` skips whitespace to
+/// find it, wants one of `State::from_glyph`'s six between the brackets, and
+/// wants the end of the line or ASCII whitespace after the `]` — so a
+/// no-break space after `[ ]` is no box (README gap 4130's world).
 fn fork_boxed(text: &str) -> bool {
     let rest = text.trim_start().strip_prefix('-').unwrap_or("").trim_start();
-    let b: Vec<char> = rest.chars().take(3).collect();
-    b.len() == 3 && b[0] == '[' && b[2] == ']'
+    let b: Vec<char> = rest.chars().take(4).collect();
+    b.len() >= 3
+        && b[0] == '['
+        && b[2] == ']'
+        && matches!(b[1], ' ' | '>' | 'x' | '-' | '~' | '?')
+        && b.get(3).is_none_or(|c| c.is_ascii_whitespace())
 }
 
 /// Is this refusal one of the declared ones?
@@ -375,30 +379,33 @@ fn declared(name: &str) -> bool {
 }
 
 /// **`Line.parseBody`'s item-ness rule, restated over the line's bytes** — the
-/// exact boundary cheats **122** and **123** record, and the thing
-/// [`the_two_readers_agree_on_which_lines_are_items`] pins.
+/// thing [`the_two_readers_agree_on_which_lines_are_items`] pins.
 ///
-/// `Line.parseItem` splits the indent with `Text.isSp`, **which is a space and
-/// not a tab** (cheat 122), then `parseBody` matches the literal `'-' :: ' '`;
-/// a `'['` immediately after takes the boxed arm through `boxAt` (`[`, a glyph,
-/// `]`), and anything else takes the bare arm, which `Field.tokBare` refuses if
-/// any word carries a `'['` (cheat 123's W-15/K3a half) and `bareOk` refuses if
-/// no word is left at all.
+/// Since W-42 (owner D83, README gap 32) it is the fork's rule but for the
+/// kernel's named refusals: `Line.parseItem` splits the indent with
+/// `Text.isIndent` (the space alone), `parseBody` matches `'-' :: ' '`, then
+/// `boxAt` looks for `[`, a character, `]` AFTER any run of separators
+/// (`Text.isSp`, Rust's `char::is_whitespace`) and only when the end of the line
+/// or ASCII whitespace follows the `]` (`Line.isBoxEnd`, the fork's
+/// `state_at`); such a box with a glyph the kernel knows is the boxed arm, with
+/// any other character it is `badState` (refused, so not an item here), and
+/// anything else is the bare arm, which `bareOk` takes when a word is left.
+/// Until W-42 it matched the literal `- [`, a tab was a word character, and
+/// the bare arm refused any `[` — cheats 122 and 123.
 ///
 /// Stated in the header as a restatement, with what that costs.
 fn kernel_reads_as_item(text: &str) -> bool {
     let body: String = text.chars().skip_while(|c| *c == ' ').collect();
     let Some(rest) = body.strip_prefix("- ") else { return false };
-    let head: Vec<char> = rest.chars().take(3).collect();
-    if head.first() == Some(&'[') {
-        // The boxed arm: `boxAt` wants `[`, a char, `]`, and a glyph the kernel
-        // knows. A `[` that is not a box falls through to the bare arm, which
-        // `tokBare` then refuses for carrying the `[`.
-        return head.len() == 3
-            && head[2] == ']'
-            && matches!(head[1], ' ' | '>' | 'x' | '-' | '~' | '?');
+    let after: Vec<char> = rest.chars().skip_while(|c| c.is_whitespace()).collect();
+    if after.len() >= 3
+        && after[0] == '['
+        && after[2] == ']'
+        && after.get(3).is_none_or(|c| c.is_ascii_whitespace())
+    {
+        return matches!(after[1], ' ' | '>' | 'x' | '-' | '~' | '?');
     }
-    rest.chars().any(|c| c != ' ') && !rest.contains('[')
+    rest.chars().any(|c| !c.is_whitespace())
 }
 
 /// **The fork's answer with the budget key spelled the way the kernel spells
@@ -473,10 +480,11 @@ fn config() -> ProptestConfig {
     let cases =
         std::env::var("TM_PROPTEST_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(256);
     // The generator puts `""`, `" "` or `"\t"` between the bullet and the box
-    // with equal weight, so **two draws in three are cheat 122/123's class** and
-    // the two editing arms assume them away (the item-ness arm is where they are
-    // asserted). proptest's default ceiling of 1,024 global rejects would stop
-    // the run long before `cases` were met, so it is raised in proportion.
+    // with equal weight. Until W-42 two draws in three were cheat 122/123's
+    // class, prose to the kernel, and the two editing arms assumed them away;
+    // D83 made them items to both readers, so the arms compare them, and what
+    // they still assume away is the refusal classes above. proptest's default
+    // ceiling of 1,024 global rejects is raised in proportion all the same.
     ProptestConfig { cases, max_global_rejects: cases * 8, ..ProptestConfig::default() }
 }
 
@@ -525,17 +533,10 @@ proptest! {
             note_case(ARM, 0);
             return Ok(());
         };
-        // **A tab hides the answer, in two ways at once, and both are recorded.**
-        // Gap 32's `Cmd.editE` guard refuses a tabbed line by name before
-        // item-ness is ever reached; and cheat 122 — the kernel's separator is a
-        // space, so `- a ^q9x2<TAB>` tokenises as the single word `^q9x2<TAB>`,
-        // which is not an id word — makes the KEY tab-dependent as well, so
-        // `noSuchId` there means "a different key", not "prose". The round-trip
-        // arm above still reads every tabbed line; this one cannot.
-        if addressed.contains('\t') {
-            note_case(ARM, 0);
-        }
-        prop_assume!(!addressed.contains('\t'));
+        // **A tab no longer hides the answer** (owner D83, W-42). Until then gap
+        // 32's edit guard refused a tabbed line before item-ness was reached, and
+        // cheat 122 made the KEY tab-dependent, so this arm assumed tabbed lines
+        // away; both are gone, and the arm reads every drawn line.
         // Appending the id cannot change item-ness, and this says so rather
         // than assuming it.
         prop_assert_eq!(

@@ -58,16 +58,28 @@ theorem mem_foldQueries (z : Cal.Tz) (dy : Cal.Instant → Nat) (sl : Nat → Op
 
 theorem entryInstants_ns (e : Entry) : ∀ q ∈ entryInstants e, q.ns < 2000000000 := by
   intro q hq
-  unfold entryInstants gapStart? at hq
+  unfold entryInstants at hq
   rcases List.mem_cons.1 hq with rfl | hq
   · exact ns_lt_of_wf _ e.t.property
-  · split at hq
+  rcases List.mem_append.1 hq with hq | hq
+  · unfold gapStart? at hq
+    split at hq
     · simp only [Option.toList_some, List.mem_singleton] at hq; subst hq
       exact ns_lt_of_wf _ (Cal.subMinutes_wf _ _ e.t.property)
     · split at hq
       · simp only [Option.toList_some, List.mem_singleton] at hq; subst hq
         exact ns_lt_of_wf _ (Cal.subMinutes_wf _ _ e.t.property)
       · simp at hq
+    · simp at hq
+  · -- a break's end (D87): `addMinutes` keeps the nanoseconds, or takes a leap second's 10⁹ off them
+    unfold brkEndAt? at hq
+    split at hq
+    · simp only [Option.toList_some, List.mem_singleton] at hq; subst hq
+      have h := ns_lt_of_wf _ e.t.property
+      unfold Replay.brkEnd Replay.addMinutes
+      split
+      · exact h
+      · split <;> (simp only; omega)
     · simp at hq
 
 /-! ## The mask, the separation, the head, and the tail's fold -/

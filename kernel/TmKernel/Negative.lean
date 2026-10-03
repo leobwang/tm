@@ -356,33 +356,27 @@ end Tm
    =================================================================== -/
 namespace Tm
 
-/- CHEAT 122 — §4.1 says an item line's tokens are "whitespace-separated
-   words", and `tm-core::grammar` splits on any whitespace run.  `Text.lean`'s
-   separator is `isSp c := c == ' '`, so a tab is an ordinary word character:
-   `a<TAB>b` is ONE token, not two.  Consequences the oracle found:
-   `- [ ] x<TAB>^a1` is refused as `noId` (still, after K3a: the title key is
-   the **bare** form's, and that line carries a box), `- [ ] x ^a1<TAB>` yields the id
-   `"a1\t"` — a store key the Rust's `Id::is_valid` rejects — and `tm edit est=`
-   lands on a different token than the Rust's does when an earlier `est:` is
-   glued to the previous word by a tab. -/
-theorem tokens_are_whitespace_separated :
-    (tokenize "a\tb".toList).length = 2 := by decide
+/- CHEAT 122 — **withdrawn at W-42 track G (owner D83): the separator is the host's, so the
+   claim it refuted is TRUE and the hole it recorded is closed.**  It read: §4.1 says an item
+   line's tokens are "whitespace-separated words", and `tm-core::grammar` splits on any
+   whitespace run, while `Text.lean`'s separator was `c == ' '`, so a tab was an ordinary word
+   character and `a<TAB>b` was ONE token — `- [ ] x<TAB>^a1` refused as `noId`, `- [ ] x ^a1<TAB>`
+   keyed `"a1\t"`, and `tm edit est=` landing on a different token from the Rust's.  Its claim,
+   `(tokenize "a\tb".toList).length = 2`, now holds, which is why it cannot stay here: a
+   negative test whose claim is true is a check no input can fail.  The positive statements are
+   `the_separator_is_white_space` (Text.lean) and `a_tab_separates_the_id` (Line.lean); what
+   still must fail is CHEAT 262, below — a separator WIDER than the host's. -/
 
-/- CHEAT 123 — the same rule at the head of the line.  `parseBody` matches the
-   literal `- [`, so `- <TAB>[ ] …` and `-  [ ] …` (two spaces) are not item
-   lines at all.  They are kept as prose and written back unchanged, so nothing
-   reports anything: the item is simply invisible to every command, to ranks,
-   and to `tm check`.  1,049 of 2,048 generated lines land here.
-
-   RESTATED 2026-09-17 (W-15, K3a): the box is optional now, so "not the boxed
-   arm" no longer implies "not an item" — without a second clause these lines
-   would have become **bare** items whose title begins `[`, which is a worse
-   answer than the prose they are.  `Field.bareOk`'s `tokBare` refuses a bare
-   line carrying a `[` anywhere, so both shapes are still prose and this block
-   still does not close; `a_line_with_a_bracket_is_not_a_bare_item` (Line.lean)
-   is the positive statement of the same fact. -/
-theorem one_space_is_not_the_only_separator_after_the_bullet :
-    isItemLine "-  [ ] 2 30m Spaced ^a1".toList = true := by decide
+/- CHEAT 123 — **withdrawn at W-42 track G (owner D83): the separators between the bullet and
+   the box are read as the host reads them.**  It read: `parseBody` matched the literal `- [`, so
+   `- <TAB>[ ] …` and `-  [ ] …` (two spaces) were not item lines but prose, written back
+   unchanged and invisible to every command — 1,049 of 2,048 generated lines — and, after K3a,
+   the bare grammar's bracket refusal (tokBare) kept them prose rather than bare items whose
+   title begins `[`.  Its claim, `isItemLine "-  [ ] 2 30m Spaced ^a1".toList = true`, now holds.
+   The positive statements are `a_line_spaced_from_its_box_is_boxed` and
+   `a_bracket_in_a_bare_line_is_title_text` (Line.lean; a_line_with_a_bracket_is_not_a_bare_item,
+   which said the opposite, is retired); what still must fail is CHEAT 260 and 261, below — a box
+   the host does not read, and an indent it does not read either. -/
 
 /- CHEAT 124 — §4.1 says a token the parser cannot classify stays in the title,
    and the Rust keeps `^`, `^%` and `^é` there and records a `tm check`
@@ -2118,11 +2112,16 @@ theorem theSmallHoursReopened :
    is what `a_malformed_item_line_is_rejected_not_treated_as_prose` (the FFI
    suite) asserts.  `tree.rs`'s `key_of` does not look at the box and would key
    this line `Id("no id here")` with a `missing-id` warning; the divergence is
-   deliberate and this block is where it is written down. -/
+   deliberate and this block is where it is written down.
+
+   AMENDED 2026-10-02 (W-42 track G, D83): the literal gained `RawItem`'s fourth field, the
+   separators between the bullet and the box (`[]` here), and nothing else — without it this
+   block would fail to elaborate for a field count and stop failing for its claim (CHEAT 176's
+   D32 amendment is the precedent). -/
 theorem aBoxedLineWithNoIdIsKeyedByItsTitle :
     parseLine "- [ ] no id here".toList =
       Except.ok (['n','o',' ','i','d',' ','h','e','r','e'], Glyph.todo,
-        ⟨[], true, tokenize " no id here".toList⟩) := by rfl
+        ⟨[], true, tokenize " no id here".toList, []⟩) := by rfl
 
 /- CHEAT 175 — a box-less line can carry a state.  `serializeItem` writes back
    the box it read, so an entity whose live line is bare and whose status is
@@ -2131,10 +2130,13 @@ theorem aBoxedLineWithNoIdIsKeyedByItsTitle :
    `a_boxless_line_cannot_carry_a_state` proves the clause fails on exactly
    that shape; driven through the wire, `{"op":"drop","id":"lunch"}` against a
    `routines.md` line answered `ok` with the line unchanged before the clause
-   landed, and answers `{"err":{"kernel":"badHorizon"}}` after. -/
+   landed, and answers `{"err":{"kernel":"badHorizon"}}` after.
+
+   AMENDED 2026-10-02 (W-42 track G, D83): the line literal gained `RawItem`'s fourth field
+   (`[]`), for the field count and nothing else (CHEAT 174's note). -/
 theorem aBoxlessLineCanCarryAState :
     boxWf { live := ⟨0, 0⟩, archive := none, status := .settled .dropped,
-            line := ⟨[], false, tokenize " lunch win:11:30-13:30".toList⟩ } = true := by rfl
+            line := ⟨[], false, tokenize " lunch win:11:30-13:30".toList, []⟩ } = true := by rfl
 
 /- CHEAT 176 — two routines with one title are two entities.  A title key that
    silently collides is a wrong answer (§5.6), and the fork's fallback — key the
@@ -2152,12 +2154,15 @@ theorem aBoxlessLineCanCarryAState :
    theorems pin byte for byte.  The edit is not a renumber (§6.2): without it
    this block would fail to elaborate for a **field count** and stop failing
    for the claim it is about, which is §9.2's disguised gap wearing check 4's
-   clothes. -/
+   clothes.
+
+   AMENDED AGAIN 2026-10-02 (W-42 track G, D83): the two line literals gained `RawItem`'s fourth
+   field, the separators before a box (`[]`), for the same reason. -/
 theorem twoRoutinesWithOneTitleAreTwoEntities :
     (match buildEntity "lunch".toList
-        [⟨0, 0, "lunch".toList, Glyph.todo, ⟨[], false, tokenize " lunch".toList⟩, none,
+        [⟨0, 0, "lunch".toList, Glyph.todo, ⟨[], false, tokenize " lunch".toList, []⟩, none,
           "routines.md".toList⟩,
-         ⟨0, 1, "lunch".toList, Glyph.todo, ⟨[], false, tokenize " lunch".toList⟩, none,
+         ⟨0, 1, "lunch".toList, Glyph.todo, ⟨[], false, tokenize " lunch".toList, []⟩, none,
           "routines.md".toList⟩] with
      | .ok _    => true
      | .error _ => false) = true := by rfl
@@ -2483,9 +2488,9 @@ theorem wallTodayIsReadOfEveryCandidate :
    started at 193 -- the second time in two runs (W-17's gap 671).  Every
    citation of track G's 193/194, in Lean and in prose, moved with them. -/
 /- CHEAT 201 — `noBlockOverABreak` asserted to hold on a day whose log records a
-   `break` while a block is running.  Every Break row of the day is a replayed
+   `break` running into a block.  Every Break row of the day is a replayed
    one (`Planner.a_break_row_is_a_replayed_row`) and so is every Block row the
-   planner did not reserve, so a log with a break at 07:30 inside `m1`'s
+   planner did not reserve, so a log with a break at 07:00 lasting into `m1`'s
    07:05-08:05 block gives the day a Break row INSIDE a Block row — which is why
    `Goals.plan_places_no_block_over_a_break` was false as stage 6 wrote it
    (W-18, README gap 385's third instance).  This block claims the checker says
@@ -2765,6 +2770,93 @@ theorem theOldE1HoldsAtAStartAfterNow :
    instant at or before `now`; D78 does not reach it).  This block claims `Planner.mkBreak?` builds a
    break that begins a second after `now`; `decide` refuses. -/
 theorem aBreakAfterNowIsBuilt : (Planner.mkBreak? ⟨1000, 0⟩ ⟨some ⟨1001, 0⟩, 10, none⟩).isSome = true := by
+  decide
+
+-- ===========================================================================
+-- APPENDED 2026-10-02 (stage 6, run W-42, track G — owner D83, README gap 32 closed: the kernel
+-- reads as a separator exactly what the host reads).  Appended at the end (§6.2: append, never
+-- renumber).  Labels 260-265, a band above the 246+ the parallel tracks of W-42 count from, so
+-- that the land step's renumber has nothing to merge (§6.2's three CHEAT 9s).
+-- ===========================================================================
+
+/- CHEAT 260 — the box widened past the host's.  A no-break space is `White_Space` and so a
+   separator between two words (`isSp`), but fork 4748911's `state_at` asks the byte after `]` to
+   be ASCII whitespace, and a no-break space is not: `- [ ]<NBSP>x` carries no box to the host.
+   The claim below is that it carries one here; `boxAt` refuses (`isBoxEnd`), and README gap
+   4130's world — a no-break space after `[ ]` — is a box-less item to both readers. -/
+theorem aNoBreakSpaceEndsABox : (boxAt "[ ]\u00A0x".toList).isSome = true := by decide
+
+/- CHEAT 261 — the indent widened with the separator.  The host reads no indentation on an item
+   line at all (`ItemLine::parse` wants `- ` at column 0); this kernel reads spaces (README gap
+   46), and D83 widened the separator between words, not that.  The claim is that a tab-indented
+   line is an item; `parseItem` splits the indent with `isIndent`, the space alone, and the line
+   is prose to both readers. -/
+theorem aTabIndentsAnItem : isItemLine "\t- [ ] x ^a1".toList = true := by decide
+
+/- CHEAT 262 — the separator widened past `White_Space`.  A zero-width space looks like a gap and
+   is not one to the host (`char::is_whitespace` is false of U+200B), so `a<ZWSP>b` is one word to
+   both readers; the claim is that it separates. -/
+theorem aZeroWidthSpaceSeparates : isSp '\u200B' = true := by decide
+
+/- CHEAT 263 — the title key joined with one space, as it was until W-42 (README gap 403).  The
+   host keys an id-less line by its title SPAN, verbatim; a key that collapsed `a  b` to `a b`
+   would name a routine the host never sends, and once a tab is a separator it would collapse
+   `Morning<TAB>stretch` too — a candidate the planner request then refuses as `ciDisagrees …
+   plan none`.  The claim is the old join; `Field.titleKey` keeps the span. -/
+theorem theTitleKeyJoinsWithOneSpace :
+    Field.titleKey ⟨[], false, tokenize " a  b dur:1h".toList, []⟩ = some "a b".toList := by
+  decide
+
+/- CHEAT 264 — an unset that glues a box to a no-break space.  Fork 4748911's `remove_token`
+   drops a token with its separator, so `- [x] due:2026-09-10<NBSP>Title ^a1` unset `due` is
+   `- [x]<NBSP>Title ^a1` to the fork — a box-less line on the next read, its done state gone.
+   The claim is that the kernel writes the same; `Field.unsetKey` keeps the box ended
+   (`Field.endBox`). -/
+theorem anUnsetGluesABoxToANoBreakSpace :
+    serializeItem ['a', '1'] Glyph.done
+      (Field.unsetKey .due ⟨[], true, tokenize " due:2026-09-10\u00A0Title ^a1".toList, []⟩)
+      = "- [x]\u00A0Title ^a1".toList := by decide
+
+/- CHEAT 265 — a comment opener indented by a tab.  `grammar::opens_comment` trims spaces only
+   (`Plan.opensComment` is its mirror, D47), so a tab-indented `<!--` opens nothing to either
+   reader; the claim is that it opens a comment once a tab is a separator. -/
+theorem aTabIndentsACommentOpener : opensComment "\t<!-- x".toList = true := by decide
+
+/- ====================================================================
+   W-42 track R — the owner's D87 (README gap 4137, parity P81): a break
+   taken inside a block is not block time.  Cheats 246-248, numbered from
+   the highest in the checkout (245); the merge renumbers if another track
+   took the same numbers (AGENTS 6.2).
+   ==================================================================== -/
+
+/- CHEAT 246 — the fork's credit: `start a` 09:00, a twenty-minute `break` at
+   09:30, `stop a` 10:00, credited the block's whole sixty-minute span.  D87's
+   `Replay.brkFx` stops the clock across the break, so `decide` computes 40 and
+   refuses 60. -/
+theorem aStoppedBlockIsCreditedItsSpan :
+    ((Replay.replay Replay.utcZone [Replay.bE 1 63924368400 (Replay.bStart ['a']),
+        Replay.bE 2 63924370200 (.brk 20 (some 20) none), Replay.bE 3 63924372000 (.stop ['a'] 0)]).items.get
+        ['a']).map (·.minutes) = some 60 := by
+  decide
+
+/- CHEAT 247 — the fork's drawing: the same day's segments claimed to be two,
+   one Block `[09:00, 10:00]` across the Break.  `decide` computes the three
+   segments `[09:00, 09:30]`, `[09:30, 09:50]`, `[09:50, 10:00]` and refuses. -/
+theorem aStoppedBlockIsDrawnAcrossItsBreak :
+    ((Replay.replay Replay.utcZone [Replay.bE 1 63924368400 (Replay.bStart ['a']),
+        Replay.bE 2 63924370200 (.brk 20 (some 20) none), Replay.bE 3 63924372000 (.stop ['a'] 0)]).days.get
+        739865).map (fun a => a.segments.length) = some 2 := by
+  decide
+
+/- CHEAT 248 — C5's `arm_split` over every event, which D87 makes false: a
+   `break`'s arm with a block running is its day family arm alone.  `decide`
+   computes the arm, which also stops the block's clock, and refuses. -/
+theorem aBreaksArmIsItsDayArm :
+    Replay.arm (fun _ => 739865) (fun _ => none)
+        ⟨some ⟨['a'], (⟨63924368400, 0⟩, ⟨false, 0⟩), some (⟨63924368400, 0⟩, ⟨false, 0⟩), false, none, 0, none⟩, none, none⟩
+        (Replay.bE 2 63924370200 (.brk 20 (some 20) none)) (⟨63924370200, 0⟩, ⟨false, 0⟩) 739865
+      = Replay.dayArm (fun _ => 739865) (fun _ => none) (Replay.bE 2 63924370200 (.brk 20 (some 20) none))
+          (⟨63924370200, 0⟩, ⟨false, 0⟩) 739865 := by
   decide
 
 end Tm

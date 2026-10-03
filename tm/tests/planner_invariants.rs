@@ -5074,21 +5074,50 @@ proptest! {
     /// them too** (W-36 track T, README gap 2920).  Every case with a running block sends the
     /// host's reading; the open row (start, stop, item, `▶`, `so far`), the reservation (its stop
     /// and its `left`) and §8.2 step 5's rows are compared with the comparand both ways.
+    ///
+    /// **Re-aimed at the owner's D87 (W-42 track R, parity P81, README gap 4242).**  The arm's
+    /// world was a break LOGGED inside the running block, which separated the two readings while
+    /// the log's counted the break as worked; since D87 the kernel's replay nets it as the host
+    /// does, so on that day the two readings are ONE — asserted case by case wherever nothing else
+    /// stops the block's clock — and the reservation compared there reads it.  What still
+    /// separates them is a RUNNING break, which `tm break` keeps in `.tm/state.json` until it ends:
+    /// the host nets it and the log cannot yet, so the arm draws one too, and its open row is the
+    /// comparand's PAUSED at the break's start (P45, the W-35 arm's `w35_pause_open_rows`) with the
+    /// host's `so far`.  A paused block reserves nothing, so a reservation is compared on a day
+    /// the readings differ only in README gap 4243's world — a logged break inside a pause, which
+    /// the host counts twice — and the arm meets it only by chance, its break inside a wall's pause
+    /// (six of 6,000 draws, W-42 track R resumed); the census counts it and no floor asks for it.
     #[test]
     fn the_kernel_reads_the_hosts_worked_minutes(
         case in case_strategy(),
         logged in prop::option::of((0u32..=60, 5u32..=30)),
+        running in prop::option::of((0u32..=40, 5u32..=30)),
     ) {
+        /// W-42's census beside W-36's: `[running breaks drawn, open rows compared on a
+        /// running-break day whose readings differ, logged-break days whose readings were held
+        /// equal (D87's one reading), reservations compared on a logged-break day]`.
+        static W42_WORKED: Mutex<[u64; 4]> = Mutex::new([0; 4]);
         let mut w = build(&case);
         let tz = w.cfg.tz;
         // A break LOGGED inside the running block, begun `into` minutes after it started and
         // ended at or before `now` — written as `tm break` writes it, at its end and stamped at
         // its start, so the kernel and the fork replay the same bytes.
         let mut drew = 0u64;
+        let mut one_reading = false;
         if let (Some((into, len)), Some(a)) = (logged, w.state.active.clone()) {
             let started = local_dt(tz, date(), a.started);
             let t = started + Duration::minutes(i64::from(into));
             if t + Duration::minutes(i64::from(len)) <= w.now {
+                // D87's one reading needs nothing else to stop the block's clock: the block not
+                // paused in the cache (a running break pauses it, and this arm draws one only
+                // where it logs none), no open interruption there, and no pause, unpause,
+                // interrupt or resume the log holds from the block's start on — the break line is
+                // appended last, so a later mark would precede it in the file.
+                let marks = w.log.lines().filter_map(|l| serde_json::from_str::<Value>(l).ok()).any(|e| {
+                    matches!(e["ev"].as_str(), Some("pause" | "unpause" | "interrupt" | "resume"))
+                        && e["t"].as_str().and_then(|s| DateTime::parse_from_rfc3339(s).ok()).is_some_and(|m| m >= started.fixed_offset())
+                });
+                one_reading = !marks && !a.paused && w.state.interrupt.is_none();
                 w.log.push_str(&format!(
                     "{{\"t\":\"{}\",\"ev\":\"break\",\"planned_min\":{len},\"actual_min\":{len}}}\n",
                     t.format("%Y-%m-%dT%H:%M:%S%:z")
@@ -5097,8 +5126,19 @@ proptest! {
                 drew = 1;
             }
         }
+        // **A RUNNING break** (W-42 track R): drawn where no break was logged, as the W-35 arm
+        // draws one (`World::run_a_break`: after the log's last start, done and timer mark,
+        // pausing the running block in `.tm/state.json` as `tm break` does).
+        let ran: Option<DateTime<Tz>> = if drew == 0 {
+            w.run_a_break(&case, running.map(|(ago, planned)| (ago, planned, "walk")))
+        } else {
+            None
+        };
         let host = w36_host_worked(&w, &w.state);
         let fork = w35_fork_worked(&w, &w.state);
+        if drew == 1 && one_reading && host.is_some() {
+            prop_assert_eq!(host, fork, "D87: a break logged inside the running block left the host's reading and the log's apart (P81)");
+        }
         let mut req = w.plan_request();
         if let Some(h) = host {
             planwire::add_worked_min(&mut req["planner"], h);
@@ -5116,10 +5156,14 @@ proptest! {
             W36_WORKED.lock().expect("census")[8] += 1;
             return Ok(());
         };
-        let d = match host {
+        let mut d = match host {
             Some(h) => w36_fork_plan(&w, &w.state, &cvec, &ps, h),
             None => w35_fork_plan(&w, &w.state, &cvec, &ps),
         };
+        // On a running-break day the comparand's open row is paused at the break's start (P45).
+        if let Some(t) = ran {
+            w35_pause_open_rows(&mut d, &[t]);
+        }
         let now_sec = rowwire::kernel_sec(w.now);
         let differs = host.is_some() && host != fork;
 
@@ -5162,9 +5206,13 @@ proptest! {
                 "the reservation's `left` is not the estimate less the host's worked minutes");
         }
 
-        // **Everything else** — §8.2 step 5's rows, against the same comparand.
-        let ka = kernel_assigned(&plan, now_sec);
-        let fa = fork_assigned(&d, w.now);
+        // **Everything else** — §8.2 step 5's rows, against the same comparand; a running-break
+        // day is not compared here (P45 has no fork analogue: the comparand plans over it).
+        let (ka, fa) = if ran.is_none() {
+            (kernel_assigned(&plan, now_sec), fork_assigned(&d, w.now))
+        } else {
+            (Vec::new(), Vec::new())
+        };
         prop_assert_eq!(&ka, &fa, "§8.2 step 5 differs from the comparand");
 
         let c = {
@@ -5180,6 +5228,14 @@ proptest! {
             c[9] += drew;
             *c
         };
+        let r = {
+            let mut r = W42_WORKED.lock().expect("census");
+            r[0] += u64::from(ran.is_some());
+            r[1] += if ran.is_some() && differs { kopen.len() as u64 } else { 0 };
+            r[2] += u64::from(drew == 1 && one_reading && host.is_some());
+            r[3] += u64::from(drew == 1 && fres.is_some());
+            *r
+        };
         let generated: u64 = std::env::var("TM_PROPTEST_CASES")
             .ok()
             .and_then(|s| s.parse().ok())
@@ -5189,8 +5245,12 @@ proptest! {
             prop_assert!(c[9] > 0, "no break was logged inside a running block in {} cases", c[0]);
             prop_assert!(c[2] > 0, "on no day did the host's reading differ from the log's in {} cases", c[0]);
             prop_assert!(c[4] > 0, "no open row was compared on a day the two readings differ");
-            prop_assert!(c[6] > 0, "no reservation was compared on a day the two readings differ");
             prop_assert!(c[7] > 0, "no assigned row was compared");
+            // Since D87 (README gap 4242): the readings differ on a RUNNING break, whose open row
+            // is compared; the logged break's day holds them equal, and its reservation reads it.
+            prop_assert!(r[0] > 0 && r[1] > 0, "no open row was compared on a running-break day whose readings differ");
+            prop_assert!(r[2] > 0, "no logged-break day held the two readings equal (D87's one reading)");
+            prop_assert!(r[3] > 0, "no reservation was compared on a day whose log holds a break inside the block");
         }
         eprintln!(
             "planner_invariants W-36 worked census: {} cases, {} with a running block, {} with a break \
@@ -5198,6 +5258,12 @@ proptest! {
              compared {} ({} on a differing day); reservations compared {} ({} on a differing day); \
              assigned rows compared {}; cases with no kernel §7 answer {}",
             c[0], c[1], c[9], c[2], c[3], c[4], c[5], c[6], c[7], c[8]
+        );
+        eprintln!(
+            "planner_invariants W-42 worked census (D87): {} running breaks drawn, {} open rows compared on \
+             one whose readings differ; {} logged-break days held to one reading; {} reservations compared on \
+             a logged-break day",
+            r[0], r[1], r[2], r[3]
         );
     }
 }

@@ -1434,9 +1434,11 @@ impl fmt::Display for Problem {
 }
 
 /// The line **opens** an HTML comment: `<!--` after leading spaces. Mirrors
-/// `Plan.lean`'s `opensComment`, whose `isSp` is `c == ' '` — a TAB does not
-/// indent an opener, and an inline `<!--` in the middle of a line opens
-/// nothing, so an item line can never open a comment.
+/// `Plan.lean`'s `opensComment`, which drops `isIndent` — the space alone, not
+/// the kernel's separator `isSp`, which since the owner's D83 (W-42) is
+/// `char::is_whitespace` as `split_words` reads it — so a TAB does not indent
+/// an opener, and an inline `<!--` in the middle of a line opens nothing, so an
+/// item line can never open a comment.
 pub fn opens_comment(line: &str) -> bool {
     line.trim_start_matches(' ').starts_with("<!--")
 }

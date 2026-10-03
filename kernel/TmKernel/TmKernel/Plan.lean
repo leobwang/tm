@@ -245,9 +245,9 @@ the kernel does not guess where the writer meant it to stop.
 `commentAfter` is the one step function; the splitter, the scan, the section
 derivation and the placement check all read comments through it. -/
 
-/-- The line opens a comment: `<!--` after leading spaces. -/
+/-- The line opens a comment: `<!--` after leading spaces (`isIndent`, the space alone — D83 widened the separator, not this). -/
 def opensComment (cs : List Char) : Bool :=
-  match cs.dropWhile isSp with
+  match cs.dropWhile isIndent with
   | '<' :: '!' :: '-' :: '-' :: _ => true
   | _                             => false
 
@@ -286,7 +286,7 @@ theorem item_lines_open_no_comment (l : List Char) (h : isItemLine l = true) :
     opensComment l = false := by
   unfold isItemLine parseLine parseItem at h
   unfold opensComment
-  cases hd : l.dropWhile isSp with
+  cases hd : l.dropWhile isIndent with
   | nil => rfl
   | cons c t =>
       rw [hd] at h
@@ -451,7 +451,7 @@ private def orientDocs : List Doc :=
   [⟨['w'], [], some ⟨week, 35⟩⟩, ⟨['m'], [], some ⟨month, 8⟩⟩]
 
 private def orientCore (st : Status) : Core :=
-  { live := ⟨0, 0⟩, archive := some ⟨⟨1, 0⟩, ⟨[], true, []⟩⟩, status := st, line := ⟨[], true, []⟩ }
+  { live := ⟨0, 0⟩, archive := some ⟨⟨1, 0⟩, ⟨[], true, [], []⟩⟩, status := st, line := ⟨[], true, [], []⟩ }
 
 private def orientPlan (st : Status) : PlanCore :=
   ⟨orientDocs,
@@ -550,10 +550,10 @@ section for free. -/
 
 def isHeading (cs : List Char) : Bool := cs.head? == some '#'
 
-/-- The text of a heading with its `#`s and leading spaces stripped, so
-`# Demoted` and `## Demoted` are one name. -/
+/-- The text of a heading with its `#`s and leading spaces (`isIndent`, as before W-42 — README gap 4166 is the host's
+reader) stripped, so `# Demoted` and `## Demoted` are one name. -/
 def headingBody (cs : List Char) : List Char :=
-  (cs.dropWhile (fun c => c == '#')).dropWhile isSp
+  (cs.dropWhile (fun c => c == '#')).dropWhile isIndent
 
 /-- §4.2: exactly three heading names mean anything. -/
 inductive SecKind | demoted | pinned | series (name : List Char) | organisational
@@ -2567,12 +2567,12 @@ theorem a_routine_line_need_not_carry_the_open_flag :
 theorem the_spec_routine_line_is_a_title_keyed_item :
     parseLine "- lunch win:11:30-13:30 dur:30m every:day".toList =
       Except.ok (['l','u','n','c','h'], Glyph.todo,
-        ⟨[], false, tokenize " lunch win:11:30-13:30 dur:30m every:day".toList⟩) := by
+        ⟨[], false, tokenize " lunch win:11:30-13:30 dur:30m every:day".toList, []⟩) := by
   rfl
 
 theorem the_spec_routine_line_round_trips :
     serializeItem ['l','u','n','c','h'] Glyph.todo
-      ⟨[], false, tokenize " lunch win:11:30-13:30 dur:30m every:day".toList⟩
+      ⟨[], false, tokenize " lunch win:11:30-13:30 dur:30m every:day".toList, []⟩
       = "- lunch win:11:30-13:30 dur:30m every:day".toList := by
   decide
 

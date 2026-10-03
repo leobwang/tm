@@ -1074,6 +1074,9 @@ theorem arm_durations_nil (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (
       · rfl
     · rfl
   case extend id by_ => rfl
+  case brk planned actual where_ =>
+    rw [List.filterMap_append, (Replay.dayArm_obs dy sl e t d).2.1, List.append_nil]
+    exact (Replay.brkFx_obs dy m t _).2
   all_goals exact (Replay.dayArm_obs dy sl e t d).2.1
 
 /-- **Each machine arm adds at most one observation on its own line**, energy or duration, not both. -/

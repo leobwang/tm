@@ -99,6 +99,9 @@ theorem arm_pending (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Ma
         · exact Or.inl rfl
         · exact Or.inl rfl
       · exact Or.inl rfl
+  case brk p a w =>
+    rw [List.filterMap_append, (Replay.dayArm_obs dy sl e t d).1, List.append_nil] at hm
+    exact Or.inl (Replay.brkFx_machine dy m t _ m' hm).2.2
   all_goals rw [(Replay.dayArm_obs dy sl e t d).1] at hm; simp at hm
 
 /-- **A step's pending observation is its start's, none, or on the step's day.** -/
