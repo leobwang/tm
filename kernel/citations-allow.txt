@@ -1289,3 +1289,13 @@ with_minute
 # And the W-41 repair's P78 test, restated when the hole it pinned closed (`ci:+5` read 5 by the kernel, gap 4330):
 # the W-41 repair's block cites it by the name it carried then.
 2 a_ci_the_kernel_reads_otherwise_is_named_at_its_line
+
+# W-43 TRACK C (README gaps 4460-4489).  The planner's oracle arm asks every frozen line as it stands -- the comparand
+# reads the backend's OWN minutes of the running block (forkplan's ForkPlan::worked, README gap 4247) -- and P81's
+# answer is frozen on the eight `worked` lines (gap 4248), so the three helpers planner_classes.rs used to ask the fork
+# a reordered or a D87 log by hand -- as_the_fork_reads_it, as_d87_asks_it, break_alone -- were DELETED (gap 4250: the
+# reordered log is a shape the owner's D92 nets).  Every citation counted here names them as they stood, in append-only
+# README blocks: W-42 track R's gap 4247 and the W-42 land's §3.  W-43's own block names them without backticks.
+2 as_the_fork_reads_it
+2 as_d87_asks_it
+2 break_alone

@@ -49,7 +49,13 @@
 //!     -> {"day":<DayPlan>, "hash":<DayPlan::hash>, "ranked":[id..], "cands":[id..]}
 //!   {"op":"diff", "old":[segment..], "new":[segment..]}
 //!     -> {"diff":<planner::diff>}
+//!   {"op":"worked", "world":{..}, "state":{..}, "now":"..", "log_line":null|".."}
+//!     -> {"worked": n|null}
 //!   ```
+//!
+//!   `worked` (W-43 track C, README gap 4460) is the running block's worked minutes as the
+//!   fork reads them — `active_run`'s reading over its own replay — which the comparand
+//!   needs before it plans (P55 and P46 move the estimate by the FORK's reading).
 //!
 //!   The world is read as the FORK reads it — its own parser, its own
 //!   `log::replay` over the same bytes (and `log_line` appended for the day
@@ -538,11 +544,53 @@ fn observe_review(req: &Value) -> Value {
     answer.unwrap_or_else(|e| json!({ "error": e }))
 }
 
+/// **One `worked` op** (stage 6 W-43 track C, README gap 4460): the running block's worked
+/// minutes as fork 4748911 READS them at the request's `now` — fork `active_run`'s own reading,
+/// over the fork's own replay of the world's log (with `log_line` appended, as `plan` reads it):
+/// the log's open block when it is the state's running item (`OpenBlock::worked_min_at`), the
+/// clock since `started` on the planned date otherwise; `null` when the state runs no block.
+///
+/// The comparand needs it BEFORE it plans — P55 moves the running estimate by the difference
+/// between the host's reading and the FORK's, and P46 asks whether the FORK's reading is past
+/// the estimate — and the kernel's replay is not the fork's reading wherever a registered number
+/// nets a break the log holds (parity P81, the owner's D87; and D92's break run into a block's
+/// start). Until W-43 the comparand read the kernel's replay as the fork's (README gap 4247), so
+/// on such a world it asked the oracle with the wrong estimate.
+///
+/// ```text
+/// {"op":"worked", "world":{docs,log,state,now,mult,ratio}, "state":{..}, "now":"..",
+///  "log_line":null|".."}  ->  {"worked": n|null}
+/// ```
+fn worked_one(req: &Value) -> Result<Value, String> {
+    let tz = tm_core::config::Config::default().tz;
+    let log_text = req["world"]["log"].as_str().ok_or("world.log is not a string")?;
+    let text = match req["log_line"].as_str() {
+        Some(l) => format!("{log_text}{l}"),
+        None => log_text.to_string(),
+    };
+    let replay = Log::parse(&text).replay(None, tz);
+    let state: tm_core::store::RuntimeState =
+        serde_json::from_value(req["state"].clone()).map_err(|e| format!("state: {e}"))?;
+    let now = instant(&req["now"], tz, "now")?;
+    let Some(active) = state.active.as_ref() else { return Ok(json!({ "worked": null })) };
+    // Fork `PlanInput::date` and `active_run`, verbatim in what they read.
+    let date = state.date.unwrap_or_else(|| now.date_naive());
+    let started = tm_core::capacity::local_dt(tz, date, active.started);
+    let worked = replay
+        .open_block
+        .as_ref()
+        .filter(|b| b.id == active.id.as_str())
+        .map(|b| b.worked_min_at(now.fixed_offset()))
+        .unwrap_or_else(|| (now - started).num_minutes().max(0) as u32);
+    Ok(json!({ "worked": worked }))
+}
+
 /// A request, answered — or refused `{"error": …}` by name, so the caller sees why.
 fn observe_plan(req: &Value) -> Value {
     let answer = match req["op"].as_str() {
         Some("plan") => plan_one(req),
         Some("diff") => diff_one(req),
+        Some("worked") => worked_one(req),
         other => Err(format!("unknown op {other:?}")),
     };
     answer.unwrap_or_else(|e| json!({ "error": e }))
@@ -681,7 +729,8 @@ fn main() {
                  \x20      tm-oracle parse-entry  (ONE log line per line: a JSON string, or a JSON array of bytes)\n\
                  \x20      tm-oracle replay <tz>  (whole log texts, one JSON string per line)\n\
                  \x20      tm-oracle fit <tz> <today>  (the same, fitted: `tm model --fit`)\n\
-                 \x20      tm-oracle plan  (one planning request per line: the fork's planner, ranked as the binary ranks it)\n\
+                 \x20      tm-oracle plan  (one planning request per line: the fork's planner, ranked as the binary ranks it;\n\
+                 \x20                       ops plan, diff, worked)\n\
                  \x20      tm-oracle review  (one week-grid request per line: the fork's review::week_review heat over a world)"
             );
             std::process::exit(2);

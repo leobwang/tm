@@ -46,7 +46,7 @@
 
 #![allow(dead_code)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -282,4 +282,175 @@ pub fn key_of(field: &'static str) -> impl Fn(&Value) -> Option<String> {
         Value::Number(n) => Some(n.to_string()),
         _ => None,
     }
+}
+
+// ---------------------------------------------------------------------------
+// Every frozen file, by a property; and a line that moves to a new KEY (W-43 track C)
+// ---------------------------------------------------------------------------
+
+/// A line's key reader, as a bless and the history gates hold its file by.
+pub type KeyFn = Box<dyn Fn(&Value) -> Option<String>>;
+
+/// `tm/tests/fixtures`.
+pub fn fixtures_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
+}
+
+/// **Does a line carry a fork DAY** — a frozen planner or grid answer: a comparand's `shipped`, a
+/// grid's `fork`, or a fixture day's `day` beside its `hash` ([`shipped_answer`]'s three shapes)?
+pub fn carries_a_fork_day(line: &Value) -> bool {
+    line.get("shipped").is_some() || line.get("fork").is_some() || (line.get("day").is_some() && line.get("hash").is_some())
+}
+
+/// **Every frozen fork comparand file, and the key its lines are held by — by a PROPERTY of the
+/// file, never a list** (W-43 track C, README gap 4461; the campaign's lesson 2). Until W-43 the
+/// history gates named ten files by hand, so a comparand frozen after them (W-43's separator days)
+/// would have been held by no plain run. A file of [`fixtures_dir`] named `fork-4748911-*.jsonl`
+/// whose every line [`carries_a_fork_day`] is one; its key is the lines' `name` where every line
+/// carries one, else [`class_key`] where every line carries a `class` (the classes file, whose lines
+/// carry no name). The D21 family — the replay and log-line fixtures `TM_FORK_BLESS` rewrites from
+/// the oracle, whose lines carry a `replay` or a verdict and no fork day — is not one, by the same
+/// property (README gap 4285). A file that is one and has neither key FAILS: an `Err`, never skipped.
+pub fn frozen_files() -> Result<Vec<(String, KeyFn)>, String> {
+    let dir = fixtures_dir();
+    let mut names: Vec<String> = std::fs::read_dir(&dir)
+        .map_err(|e| format!("{}: {e}", dir.display()))?
+        .filter_map(|e| e.ok().and_then(|e| e.file_name().into_string().ok()))
+        .filter(|n| n.starts_with("fork-4748911-") && n.ends_with(".jsonl"))
+        .collect();
+    names.sort();
+    let mut out: Vec<(String, KeyFn)> = Vec::new();
+    for name in names {
+        let text = std::fs::read_to_string(dir.join(&name)).map_err(|e| format!("{name}: {e}"))?;
+        let lines: Vec<Value> = text
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| serde_json::from_str(l).map_err(|e| format!("{name}: a line that is not JSON ({e})")))
+            .collect::<Result<_, _>>()?;
+        if lines.is_empty() || !lines.iter().all(carries_a_fork_day) {
+            continue;
+        }
+        let key: KeyFn = if lines.iter().all(|l| l["name"].is_string()) {
+            Box::new(key_of("name"))
+        } else if lines.iter().all(|l| l["class"].is_string()) {
+            Box::new(class_key)
+        } else {
+            return Err(format!("{name}: a frozen fork comparand whose lines carry neither a `name` nor a `class` to be held by"));
+        };
+        out.push((name, key));
+    }
+    Ok(out)
+}
+
+/// **The parity numbers a line carries a flag of, and of those the ones SET** — every `p<n>`
+/// with a boolean value in an object the line carries beside its world and its days
+/// (`forkclass::flag_homes`' reading, which the re-bless gate reads; [`is_answer`] reads the
+/// same objects as answers).
+pub fn flags(line: &Value) -> (BTreeSet<u32>, BTreeSet<u32>) {
+    let (mut all, mut set) = (BTreeSet::new(), BTreeSet::new());
+    for (k, v) in line.as_object().into_iter().flatten() {
+        if matches!(k.as_str(), "world" | "day" | "shipped" | "whatif") {
+            continue;
+        }
+        for (f, b) in v.as_object().into_iter().flatten() {
+            let n = f.strip_prefix('p').filter(|d| !d.is_empty() && d.bytes().all(|c| c.is_ascii_digit())).and_then(|d| d.parse::<u32>().ok());
+            if let (Some(n), Some(b)) = (n, b.as_bool()) {
+                all.insert(n);
+                if b {
+                    set.insert(n);
+                }
+            }
+        }
+    }
+    (all, set)
+}
+
+/// **The fields a file's key is made of** — what may move when a line moves to a new key: a
+/// `name`-keyed file's `name`; the classes file's class, secondary floor and derivation
+/// ([`class_key`]).
+pub fn key_fields(line: &Value) -> &'static [&'static str] {
+    if line["name"].is_string() {
+        &["name"]
+    } else {
+        &["class", "secondary", "derived"]
+    }
+}
+
+/// **The lines that left between two versions, paired with the line that holds each one's WORLD
+/// in the newer** (W-43 track C, README gap 4320's key-change half): a frozen line's key is a
+/// label — the classes file's is its class, which is a FUNCTION of the world through the kernel's
+/// reading (`forkclass::class_of`), so a registered number that moves the kernel's reading moves
+/// the key (the owner's D87 re-filed two `worked` lines) — and until W-43 a key that left and a key
+/// that arrived were two lines to every gate: the old one judged by nothing, the new one a fresh
+/// freeze. `(paired, unpaired)`: `paired` is `(old key, new key)` where exactly one ARRIVED line
+/// carries the departed line's world byte for byte; `unpaired` is every departed key no arrived
+/// line, or more than one, holds the world of, with why — each a finding for the caller to judge
+/// ([`left_with_a_redrawn_parent`] says which the owner's D64(b) lets go).
+pub fn refiles(old: &BTreeMap<String, Value>, new: &BTreeMap<String, Value>) -> (Vec<(String, String)>, Vec<(String, String)>) {
+    let arrived: Vec<&String> = new.keys().filter(|k| !old.contains_key(*k)).collect();
+    let (mut paired, mut unpaired) = (Vec::new(), Vec::new());
+    for (k, line) in old.iter().filter(|(k, _)| !new.contains_key(*k)) {
+        let world = line.get("world").map(|w| serde_json::to_string(w).expect("a value serialises"));
+        let twins: Vec<&&String> = arrived
+            .iter()
+            .filter(|a| world.is_some() && new[a.as_str()].get("world").map(|w| serde_json::to_string(w).expect("a value serialises")) == world)
+            .collect();
+        match twins.as_slice() {
+            [one] => paired.push((k.clone(), (**one).clone())),
+            [] => unpaired.push((k.clone(), format!("`{k}` left the file and no line that arrived holds its world"))),
+            many => unpaired.push((k.clone(), format!("`{k}` left the file and {} lines that arrived hold its world", many.len()))),
+        }
+    }
+    (paired, unpaired)
+}
+
+/// **A derived line that left with its parent re-drawn** — the one deletion a history gate lets
+/// through: the classes' re-draw (the owner's D64(b)) drops a derived line its re-drawn parent's rule
+/// no longer derives. `k` names a line of `old` carrying a `derived`, and its parent — the primary
+/// line of the same `seed` and `draw` — carries a new D64(b) reason in `new` ([`redrawn`]).
+pub fn left_with_a_redrawn_parent(k: &str, old: &BTreeMap<String, Value>, new: &BTreeMap<String, Value>) -> bool {
+    let Some(line) = old.get(k).filter(|l| !l["derived"].is_null()) else { return false };
+    let parent = |m: &BTreeMap<String, Value>| {
+        m.values().find(|p| p["secondary"].is_null() && p["derived"].is_null() && p["seed"] == line["seed"] && p["draw"] == line["draw"]).cloned()
+    };
+    matches!((parent(old), parent(new)), (Some(a), Some(b)) if redrawn(&a, &b))
+}
+
+/// **May a line move from `old` to `new`, a new key?** (W-43 track C, README gap 4320.) Held as an
+/// in-place line is held ([`shipped_answer`] byte for byte; every key of the world and the
+/// provenance byte for byte) but for the fields its key is made of ([`key_fields`]) — and those may
+/// move only when `new` carries a SET parity flag of a number `old` carries no flag of at all: the
+/// number whose rule moved the kernel's reading, and with it the key (D64(a)'s licence, read off the
+/// line as the re-bless gate reads it; the number's registration is `planner_classes.rs`'
+/// `every_parity_flag_names_a_registered_number`'s, on every run). `Ok` names the licensing
+/// numbers (empty when no key field moved); `Err` says what moved that may not.
+pub fn refiled_allows(old: &Value, new: &Value) -> Result<Vec<u32>, String> {
+    if shipped_answer(old) != shipped_answer(new) {
+        return Err("it moved the SHIPPED fork's answer".to_string());
+    }
+    let fields = key_fields(old);
+    let keys: BTreeSet<&String> = old.as_object().into_iter().flatten().chain(new.as_object().into_iter().flatten()).map(|(k, _)| k).collect();
+    let mut key_moved = false;
+    for k in keys {
+        if is_answer(old, k) || is_answer(new, k) || old[k.as_str()] == new[k.as_str()] {
+            continue;
+        }
+        if fields.contains(&k.as_str()) {
+            key_moved = true;
+            continue;
+        }
+        return Err(format!("it moved `{k}`, which is its world or provenance"));
+    }
+    if !key_moved {
+        return Ok(Vec::new());
+    }
+    let (old_all, _) = flags(old);
+    let licence: Vec<u32> = flags(new).1.into_iter().filter(|n| !old_all.contains(n)).collect();
+    if licence.is_empty() {
+        return Err(format!(
+            "its key moved ({}) and it carries no newly set parity flag — a key moves only with the number whose rule moved it",
+            fields.join(", ")
+        ));
+    }
+    Ok(licence)
 }

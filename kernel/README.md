@@ -84828,3 +84828,307 @@ divergences the swap would ship.  The exact remaining list before the swap:
 And WITH the swap, by name: gaps 3476 and 4327, now **twenty** tests (gap 4347), 3583, 4046, and 4321.  Gap 4340 (an
 interruption inside a running break, read two ways) is the owner's and moves no planner row, so it does not block the
 swap.
+
+<!-- =====================================================================
+     APPENDED 2026-10-03: stage 6 (the planner), run **W-43**, **TRACK C**
+     — the comparand R3 needs: gap 4168's day frozen out of the tree, the
+     planner's oracle arm reading the fork's own minutes, P81's answer
+     frozen, and a re-filed frozen line seen by a gate.  Rust, the oracle
+     and fixtures only; no `.lean` file.  Worktree `.claude/worktrees/w43-c`,
+     branch `w43-c` off `0984304`.  Gap range **4460-4489**: 4460-4467
+     taken, 4468 free.  Parity: none issued, none PARITY-PENDING (no
+     divergence was needed).  Burn-down unchanged (0).
+     ===================================================================== -->
+
+## Stage 6 — W-43 track C: the comparand R3 needs — gap 4168's day frozen out of the tree, the planner's oracle arm asking the fork its own minutes, P81's answer frozen, and a frozen line that moves to a new key seen by every gate
+
+### 0. The brief, measured before it was acted on
+
+* **Gap 4247 was CLOSED at the W-42 land (§3), not open — and its closure stood on gap 4241's edge.**  The land's oracle
+  arm asked fork 4748911 a log with the inner break moved ahead of the block's `start` and asserted that the KERNEL's
+  replay read that log as fork 4748911's does — a break stepped before a `start` whose span reaches into the block,
+  which is exactly the shape the owner's D92 (track K, this run) nets.  Measured over every frozen planner and grid
+  world (`scratchpad/w43-c/d92_census.py`): NO frozen world holds that shape; the reordering trick was the one place
+  that BUILT it.  So D92, landing beside this step, would re-open gap 4247 through the instrument; it is re-closed here
+  without any reordering (§2).
+* **Gap 4248 needs more than `forkclass::ANSWERS`.**  The classes re-bless ran in the fork region, IN-TREE, and the
+  in-tree fork plans over the kernel's replay, which since D87 nets the eight `worked` lines' break — so D64's clause 2
+  refused those lines on every in-tree run (measured by the W-42 land, §2 point 5): no re-bless could introduce `p81`.
+  The re-bless moved onto the oracle and out of the region (§2).
+* **Gap 4249**: its world — gap 4243's, a break inside a pause counted twice by the host — closed at the W-42 repair
+  (P84, the union of idle spans); measured empty here (§4).  **Gap 4250**: the owner's D92 answered gap 4241, so the
+  in-tree check (1) went to the oracle (§2).  **Gap 4251**: T5's comparison (`kernel_replay_parity.rs`,
+  `kernel_log_door.rs`, `support/p81.rs`) is track K's this run and D92 moves the same comparison — left by name (§4).
+* **Gap 4320's key-change half** stood on HEAD as the W-42 repair wrote it ("neither the gate nor §1 (9)'s history
+  test calls two keys one line"), and the history gates read a LIST of ten files (§3).
+* **Two files this step needed are on no track's list**: `tm/tests/fork_rebless_history.rs` (the plain-run history
+  gate, where gap 4320's blind spot was declared) and `kernel/citations-allow.txt` (§3, §9).  No other track holds
+  either; both are edited here, and said.
+
+### 1. Gap 4168 — the separator days, frozen out of the tree: CLOSED
+
+`tm/tests/fixtures/fork-4748911-planner-separators.jsonl` (new) holds the unedited `plan-basic` tree — the
+comparator's control — and the four hand-typed worlds of `kernel_separator_worlds.rs`, each with its WORLD by value,
+the edited line, and **fork 4748911's day on it by value** (`shipped`), asked of a FRESHLY BUILT `tm-oracle plan`
+(gap 196) over the grants the shipped binary ranks the fork's candidates by (D53, `forkplan::capacity_grants`).  It
+was introduced through the gate: `the_frozen_separator_days_are_blessed` (`tm/tests/planner_separator_days.rs`, new)
+holds every line against the file's committed history (`frozenhist::held`; none held a key, so 5 were added), refuses a
+committed line whose world or shipped day moves, and asserts at every bless that no registered number departs on the
+world (`no_departure`: the comparand IS the shipped day, its `shipped` null).
+
+| line | `^t4`'s line | fork 4748911's day | `^t4` rows |
+|---|---|---|---|
+| unedited | `- [ ] 3 1b Claude Code drafts tests     @m2 ^t4` | `408a786317fc8e65`, 18 rows | 2 |
+| tab-box | a tab after `]` | `408a786317fc8e65` | 2 |
+| tab-ci | a tab after the `ci` digit | `408a786317fc8e65` | 2 |
+| nbsp-ci | a no-break space after the `ci` digit | `408a786317fc8e65` | 2 |
+| nbsp-box | a no-break space after `]` | `6dc6ce49d13be1a0`, 18 rows | 0 |
+
+**Measured on the way: the separator suite's own world is not one the binary holds.**  It plans with
+`.tm/state.json`'s default; `forkclass::binary_holds` refuses it by clause 5 (the binary writes the day's `date` on
+every load).  So the frozen world carries that date, and the suite's own construction is held too: the kernel plans
+both constructions as the frozen day (10 days, 10 of 10 hashes equal, default run), and the oracle (TM_ORACLE) and the
+in-tree fork (the region) plan the suite's construction as the same frozen day.  **The fork's own days say what the
+host's reader says**: the three spaced twins ARE the unedited tree's day, by value, and `nbsp-box` plans no `^t4` row.
+
+What holds it after R3, outside every region: `the_kernel_plans_every_frozen_separator_day_as_the_fork_did`,
+`the_fork_reads_the_edited_worlds_as_the_host_does`, `every_frozen_separator_world_is_the_edited_fixture` (rebuilt
+from the fixture by value, and one the binary holds) and the bite tests; the oracle arm and the bless ask fork 4748911
+out of the tree.  The in-tree region (`the_frozen_separator_days_are_the_in_tree_forks_answer_today`, and
+`no_departure`'s bite) is deleted at R3.  `kernel_separator_worlds.rs`' prose still says the claim "rests on the reader
+comparison" after R3 — that file is no track's this run (gap 4464).
+
+### 2. Gaps 4247, 4248 and 4250 — the comparand asks each backend its OWN minutes, and P81's answer is frozen: CLOSED
+
+* **The fork's reading of the running block is the backend's own** (`forkplan::ForkPlan::worked`).  P55 and P46 move
+  the running estimate by what the FORK reads as the block's worked minutes (fork `active_run`'s reading); the
+  comparand read that off `Built::worked` — the KERNEL's replay — for every backend.  The in-tree fork plans over that
+  replay, so for it the two were one; fork 4748911 reads its own, and since D87 the two differ on a break inside the
+  block.  `tm-oracle plan` gained a `worked` op (fork `active_run`'s reading over the fork's own replay; an oracle
+  built before W-43 refuses it by name and is STALE, gap 196); `comparand_with` asks it once per state and moves P55's
+  and P46's estimate by it (`p55_state_at`, `is_p46_at`, `p46_state_at`).  Probed: the eight `worked` lines read 34,
+  22, 34, 75, 79, 64, 86, 32 — W-42 track R's "fork 4748911's reading", value for value.
+* **The oracle arm asks every line as it stands** (`the_frozen_lines_are_the_forks_oracle_answer_today`): 229 of
+  229, 8 carrying P81's answer, 3,078 oracle requests, no reordered log.  The in-tree region's check (1) — the
+  reordered log — is gone with its three helpers (as_the_fork_reads_it, as_d87_asks_it, break_alone; their
+  historical citations counted in `citations-allow.txt`); the region now holds what the in-tree fork CAN answer:
+  P81's answer is the frozen one, and over the kernel's replay it draws that day.
+* **P81's answer, frozen** (`forkplan::p81_after`, `forkclass::ANSWERS`): `{"p81": true, "hash", "day"}` wherever
+  `p81::netted_breaks` (fork 4748911's own machine, read off the log) finds a break — the comparand asked the D87 day
+  through `p81::as_d87_asks` (the one definition, nested in `forkplan.rs`) with the `paused` row over the break drawn
+  as the break alone, owed only over what P56's wall cut leaves.  `compare_line` holds the kernel to it; P81's RULE
+  (`p81::planned_day` on the frozen `day`) is held to the frozen answer by value on every run (`p81_rule_unmet`).
+* **Introduced through the gate**: the classes re-bless now asks the ORACLE and sits outside the region (it survives
+  R3).  Dry run, no reason named: every answer of all 100 lines reproduced but `p81` on the eight, refused by name;
+  named `P81` (D70's introduction, adds-only): 8 lines changed, 0 refused, the file written byte-identical to the dry
+  run.  **The eight answers are byte-identical, day and hash, to the values W-42 track R computed in-tree with its own
+  D87 log shape** (`scratchpad/w42-r/resume/p81-values.jsonl`, matched by draw) — two backends, two log shapes.
+
+The frozen lines touched, each gaining `p81` and nothing else:
+
+| class (line) | draw | `derived.from` | `day` (fork 4748911's reading) | `p81` (asked the D87 day) |
+|---|---|---|---|---|
+| `running/home` (worked) | 2373 | `running/home` | `1a37f9f245886788` | `f37b559c861c23d6` |
+| `running/travel` (worked) | 2314 | `running/travel` | `11212d39418da452` | `346025f825e08a02` |
+| `running/spent` (worked) | 289 | `running/spent` | `b14cef9b5deafb3c` | `874e04853b697448` |
+| `running/home` (worked) | 1402 | `overtime/home` | `73ba86de572cb8da` | `998a5e7e0f831f62` |
+| `overtime/late` (worked) | 2364 | `overtime/late` | `5cc7226dc3c32c69` | `b6a114aee77339d7` |
+| `running/travel` (worked) | 1260 | `overtime/travel` | `088e65ca921b4722` | `7334584d08022a95` |
+| `overtime/spent` (worked) | 2427 | `overtime/spent` | `372fdee4608555a4` | `08b851037e2ac5d1` |
+| `wall-on-now/travel` (worked) | 2049 | `wall-on-now/travel` | `728f0ae563d84efc` | `ba9d0943ecffd50e` |
+
+### 3. Gap 4320's key-change half — a frozen line that moves to a new key is held as one line: CLOSED; and the frozen files read by a property (gap 4461)
+
+A frozen line's key is a label; the classes file's is its class, a FUNCTION of the world through the kernel's reading
+(`forkclass::class_of`), so a registered number that moves the reading moves the key — D87 re-filed two `worked` lines
+at the W-42 land.  `frozenhist::refiles` pairs a key that LEFT with the one arrived line that holds its world byte for
+byte; `frozenhist::refiled_allows` holds the pair as an in-place line is held (the shipped fork's answer and every key
+of the world and provenance byte for byte) but for the fields its key is made of, which move only under a newly SET
+parity flag the old line carried no flag of; a key that left with no such twin is a finding, but for a derived line
+dropped with its parent re-drawn under D64(b) (`frozenhist::left_with_a_redrawn_parent`).  Asked by the plain run
+(`fork_rebless_history.rs`' history test, judged from the commit that brought the history test in, as before) and by
+the classes' re-bless (registration checked there).  The tree's one re-file is licensed by P81 now that its lines carry
+the flag (`fork_frozen_refile::the_classes_files_refiled_lines_carry_their_licence`).  The history gates read EVERY
+frozen file by a PROPERTY (`frozenhist::frozen_files`: a `fork-4748911-*.jsonl` whose every line carries a fork day —
+11 files, the separators among them; the D21 family excluded by the same property), where they named ten by hand.
+A file the working copy introduces reads an empty history (`every_frozen_comparand_reads_its_committed_history`
+refuses only a file HEAD dropped while a committed version held lines).  On the committed tree the plain run holds
+3,734 line-version pairs, 2 of them a line moved to a new key, and counts 44 changes before the history test landed
+without judging them: the W-41 land's 42 grid changes, and the W-42 land's two re-files, whose lines carried no flag
+of P81 THEN — the rule would have refused them; the pair is licensed only now (the census above).
+
+### 4. Gaps 4249 and 4251, re-derived
+
+* **4249** — measured (`scratchpad/w43-c/census4249.log`, one 287-case run): "reservations compared 30 (0 on a
+  differing day)".  The class P55's reservation half bit on is empty since the W-42 repair's union; what is left is the
+  owner's choice the gap named (retire the clause as subsumed by P81, or keep it) — gap 4465.
+* **4251** — stands, track K's: the frozen carry (`p81::carry`) is applied in `kernel_replay_parity.rs` and
+  `kernel_log_door.rs`, and D92 (`P85`) moves the same comparison this run; freezing the fork's asked answers belongs
+  with the track that holds the comparison (gap 4466).
+
+### 5. Plants — every new or changed definition bent, one at a time, in the scratch clone (`scratchpad/w43-c/plants.py`, `plants2.py`; the clone `scratchpad/w43-c/clone` at this step's tree; its `git status --porcelain` hashed before and after each, `d41d8cd9…` = empty every time)
+
+| plant | where | caught by, and the name it gave |
+|---|---|---|
+| the oracle's reading replaced by the kernel's (gap 4247's own bug) | `Oracle::worked` | the oracle arm: `running/home (worked): … "34m so far" against "24m so far"`, `shipped: null against …` on the eight |
+| the oracle's `worked` op answering `null` (an oracle built aside) | oracle `worked_one` | the oracle arm, the same eight lines |
+| P55 never departs | `p55_state_at` | the oracle arm: `running/home (worked): p55: null against {"p55":true}` |
+| P46 never departs | `is_p46_at` | the in-tree region: "overtime/lounge: d57", "overtime/home: d57" |
+| P46's state the identity | `p46_state_at` | the in-tree region: "overtime/lounge: day", "…: shipped" |
+| P81's answer never computed | `p81_after` | the in-tree region: "running/home (worked): p81 over the kernel's replay" |
+| the kernel held to `day`, not `p81` | `compare_line` | the surviving arm: `running/home (worked): the rows differ at 1 (fork 16 rows, kernel 17)` |
+| P81's rule never asked | `p81_rule_unmet` | the surviving arm: `P81's answer moves 0 of the 0 line(s) carrying it` |
+| the tally does not count P81's answer | `ClassTally` | the surviving arm: `the kernel was held to P81's frozen answer on 0 line(s) of the 8` |
+| `p81` dropped from the answers | `ANSWERS` | `p67s_answer_is_its_own_and_departs_only_where_its_rule_does`: "running/home: carries p81, an answer … does not list" |
+| a frozen file left out of the property | `frozen_files` | `separators.jsonl is not found by the property`; the plain run: `the property finds 10` |
+| every file taken for a comparand | `carries_a_fork_day` | "fork-4748911-log-lines.jsonl: … carry neither a name nor a class" |
+| an unset flag read as set | `flags` | the bite: `a new flag, unset: [81]` — **at first NOT CAUGHT**: the bite had no case of a flag the NEW line carries unset, so one was added and it bit |
+| no key fields | `key_fields` | the bite: the class move read as provenance |
+| nothing paired | `refiles` | `the_classes_files_refiled_lines_carry_their_licence`: the tree's re-file "left with no line holding its world" |
+| every re-file allowed | `refiled_allows` | the bite: `a class moved by hand, no flag: []` |
+| a re-drawn parent's child never let go | `left_with_a_redrawn_parent` | the bite: `a derived line dropped with its re-drawn parent was held` |
+| the frozen world without the binary's `date` | `world_of` | `unedited: the suite builds another world now (world.state.date …)` on all five |
+| the no-departure assertion a no-op | `no_departure` | its bite: `no_departure let a world D60's order departs on through` |
+| a name carried twice let through | `lines_of` | `a_frozen_separator_name_carried_twice_is_refused`: `test did not panic as expected` |
+| the kernel asked another location | `kernel_of` | `unedited: diagnostics.dropped_tail[3]: kernel "t3" fork "d2"` |
+| a class line re-filed BY HAND, no flag (data) | the classes file | the plain run: "idle/home (window) moved to idle/lounge (window): its key moved (class, secondary, derived) and it carries no newly set parity flag" |
+| the same, a fake flag, its shipped day bent | the classes file | the plain run: `it moved the SHIPPED fork's answer` |
+| a frozen line deleted by hand | the classes file | the plain run: `left the file and no line that arrived holds its world` |
+| the classes re-bless over a hand re-file (dry run, oracle) | the classes file | the re-bless refused: `… its key moved … no newly set parity flag` |
+| the `nbsp-box` day bent (a `^t4` row) | the separators file | the default comparison: "nbsp-box: the rows differ at 2", and the suite's construction too; the plain run: "nbsp-box moved the SHIPPED fork's answer" |
+
+Every plant was caught by name; one only after the bite it exposed was strengthened (`flags`).  Three plants first ran
+with a mistyped expectation or an attribute Rust refuses on an expression (P3, P10, P17c in `plants1.log`) and were
+re-run (`plants3.log`).  `shipped_day`'s check that the shipped binary's drawing is fork 4748911's on these worlds
+could fail on no input of the file (no log, nothing for P56 to cut) and was DELETED rather than kept as a check no
+input can fail.
+
+### 6. R3, simulated in the clone — every fork planner and review entry unreachable, every comparand compares, one kernel answer corrupted per item (`scratchpad/w43-c/r3sim.py`, `r3run.sh`; never the worktree committed from)
+
+**The deletion table** — every `BEGIN THE FORK PLANNER` region under `tm/tests` deleted: **21 regions, 6,086 lines**
+(the W-42 land's 20 and 6,099, plus this step's separator region and less what left `planner_classes.rs`' region):
+`planner_invariants.rs` 3,745, `planner_classes.rs` 679, `planner_w40_runs.rs` 248, `planner_dynamics.rs` 213,
+`planner_p56_cut.rs` 192, `planner_w38_order.rs` 155, `support/forkplan.rs` 133, `planner_regressions.rs` 107,
+`planner_w37_rows.rs` 101, `planner_fixtures.rs` 94, `tui_kernel_answers.rs` 80, `planner_w39_conference.rs` 65,
+`kernel_unplaced_banner.rs` 42, `planner_w39_arrival.rs` 41, `planner_w41_starts.rs` 38, `planner_separator_days.rs` 34,
+`kernel_separator_worlds.rs` 32, `planner_common/mod.rs` 32, `emit_planner.rs` 30, `priority_plan_basic.rs` 13,
+`support/forkclass.rs` 12.
+
+| configuration | the workspace (`--no-fail-fast`, 135 result lines) | what failed, by name |
+|---|---|---|
+| R3 exactly: the five fork PLANNER entries panic from any process but `tm` | 2,047 passed, **22 failed**, 24 ignored | **20** the body swap's class, each through `App::replan`/`App::extend_drops` (gap 4347's twenty: the binary's 4 `tui::tests`, `p77_…`, `tui_today_ghost` 3, `tui_today_prompts` 11, `worked_midnight_timer` 1); **2** the region gates R3's deletion commit rewrites (`every_bless_holds_its_lines_against_the_committed_history`, `every_test_that_reaches_the_fork_keeps_it_in_one_region`).  Every comparand suite passed |
+| and the three REVIEW entries too (`day_review`, `week_review`, `month_review`) | 1,995 passed, **74 failed**, 24 ignored | the 22 above, and **52** reaching the shipped binary's OWN review code in-process — `review_day` 18, `review_edges` 9, `review_month` 7, `review_week` 12, and the TUI's Review screen 6 (2 of them `tui_kernel_answers`' grid tests, whose KERNEL side is that screen).  No comparand computes its FORK side through either entry: the fork's planner and its grid are reached only out of the tree |
+
+**One kernel answer corrupted per item** (bends in `support/planreq.rs`' `kernel_day_of`, the one reader every
+comparand's kernel side goes through; the planner-and-review configuration):
+
+| bend | what it bends | every comparand suite | the items |
+|---|---|---|---|
+| `work` | the first Block row neither running nor open, a minute longer | each fails by name (`planner_classes` 5, `planner_separator_days` 2, `planner_fixtures` 1, `planner_p56_cut` 1, `planner_w41_starts` 3, `tui_kernel_answers` 3) but the conference days, which hold no Block row | gap 4168: `nbsp-box: the rows differ at 2`; gaps 4247/4248: `running/home (worked): the rows differ at 0` |
+| `t4` | the first Block row's item made `t4` | the same | the same two |
+| `wall` | the first Wall row a minute longer | `planner_w39_conference`: `wednesday 08:00: the rows differ at 0`; the separators again | `nbsp-box: the rows differ at 6` |
+
+And gap 4320's item, which is not a kernel answer: a class line re-filed by hand fails the plain run by name (§5,
+G1-G3), on this tree and on the simulated one alike — the history gate needs no fork.
+
+
+### 7. Acceptance, capped (`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`; 16 GB for the oracle)
+
+`git status --porcelain` hashed before and after every measurement below and equal each time; other tracks were
+building and testing on the same machine throughout (load 7-30), and the load is quoted where a number could feel it.
+
+* **`check.sh`, all seventeen lines ok, exit 0** — in `scratchpad/w43-c/clone` at this commit's tree (so check 9's
+  gate ran in a clone), 29.6 s warm on the final tree (5 min 49 s on the first run, which replayed the 94 modules): lake build ok;
+  totality ok; axiom audit **6,232** theorems (Classical.choice 3,283, Quot.sound 4,783, propext 5,827; 402 on none);
+  Negative.lean rejected; FFI **95**; corpus **29/37 and 4/5**; stage goals **0**; prose citations 56,662 (54,298
+  resolved, 2,364 allowed, 490 counted), 0 allow entries unused; new definitions mutated 676 rostered, **0 owed**;
+  parity **P1-P84**, no hole, next free P85; no two names, 3,372 bodies, 0 UNANSWERED; every emitted definition
+  reached, **1,501** reachable, **1,100** exempt, 164 answered by the CSIMP class, 0 UNANSWERED; fields 17/17; inputs
+  33 of 37; sent 169 key paths; written 220; the kernel replays 94 modules.  The first run FAILED one line, the parity
+  register: this block spelled track K's pre-allocated `P85` bare, which check 10 reads as an issuance above the top;
+  quoted in backticks, as check 10 asks of a number this track does not take.
+* **`cargo test --workspace --no-fail-fast`, THREE complete runs (D46)** in the worktree
+  (`scratchpad/w43-c/ws-runs.log`; the porcelain and the code's hash `c3ae6f6e7136` equal at every start and end): each **135 result
+  lines, 2,153 passed, 0 failed, 34 ignored, 0 warnings** (9 min 29 s, 9 min 46 s, 10 min 31 s; load 9-19) — the
+  repair's 133 lines and 2,135 passed, plus this step's two files (18 passed, 2 ignored).  No `.proptest-regressions`
+  file moved.
+* **The named suites, inside each run**: T5 `kernel_replay_parity` 32 (4 ignored), the door `kernel_log_door` 26,
+  `cli_switch_acceptance` 16, `cli_latency` 6 (1 ignored), `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 27,
+  `kernel_row_cells` 28, `kernel_item_grammar` 6, `kernel_planner_wire` 27, `planner_classes` 56 (6 ignored),
+  `planner_invariants` 39 (2 ignored), `cli_conformance` 5, `cli_json_matrix` 8; and `planner_separator_days` 13 (2
+  ignored), `fork_frozen_refile` 5, `fork_rebless_history` 9, `kernel_separator_worlds` 12, `tui_kernel_answers` 37 (2
+  ignored), `planner_p56_cut` 12 (4 ignored), `planner_w41_starts` 17 (2 ignored), `fork_week_grid` 14 (3 ignored).
+  FFI: check 5's 95, check 6's corpus.
+* **`cli_latency --include-ignored`, one run** (load 10.6-18.8): 7 passed, 29.3 s; no band touched.
+* **Every planner and grid `TM_ORACLE` arm, on the final tree, over the oracle built fresh at this step**
+  (`scratchpad/w43-c/oracle-arms2.log`, one arm at a time, 16 GB cap, load 9.8-20.9), each `test result: ok`: the
+  frozen class, batch and driven lines **229 of 229** (8 carrying P81's answer, 3,078 requests); the separator days
+  (40); the start days (20); the TUI days (234); the P56 days **24 of 24** (432), the seeded P56 cross-check and 16
+  fresh P56 days; the fresh draws **287 of 287** compared (3,330 requests: what-ifs 126; P45 24, P46 9, P47 10, P51
+  187, P52 3, P55 0, P56 6) and the in-tree/oracle cross-check equal on all 287 (P56's cut on 6 raw days); the week
+  grids, frozen and 16 fresh.  The first pass (`oracle-arms1.log`, before the last test edits) said the same.  Not run
+  here, by name: T5's and the grammar's oracle arms (track K's files; unchanged by this step).
+
+### 8. Gaps 4460-4469
+
+**Gap 4247 — CLOSED again** (§2): the reordered log its W-42 closure stood on is the shape D92 nets (track K's, this
+run); it is closed by the backend's own reading instead.
+**Gap 4248 — CLOSED** (§2).  **Gap 4250 — CLOSED** (§2): check (1) asks the oracle.  **Gap 4168 — CLOSED** (§1).
+**Gap 4320 — CLOSED**, both halves (the W-42 repair's in-place half, §3's key-change half).
+
+**Gap 4460 — the comparand read the kernel's minutes as the fork's: CLOSED here** (§2).  1. *What.*  P55 and P46 were
+computed from `Built::worked`, the kernel's replay, for the oracle as for the in-tree fork.  2. *Done.*
+`ForkPlan::worked`, the oracle's `worked` op.  3. *Residue.*  Every `TM_ORACLE` arm needs an oracle built at or after
+this step; an older one is refused by name ("it is STALE, rebuild it").  4. *Nothing owed.*
+
+**Gap 4461 — the history gates named ten frozen files by hand: CLOSED here** (§3, `frozenhist::frozen_files`).
+Residue: a future frozen file whose lines carry neither a `name` nor a `class` FAILS the property by name (no key).
+
+**Gap 4462 — the classes re-bless could no longer run in-tree: CLOSED here** (§2): it asks the oracle and sits
+outside the fork region, so the classes file can still be re-blessed under D64 after R3.
+
+**Gap 4463 — six blesses still plan in-tree, so their files are final at R3.**  1. *What.*  The batch's and the driven
+days' re-blesses, the plan-basic days', the fixture days' (`planner_fixtures.rs`), the conference days' and the P56
+days' (both backends) live in fork regions; R3 deletes them, and after it a registered number that moves one of those
+files' days has no gate to re-bless through (the TUI, starts, week-grid, classes and separator blesses ask the oracle
+and survive).  2. *Why not changed.*  None is needed before R3 (no line of those files is moved by a pending number),
+and three of the six are in files no track holds this run (`planner_fixtures.rs`, `planner_w39_conference.rs`, `planner_p56_cut.rs`).  3. *Cost.*  A future parity number on one of those worlds
+needs a bless written first.  4. *Clears it.*  The classes re-bless's shape (§2), per file, when a number needs it.
+
+**Gap 4464 — `kernel_separator_worlds.rs`' prose about gap 4168 is stale.**  1. *What.*  Its module doc and region
+banner say that after R3 the `nbsp-box` claim rests on the reader comparison alone; the frozen separator days (§1) now
+hold it.  2. *Why not changed.*  The file is on no track's list this run (W-42 track G's).  3. *Cost.*  A reader of that
+file underrates what survives R3.  4. *Clears it.*  Whoever holds the file next, or R3's deletion commit, which rewrites
+the region anyway.
+
+**Gap 4465 — P55's reservation clause bites on nothing (gap 4249's residue).**  1. *What.*  §4: 0 of 30 reservations
+on a day the two readings differ, since the host takes the union of idle spans.  2. *Why not changed.*  Retiring a
+parity clause is the owner's.  3. *Cost.*  A census row that counts an empty class.  4. *Clears it.*  The owner:
+retire P55's reservation clause as subsumed by P81, or keep it.
+
+**Gap 4466 — the frozen carry (gap 4251) stands with track K.**  1. *What.*  T5 and the door suite move frozen fork
+answers by `p81::carry`, a model; freezing the fork's asked answers is the clearance.  2. *Why not changed.*  The
+comparison is in track K's files this run, and D92 (`P85`) moves the same comparison.  3. *Cost.*  As gap 4251 wrote it.
+4. *Clears it.*  Track K or the Land, beside `P85`'s carry: freeze the asked answers for every frozen input P81 or `P85`
+moves.
+
+**Gap 4467 — the in-tree/oracle cross-check holds a P81 world unequal by design.**  1. *What.*
+`the_forks_oracle_answers_as_the_in_tree_fork_on_every_fresh_draw` (planner_invariants' region) demands the two
+backends' answers equal; on a world whose log holds a break P81 nets they differ (the in-tree fork reads the kernel's
+netted replay — the frozen `worked` lines are exactly that).  No fresh draw holds one (P55 0 of 287 in §7's run).
+2. *Why not changed.*  The region is deleted at R3; the property it would need is "equal but for P81's answer".
+3. *Cost.*  A fresh draw with such a break would fail the cross-check by name, not silently.  4. *Clears it.*  R3.
+
+### 9. For the Land
+
+* **Branch `w43-c`**, one commit (§7).  **Files outside the brief's list for this track, edited and said**:
+  `tm/tests/fork_rebless_history.rs` (the plain-run history gate: its two ten-file lists replaced by
+  `frozenhist::frozen_files`, the key-change judgment added beside the in-place one, and a working-copy-introduced file
+  allowed an empty history) — no track holds it; `kernel/citations-allow.txt` (the three deleted helpers' historical
+  citations, counted, under this track's banner).  New files: `tm/tests/planner_separator_days.rs`,
+  `tm/tests/fork_frozen_refile.rs`, `tm/tests/fixtures/fork-4748911-planner-separators.jsonl`.
+* **Track K's `support/p81.rs` is READ by `forkplan.rs` now** (nested as `forkplan::p81`): `netted_breaks` and
+  `as_d87_asks`.  If K changes either signature, `forkplan.rs` fails to compile, by name; if K widens `netted_breaks`
+  to D92's breaks, `p81_after` would freeze those as P81's — no frozen planner world holds D92's shape (§0), so no frozen
+  line moves, but the answer's name would then be `P85`'s too.
+* **Every `TM_ORACLE` arm needs an oracle rebuilt at this step** (the `worked` op).  No parity number is issued.

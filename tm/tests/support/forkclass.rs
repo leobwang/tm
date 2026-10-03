@@ -1540,7 +1540,14 @@ pub fn order_worlds(parent: &ClassWorld) -> Vec<ClassWorld> {
 /// with that ends the running block where the kernel's log reading does). Its flag lived on the
 /// two P69 lines before D89, written beside the answers as the number no fork input carried;
 /// listing it here puts it under the D64 gate with every other answer.
-pub const ANSWERS: [&str; 12] = ["day", "shipped", "d57", "d60", "whatif", "p45", "p52", "p55", "p56", "p64", "p67", "p69"];
+///
+/// **W-43 track C adds `p81`** (the owner's D87, README gap 4248): `{"p81": true, "hash", "day"}` on
+/// a line whose world's log holds a break P81 nets — fork 4748911's own day asked the D87 day, its
+/// `paused` row over the break drawn as the break alone (`forkplan::p81_after`). The eight `worked`
+/// lines held P81 by its RULE until W-43 (`p81::planned_day`, a model of the fork's drawing), because
+/// an answer outside this list could move under no gate (W-42 track R's block, §0); the rule is now
+/// held to the frozen answer by value instead of standing in for it.
+pub const ANSWERS: [&str; 13] = ["day", "shipped", "d57", "d60", "whatif", "p45", "p52", "p55", "p56", "p64", "p67", "p69", "p81"];
 
 /// **The answers every line carries, `null` where there is none** — the five a
 /// line has carried since W-36. The rest of [`ANSWERS`] are present only where
@@ -2078,6 +2085,9 @@ pub struct ClassTally {
     /// meeting's pause as the wall alone against fork 4748911's drawing (P56).
     pub p55: usize,
     pub p56: usize,
+    /// Lines whose day the kernel is held to is P81's answer — fork 4748911's day asked the D87
+    /// day (`p81`, W-43 track C, README gap 4248) — in place of the frozen `day`.
+    pub p81: usize,
 }
 
 impl ClassTally {
@@ -2089,7 +2099,8 @@ impl ClassTally {
              P47 {}, P51 {}; under-used notes the renderer derived as the fork wrote them {}; what-ifs {} ({} \
              parity-P44 days, {} ids; asked with the host's grown facts, {} parity-P52); break-day open rows \
              {} (the host's minutes departing from the log's on {}); rows after a running break against P45's \
-             comparand {} ({} kept breaks; P67's on {} line(s)); P55 comparand days {}, P56 {}; {findings} difference(s) in all",
+             comparand {} ({} kept breaks; P67's on {} line(s)); P55 comparand days {}, P56 {}; P81's answer held on {}; \
+             {findings} difference(s) in all",
             self.classes.len(),
             self.day.line("the non-P45 days", findings),
             self.p45,
@@ -2112,6 +2123,7 @@ impl ClassTally {
             self.p67,
             self.p55,
             self.p56,
+            self.p81,
         )
     }
 }
@@ -2341,6 +2353,16 @@ pub fn compare_line(line: &Value, t: &mut ClassTally) -> Vec<String> {
             }
         }
     } else {
+        // **P81's answer where the line carries it** (W-43 track C, README gap 4248): fork
+        // 4748911's day asked the D87 day — the day a kernel whose replay nets the logged break
+        // plans — by value, in place of `day` (the fork's reading of the stored log).
+        let fork = match line.get("p81").filter(|v| !v.is_null()) {
+            Some(p) => {
+                t.p81 += 1;
+                p
+            }
+            None => fork,
+        };
         findings.extend(forkday::compare_day_with_fork(&key, &k, fork, now, &mut t.day));
         // The under-used note the kernel leaves to the renderer (by design,
         // `forkday`'s fourth class): the renderer must derive the fork's exact
