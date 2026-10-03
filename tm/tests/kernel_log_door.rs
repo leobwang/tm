@@ -45,6 +45,12 @@ mod fork;
 #[path = "support/p81.rs"]
 mod p81;
 
+// Parity P85 (the owner's D92, README gap 4241): the fork's frozen answer moved after P81's by the one rule P85
+// changes — a clock that starts inside a logged break starts at its end.
+#[allow(dead_code)]
+#[path = "support/p85.rs"]
+mod p85;
+
 #[allow(dead_code)]
 #[path = "support/loggen.rs"]
 mod loggen;
@@ -127,6 +133,7 @@ fn the_door_is_the_reader_it_replaces() {
     let mut t = fork::ForkTally::default();
     let mut findings: Vec<String> = Vec::new();
     let (mut p81_breaks, mut p81_minutes) = (0usize, 0u64);
+    let (mut p85_starts, mut p85_minutes) = (0usize, 0u64);
     for (name, text) in &logs {
         let (dir, bytes) = tree(text);
         let today = day_after(text);
@@ -144,17 +151,20 @@ fn the_door_is_the_reader_it_replaces() {
                     let swept = kernel_log::line_warnings(&bytes, &today.to_string(), &wire(dir.path()))
                         .expect("the sweep answers");
                     let refused: Vec<u64> = swept.iter().map(|w| w.line as u64).collect();
-                    // Parity P81 by value: the fork's answer moved by P81's rule alone (`support/p81.rs`).
-                    match p81::carry(f) {
-                        Ok((f81, t81)) => {
+                    // Parity P81 and P85 by value: the fork's answer moved by P81's rule (`support/p81.rs`) and then
+                    // P85's (`support/p85.rs`, the owner's D92), and by nothing else.
+                    match p81::carry(f).and_then(|(f81, t81)| p85::carry(&f81).map(|(f85, t85)| (f85, t81, t85))) {
+                        Ok((f85, t81, t85)) => {
                             p81_breaks += t81.breaks;
                             p81_minutes += t81.minutes;
+                            p85_starts += t85.starts;
+                            p85_minutes += t85.minutes;
                             findings.extend(fork::compare_replay_with_fork(
                                 &format!("{name} ({pass})"),
                                 &read.replay,
                                 read.replay.entry_count() as u64,
                                 &refused,
-                                &f81,
+                                &f85,
                                 &mut t,
                             ));
                         }
@@ -176,6 +186,8 @@ fn the_door_is_the_reader_it_replaces() {
     eprintln!("the door: {} logs, {compared} scoped reads, {days} days compared, 0 differences", logs.len());
     eprintln!("  the door's {}", t.line("the `All` scope against the frozen fork"));
     eprintln!("  parity P81 carried by value: {p81_breaks} break(s) inside a block, {p81_minutes} minute(s) netted off cut credits");
+    eprintln!("  parity P85 carried by value: {p85_starts} clock start(s) inside a break, {p85_minutes} minute(s) netted off cut credits");
+    assert!(p85_starts > 0, "P85 moved no frozen input of the door: the carry is not exercised here");
     fork::no_disagreement(&findings);
 }
 

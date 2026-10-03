@@ -263,8 +263,42 @@ struct ClockEntry {
 /// line the fork refused skipped (`refused`, its own `warningLines`). A `break` is netted when a
 /// block's clock RUNS at its place in the file — not paused, no interruption open — exactly
 /// `Replay.brkFx`'s condition; the clock then restarts at the later of its stretch's start and the
-/// break's end. Read off the log and the fork's own refusals, never the kernel's answer.
+/// break's end. Read off the log and the fork's own refusals, never the kernel's answer. [`clock_read`]'s
+/// first half.
 pub fn netted_breaks(text: &str, refused: &[u64]) -> Result<Vec<Netted>, String> {
+    clock_read(text, refused).map(|c| c.netted)
+}
+
+/// **One clock start the owner's D92 moves** (README gap 4241, parity P85): the block, what started the
+/// clock (`start`, `unpause` or `resume`), that line (1-based, in the log as given) and its stamp as the log
+/// spells it (where fork 4748911's clock starts), and the end of the break it falls inside (where the
+/// kernel's starts, `Replay.restartAt`). `support/p85.rs` reads these as its `Restart`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Restarted {
+    pub id: String,
+    pub by: &'static str,
+    pub line: u64,
+    pub at: DateTime<FixedOffset>,
+    pub at_text: String,
+    pub restart: DateTime<FixedOffset>,
+}
+
+/// What the block family's clock does with a log's breaks: the breaks P81 nets and the clock starts D92
+/// moves.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ClockRead {
+    pub netted: Vec<Netted>,
+    pub restarts: Vec<Restarted>,
+}
+
+/// **The block family's clock over a log, by the KERNEL's machine** (`Replay.arm`) — ONE reading of it, for
+/// both P81's breaks and, since the owner's D92 (README gap 4241, parity P85), the clock starts a break moves:
+/// the machine remembers the span of the last `break` it stepped (`Replay.Machine.brk`) and a clock that
+/// starts — at a `start` with no interruption open, an `unpause` with none open, or a `resume` of a block
+/// neither paused nor running — inside that span starts at its end (`Replay.restartAt`), which is also where
+/// a stretch a later P81 break falls inside began.  The file order, the undo mask and the refusals are
+/// [`netted_breaks`]'.
+pub fn clock_read(text: &str, refused: &[u64]) -> Result<ClockRead, String> {
     let mut stack: Vec<ClockEntry> = Vec::new();
     for (i, raw) in text.split('\n').enumerate() {
         let line = i as u64 + 1;
@@ -289,15 +323,32 @@ pub fn netted_breaks(text: &str, refused: &[u64]) -> Result<Vec<Netted>, String>
         let minutes = e["actual_min"].as_i64().or_else(|| e["planned_min"].as_i64()).unwrap_or(0);
         stack.push(ClockEntry { line, tag, id: e["id"].as_str().map(str::to_string), t, t_text, minutes });
     }
-    // The block family's clock (`Replay.arm`): the open block's id, its stretch's start, paused; and
-    // whether an interruption is open.
+    // The block family's clock (`Replay.arm`): the open block's id, its stretch's start, paused; whether an
+    // interruption is open; and the last break's span.
     let mut block: Option<(String, Option<DateTime<FixedOffset>>, bool)> = None;
     let mut interrupted = false;
-    let mut out = Vec::new();
+    let mut last: Option<(DateTime<FixedOffset>, DateTime<FixedOffset>)> = None;
+    let mut out = ClockRead::default();
+    // `Replay.restartAt`: the end of the last break when it began at or before `t` and ends after it.
+    let inside = |last: &Option<(DateTime<FixedOffset>, DateTime<FixedOffset>)>, t: DateTime<FixedOffset>| {
+        last.filter(|(s, e)| *s <= t && t < *e).map(|(_, e)| e)
+    };
     for c in &stack {
         let same = |b: &Option<(String, Option<DateTime<FixedOffset>>, bool)>| b.as_ref().is_some_and(|b| Some(b.0.as_str()) == c.id.as_deref());
+        // A clock (re)started by `c` for block `id`: at `c.t`, or at the end of the break it falls inside.
+        let start = |id: &str, by: &'static str, out: &mut ClockRead| match inside(&last, c.t) {
+            Some(e) => {
+                out.restarts.push(Restarted { id: id.to_string(), by, line: c.line, at: c.t, at_text: c.t_text.clone(), restart: e });
+                e
+            }
+            None => c.t,
+        };
         match c.tag.as_str() {
-            "start" => block = Some((c.id.clone().unwrap_or_default(), (!interrupted).then_some(c.t), false)),
+            "start" => {
+                let id = c.id.clone().unwrap_or_default();
+                let since = if interrupted { None } else { Some(start(&id, "start", &mut out)) };
+                block = Some((id, since, false));
+            }
             "pause" => {
                 if let Some(b) = block.as_mut().filter(|b| Some(b.0.as_str()) == c.id.as_deref() && !b.2) {
                     b.1 = None;
@@ -308,7 +359,7 @@ pub fn netted_breaks(text: &str, refused: &[u64]) -> Result<Vec<Netted>, String>
                 if let Some(b) = block.as_mut().filter(|b| Some(b.0.as_str()) == c.id.as_deref() && b.2) {
                     b.2 = false;
                     if !interrupted {
-                        b.1 = Some(c.t);
+                        b.1 = Some(start(&b.0.clone(), "unpause", &mut out));
                     }
                 }
             }
@@ -320,7 +371,7 @@ pub fn netted_breaks(text: &str, refused: &[u64]) -> Result<Vec<Netted>, String>
             }
             "resume" => {
                 if let Some(b) = block.as_mut().filter(|b| !b.2 && b.1.is_none()) {
-                    b.1 = Some(c.t);
+                    b.1 = Some(start(&b.0.clone(), "resume", &mut out));
                 }
                 interrupted = false;
             }
@@ -330,14 +381,15 @@ pub fn netted_breaks(text: &str, refused: &[u64]) -> Result<Vec<Netted>, String>
                 }
             }
             "break" => {
+                let end = c.t + chrono::Duration::minutes(c.minutes);
                 if let Some(b) = block.as_mut() {
                     if let Some(x) = b.1 {
-                        let end = c.t + chrono::Duration::minutes(c.minutes);
                         let restart = if x < end { end } else { x };
-                        out.push(Netted { id: b.0.clone(), at: c.t, at_text: c.t_text.clone(), restart, line: c.line });
+                        out.netted.push(Netted { id: b.0.clone(), at: c.t, at_text: c.t_text.clone(), restart, line: c.line });
                         b.1 = Some(restart);
                     }
                 }
+                last = Some((c.t, end));
             }
             _ => {}
         }

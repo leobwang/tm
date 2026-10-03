@@ -62,8 +62,31 @@
 //! not read, and the cross-check in `planner_invariants.rs`' region holds the two
 //! backends' answers equal, value for value, on the fresh draws it is run over while the
 //! in-tree fork is here (README gap 3667 says what that leaves).
+//!
+//! # The fork's OWN reading of the running block, and P81's answer (W-43 track C)
+//!
+//! P55 and P46 move the running estimate by what the FORK reads as the block's worked minutes
+//! (fork `active_run`'s reading). Until W-43 the comparand read that off `Built::worked` — the
+//! KERNEL's replay — for every backend. The in-tree fork plans over that same replay, so for it
+//! the two were one; fork 4748911 (the oracle) reads its OWN replay, and since the owner's D87
+//! the kernel's nets a break the log holds inside the block, which fork 4748911's does not
+//! (parity P81). On such a world the oracle was asked with the kernel's minutes and answered
+//! another day (README gap 4247), and the land's repair asked it a REORDERED log the kernel
+//! happened to read as the fork does — a reading the owner's D92 takes away (README gap 4250).
+//! So [`ForkPlan::worked`] is each backend's own reading, and the comparand asks it of the
+//! backend it plans with: the oracle answers `tm-oracle plan`'s `worked` op, the in-tree fork
+//! the replay it is handed. And since W-43 the comparand carries **P81's answer** ([`p81_after`],
+//! README gap 4248): on a world whose log holds a break P81 nets, the comparand asked the D87
+//! day, so the frozen lines hold fork 4748911's own answer by value and not P81's rule as a model.
 
 #![allow(dead_code)]
+
+/// Parity P81's reading of a log by fork 4748911's own machine, and the log the fork can be asked
+/// P81's day in — `support/p81.rs`, the one definition (W-42 track R), nested here so every suite
+/// that builds the comparand reaches it without declaring it.
+#[allow(dead_code)]
+#[path = "p81.rs"]
+mod p81;
 
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Write};
@@ -126,6 +149,12 @@ pub struct Planned {
 pub trait ForkPlan {
     /// The fork's day for `ask` over the world `b`.
     fn plan(&self, b: &Built, ask: &ForkAsk<'_>) -> Result<Planned, String>;
+    /// **The running block's worked minutes as THIS fork reads them** for the state `st` at the
+    /// world's `now` (fork `active_run`'s reading: the log's open block when it is `st`'s running
+    /// item, the clock since `started` otherwise; `None` with no block running) — what P55 and
+    /// P46 move the estimate by (W-43 track C, README gap 4247): the in-tree fork reads the replay
+    /// it is handed (the kernel's), the oracle its own.
+    fn worked(&self, b: &Built, st: &RuntimeState) -> Result<Option<u32>, String>;
     /// Fork `planner::diff` of two serialised days: `{moved, added, removed, drift_min}`.
     fn diff(&self, tz: Tz, old: &Value, new: &Value) -> Result<Value, String>;
 }
@@ -410,10 +439,16 @@ pub fn p69_day_unmet(who: &str, fork: &Value, b: &Built, logged: DateTime<Tz>, k
 /// worked minutes and the fork's reading of the log differ on a day with no running
 /// break, the running estimate moves by their difference — so the FORK computes `left`
 /// from the host's reading — and the open row carries the host's minutes. `None` where
-/// the readings agree.
+/// the readings agree. The fork's reading here is the KERNEL's replay (`Built::worked_for`),
+/// the in-tree fork's; the comparand asks [`p55_state_at`] with its backend's own.
 pub fn p55_state(b: &Built, st: &RuntimeState) -> Option<(RuntimeState, u32)> {
+    p55_state_at(b, st, b.worked_for(st))
+}
+
+/// [`p55_state`] over a given reading of the fork's worked minutes, `fork` ([`ForkPlan::worked`]).
+pub fn p55_state_at(b: &Built, st: &RuntimeState, fork: Option<u32>) -> Option<(RuntimeState, u32)> {
     let host = forkclass::host_worked(b)?;
-    let fork = b.worked_for(st)?;
+    let fork = fork?;
     let breaking = st.break_.as_ref().is_some_and(|x| x.started.is_some());
     if breaking || host == fork {
         return None;
@@ -429,8 +464,13 @@ pub fn p55_state(b: &Built, st: &RuntimeState) -> Option<(RuntimeState, u32)> {
 /// paused, no break running, its worked minutes at or past its estimate (fork
 /// `active_run`'s `left == 0` refusal).
 pub fn is_p46(b: &Built, st: &RuntimeState) -> bool {
+    is_p46_at(st, b.worked_for(st))
+}
+
+/// [`is_p46`] over a given reading of the fork's worked minutes ([`ForkPlan::worked`]).
+pub fn is_p46_at(st: &RuntimeState, worked: Option<u32>) -> bool {
     let Some(a) = st.active.as_ref() else { return false };
-    let worked = b.worked_for(st).unwrap_or(0);
+    let worked = worked.unwrap_or(0);
     let breaking = st.break_.as_ref().is_some_and(|x| x.started.is_some());
     !a.paused && !breaking && worked >= a.est_min
 }
@@ -439,11 +479,15 @@ pub fn is_p46(b: &Built, st: &RuntimeState) -> bool {
 /// fork reserves the block from its own walls, wind-down and block boundary; unchanged
 /// off P46.
 pub fn p46_state(b: &Built, st: &RuntimeState) -> RuntimeState {
+    p46_state_at(st, b.worked_for(st))
+}
+
+/// [`p46_state`] over a given reading of the fork's worked minutes ([`ForkPlan::worked`]).
+pub fn p46_state_at(st: &RuntimeState, worked: Option<u32>) -> RuntimeState {
     let mut out = st.clone();
-    if is_p46(b, st) {
-        let worked = b.worked_for(st).unwrap_or(0);
+    if is_p46_at(st, worked) {
         if let Some(a) = out.active.as_mut() {
-            a.est_min = worked.saturating_add(24 * 60);
+            a.est_min = worked.unwrap_or(0).saturating_add(24 * 60);
         }
     }
     out
@@ -611,7 +655,7 @@ fn p45_rows_with(
 pub fn comparand_answers(b: &Built, prios: &[Prio], fp: &dyn ForkPlan) -> Result<Value, String> {
     let mut with = comparand_with(b, prios, fp, true)?;
     let without = comparand_with(b, prios, fp, false)?;
-    let p64 = ["day", "whatif", "p45", "p67"].iter().any(|k| with[*k] != without[*k]);
+    let p64 = ["day", "whatif", "p45", "p67", "p81"].iter().any(|k| with[*k] != without[*k]);
     if p64 {
         with["p64"] = json!({"p64": true});
     }
@@ -633,16 +677,20 @@ fn comparand_with(b: &Built, prios: &[Prio], fp: &dyn ForkPlan, runs: bool) -> R
     // comparand — and its what-if — plan from THAT start (`p69_state`); the shipped day never.
     let p69 = p69_state(b, st);
     let st = p69.as_ref().unwrap_or(st);
+    // The running block's worked minutes as THIS backend's fork reads them (W-43 track C, README
+    // gap 4247): what P55 and P46 move the estimate by. One reading serves every state below —
+    // they differ from `st` in the estimate alone, which no reading reads.
+    let fork_worked = fp.worked(b, st)?;
     // P55: on a day whose host reading of the running block's worked minutes is not the
-    // log's, the comparand reads the host's (`p55_state`).
-    let p55 = p55_state(b, st);
+    // fork's, the comparand reads the host's (`p55_state_at`).
+    let p55 = p55_state_at(b, st, fork_worked);
     let st1 = p55.as_ref().map_or_else(|| st.clone(), |(s, _)| s.clone());
-    let st2 = p46_state(b, &st1);
+    let st2 = p46_state_at(&st1, fork_worked);
     let comparand_p = fp.plan(b, &ForkAsk { state: &st2, now, d60: true, p64: runs, prios, extend: None, log_line: None })?;
     // P51: D60's key moved the fork's §7.4 order (`forkclass::is_p51`'s reading).
     let p51 = comparand_p.ranked != shipped_p.ranked;
     let mut comparand = comparand_p.day;
-    let p46 = is_p46(b, &st1);
+    let p46 = is_p46_at(&st1, fork_worked);
     if p46 {
         p46_row(now, &mut comparand);
     }
@@ -663,8 +711,8 @@ fn comparand_with(b: &Built, prios: &[Prio], fp: &dyn ForkPlan, runs: bool) -> R
         // before the block is added, the saturation at an overtime `est − host` would give
         // the fork a whole block where the kernel reads what is left of it (found by the
         // frozen `overtime/spent (worked)` line, W-38).
-        let rt = p55_state(b, &rt).map_or(rt, |(s, _)| s);
-        let rt = p46_state(b, &rt);
+        let rt = p55_state_at(b, &rt, fork_worked).map_or(rt, |(s, _)| s);
+        let rt = p46_state_at(&rt, fork_worked);
         let whatif_day = |ps: &[Prio], full: bool| -> Result<Value, String> {
             let ask = ForkAsk { state: &rt, now, d60: true, p64: runs, prios: ps, extend: full.then_some((id, bm)), log_line: None };
             let mut d = fp.plan(b, &ask)?.day;
@@ -686,6 +734,7 @@ fn comparand_with(b: &Built, prios: &[Prio], fp: &dyn ForkPlan, runs: bool) -> R
     }
     let p52 = whatif.as_ref().is_some_and(|w| !w["grown"].is_null());
     let (p45, p67) = after_break(b, prios, fp, runs)?;
+    let p81 = p81_after(b, prios, fp, runs)?;
     let flag = |set: bool, n: &str| {
         set.then(|| Value::Object(std::iter::once((n.to_string(), Value::Bool(true))).collect()))
     };
@@ -701,7 +750,61 @@ fn comparand_with(b: &Built, prios: &[Prio], fp: &dyn ForkPlan, runs: bool) -> R
         "p55": flag(p55.is_some(), "p55"),
         "p56": flag(p56, "p56"),
         "p69": flag(p69.is_some(), "p69"),
+        "p81": p81,
     }))
+}
+
+/// **P81's comparand** (the owner's D87, parity P81; W-43 track C, README gap 4248): on a world
+/// whose log holds a break P81 nets — read off the log by fork 4748911's own machine
+/// (`p81::netted_breaks`), never off the kernel's answer — the comparand asked the D87 day: the
+/// world with each netted break given as a `pause` at its start and an `unpause` where the clock
+/// restarts (`p81::as_d87_asks`), which fork 4748911's machine nets as the kernel's replay nets the
+/// break, with this comparand's own departures and D74's split as asked (`runs`); its `paused` row
+/// over each netted span drawn as the break alone (one span, one row, as D65 draws a meeting's
+/// pause as the wall) and the day re-digested. `{"p81": true, "hash", "day"}`, the flag in its
+/// own home; `None` where P81 nets nothing.
+///
+/// Until W-43 the frozen lines held P81 by its RULE (`p81::planned_day` on the frozen `day`) and
+/// only the in-tree region asked the fork the D87 day (README gap 4248); this is that answer,
+/// frozen, from whichever backend plans. Refused by name, never guessed: a D87-asked log P81
+/// would still net (it would ask a different day), and a netted span the asked day draws no
+/// `paused` row over, inside the day and before `now`.
+pub fn p81_after(b: &Built, prios: &[Prio], fp: &dyn ForkPlan, runs: bool) -> Result<Option<Value>, String> {
+    let netted = p81::netted_breaks(&b.world.log, &[])?;
+    if netted.is_empty() {
+        return Ok(None);
+    }
+    let (log, _) = p81::as_d87_asks(&b.world.log, &netted)?;
+    let asked = Built::of(forkclass::ClassWorld { log, ..b.world.clone() });
+    let again = p81::netted_breaks(&asked.world.log, &[])?;
+    if !again.is_empty() {
+        return Err(format!("P81: the log asked the D87 day still holds {} break(s) P81 nets", again.len()));
+    }
+    let answer = comparand_with(&asked, prios, fp, runs)?;
+    let mut day = answer["day"]["day"].clone();
+    let (lo, _) = b.day_bounds();
+    let (lo, now) = (lo.fixed_offset(), b.world.now.fixed_offset());
+    // The shipped binary's fork draws no part of a replayed pause a wall of the day covers (P56,
+    // `p56_cut`), so a `paused` row is owed only over what the walls leave of the span, inside the
+    // day and before `now`.
+    let walls: Vec<(DateTime<Tz>, DateTime<Tz>)> = b.walls().iter().map(|(_, lo, hi, _)| (*lo, *hi)).collect();
+    let rows = segments_mut(&mut day).ok_or("P81: the day asked the D87 day has no rows")?;
+    for n in &netted {
+        let covered = |r: &Value| {
+            r["kind"] == "lost"
+                && r["flags"]["note"] == "paused"
+                && r["item"] == n.id.as_str()
+                && at(&r["start"]).is_some_and(|a| a >= n.at)
+                && at(&r["end"]).is_some_and(|z| z <= n.restart)
+        };
+        let before = rows.len();
+        rows.retain(|r| !covered(r));
+        let owed = cut_out(&walls, n.at.max(lo), n.restart.min(now)).iter().any(|(x, y)| x < y);
+        if owed && rows.len() == before {
+            return Err(format!("P81: the day asked the D87 day draws no `paused` row of `{}` over the break at {}", n.id, n.at));
+        }
+    }
+    Ok(Some(json!({"p81": true, "hash": day_hash(&day), "day": day})))
 }
 
 /// **Where two values first differ**, as a path and the two leaves — so a comparison of two
@@ -876,6 +979,30 @@ impl ForkPlan for Oracle {
         let a = self.ask(&json!({"op": "diff", "old": old["segments"], "new": new["segments"]}))?;
         Ok(a["diff"].clone())
     }
+
+    /// Fork 4748911's own reading, asked of `tm-oracle plan`'s `worked` op (W-43 track C, README
+    /// gap 4460) — an oracle built before W-43 refuses the op by name, and is stale (gap 196).
+    fn worked(&self, b: &Built, st: &RuntimeState) -> Result<Option<u32>, String> {
+        let req = json!({
+            "op": "worked",
+            "world": b.world.to_json(),
+            "state": serde_json::to_value(st).map_err(|e| e.to_string())?,
+            "now": b.world.now.to_rfc3339(),
+            "log_line": Value::Null,
+        });
+        let a = self.ask(&req).map_err(|e| {
+            if e.contains("unknown op") {
+                format!("{e} — an oracle built before W-43 has no `worked` op: it is STALE, rebuild it (build-oracle.sh)")
+            } else {
+                e
+            }
+        })?;
+        match &a["worked"] {
+            Value::Null => Ok(None),
+            Value::Number(n) => n.as_u64().and_then(|m| u32::try_from(m).ok()).map(Some).ok_or_else(|| format!("the oracle's `worked` is {n}")),
+            other => Err(format!("the oracle's `worked` answer is {other}, not minutes")),
+        }
+    }
 }
 
 // BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gap 3533)
@@ -1002,6 +1129,12 @@ impl ForkPlan for InTree {
     fn diff(&self, tz: Tz, old: &Value, new: &Value) -> Result<Value, String> {
         let (a, z) = (day_of_json(tz, old)?, day_of_json(tz, new)?);
         serde_json::to_value(planner::diff(&a, &z)).map_err(|e| e.to_string())
+    }
+
+    /// The in-tree fork plans over the replay it is handed — the kernel's — so its reading is
+    /// `Built::worked_for`'s.
+    fn worked(&self, b: &Built, st: &RuntimeState) -> Result<Option<u32>, String> {
+        Ok(b.worked_for(st))
     }
 }
 // END THE FORK PLANNER

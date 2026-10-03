@@ -489,7 +489,7 @@ theorem setLeadToks_head_sep (w : List Char) (ts : List Tok) :
       by_cases he : (estSlot t.word).isSome = true <;> simp [setLeadToks, hc, he]
 
 /-- **Whatever the leading-slot rewrite writes, the kernel reads back.** -/
-theorem setLead_canonical (i : Id) (w : List Char) (r : RawItem) (hw : wordWf w = true)
+theorem setLead_canonical_box_ended (i : Id) (w : List Char) (r : RawItem) (hw : wordWf w = true)
     (hid : isIdWord w = false) (h : CanonicalItem i r = true) :
     CanonicalItem i (setLead w r) = true := by
   obtain ⟨hb, hind, hlead, hend, htw, hids⟩ := (canonical_iff i r).1 h
@@ -506,8 +506,8 @@ theorem setRemaining_canonical (i : Id) (lead key : Dur) (r : RawItem)
     (h : CanonicalItem i r = true) : CanonicalItem i (setRemaining lead key r) = true := by
   unfold setRemaining
   split
-  · exact setLead_canonical i _ r (wordWf_renderDur lead) (isIdWord_renderDur lead) h
-  · exact setKey_canonical i .est _ r (wordWf_renderDur key) h
+  · exact setLead_canonical_box_ended i _ r (wordWf_renderDur lead) (isIdWord_renderDur lead) h
+  · exact setKey_canonical_box_ended i .est _ r (wordWf_renderDur key) h
 
 /-- **The payoff**, as `setKey_line_reparses` is for the key setters: whatever `tm edit ^id
 est=` writes, on either slot, the kernel parses back to the same item. -/
@@ -515,7 +515,7 @@ theorem setRemaining_line_reparses (i : Id) (g : Glyph) (lead key : Dur) (r : Ra
     (h : CanonicalItem i r = true) :
     parseItem (serializeItem i g (setRemaining lead key r))
       = .ok (some i, g, setRemaining lead key r) :=
-  parse_serialize i g _ (setRemaining_canonical i lead key r h)
+  parse_serialize_box_ended i g _ (setRemaining_canonical i lead key r h)
 
 /-! ### The three lines D56 is about, computed
 
@@ -1049,9 +1049,11 @@ theorem ndDur?_is_parseDurND (w : List Char) :
 
 /-- R10's smart constructor for every wf-bounded value class the widened edit
 carries: the parser's answer, kept only with its wf proof.  The bridges in
-Line.lean (`parseDate_dayWf`, `parseMoment_wf`, …) are what make the guard
-refuse nothing the parser accepted — `guardWf_isSome` — except where a bridge
-is honestly false (`at:`/`win:`'s year-9999 rollover). -/
+Line.lean (`parseDate_dayWf`, `parseMoment_wf_unless_signed`, …) are what make
+the guard refuse nothing the parser accepted — `guardWf_isSome` — except where a
+bridge is honestly false: a date past 9999, which since W-43 the line reads
+after a `+` (`due:+10000-1-7`, README gap 4346), and `at:`/`win:`'s year-9999
+rollover. -/
 def guardWf {α : Type} (p : α → Bool) (o : Option α) : Option { a : α // p a = true } :=
   o.bind (fun a => if h : p a = true then some ⟨a, h⟩ else none)
 
@@ -1263,7 +1265,7 @@ def editValOf : Field.Key → List Char → Option EditVal
   | .every, w => (guardWf Field.Rule.wf (Field.parseRule w)).map .every
   | .onEvent, w => (guardWf Field.OnEvent.wf (Field.parseOnEvent w)).map .onEvent
   | .loc, w => (guardWf locOk (Field.parseLoc w)).map .loc
-  | .waiting, w => (guardWf Field.dayWf (Field.parseDate w)).map .waiting
+  | .waiting, w => (guardWf Field.dayWf (Log.instDate? w)).map .waiting
   | .after, w => (guardWf Field.depsWf (Field.parseDeps w)).map .after
   | _, _ => none
 
@@ -1310,14 +1312,37 @@ theorem editValOf_key (k : Field.Key) (w : List Char) (v : EditVal)
 
 The eight keys wired in stage 3's step 5 each go through `guardWf`, and each
 gets the theorem that the guard is not a second grammar: what `editValOf`
-refuses is what the loader's parser refuses — exactly, for `due`, `every`,
-`on-event`, `waiting` and `after`; up to the word bound for `loc`; and up to
-the one stated rollover for `at` and `win`. -/
+refuses is what the loader's parser refuses — exactly, for `every`,
+`on-event` and `after`; up to the word bound for `loc`; up to a `+`-signed year,
+the only spelling of a year past 9999 no render writes back, for `due` and
+`waiting`; and up to an end past 9999, of which the rollover is one case, for
+`at` and `win`.  The last two classes are W-43's (README gap 4346): the line
+reads chrono's dates since, and the statements stage 3 gave `due`, `waiting`,
+`at` and `win` are each refuted beside their restatement. -/
 
-theorem editValOf_due_refuses_only_what_parseMoment_refuses (w : List Char) :
-    (editValOf .due w).isSome = (Field.parseMoment w).isSome := by
-  show ((guardWf _ _).map _).isSome = _
-  rw [Option.isSome_map, guardWf_isSome _ _ (fun _ h => Field.parseMoment_wf h)]
+/-- **`due:`'s edit refuses a bad value or a signed year, and nothing else** (W-43). -/
+theorem editValOf_due_refuses_only_a_bad_value_or_a_signed_year (w : List Char)
+    (h : editValOf .due w = none) :
+    Field.parseMoment w = none ∨ (LogStamp.trimWs w).head? = some '+' := by
+  have hg : guardWf Field.Moment.wf (Field.parseMoment w) = none := by
+    have h' : (guardWf Field.Moment.wf (Field.parseMoment w)).map EditVal.due = none := h
+    simpa using h'
+  cases hp : Field.parseMoment w with
+  | none => exact Or.inl rfl
+  | some m =>
+      refine Or.inr ?_
+      by_cases hu : (LogStamp.trimWs w).head? = some '+'
+      · exact hu
+      · have hbad := (guardWf_none_iff _ _).1 hg m hp
+        rw [Field.parseMoment_wf_unless_signed hp hu] at hbad
+        cases hbad
+
+/-- **Refuted** (W-43): stage 3's editValOf_due_refuses_only_what_parseMoment_refuses, by
+`due:+10000-1-7`, which the line reads and no render writes back. -/
+theorem editValOf_due_refuses_only_what_parseMoment_refuses_is_refuted :
+    ¬ ∀ w : List Char, (editValOf .due w).isSome = (Field.parseMoment w).isSome := by
+  intro h
+  exact absurd (h ['+','1','0','0','0','0','-','1','-','7']) (by decide)
 
 theorem editValOf_every_refuses_only_what_parseRule_refuses (w : List Char) :
     (editValOf .every w).isSome = (Field.parseRule w).isSome := by
@@ -1334,10 +1359,31 @@ theorem editValOf_after_refuses_only_what_parseDeps_refuses (w : List Char) :
   show ((guardWf _ _).map _).isSome = _
   rw [Option.isSome_map, guardWf_isSome _ _ (fun _ h => Field.parseDeps_wf h)]
 
-theorem editValOf_waiting_refuses_only_what_parseDate_refuses (w : List Char) :
-    (editValOf .waiting w).isSome = (Field.parseDate w).isSome := by
-  show ((guardWf _ _).map _).isSome = _
-  rw [Option.isSome_map, guardWf_isSome _ _ (fun _ h => Field.parseDate_dayWf h)]
+/-- **`waiting:`'s edit refuses a bad value or a signed year, and nothing else** (W-43): its value is
+read by `Log.instDate?`, the reader the loader's `viewWaiting` binds since W-43. -/
+theorem editValOf_waiting_refuses_only_a_bad_value_or_a_signed_year (w : List Char)
+    (h : editValOf .waiting w = none) :
+    Log.instDate? w = none ∨ (LogStamp.trimWs w).head? = some '+' := by
+  have hg : guardWf Field.dayWf (Log.instDate? w) = none := by
+    have h' : (guardWf Field.dayWf (Log.instDate? w)).map EditVal.waiting = none := h
+    simpa using h'
+  cases hp : Log.instDate? w with
+  | none => exact Or.inl rfl
+  | some n =>
+      refine Or.inr ?_
+      by_cases hu : (LogStamp.trimWs w).head? = some '+'
+      · exact hu
+      · have hbad := (guardWf_none_iff _ _).1 hg n hp
+        rw [Field.instDate?_dayWf_unless_signed hp hu] at hbad
+        cases hbad
+
+/-- **Refuted** (W-43): stage 3's editValOf_waiting_refuses_only_what_parseDate_refuses — the
+`waiting:` edit read `Field.parseDate`, which refuses every signed year; it reads `parse_date` now, so
+`waiting:+026-09-01` is an edit to the year 26, as the host reads it. -/
+theorem editValOf_waiting_refuses_only_what_parseDate_refuses_is_refuted :
+    ¬ ∀ w : List Char, (editValOf .waiting w).isSome = (Field.parseDate w).isSome := by
+  intro h
+  exact absurd (h ['+','0','2','6','-','0','9','-','0','1']) (by decide)
 
 /-- `parseLoc` hands back the word it read: the enum's four spellings are
 exactly themselves, and a name is the word. -/
@@ -1382,13 +1428,13 @@ theorem editValOf_loc_refuses_only_a_bad_or_unworded_value (w : List Char) :
         rw [hw, dif_neg hok]; rfl
 
 /-- **`at:`'s table entry refuses what `parseInterval` refuses — and one more
-thing, by name**: a short end that rolls past 9999-12-31 onto a day no
-four-digit year can write. -/
-theorem editValOf_interval_refuses_only_a_bad_value_or_the_rollover (w : List Char)
+thing, by name**: an end past 9999, on a day no four-digit year can write — a
+short end that rolls past 9999-12-31, or, since W-43, a signed year chrono reads
+(restated: stage 3's form, with the rollover alone, is refuted below). -/
+theorem editValOf_interval_refuses_only_a_bad_value_or_an_end_past_9999 (w : List Char)
     (h : editValOf .interval w = none) :
     Field.parseInterval w = none ∨
-      ∃ s e, Field.parseInterval w = some (s, e) ∧ e.day = s.day + 1 ∧
-        Field.dayWf (s.day + 1) = false := by
+      ∃ s e, Field.parseInterval w = some (s, e) ∧ Field.dayWf e.day = false := by
   have hg : guardWf (fun se : Field.DT × Field.DT => Field.intervalWf se.1 se.2)
       (Field.parseInterval w) = none := by
     have h' : ((guardWf (fun se : Field.DT × Field.DT => Field.intervalWf se.1 se.2)
@@ -1399,14 +1445,34 @@ theorem editValOf_interval_refuses_only_a_bad_value_or_the_rollover (w : List Ch
   | some se =>
       refine Or.inr ⟨se.1, se.2, rfl, ?_⟩
       have hbad := (guardWf_none_iff _ _).1 hg se hp
-      exact Field.parseInterval_wf_unless_rollover (s := se.1) (e := se.2) hp hbad
+      exact Field.parseInterval_wf_unless_its_end_is_past_9999 (s := se.1) (e := se.2) hp hbad
+
+/-- **Refuted** (W-43): stage 3's editValOf_interval_refuses_only_a_bad_value_or_the_rollover, by
+`at:+10000-1-7T08:15/09:00`: refused, and its end is on its start's day. -/
+theorem editValOf_interval_refuses_only_a_bad_value_or_the_rollover_is_refuted :
+    ¬ ∀ w : List Char, editValOf .interval w = none →
+      Field.parseInterval w = none ∨
+        ∃ s e, Field.parseInterval w = some (s, e) ∧ e.day = s.day + 1 ∧
+          Field.dayWf (s.day + 1) = false := by
+  intro h
+  have := h ['+','1','0','0','0','0','-','1','-','7','T','0','8',':','1','5','/','0','9',':','0','0']
+    (by decide)
+  rcases this with hn | ⟨s, e, hp, hd, _⟩
+  · exact absurd hn (by decide)
+  · have he : Field.parseInterval
+        ['+','1','0','0','0','0','-','1','-','7','T','0','8',':','1','5','/','0','9',':','0','0'] =
+        some (⟨Cal.toDay ⟨10000, 1, 7⟩, ⟨495, by decide⟩⟩, ⟨Cal.toDay ⟨10000, 1, 7⟩, ⟨540, by decide⟩⟩) := by
+      decide
+    rw [he] at hp
+    simp only [Option.some.injEq, Prod.mk.injEq] at hp
+    obtain ⟨rfl, rfl⟩ := hp
+    exact absurd hd (by decide)
 
 /-- The same for `win:`, whose absolute form is an `at:` interval. -/
-theorem editValOf_window_refuses_only_a_bad_value_or_the_rollover (w : List Char)
+theorem editValOf_window_refuses_only_a_bad_value_or_an_end_past_9999 (w : List Char)
     (h : editValOf .window w = none) :
     Field.parseWindow w = none ∨
-      ∃ s e, Field.parseWindow w = some (.absolute s e) ∧ e.day = s.day + 1 ∧
-        Field.dayWf (s.day + 1) = false := by
+      ∃ s e, Field.parseWindow w = some (.absolute s e) ∧ Field.dayWf e.day = false := by
   have hg : guardWf Field.windowWf (Field.parseWindow w) = none := by
     have h' : ((guardWf Field.windowWf (Field.parseWindow w)).map EditVal.window) = none := h
     simpa using h'
@@ -1414,8 +1480,46 @@ theorem editValOf_window_refuses_only_a_bad_value_or_the_rollover (w : List Char
   | none => exact Or.inl rfl
   | some g =>
       have hbad := (guardWf_none_iff _ _).1 hg g hp
-      obtain ⟨s, e, hge, hd⟩ := Field.parseWindow_wf_unless_rollover hp hbad
+      obtain ⟨s, e, hge, hd⟩ := Field.parseWindow_wf_unless_its_end_is_past_9999 hp hbad
       exact Or.inr ⟨s, e, by rw [hge], hd⟩
+
+/-- **Refuted** (W-43): stage 3's editValOf_window_refuses_only_a_bad_value_or_the_rollover, by
+`win:+10000-1-7T08:15/09:00`. -/
+theorem editValOf_window_refuses_only_a_bad_value_or_the_rollover_is_refuted :
+    ¬ ∀ w : List Char, editValOf .window w = none →
+      Field.parseWindow w = none ∨
+        ∃ s e, Field.parseWindow w = some (.absolute s e) ∧ e.day = s.day + 1 ∧
+          Field.dayWf (s.day + 1) = false := by
+  intro h
+  have := h ['+','1','0','0','0','0','-','1','-','7','T','0','8',':','1','5','/','0','9',':','0','0']
+    (by decide)
+  rcases this with hn | ⟨s, e, hp, hd, _⟩
+  · exact absurd hn (by decide)
+  · have he : Field.parseWindow
+        ['+','1','0','0','0','0','-','1','-','7','T','0','8',':','1','5','/','0','9',':','0','0'] =
+        some (.absolute ⟨Cal.toDay ⟨10000, 1, 7⟩, ⟨495, by decide⟩⟩
+          ⟨Cal.toDay ⟨10000, 1, 7⟩, ⟨540, by decide⟩⟩) := by
+      decide
+    rw [he] at hp
+    simp only [Option.some.injEq, Field.WindowRange.absolute.injEq] at hp
+    obtain ⟨rfl, rfl⟩ := hp
+    exact absurd hd (by decide)
+
+/-- **A signed year, edited as the host reads it** (W-43, README gap 4346): `due:+026-09-09` and
+`waiting:+026-09-01` are the year 26 to `tm-core`'s `parse_date` and now to the kernel's edit, which
+writes them as `renderDate` spells them (`0026-09-09`, D49's one writer); `+2026-9-09` is 2026-09-09; a
+year past 9999 (`+10000-1-7`) is read and refused by name, since no render writes it back; and a date
+before 0001-01-01 is no `Cal.Day` (parity P88). -/
+theorem a_signed_year_is_edited_as_the_host_reads_it :
+    (editValOf .due ['+','0','2','6','-','0','9','-','0','9']).map EditVal.rendered =
+        some ['0','0','2','6','-','0','9','-','0','9'] ∧
+      (editValOf .due ['+','2','0','2','6','-','9','-','0','9']).map EditVal.rendered =
+        some ['2','0','2','6','-','0','9','-','0','9'] ∧
+      (editValOf .waiting ['+','0','2','6','-','0','9','-','0','1']).map EditVal.rendered =
+        some ['0','0','2','6','-','0','9','-','0','1'] ∧
+      editValOf .due ['+','1','0','0','0','0','-','1','-','7'] = none ∧
+      editValOf .due ['0','0','0','0','-','0','1','-','0','1'] = none := by
+  decide
 
 /-- …and upward: the eight bridged keys each accept their §4.1 spec value —
 both `due:` forms, `at:`'s short end, a daily `win:`, a weekday list, an
@@ -1436,7 +1540,8 @@ theorem the_eight_bridged_keys_accept_their_spec_values :
 `at:9999-12-31T23:00/01:00` — the short end rolls onto 10000-01-01 — and the
 edit path refuses it, because `renderDate` cannot write a five-digit year back
 (`intervalWf`).  The day before is not refused: the bite is exactly the
-rollover `editValOf_interval_refuses_only_a_bad_value_or_the_rollover` names. -/
+rollover, one case of the end past 9999 that
+`editValOf_interval_refuses_only_a_bad_value_or_an_end_past_9999` names. -/
 theorem the_year_9999_rollover_parses_but_the_edit_refuses_it :
     (Field.parseInterval "9999-12-31T23:00/01:00".toList).isSome = true ∧
     editValOf .interval "9999-12-31T23:00/01:00".toList = none ∧

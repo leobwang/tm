@@ -710,14 +710,40 @@ fn stamp_refused_write(ctx: &Ctx, verb: &str, e: CliError) -> CliError {
 /// ([`stamp_refused_write`], README gap 1080).
 pub fn apply(ctx: &Ctx, verb: &str, cmds: &[Cmd]) -> Result<Applied, CliError> {
     // 1. The whole tree, guarded.
-    let mut paths = ctx.store.list_files()?;
-    let mut texts: Vec<String> = Vec::new();
+    let mut docs: Vec<(String, String)> = Vec::new();
     let mut guards: Vec<FileGuard> = Vec::new();
-    for rel in &paths {
-        let (text, guard) = ctx.store.read_guarded(rel)?;
-        texts.push(text);
+    for rel in ctx.store.list_files()? {
+        let (text, guard) = ctx.store.read_guarded(&rel)?;
+        docs.push((rel, text));
         guards.push(guard);
     }
+    // 2-4. The request, the one call, and the documents read back ([`answer`]).
+    let applied = answer(ctx, verb, cmds, docs)?;
+
+    // 5. Write the changed documents through the guarded atomic store. The
+    // documents [`answer`] returns are the ones read above, in their order,
+    // then the destinations it added: each of those enters with a guard that
+    // demands the file still be absent.
+    for (i, doc) in applied.docs.iter().enumerate() {
+        if doc.changed {
+            match guards.get(i) {
+                Some(guard) => ctx.store.write_guarded(&doc.path, guard, &doc.returned)?,
+                None => ctx.store.write_guarded(&doc.path, &FileGuard::absent(), &doc.returned)?,
+            }
+        }
+    }
+    Ok(applied)
+}
+
+/// **The kernel's answer to `cmds` over the documents `docs`, writing nothing**
+/// — [`apply`]'s steps 2-4: the destinations and sections a command needs
+/// added, the one request, the one call, and every document read back with its
+/// region checked. [`apply`] writes what it answers; the TUI's automatic close
+/// past midnight HOLDS it (the owner's D91, README gap 4342,
+/// `closing::close_in_memory`) — one builder of the request, never a second
+/// copy of it. `docs` is every plan file in tree order with its text.
+pub fn answer(ctx: &Ctx, verb: &str, cmds: &[Cmd], docs: Vec<(String, String)>) -> Result<Applied, CliError> {
+    let (mut paths, mut texts): (Vec<String>, Vec<String>) = docs.into_iter().unzip();
     // A destination the tree does not hold yet enters the request as its
     // horizon's initial text, and is created on write only if the kernel
     // put something there (its guard demands the file still be absent).
@@ -757,7 +783,6 @@ pub fn apply(ctx: &Ctx, verb: &str, cmds: &[Cmd]) -> Result<Applied, CliError> {
                 .unwrap_or_default();
             paths.push(dest.to_string());
             texts.push(initial);
-            guards.push(FileGuard::absent());
         }
     }
 
@@ -933,12 +958,6 @@ pub fn apply(ctx: &Ctx, verb: &str, cmds: &[Cmd]) -> Result<Applied, CliError> {
         }
     }
 
-    // 5. Write the changed documents through the guarded atomic store.
-    for (doc, guard) in docs.iter().zip(&guards) {
-        if doc.changed {
-            ctx.store.write_guarded(&doc.path, guard, &doc.returned)?;
-        }
-    }
     Ok(Applied { docs, closes: report })
 }
 

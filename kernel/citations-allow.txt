@@ -211,6 +211,8 @@ TimeDelta::num_seconds
 FixedOffset::east_opt
 SecondsFormat::Secs
 Parsed::set_year
+# W-43 track G: `Line.lean`'s `Log.chronoHM` names the setter whose range its hour item reads (0 to 23).
+Parsed::set_hour
 Item::Numeric
 format::parse::parse_internal
 format::parse::parse_rfc3339
@@ -1289,3 +1291,53 @@ with_minute
 # And the W-41 repair's P78 test, restated when the hole it pinned closed (`ci:+5` read 5 by the kernel, gap 4330):
 # the W-41 repair's block cites it by the name it carried then.
 2 a_ci_the_kernel_reads_otherwise_is_named_at_its_line
+
+# W-43 TRACK K (README gaps 4241 and 4362).  The owner's D92 nets a break that runs into a block's start, so the day
+# PlannerWit section 14's refutation of plan_places_no_block_over_a_break stood on keeps its Block off the Break, the
+# refutation FELL, and it was DELETED with its goal back in Goals.lean (gap 4362).  Every citation counted here names it
+# as it stood: two append-only README blocks (W-18's and the W-18 merge's), PlanCheck.lean's break-law note and
+# Planner.lean's P9 note, the last two not this track's files and stale until their owner says the refutation is gone
+# (README gap 4366).  The track's own prose names it without backticks.
+# W-43 LAND: gap 4366 is closed -- the two Lean notes now name it unbackticked, as dead, so the qualified count
+# fell 3 -> 1 (the W-18 merge's README block alone).
+1 plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted
+1 PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted
+# W-43 TRACK H (README gaps 4390-4399).  The W-42 repair's pinned test of README gap 4342 was RENAMED when D91 closed
+# the gap it pinned (it now asserts the opposite, as d91_on_a_day_with_unfinished_work_the_tui_closes_in_memory_and_
+# asks_what_tm_plan_asks).  The W-42 repair's append-only block cites it by the name it carried then; track H's own
+# block names it without backticks.
+1 tui::tests::d84_on_a_day_with_unfinished_work_the_tui_and_tm_plan_ask_about_different_documents
+
+
+# W-43 TRACK G (README gaps 4430-4459).  README gap 4344: the seven laws over W-42's narrower CanonicalItem carry
+# the suffix _box_ended, and README gap 4346: the line reads a date through chrono's readers, so ten stage-3
+# laws that held because the line refused every signed year are refuted by one and restated beside it (W-43
+# track G's block, §1 and §2, names each with its successor).  Every citation counted here is a sentence in an
+# append-only README block naming the law as it stood; W-43's own block names them without backticks.
+6 parse_serialize
+4 setEst_canonical
+3 setKey_canonical
+4 unsetKey_canonical
+2 setLead_canonical
+3 renderItem_canonical
+5 canonicalKeyed_of_canonical
+1 parseDT_wf
+1 parseMoment_wf
+1 parseInterval_spec
+1 parseInterval_wf_unless_rollover
+1 parseWindow_wf_unless_rollover
+1 editValOf_due_refuses_only_what_parseMoment_refuses
+1 editValOf_waiting_refuses_only_what_parseDate_refuses
+1 editValOf_interval_refuses_only_a_bad_value_or_the_rollover
+1 editValOf_window_refuses_only_a_bad_value_or_the_rollover
+
+
+# W-43 TRACK C (README gaps 4460-4489).  The planner's oracle arm asks every frozen line as it stands -- the comparand
+# reads the backend's OWN minutes of the running block (forkplan's ForkPlan::worked, README gap 4247) -- and P81's
+# answer is frozen on the eight `worked` lines (gap 4248), so the three helpers planner_classes.rs used to ask the fork
+# a reordered or a D87 log by hand -- as_the_fork_reads_it, as_d87_asks_it, break_alone -- were DELETED (gap 4250: the
+# reordered log is a shape the owner's D92 nets).  Every citation counted here names them as they stood, in append-only
+# README blocks: W-42 track R's gap 4247 and the W-42 land's §3.  W-43's own block names them without backticks.
+2 as_the_fork_reads_it
+2 as_d87_asks_it
+2 break_alone

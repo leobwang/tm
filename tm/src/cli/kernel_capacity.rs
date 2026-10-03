@@ -228,10 +228,13 @@ fn request_on(
     let section = planwire::capacity_json(&input, ranked).map_err(input_error)?;
     let order = ranked.map(|r| planwire::send_order(r.cands)).unwrap_or_default();
 
-    // The documents: the whole tree, as `kernel_bridge::apply` sends it.
+    // The documents: the whole tree, as `kernel_bridge::apply` sends it — read through
+    // `Ctx::reading`, so a TUI past midnight that holds §6.3's automatic close in memory sends the
+    // documents `tm plan` sends after its own close (the owner's D91, README gap 4342).
+    let reading = ctx.reading()?;
     let mut docs = Vec::new();
-    for rel in ctx.store.list_files()? {
-        let text = ctx.store.read_text(&rel)?;
+    for rel in reading.store().list_files()? {
+        let text = reading.store().read_text(&rel)?;
         docs.push(kernel_bridge::doc_json(&rel, &kernel_bridge::doc_lines(&text)));
     }
     let cache = ctx.store.root().join(".tm/cache/replay");
@@ -239,8 +242,9 @@ fn request_on(
     // Stage 6 step L9: the `log` section day 0 is derived from (D24's seam).  The kernel answers
     // both sections in one call and `runCapZ` hands the log answer's replay to the capacity
     // reader; without it the kernel refuses `day0WithoutLog` rather than invent an empty day.
+    // The log as the request reads it (`Ctx::log_now`): with the lines that close would log (D91).
     let log = kernel_log::capacity_log_section(
-        ctx.store.root(), &Ctx::log_bytes(&ctx.store)?, &tz_wire, kernel_log::day_of(ctx.today))
+        ctx.store.root(), &ctx.log_now()?, &tz_wire, kernel_log::day_of(ctx.today))
         .map_err(super::ctx::genesis_error)?;
     let rest = json!({
         "docs": docs,

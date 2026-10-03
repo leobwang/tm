@@ -704,7 +704,7 @@ theorem pairedEntity_error_spots (i : Id) (x y : Placement) (e : LErr)
 
 /-- **The widened payload is a projection of the placements that were refused**
 — AGENTS §5.3's obligation when an artefact is widened rather than forked, and
-the shape `Look.wallsOn_eq_map_wallIxOn` and `canonicalKeyed_of_canonical` set.
+the shape `Look.wallsOn_eq_map_wallIxOn` and `canonicalKeyed_of_canonical_box_ended` set.
 Both spots a collision names are `Placement.spot` of two of the very placements
 `buildEntity` was handed, and **mapping `Placement.id` over that pair gives back
 the single `Id` the error carried before D32** — so the new fields are a view of

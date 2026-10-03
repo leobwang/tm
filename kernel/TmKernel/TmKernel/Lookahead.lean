@@ -3665,7 +3665,7 @@ start.  (`blocks_done` and `since_break_min` count up in the fork and reach `Fea
 def day0Slots (I : Input) : List (Fin 6 × Slot) := energizeToday I (day0Cut I).slots
 
 /-- **The old view is the widened one at the old argument** (AGENTS §5.3's widen-and-project,
-the shape `wallsOn_eq_map_wallIxOn` and `canonicalKeyed_of_canonical` set). -/
+the shape `wallsOn_eq_map_wallIxOn` and `canonicalKeyed_of_canonical_box_ended` set). -/
 theorem day0Slots_is_energizeToday (I : Input) :
     day0Slots I = energizeToday I (day0Cut I).slots := rfl
 

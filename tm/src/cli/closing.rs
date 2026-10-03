@@ -374,6 +374,22 @@ fn period_key(path: &str) -> String {
 /// one — which never reaches the line, because [`auto_close`] swallows the
 /// refusal and prints its own sentence with those words in it.
 pub fn run(ctx: &mut Ctx, which: Which, verb: &str, drops: &[Id]) -> Result<ReportOut, CliError> {
+    let applied = kernel_bridge::apply(ctx, verb, &commands(which, drops))?;
+    let left = leaves(which, drops, &applied, &ctx.state.closed, ctx.today);
+    for event in left.events {
+        ctx.append_event(event)?;
+    }
+    ctx.state.closed = left.closed;
+    ctx.save_state()?;
+    if applied.docs.iter().any(|d| d.changed) {
+        ctx.reload()?;
+    }
+    Ok(left.report)
+}
+
+/// The commands one close sends: the `--drop` list first (a dropped line is
+/// settled, and no close row takes a settled line), then the close.
+fn commands(which: Which, drops: &[Id]) -> Vec<Cmd> {
     let mut cmds: Vec<Cmd> = drops
         .iter()
         .map(|id| Cmd::Drop { id: id.to_string() })
@@ -382,33 +398,46 @@ pub fn run(ctx: &mut Ctx, which: Which, verb: &str, drops: &[Id]) -> Result<Repo
         Which::One(grain) => Cmd::Close { grain },
         Which::All => Cmd::AutoClose,
     });
-    let applied = kernel_bridge::apply(ctx, verb, &cmds)?;
+    cmds
+}
 
+/// **What a close leaves beside its documents** — the report, the §10.1 events
+/// it logs in the order [`run`] appends them, and `state.closed` advanced. Read
+/// off the kernel's answer and nothing else, so the CLI's close, which writes
+/// it ([`run`]), and the TUI's past midnight, which holds it in memory
+/// ([`close_in_memory`], the owner's D91), are one close and not two.
+struct Left {
+    report: ReportOut,
+    events: Vec<Event>,
+    closed: Closed,
+}
+
+/// [`Left`] of the kernel's answer `applied` to [`commands`]`(which, drops)`,
+/// over the stamps `closed` and the date `today`.
+fn leaves(which: Which, drops: &[Id], applied: &kernel_bridge::Applied, closed: &Closed, today: NaiveDate) -> Left {
     let mut report = ReportOut {
         closes: Vec::new(),
         dropped: drops.iter().map(|d| d.to_string()).collect(),
     };
-    for id in drops {
-        ctx.append_event(Event::Drop { id: id.to_string() })?;
-    }
+    let mut events: Vec<Event> = drops.iter().map(|id| Event::Drop { id: id.to_string() }).collect();
     for e in &applied.closes {
         let (from, to) = (applied.path_of(e.from).to_string(), applied.path_of(e.to).to_string());
         let min = e.minutes.map(|m| MinOut { num: m.num(), den: m.den() });
         if e.did == CloseDid::DropIntoParent {
             // stays in its file, `[~]`; its minutes are in its parent's record
         } else if e.stamp.is_some() {
-            ctx.append_event(Event::Demote {
+            events.push(Event::Demote {
                 id: e.id.clone(),
                 from: period_key(&from),
                 to: period_key(&to),
                 est_min: e.minutes.map_or(0, |m| m.whole()),
-            })?;
+            });
         } else {
-            ctx.append_event(Event::Move {
+            events.push(Event::Move {
                 id: e.id.clone(),
                 from: from.clone(),
                 to: to.clone(),
-            })?;
+            });
         }
         report.closes.push(ClosedLine {
             id: e.id.clone(),
@@ -421,7 +450,7 @@ pub fn run(ctx: &mut Ctx, which: Which, verb: &str, drops: &[Id]) -> Result<Repo
         });
     }
 
-    let today = ctx.today;
+    let mut closed = closed.clone();
     let grains = match which {
         Which::One(g) => vec![g],
         Which::All => vec![Grain::Day, Grain::Week, Grain::Month],
@@ -433,25 +462,88 @@ pub fn run(ctx: &mut Ctx, which: Which, verb: &str, drops: &[Id]) -> Result<Repo
         // and a close of nothing happened to nothing. A sweep of an
         // upgraded tree can take lines without moving a stamp (see [`due`]),
         // and it happened too, so the stamp's movement does not decide.
-        advance(&mut ctx.state.closed, g, today);
+        advance(&mut closed, g, today);
         let took = report.closes.iter().any(|c| c.grain == g.name());
         if which != Which::All || took {
-            ctx.append_event(Event::Close {
+            events.push(Event::Close {
                 period: g.name().to_string(),
                 key: last_ended_key(g, today),
-            })?;
+            });
         }
     }
     if which == Which::All {
         // Every ended region of every grain has been closed by the kernel:
         // the stamps are now trustworthy as "nothing live left behind".
-        ctx.state.closed.swept = true;
+        closed.swept = true;
     }
-    ctx.save_state()?;
-    if applied.docs.iter().any(|d| d.changed) {
-        ctx.reload()?;
+    Left { report, events, closed }
+}
+
+/// What [`close_in_memory`] did.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum InMemory {
+    /// No period has ended since the last close: nothing was asked.
+    NotDue,
+    /// The kernel closed what had ended, and the context holds it; the report.
+    Held(ReportOut),
+    /// The kernel refused the tree by name: nothing is held, and the context
+    /// reads the files as they stand — as `tm plan` reads them after its own
+    /// close was refused. The refusal, explained ([`explain`]).
+    Refused(String),
+}
+
+/// **§6.3's automatic close, IN MEMORY** — the owner's **D91** (W-43 track H,
+/// README gap 4342). A TUI left open past local midnight asks the kernel for
+/// the documents the automatic close would leave — the one request [`run`]
+/// sends ([`kernel_bridge::answer`]: the same commands, the same
+/// destinations, the same `now`), over the plan directory as this context
+/// read it — and HOLDS them, with the log lines and the stamps [`run`] would
+/// write ([`leaves`]), writing nothing (D84: nothing writes on a timer).
+/// Every request built from the context afterwards reads them (`Ctx::reading`,
+/// `Ctx::log_now`), so the TUI asks the kernel what `tm plan` asks after its
+/// own close. Gated by [`due`], as [`auto_close`] is.
+///
+/// **One close, from the files as read.** A close held at an earlier date
+/// change is let go first ([`Ctx::release`]): the TUI writes nothing, so at
+/// every date change `tm plan` would run ONE catch-up from the files as they
+/// stand, stamped and keyed at that instant, and so does this.
+///
+/// A refusal holds nothing and is said ([`InMemory::Refused`]); a kernel fault
+/// is an error, as everywhere.
+pub fn close_in_memory(ctx: &mut Ctx) -> Result<InMemory, CliError> {
+    ctx.release();
+    if !due(&ctx.state.closed, ctx.today) {
+        return Ok(InMemory::NotDue);
     }
-    Ok(report)
+    let reading = ctx.reading()?;
+    let mut docs = Vec::new();
+    for rel in reading.store().list_files()? {
+        let text = reading.store().read_text(&rel)?;
+        docs.push((rel, text));
+    }
+    drop(reading);
+    let applied = match kernel_bridge::answer(ctx, "close", &commands(Which::All, &[]), docs) {
+        Ok(applied) => applied,
+        Err(CliError::Kernel(issue)) if !issue.is_fault() => return Ok(InMemory::Refused(explain(&issue))),
+        Err(e) => return Err(e),
+    };
+    let left = leaves(Which::All, &[], &applied, &ctx.state.closed, ctx.today);
+    let mut lines = Vec::with_capacity(left.events.len());
+    for event in left.events {
+        // The bytes `Ctx::append_event` appends: the kernel's rendering of the entry stamped `now`.
+        let entry = tm_core::log::LogEntry::new(ctx.now, event);
+        lines.push(super::kernel_log::render_one(&entry).map_err(|why| {
+            CliError::msg(format!("the kernel could not write this log line: {why}"))
+        })?);
+    }
+    let changed = applied
+        .docs
+        .iter()
+        .filter(|d| d.changed)
+        .map(|d| (d.path.clone(), d.returned.clone()))
+        .collect();
+    ctx.hold(changed, &lines, left.closed)?;
+    Ok(InMemory::Held(left.report))
 }
 
 /// §6.3's automatic close, run by [`Ctx::load`] ahead of every verb that

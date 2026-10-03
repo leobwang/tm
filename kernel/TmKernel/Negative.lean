@@ -2488,12 +2488,13 @@ theorem wallTodayIsReadOfEveryCandidate :
    started at 193 -- the second time in two runs (W-17's gap 671).  Every
    citation of track G's 193/194, in Lean and in prose, moved with them. -/
 /- CHEAT 201 — `noBlockOverABreak` asserted to hold on a day whose log records a
-   `break` running into a block.  Every Break row of the day is a replayed
+   `break` across a block.  Every Break row of the day is a replayed
    one (`Planner.a_break_row_is_a_replayed_row`) and so is every Block row the
-   planner did not reserve, so a log with a break at 07:00 lasting into `m1`'s
-   07:05-08:05 block gives the day a Break row INSIDE a Block row — which is why
-   `Goals.plan_places_no_block_over_a_break` was false as stage 6 wrote it
-   (W-18, README gap 385's third instance).  This block claims the checker says
+   planner did not reserve, so a log with a break logged ahead of `m1`'s 07:05
+   `start` but begun at 07:10 (README gap 4361; D92 nets one begun before the
+   start) gives the day a Break row INSIDE a Block row.  (The goal it once
+   refuted is back in `Goals.lean`: that refutation stood on a two-readings log.)
+   This block claims the checker says
    `true` there.  `decide` refuses: it says `false`, and so does `planOkCore`. -/
 theorem theMidBreakDayKeepsItsBlocksOffTheBreak :
     PlanCheck.noBlockOverABreak PlannerWit.theMidBreakRequest
@@ -2853,10 +2854,91 @@ theorem aStoppedBlockIsDrawnAcrossItsBreak :
    computes the arm, which also stops the block's clock, and refuses. -/
 theorem aBreaksArmIsItsDayArm :
     Replay.arm (fun _ => 739865) (fun _ => none)
-        ⟨some ⟨['a'], (⟨63924368400, 0⟩, ⟨false, 0⟩), some (⟨63924368400, 0⟩, ⟨false, 0⟩), false, none, 0, none⟩, none, none⟩
+        ⟨some ⟨['a'], (⟨63924368400, 0⟩, ⟨false, 0⟩), some (⟨63924368400, 0⟩, ⟨false, 0⟩), false, none, 0, none⟩, none, none,
+          none⟩
         (Replay.bE 2 63924370200 (.brk 20 (some 20) none)) (⟨63924370200, 0⟩, ⟨false, 0⟩) 739865
       = Replay.dayArm (fun _ => 739865) (fun _ => none) (Replay.bE 2 63924370200 (.brk 20 (some 20) none))
           (⟨63924370200, 0⟩, ⟨false, 0⟩) 739865 := by
+  decide
+
+/- ====================================================================
+   W-43 track K — the owner's D92 (README gap 4241, parity P85): a break
+   that runs INTO a block's start is not block time.  Cheats 266-268,
+   numbered from the highest in the checkout (265); the merge renumbers if
+   another track took the same numbers (AGENTS 6.2).  CHEAT 201's comment and
+   CHEAT 248's machine literal (`Replay.Machine` gained `brk`) were edited so
+   each still fails for the reason it states.
+   ==================================================================== -/
+
+/- CHEAT 266 — the fork's credit for a break logged before a block's `start`:
+   a ten-minute `break` at 08:55, `start a` 09:00, `stop a` 10:00, credited
+   the block's whole sixty-minute span.  D92's `Replay.restartAt` starts the
+   clock at the break's end, so `decide` computes 55 and refuses 60. -/
+theorem aBlockBegunInsideABreakIsCreditedItsSpan :
+    ((Replay.replay Replay.utcZone [Replay.bE 1 63924368100 (.brk 10 (some 10) none),
+        Replay.bE 2 63924368400 (Replay.bStart ['a']), Replay.bE 3 63924372000 (.stop ['a'] 0)]).items.get
+        ['a']).map (·.minutes) = some 60 := by
+  decide
+
+/- CHEAT 267 — the planner's day for that log, as fork 4748911 drew it: the
+   census log with a break at 07:00 lasting into `m1`'s 07:05 `start`
+   claimed to lay a Block across the Break.  `decide` computes the Block from
+   07:15 and `noBlockOverABreak` true, and refuses. -/
+theorem theIntoBreakDayLaysABlockAcrossTheBreak :
+    PlanCheck.noBlockOverABreak PlannerWit.theIntoBreakRequest
+      (Planner.dayPlan PlannerWit.theIntoBreakRequest) = false := by decide
+
+/- CHEAT 268 — one rule at every place a clock starts: an `unpause` inside a
+   break claimed to restart the clock at the unpause.  `start a` 09:00, `pause
+   a` 09:10, a twenty-minute `break` at 09:15, `unpause a` 09:30, `stop a`
+   10:00, credited 10 + 30 = 40.  `decide` computes 35 and refuses. -/
+theorem anUnpauseInsideABreakRestartsAtTheUnpause :
+    ((Replay.replay Replay.utcZone [Replay.bE 1 63924368400 (Replay.bStart ['a']),
+        Replay.bE 2 63924369000 (.pause ['a']), Replay.bE 3 63924369300 (.brk 20 (some 20) none),
+        Replay.bE 4 63924370200 (.unpause ['a']), Replay.bE 5 63924372000 (.stop ['a'] 0)]).items.get
+        ['a']).map (·.minutes) = some 40 := by
+  decide
+
+-- ===========================================================================
+-- APPENDED 2026-10-03 (stage 6, run W-43, track G — README gap 4346: an item line reads a date
+-- through chrono's readers, `Log.instDate?` and `Field.parseDT`, the one reading of a date).
+-- Appended at the end (§6.2: append, never renumber).  Labels 269-273 (266-270 on track G's branch; renumbered at the W-43 land, track K took 266-268), numbered from the highest
+-- in the checkout (265); the land step renumbers if another track of W-43 took the same numbers.
+-- ===========================================================================
+
+/- CHEAT 269 — the item line's old date reader.  Until W-43 `due:` read `Field.parseDate` (four
+   digits, two, two), so `due:+026-09-09` was no date to the kernel while `tm-core`'s `parse_date`
+   read the year 26.  This block claims the line still reads no date there; `decide` computes the
+   year-26 day and refuses. -/
+theorem aSignedYearIsNoDateOnTheLine :
+    Field.parseMoment ['+','0','2','6','-','0','9','-','0','9'] = none := by
+  decide
+
+/- CHEAT 270 — a date before 0001-01-01 read as a day.  chrono reads `0000-01-01` (year 0) and
+   `-001-01-01` (year −1); `Day := Nat` starts at 0001-01-01 (AGENTS §4), so the kernel reads no
+   date there (parity P88).  This block claims `instDate?` answers for year 0; `decide` refuses. -/
+theorem aYearZeroDateIsADay :
+    (Log.instDate? ['0','0','0','0','-','0','1','-','0','1']).isSome = true := by
+  decide
+
+/- CHEAT 271 — `parse_datetime` without its sixteen bytes.  chrono reads `+2026-9-7T08:15`
+   (fifteen bytes) as 2026-09-07 08:15, and `model::parse_datetime` refuses it on its length before
+   chrono runs.  This block claims the line reads it; `decide` refuses. -/
+theorem aFifteenByteDateTimeIsRead :
+    (Field.parseDT ['+','2','0','2','6','-','9','-','7','T','0','8',':','1','5']).isSome = true := by
+  decide
+
+/- CHEAT 272 — `parse_time` read as RFC 3339's clock.  chrono's `%H` skips whitespace, so
+   ` 9:05` is 09:05 to `model::parse_time` (five bytes), where RFC 3339's `HH:MM` (`parseClock`)
+   reads nothing.  This block claims the line's time reader refuses it; `decide` refuses. -/
+theorem aSpacedClockIsNoTime : Field.parseTime [' ','9',':','0','5'] = none := by
+  decide
+
+/- CHEAT 273 — a date past 9999 written back by an edit.  The line reads `due:+10000-1-7` as the
+   host does, and no render writes a five-digit year in `parse_date`'s ten bytes, so the edit path's
+   `guardWf` refuses it by name.  This block claims the edit takes it; `decide` refuses. -/
+theorem aYearPast9999IsEdited :
+    (editValOf .due ['+','1','0','0','0','0','-','1','-','7']).isSome = true := by
   decide
 
 end Tm

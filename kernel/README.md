@@ -84828,3 +84828,1840 @@ divergences the swap would ship.  The exact remaining list before the swap:
 And WITH the swap, by name: gaps 3476 and 4327, now **twenty** tests (gap 4347), 3583, 4046, and 4321.  Gap 4340 (an
 interruption inside a running break, read two ways) is the owner's and moves no planner row, so it does not block the
 swap.
+
+<!-- =====================================================================
+     APPENDED 2026-10-03: stage 6 (the planner), run **W-43**, **TRACK K**
+     — the owner's D92: a logged break that runs INTO a block's start is
+     netted by the kernel as the host nets it.  Worktree
+     `.claude/worktrees/w43-k` (branch `w43-k` off `0984304`); clones,
+     plants, measurements and scratch evidence under `scratchpad/w43-k/`,
+     never in the shared tree.  Gap range **4360-4389**: 4360-4367 taken,
+     4368 free.  Parity **P85** taken (pre-allocated to this track).
+     Burn-down **1**: `plan_places_no_block_over_a_break` is back in
+     `Goals.lean`, a deliberately admitted debt (gap 4362).
+     ===================================================================== -->
+
+## Stage 6 — W-43 track K: a break that runs into a block's start is not block time (D92, P85), and the break law's goal back in `Goals.lean`
+
+### 0. The brief, measured before it was acted on
+
+* HEAD `0984304`, the tree clean, no worktree but `stage5-lookahead`.  The brief's figures were not re-measured
+  beside this track's own (the land and the verifier own the run-wide ones); what this track measured is below.
+* **"The generated month: 22" — confirmed, and it is the whole of the shape in T5's inputs.**  `scratchpad/w43-k/shapes.py`
+  read every T5 input (474: the 7 corpus logs, the generated month at 40 and 61 a day, the half-year, three 120-200-day
+  logs, the 12 zone cases, the 256 sequences and the 192 triple logs; dumped by a scratch test in the clone) by the
+  kernel's own machine: a clock start inside the span of the last `break` stepped before it occurs **604 times, in 6
+  inputs, every one a `loggen` log**, and 22 times in the generated month (19 blocks ended by a `done`, 81 drawn
+  minutes; 2 `stop`ped, 11 credited minutes; 1 cut by the next `start`, 4).  **0** at an `unpause`, **0** at a
+  `resume`, **0** planned-only, **0** across a day, **0** a break begun after the start it is logged ahead of.  The
+  instrument's P81 count is 48 breaks in 23 of the live arm's 469 inputs — W-42 track R's figure exactly.
+* **Not in the brief: the binary CAN write gap 4241's log**, with a `--now` in the past: `tm break 20m` at 09:00,
+  `tm break` at 09:25 (the `break` line, `actual_min` 25), `tm start ^m1` at `--now 09:10` — `tm start` ends a RUNNING
+  break, and this one had ended.  §1 drives it.  So does a clock behind the log (D78's two machines).
+* **Not in the brief: one shape the replay still reads two ways**, gap 4361 (§7): a break logged ahead of a `start`
+  but BEGUN after it — `tm --now` at 10:00 `break`, ended at 10:15, then `start` at `--now 09:50` — driven on the HEAD
+  binary: `tm stop` "after 55m", `tm review day` `block_min 70`.  It is not D92's shape (the break does not run into the
+  start) and it is not changed here.
+
+### 1. Parity P85 — issued
+
+**Parity P85 taken**: a block's clock that STARTS inside the span of the last `break` the replay stepped — at a `start` with no interruption open, an `unpause`, or a `resume` — starts at that break's end (`Replay.restartAt`, the span remembered by `Replay.Machine.brk`), so a break logged before a block's `start` and lasting into it is not block time: the block is drawn from the break's end and credited, banked and planned net of the overlap — `tm review`'s minutes, load and mix, the heat grid, an item's done minutes, the close's remaining, the planner's past and open rows, the sealed records; fork 4748911's clock started at the `start` whatever break the log held, and credited and drew the overlap while `tm stop` and `tm done` netted it (the owner's D92, W-43 track K, README gap 4241)
+
+**Behaviour rows**, driven on both binaries (`scratchpad/w43-k/drive/d92.sh`; the TUI through a pty, `tuipty.py` and
+`vt.py` as W-42 track R wrote them, keys `4`, `1`): `tm init --example`, `wake 07:00`, `break 20m` at 09:00, `break`
+at 09:25 (25 minutes), `start ^m1` at `--now 09:10`, `stop` at 10:00, the readers at 10:01.  HEAD is `tm-head`, a copy
+of the main checkout's `target/debug/tm` (built 04:03 from `f5a9585`'s code, `0984304`'s), this track the worktree's.
+
+| surface | `0984304` | this branch |
+|---|---|---|
+| the log it leaves | `break` 09:00 `actual_min 25`, `start` 09:10, `stop` 10:00 | the same bytes |
+| `tm stop` | `stopped ^m1 after 35m · 325m left` | the same |
+| `tm review day` | `load 50.0`; `--json` `block_min 50`, `load_blocks 0.83`, mix `total_min 50`, `high_share 14` | `load 35.0`; `block_min 35`, `load_blocks 0.58`, `total_min 35`, `high_share 10` |
+| `tm review week` | `load 50.0`; heat `block 50m · break 25m`; `--json` the 09:00 cell `[50, 25, 0, …]`, 75 minutes in a 60-minute hour | `load 35.0`; `block 35m · break 25m`; `[35, 25, 0, …]` |
+| `tm plan`'s past rows | `09:00 break 25m`, `09:10` block | `09:00 break 25m`, `09:25` block |
+| the TUI, Today: timeline and day bar | `09:10` block; bar `░░███▒▒…` | `09:25` block; bar `░░░██▒▒…` |
+| the TUI, screen 4 (Review), day | `load 50.0` | `load 35.0` |
+
+`tm stop`'s "after 35m" was already the host's union (P84) — what moved is every reader of the replay, which now
+reads it too.  **Pinned** by the replay witnesses of §3 and `PlannerWit` section 32, cheats 266-268, T5's and the
+door's carry (§4), and `tm/tests/cli_break_into_block.rs` (§6).
+
+### 2. Who reads the overlap (step 1)
+
+The overlap is `[start, the break's end)`.  "Span" credits or draws it, "net" does not.  Measured at `0984304` over
+`tm/src`, `tm-core/src` and the kernel; the readers are W-42 track R's for a break inside a block, met here by the
+other end of the break.
+
+| reader | what it reads | at `0984304` |
+|---|---|---|
+| `tm stop`'s "after Nm", `tm done`'s logged `actual_min`, `tm now`, the TUI's timer, §9.1's overtime prompt | `Replay::running_worked_min` → `Replay::idle_min_since`, which clips every break span in the start day's seam to `[started, now]` | **net** |
+| the replay's credit on a cut (`Replay.cut` → `closeSub` → `creditFx`): a day's `blockMin` and `ciUnknown`, the item's minutes and item-day minutes | the open block's `since`, set at the `start` | **span** |
+| the replay's credit on a `done` (`Replay.doneFx`) and the fit's duration observations | the logged `actual_min`, the host's | net |
+| the replay's `Block` segments (`closeSub`) | `since` | **span**, drawn across the `Break` |
+| the open block (`Replay.OpenBlock.since`, `workedMin`) → `Planner.openBlockRows`, `Planner.openWorkedMin` (P55: the host's minutes when the request carries them) | `since` | **span** |
+| sealed day records (`Seal.DayRecord`, `.tm/cache/replay/`) | copies of the replay's day | as the replay |
+| `tm review day`/`week`/`month` (block minutes, load, load in blocks, mix) and the TUI's Review screen | the day record | **span** for a cut block |
+| the heat grid (`heat_of` over the day's segments) | segments | **span**: the hour counts the overlap as block AND break |
+| the TUI's week pane and queue progress (`Replay::done_minutes_map`) | the item's minutes | **span** for a cut block |
+| the close's remaining (`day_remaining` → `block_minutes_on`) and priority's cap usage (`block_minutes_on`) | item-day minutes | **span** for a cut block |
+| the planner's past rows (`Planner.pastRows`; the in-tree fork planner, over the kernel's replay) | segments | **span** |
+
+### 3. The one rule (step 2)
+
+`Replay.Machine` gains `brk : Option (At × At)`, the span `[t, brkEnd t …]` of the last `break` it stepped, written by
+every break (`Replay.brkFx`, which since D87 also stops a running clock across the break) whether a clock ran or not.
+`Replay.restartAt m t` is `brk`'s end when `brk` began at or before `t` and ends after it, else `t`, and it is read at
+every place a clock starts: the `start` arm (no interruption open), the `unpause` arm (none open), and `resumeBlock`
+(which takes the restart instant beside the resume's stamp: a paused block's pause still restarts at the stamp).  One
+rule, the host's union read at the instant the clock starts; a break stepped while a clock RUNS is still P81's.
+
+**Proved, nothing admitted to the library** (the one admitted debt is the goal of §5):
+* `Replay.brkFx_cases` — re-proved with its statement unchanged (D5): with no clock running `closeSub` is the
+  identity, so a break's one machine is the second case.  New: `brkFx_brk` (every machine a break writes holds its
+  span), `brkFx_of_stopped`, `closeSub_brk`, `closePause_brk`, `cut_brk`, `restartAt_cases`.
+* `Seal.machineInstants` widens by the remembered break's end (where a later step may read the day index), written
+  inline rather than as a definition of its own, because a proof-only definition the export does not reach is a new
+  entry check 12's shrink-only exemption file cannot take: `stepQueries_sub`, `closeSub_mi`, `closePause_mi`, `cut_mi`,
+  `arm_mi_of_not_brk`, `brkFx_mi`, `arm_mi`, `stepWith_mi`, `foldQueries_sub` and `foldl_mi` re-proved with their
+  statements unchanged (`resumeBlock_since` and `resumeBlock_pausedAt` gain the restart argument); `mi_of_eq`,
+  `restartAt_mi` and the witness `a_machine_holds_its_last_breaks_end` new.  The checkpoint codec
+  (`Seal.cMachine`) carries the span, so a resumed fold restarts a clock where a whole replay does; the sixteen window
+  laws, the codec round trips and C5's `arm_split`/`arm_split_of_not_brk` (as W-42 restated them) compile on top
+  unchanged, and so do the four `simp` sets over the empty state, which close the new component unaided.
+* Replay witnesses (the D92 section at the end of `Replay.lean`, each decided under an 8 GiB cap — the module whole in
+  11.5 s, 1.38 GB):
+  `a_break_logged_before_its_blocks_start_is_netted` (55 of 60 credited, the Block drawn `[09:05, 10:00]`; W-42's
+  a_break_logged_before_its_blocks_start_is_not_netted is refuted by name and renamed, D5),
+  `an_open_block_begun_inside_a_break_runs_from_its_end`,
+  `a_done_begun_inside_a_break_credits_its_minutes_and_is_drawn_after_it`,
+  `an_unpause_inside_a_break_restarts_the_clock_at_its_end` and `a_resume_inside_a_break_restarts_the_clock_at_its_end`
+  (35, the host's union; 40 before), `a_break_the_start_ended_nets_nothing` (the binary's own log: the rule does not
+  over-bite), and `a_break_logged_before_a_start_but_begun_after_it_is_not_netted` (gap 4361's edge, named).
+
+### 4. The comparand (step 3)
+
+`tm/tests/support/p85.rs` is P85 as `p81.rs` is P81, applied after it:
+* **Frozen, by value** — `p85::carry` moves the fork's frozen answer by P85's rule read off the FORK's own segments: a
+  `Block` segment that starts inside a `Break` segment starts at its end (or goes), and a cut's credit loses the netted
+  minutes (`block_min`, `ci_unknown`, the item's minutes); the fork's open block likewise.  It refuses by name a start
+  inside two breaks, a moved stretch filed on another day, a cut short of ci-unknown minutes.  T5 (`compare_with_fork`)
+  and the door suite chain it after `p81::carry`, never by skipping a key: the generated month moves **22 clock starts
+  and 15 minutes**.  `p85_is_carried_by_value_and_a_corrupted_kernel_answer_fails_by_name` (new) holds the count, holds
+  that the answer moved by P81 alone disagrees at P85's leaves (`days.2026-01-06.block_min`, `items.570.minutes`,
+  `items.641.minutes`, `items.647.minutes`, the segments), and that a kernel answer one minute off on `^570` fails by
+  name; W-42's P81 test reads its leaves against the answer moved by P85 alone, so each test isolates its own number.
+* **Asked, live** (`TM_ORACLE`): ONE model of the block family's clock, `p81::clock_read` — the kernel's machine
+  over the fork's refusals, the last break's span remembered — reads both P81's breaks (`p81::netted_breaks`, its
+  signature unchanged for `planner_classes.rs`) and P85's clock starts (`p85::restarts`); until this track the P81
+  model had no D92 restart, and a stretch can now begin at a break's end.  `p85::as_asked_log` gives P81's breaks as
+  `p81.rs` did and each P85 start as a `pause` at the start and an `unpause` at the break's end right after its line —
+  which fork 4748911's machine nets as `restartAt` does — and `p85::as_asked_answer` takes the inserted `Pause`
+  segments off.  The live arm's cross-check holds `p85::carry ∘ p81::carry` to the asked answer.  It ran (§9).
+  No T5 input tells the model's D92 restart from none (a plant of it survived T5 and `planner_classes`), so
+  `the_clock_model_starts_a_stretch_where_the_kernels_machine_does` (new) holds it to the kernel on a hand-written log.
+* **The planner's frozen lines**: none moves (§9's `planner_classes` and `planner_invariants` runs) — the frozen
+  worlds' breaks are inside a running block (P81) or running (P45), and §2's check (1) of
+  `the_frozen_classes_are_the_forks_answer_today` moves its break ahead of the `start` but stamped five minutes AFTER
+  it, gap 4361's shape, which D92 does not reach: its premise (the open block's clock runs from its start, nothing
+  banked) still holds, so gap 4250 is unchanged.  Track C was told this track may introduce lines under D64 (a)/D70 with
+  P85, and none was needed — which also means no frozen planner line holds P85's planner half to fork 4748911 (gap
+  4367).
+* **What compares what after R3** (lesson 5): T5's frozen arms and the door compare the kernel's replay with fork
+  4748911's FROZEN answers moved by P85 (bytes on disk, which R3 does not touch); T5's live arm compares it with fork
+  4748911 itself, asked the D92 day out of the tree (`TM_ORACLE`); the replay witnesses, `PlannerWit` section 32 and
+  `cli_break_into_block.rs` compare the kernel with values a human wrote down, not with the kernel.
+
+### 5. The goal's fate (step 4) — `plan_places_no_block_over_a_break` is BACK in `Goals.lean`
+
+The refutation PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted stood on
+`theMidBreakRequest`: the census log with a planned-only break at 07:00 lasting into `m1`'s 07:05 `start` — gap 4241's
+shape exactly, and cheat 201 with it.  Under D92 that day keeps `m1`'s Block off the Break (07:15-08:05) and passes
+`noBlockOverABreak` and `planOkCore` (`PlannerWit.the_into_break_day_keeps_its_block_off_the_break`, section 32), so the
+refutation FELL.  Could it stand on another log the binary can build?  Only on gap 4361's (a `--now` in the past) or gap
+4340's (an interruption logged while a break runs, until D90) — both read two ways by the kernel and the host, so a
+refutation standing on either stands on a kernel defect and is not a discharge (lesson 4; D92's own row).  Could it be
+proved as written?  No: `PlanReq.run` is any `Seal.Run`, and gap 4361's log is a replay-built counterexample.  So:
+* the refutation is **deleted** (its audit line with it) and the goal **returns** to `Goals.lean` under STAGE 6, as
+  written at W-18, with a doc comment saying all of the above (burn-down **1**, gap 4362);
+* `PlanCheck.plan_places_no_block_over_a_break` (the law over the Block rows from `now`) stays proved;
+* `theMidBreakRequest` and `theOpenBreakRequest` move LINE FOR LINE to gap 4361's shape (the break stamped 07:10 and
+  12:05, logged ahead of the 07:05 and 12:00 starts), the one shape the replay still draws a Block across, so every
+  other law they evidence keeps its statement: `the_mid_break_day_lays_a_block_across_a_break` (its first two rows and
+  its rest row re-decided), `the_core_seven_is_false_on_three_whole_days`, `the_paying_past_fails_on_four_whole_days`,
+  `every_refuted_day_refutes_its_own_clause`, `the_open_requests_agree`, `the_battery_bites_on_the_open_row` and
+  `noBlockOverABreak_of_a_logless_day_over_the_closed_rows_is_refuted`.  Their doc comments say they stand on gap 4361:
+  `PastPays.offBreak` is needed because of it, and when it closes they fall and the clause can go.  Cheat 201 follows
+  the same day and still fails as it says;
+* D92's own planner days are appended (section 32, line-neutral above it, so no roster pin site moved):
+  `the_into_break_day_keeps_its_block_off_the_break` and `the_open_row_begun_inside_a_break_starts_at_its_end` (the
+  open row `[12:10, 14:00)` reading `110m so far` — the host's reading of that break logged with its `actual_min`, though
+  not of this planned-only one, gap 4360; fork 4748911's read 120).
+
+### 6. The cache (step 5)
+
+A checkpoint carries the identity of the kernel that wrote it (`kernel_log::kernel_id`, FNV-1a-64 of the linked
+archive) and `Snapshot::valid_for` sends one another kernel wrote to genesis (W-42 track R).  D92 changes the archive,
+and the machine's codec too (a checkpoint holds four machine fields now, so an older one does not decode).
+`tm/tests/cli_break_into_block.rs` (new) shows it by value — see §9 for what it asserts and measured.
+
+### 7. Gaps 4360-4367
+
+**Gap 4241 — CLOSED** (§3, P85).  **Gap 4250 — unchanged**: §2's check (1) of
+`the_frozen_classes_are_the_forks_answer_today` moves its break ahead of the `start` but stamped after it, gap 4361's
+shape, which D92 does not reach, so its premise holds and nothing failed (§4).
+
+**Gap 4360 — a planned-only break is read two ways.**  1. *What.*  `log::idle_spans` skips a `break` with no
+`actual_min`; the replay's `brkEnd` reads its planned minutes, so a planned-only break inside a block (P81) or run into
+its start (P85) is netted by the replay and not by `tm stop`'s minutes.  2. *Why not changed.*  No verb writes such a
+line (`day::end_break_at` always writes `actual_min`); the W-42 repair closed gap 4243 "for every world `tm` writes" and
+left this half; changing the host's reader is a host behaviour change on hand-edited logs, outside D92's text.  3.
+*Cost.*  On a hand-edited log `tm stop` and `tm review` disagree by the planned span.  4. *Clears it.*  The owner: the
+host reading `brkEnd`'s span (actual, else planned), with a behaviour row.
+
+**Gap 4361 — a break logged ahead of a `start` but begun after it is read two ways.**  1. *What.*  A `break` line the
+replay steps before a `start` whose stamp is AFTER the start's (the binary writes it with a `--now` in the past, or a
+clock behind the log by more than the break): no clock ran when it was stepped, and it did not begin before the clock
+started, so `restartAt` does not reach it; the replay credits and draws the block across it while
+`Replay::idle_min_since` nets it.  Driven on the HEAD binary (`scratchpad/w43-k/drive/late.sh`): `tm stop` "after 55m",
+`tm review day` `block_min 70`; the same on this branch (`a_break_logged_before_a_start_but_begun_after_it_is_not_netted`).
+0 in T5's 474 inputs.  2. *Why not changed.*  It is not D92's shape (the break does not run into the start), and
+netting it needs a span the clock meets AFTER it started — a pending span `closeSub` clips — which changes R8's
+per-sub-segment minutes and every law over `closeSub`.  3. *Cost.*  The one Block-over-Break the replay still draws on
+a log: `PlannerWit`'s sections 14, 19, 24 and 26 stand on it (said in each), and `plan_places_no_block_over_a_break` is
+false on it, which is why that goal cannot be discharged (gap 4362).  4. *Clears it.*  The owner: net it, or rule a
+clock behind the log out of scope.
+
+**Gap 4362 — `Goals.plan_places_no_block_over_a_break` is back in `Goals.lean`.**  §5.  1. *What.*  The goal as W-18
+wrote it, `sorry`, burn-down 1.  2. *Why.*  Its refutation stood on gap 4241's log, which D92 reads one way; re-standing
+it on gap 4361's or gap 4340's would stand on a kernel defect (lesson 4, D92's row), and it is not provable as written
+(`PlanReq.run` is any `Seal.Run`; gap 4361's log is a replay-built counterexample).  3. *Cost.*  One admitted debt.
+4. *Clears it.*  Gap 4361 closed and D90 landed (track H), then a proof over the runs the decoder builds (a restatement
+the owner rules on) or a refutation on a world with one reading.
+
+**Gap 4363 — the host reads a block's marks from its `start`'s day on; the machine reads any day.**  1. *What.*
+`Replay::idle_min_since` reads the seams from the day the replay files the block's `start` under, so a break filed
+under an EARLIER day (a wake logged between the break's stamp and the start) that runs into the start is netted by the
+replay (`Machine.brk` knows no day) and not by the host.  2. *Why not changed.*  0 in T5's inputs, and the binary
+refuses `tm wake` over a running break (D81), so it needs a `--now` in the past; `tm-core/src/log.rs` was open to this
+track only to make two readings one, and no input shows two readings.  3. *Cost.*  None observed.  4. *Clears it.*  The
+host reading the break marks of the day before its start's when they reach it, if such a log appears.
+
+**Gap 4364 — the machine remembers one break.**  1. *What.*  `Machine.brk` is the LAST break stepped; a clock that starts
+inside an earlier, longer break with a later, shorter one stepped between them is not moved, while the host's union
+nets it.  2. *Why.*  One span is the rule the logs hold (0 in T5's inputs; the binary writes no overlapping breaks — a
+second `tm break` ends the first).  3. *Cost.*  None observed.  4. *Clears it.*  Nothing unless such a log appears.
+
+**Gap 4365 — P85's frozen carry is a model.**  1. *What.*  As P81's (gap 4251): `p85::carry` moves the fork's frozen
+answers by P85's rule read off the fork's own segments; it is not fork 4748911's machine.  2. *Why.*  The frozen
+answers are bytes on disk, and asking the fork needs its build.  3. *Cost.*  In plain `cargo test --workspace` the
+carry is held to the fork's own machine asked the D92 day only through the live arm's cross-check, which runs under
+`TM_ORACLE` (§9: it ran over this tree, green).  It refuses by name the shapes it will not guess at, and none occurs in
+a frozen input.  4. *Clears it.*  Nothing while each land runs the live arm; R3 does not touch it.
+
+**Gap 4366 — two notes outside this track still describe the refutation as standing.**  1. *What.*
+`PlanCheck.lean`'s break-law note and `Planner.lean`'s P9 note cite
+PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted as the goal's refutation.  2. *Why not
+changed.*  Neither file is track K's; check 8 counts the two citations (and the README's two) as adjudicated dead names
+in `citations-allow.txt`.  3. *Cost.*  Stale prose until their owner corrects it.  4. *Clears it.*  The land or the
+repair: say the refutation is gone and the goal is back (gap 4362).
+
+**Gap 4367 — P85's planner half has no fork comparand.**  1. *What.*  No frozen planner line's world holds a break
+run into a start, so after R3 nothing holds the planner's past and open rows on such a day to fork 4748911 asked the
+D92 day; `PlannerWit` section 32 holds them to written values.  2. *Why not changed.*  A new frozen line is Track C's
+file (`tm/tests/fixtures/`), and the brief's permission was for lines D92 MOVES, of which there are none.  3. *Cost.*
+The planner's reading of P85 is pinned in Lean and in `cli_break_into_block.rs`'s `tm plan` row, not against the fork.
+4. *Clears it.*  Track C or the land, before R3: a frozen world whose log holds a break run into the running block's
+`start`, introduced under D70 with P85 and asked of the fork as `p85::as_asked_log` asks the replay.
+
+### 8. D40
+
+`mutate.py`, in clones of this tree (`scratchpad/w43-k/clone`, `scratchpad/w43-k/mutB`, `scratchpad/w43-k/mutC`; never the worktree), one definition a
+run so each row persisted (`scratchpad/w43-k/mutrun.sh`), the rows merged into this tree's `mutations.txt` by
+`mutate.write_rows`.
+
+* **The pin sites the line moves left stale, re-verified** (`--verify --write --only`, `mut-drift.out`): check 9's gate
+  stopped on 15 drifted sites in five rows — `Replay.dayArm`, `Replay.brkEnd` and `Seal.brkEndAt?` (bodies unchanged,
+  their pinning theorems moved down `Replay.lean` and `SealStep.lean`) and `Replay.arm` and `Replay.brkFx` (bodies
+  changed).  All five re-derived PINNED (`brkEnd`'s `default` UNFOLDABLE beside its synthesised constant, as before);
+  `brkFx` is now pinned first by `brkFx_cases` and `brkFx_of_stopped`.
+* **The 19 owed** — `arm` and `brkFx` above, and 17 definitions new or changed with no matching row (seven in
+  `Replay.lean` and the `Seal*` files, ten `PlannerWit` fixtures), every one run, none SURVIVED, INVALID or ALONE:
+
+| definition | constants | the first pin |
+|---|---|---|
+| `Replay.restartAt` | `default` unfoldable (no `Inhabited At`), `(⟨0, 0⟩, ⟨true, 0⟩)` | `restartAt_cases`, then `a_start_cuts_any_open_block_even_the_same_id` |
+| `Replay.resumeBlock` | `default` unfoldable, the identity `b`, `⟨[], …⟩` | `resumeBlock_obs`, then `a_block_started_during_an_interruption_runs_from_resume` |
+| `Replay.cut` | `default` unfoldable, `(⟨none, none, none, none⟩, [])` | `cut_plain`, then `cut_brk` |
+| `Seal.machineInstants` | `default`, `[]` | `stepQueries_sub`, then `mi_of_eq` |
+| `Seal.Ckpt.empty` | `default` unfoldable, a synthesised checkpoint | `the_checkpoint_of_nothing_is_the_empty_checkpoint` |
+| `Replay.State.init`, `Seal.cMachine` | `default` unfoldable (no `Inhabited State`, no `Inhabited (Codec Machine)`) | none: PINNED BY NOTHING, two more rows on that counted line — neither takes an argument of its result type and the checker synthesises no term of either |
+| `PlannerWit.midBreakLine`, `openBreakLine` (re-stamped, sections 14 and 26) | `default` unfoldable (no `Inhabited Log.Line`), `⟨0, none⟩` | `the_mid_break_day_lays_a_block_across_a_break`; `the_battery_bites_on_the_open_row` |
+| `PlannerWit.intoBreakLine`, `intoBreakLines` (section 32) | `default` unfoldable, `⟨0, none⟩`; `default`, `[]` | `the_into_break_day_keeps_its_block_off_the_break` |
+| `PlannerWit.openIntoBreakLine`, `openIntoBreakLines` (section 32) | the same | `the_open_row_begun_inside_a_break_starts_at_its_end` |
+| `PlannerWit.intoBreakRun`, `theIntoBreakRequest`, `openIntoBreakRun`, `theOpenIntoBreakRequest` | `default` unfoldable (no `Inhabited Seal.Run`, no `Inhabited PlanReq`) | WITNESS FIXTURES (`mutate.WITNESS_MODULES`), as every `Run` and request in the module |
+
+The gate over the merged roster, in the synced clone: `691 new or changed since 86c4dc6, 691 rostered (248
+unfoldable, 164 witness fixtures, 42 pinned by nothing; 2 literal), 0 owed` — 42 pinned by nothing, `State.init` and
+`cMachine` among them.
+
+**A plant beyond the roster** (the identity the checker did not try): `restartAt m t := t` — the rule ignoring the
+break — in the clone scratchpad/w43-k/mutB, Replay.lean rebuilt: `restartAt_cases` fails and six of the D92 witnesses decide false; restored
+by copying the worktree's file (the clone's code diff hashed equal before and after).
+
+**The Rust this track adds, planted** (`scratchpad/w43-k/plants.sh`, `plants2.sh`, in `scratchpad/w43-k/plantR`, a clone synced to this
+tree by `git diff` and hashed equal to it; the shared tree's `git status --porcelain` empty — sha256 `e3b0c442…` —
+before and after every plant, and the plant clone's diff equal before and after each restore):
+
+| plant | what failed |
+|---|---|
+| `p85::carry` nets nothing | T5: `t5_the_frozen_generated_month_replays_as_the_fork_point_does`, `t5_the_generated_month_and_half_year_replay_as_the_fork_does`, `p85_is_carried_by_value_…` and `p81_is_carried_by_value_…` (4 of 33); the door: `the_door_is_the_reader_it_replaces` ("P85 moved no frozen input") |
+| `p85::carry` trims the segments and nets no credit | the same four T5 tests (`items.570`, `items.641`, `items.647`, `days.2026-01-06.block_min`) |
+| the live arm inserts no P85 pair | `stage5_parity_the_kernel_replays_and_fits_as_the_fork_point_does` under `TM_ORACLE`: no `Pause` to take off, so no input was asked (`P85 was asked of the fork on no input it moves`) |
+| the clock model without D92's restart | at first NOTHING — T5's live arm and `planner_classes` both green, because no input starts a stretch inside one break and nets another inside it; so `the_clock_model_starts_a_stretch_where_the_kernels_machine_does` was added, and it FAILED (1 of 34) |
+
+### 9. Acceptance of this commit
+
+Capped: `systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0` (16 GB for `mutate.py`, the oracle, the drives
+and the census scripts; each new `decide` witness first under 8 GB and `timeout 120`).
+
+* **`check.sh`, in `scratchpad/w43-k/clone` synced to exactly this tree** (every changed file compared byte for byte
+  with the worktree's; check 9's `mutate.py --gate` never ran in the worktree), 07:16:58-07:28:02 (load 4.4 at the
+  start), 11 m 04 s wall, peak RSS 7.5 GB, exit 0, every one of the 17 lines ok: the build; totality; **the axiom audit
+  at 6,251** (6,232 at `0984304`: +19 = 21 lines appended, 2 deleted — the refutation of §5 and W-42's witness renamed;
+  the declared theorems 6,224 -> 6,243 by the same 19); `Negative.lean` rejected; FFI 95; the corpus 29/37 files and
+  4/5 plans; **stage goals 1, all stage 6** (0 at `0984304`: §5); citations ok (§10 has the figure over the final
+  README); check 9 691 rostered, 0 owed; the parity register P1-P85, next free P86; check 11 0 UNANSWERED; check 12
+  1,502 reachable, 1,100 exempt, 0 UNANSWERED; check 13 17/17, 33 of 37, 169 and 220, 0 UNANSWERED; check 14 94
+  modules.  Re-run after this README's last edit: §10.
+* **`cargo test --workspace`, THREE runs** over the code committed here (every file a test compiles was last written
+  at or before 06:27:40, before run 1 began; only this README and `kernel/mutations.txt`, which no test reads, were
+  written after): **2,139 passed / 0 failed / 32 ignored over 134 result lines, each run** — run 1 06:42:28-06:52:30
+  (load 8.8 -> 10.7), run 2 06:53:07-07:02:24 (11.7 -> 9.9), run 3 07:02:49-07:12:07 (7.3 -> 6.1); 0 compiler warnings;
+  no `.proptest-regressions` file moved.  The named suites, the same in each run: T5 (`kernel_replay_parity`) 34 (4
+  ignored), the door 26, `cli_switch_acceptance` 16, `cli_latency` 6 (1 ignored; at the loads above),
+  `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 27, `kernel_row_cells` 28, `kernel_item_grammar` 6,
+  `kernel_planner_wire` 27, `planner_classes` 56 (6 ignored), `planner_invariants` 39 (2 ignored), `cli_conformance` 5,
+  `cli_json_matrix` 8, `cli_break_in_block` 5, `cli_break_into_block` 2 (new), `cli_replay_cache_kernel` 1.  A probe run
+  before the two tests of §6 and the clock-model test: 2,136 / 0 / 32 over 133.
+* **The `TM_ORACLE` arm of T5** (`stage5_parity_the_kernel_replays_and_fits_as_the_fork_point_does`; fork 4748911's
+  `tm-oracle` built fresh by `build-oracle.sh` into `scratchpad/w43-k/oracle` at 06:01), re-run at 07:21 over the
+  committed code: green — 469 logs over 6 zones, 8,442 `Replay` keys, 195,375 scalar values; P81 asked on 48 breaks in
+  23 inputs (W-42's figure); **P85 asked on 162 clock starts in 2 inputs**, the generated month's 22 and the
+  half-year's 140, each input asked again with a `pause` at the start and an `unpause` at the break's end, and on both
+  the asked answer is not the fork's answer to the log as given (the other 442 of step 1's 604 are in the 61-a-day
+  month and the 120- and 200-day logs, which no live arm reads); P21's 49 last-ulp loads, nothing else.  The door's
+  and `planner_classes`' oracle arms were not run by this track.
+* **Driven** (§1): both binaries and the TUI through a pty; gap 4361's shape on the HEAD binary (`late.sh`).
+* **The cache** (§6): `cli_break_into_block.rs`'s second test, measured value for value in `scratchpad/w43-k/cache`
+  first: a day record holding the `0984304` kernel's reading (260 block minutes, 48 ci-unknown, the segment at 11:40,
+  against 250, 38 and 11:50) is served when it carries this binary's identity — so the test can see a stale record —
+  and is rebuilt when it carries `75dcd6da44741b7a`, the identity the `0984304` archive writes.
+
+### 10. Status note (kept current while the track runs; a usage-limit cut may land at any moment)
+
+* 2026-10-03 04:20 — worktree made off `0984304`; `kernel/TmKernel/.lake` copied from the main checkout (lake: 192
+  jobs replayed, nothing rebuilt); `cargo test --workspace --no-run` built (0 warnings).
+* 04:35 — **step 1 measured** (`scratchpad/w43-k/shapes.py` over every T5 input, dumped by a scratch test in the
+  clone `scratchpad/w43-k/clone` into `scratchpad/w43-k/dump/`, 474 inputs): the INTO shape (a `start` inside the
+  span of the last `break` stepped before it) is **604 occurrences in 6 inputs, every one a `loggen` log** — 22 in the
+  generated month (19 ended by `done`, 81 drawn minutes; 2 by `stop`, 11 credited minutes; 1 cut by the next
+  `start`, 4) — and **0** in the corpus, the zone cases, the 256 sequences and the 192 triples; 0 at an `unpause`,
+  0 at a `resume`, 0 planned-only, 0 across a day, 0 non-monotone.  The instrument's P81 count is 48 breaks in 23
+  of the live arm's 469 inputs — W-42 track R's figure exactly.
+* 05:05 — **step 2 built in the worktree**: `Machine.brk`, `Replay.restartAt` (one rule at every clock start:
+  `start`, `unpause`, `resume`), `brkFx` remembers every break's span; the checkpoint codec carries it;
+  `Seal.machineInstants` widened by the remembered break's end; every Seal law re-proved with its statement unchanged
+  (`brkFx_cases` too); the replay's D92 witnesses all decide under an 8 GiB cap (Replay.lean 11.5 s, 1.38 GB).  The
+  library builds but for `PlannerWit`'s five INTO-shape witnesses (sections 14, 18, 19 and 26) — step 4's subject.
+* 05:08 — **step 4 decided and built; the whole library builds** (6 m 42 s, capped 40G, load 15-17).  The INTO
+  witnesses are moved LINE FOR LINE to gap 4361's shape (a break logged ahead of a `start` but begun after it —
+  driven on the HEAD binary with a `--now` in the past: `tm stop` "after 55m", `tm review day` `block_min 70`), the one
+  shape the replay still draws a Block across; section 32 (appended) holds D92's two planner days; the refutation of
+  `plan_places_no_block_over_a_break` is DELETED and the goal is back in `Goals.lean` (burn-down 1, gap 4362).
+  Negative.lean: cheats 266-268 appended, 201's comment and 248's literal edited.  Next: Check.lean, check 3/4/7, the
+  Rust comparand (P85), parity.txt, the cache test, mutate in a clone, the acceptance runs.
+* 06:05 — **steps 3 and 5 built and green in the worktree; step 2's helper inlined.**  `tm/tests/support/p85.rs`
+  (frozen carry, live asking), T5 and the door chain it after P81's: T5 33 passed (4 ignored), the door 26; the
+  generated month moves 22 starts and 15 minutes.  `tm/tests/cli_break_into_block.rs` (2 tests) green: the drive's
+  values by the binary, and a sealed record holding the 0984304 kernel's reading of the day (measured value for value in
+  `scratchpad/w43-k/cache`: three leaves, 260/48/11:40 against 250/38/11:50) served under this binary's id and rebuilt
+  under `75dcd6da44741b7a`'s.  One probe workspace run before the two new tests: 2,136 passed / 0 failed / 32 ignored
+  over 133 result lines.  Seal.brkInstants was inlined into `machineInstants` (check 12 cannot take a new unreached
+  definition).  Checks 2, 3 (6,251), 4, 7 (1 goal), 8, 10 (P1-P85), 12 green in the worktree's read-only runs; check
+  14 green in the clone.  Running: check 9's drifted rows re-verified in the clone (`mut-drift.out`), then 19 owed
+  definitions in two more clones; the fork oracle rebuilt for the `TM_ORACLE` arms.
+* 06:55 — the TM_ORACLE live arm GREEN (run at 06:11, over the tree before the clock model became one function;
+  re-run over the committed code at 07:21, §9; 469 logs; P85 asked on 162 starts in 2 inputs, both moved; P21's
+  49 last-ulp loads and nothing else); the clock model made ONE function (`p81::clock_read`) with a test that pins it
+  to the kernel after its plant survived T5; the Replay and Seal mutations done (`restartAt`, `resumeBlock`, `cut`,
+  `machineInstants`, `Ckpt.empty` PINNED; `State.init`, `cMachine` unfoldable and pinned by nothing); the drifted rows
+  re-verified; 6 of the 10 `PlannerWit` fixtures done.  Workspace run 1: 2,139 passed / 0 failed / 32 ignored over 134
+  result lines (06:42-06:52, load 8.8-10.7); run 2 running.  Left: the last fixtures, the roster merge, `check.sh` in a
+  synced clone, run 3, the commit.
+* 07:35 — **done; committed on `w43-k`.** The last `PlannerWit` fixtures done (07:13); the rows the three clones wrote
+  merged into this tree's `mutations.txt` by `mutate.write_rows` (`scratchpad/w43-k/merge_rows.py`: 15 appended, 7
+  replaced — the five drifted rows and the two re-stamped lines); the gate in the synced clone 691 rostered, 0 owed.
+  Workspace runs 2 and 3 green (§9). `check.sh` in the synced clone 17 ok (§9), and again after this README's last edit,
+  07:29:44-07:30:14 (30 s, everything cached), 17 ok again, the citations 56,754 (54,391 resolved, 2,363 allowed, 0
+  allow entries unused). T5's live arm re-run at 07:21 over the committed code, because the 06:55 bullet's run predates
+  the clock model's last change. **A defect of this track's own, caught before anything read it:** a script editing this
+  block at 07:18 looked a heading up with no start offset, found an earlier block's identically named section, and
+  duplicated 16,068 lines of this file (85,162 -> 101,230); seen at once by its line count, the file was restored from
+  the clone's copy taken at 07:16 and the two edits made since were re-applied, so the committed diff of this file is a
+  pure append. Every later edit of this block is anchored at the block's own banner.
+
+<!-- =====================================================================
+     APPENDED 2026-10-03: stage 6 (the planner), run **W-43**, **TRACK H**
+     — the owner's D90 (`tm interrupt` ends a running break first), D91 (a
+     TUI past midnight closes in memory) and D93 (a digest per sealed
+     replay-cache month file).
+     Built in the worktree `.claude/worktrees/w43-h` (branch `w43-h`, off
+     `0984304`); plants and drives in clones and scratch trees under
+     `scratchpad/w43-h/`, never in the shared tree; the main checkout on
+     `rebuild-on-lean` throughout.  Gap range **4390-4429**: 4390-4400
+     taken, 4401 free.  Parity: **P86** and **P87** taken; P85 is track
+     K's, a declared hole in `parity.txt` on this branch until the land.
+     Burn-down **0**, unchanged (no Lean file is touched).
+     ===================================================================== -->
+
+## Stage 6 — W-43 track H: `tm interrupt` ends a running break, a TUI past midnight closes in memory, and a sealed month file carries a digest
+
+### 0. The brief, measured before it was acted on
+
+* **D90's world reads differently on the base binary than gap 4340's.**  Gap 4340 drove `break` ENDED at 09:30 (`tm
+  stop` 30m, `tm review day` 40).  The brief's world has no 09:30 `break`: on `0984304`'s binary the break then runs
+  until `tm stop` at 10:00 ends it (its line `actual_min: 50`, written after the `resume`), and `tm stop` says
+  **10m** beside `tm review day`'s **20** — two readings again, by other numbers (§4, `drive/d90-base.out`).
+* **"Key for key" is key for key but ONE path.**  D91's TUI request and `tm plan`'s after its close differ at
+  `log.ckpt.resealDay` alone — the replay checkpoint `tm plan`'s own read reseals, which the TUI, writing nothing,
+  does not — the same exception the D84 equality test has always carried.  The documents and the log section's tail
+  (the close's `demote` and `close` lines) are equal byte for byte.
+* **P87 is needed**: D91 departs from fork 4748911 beyond P83 — P83 re-collected the state, candidates and ranking;
+  the documents were still the unclosed files, and the driven frame differs (§4: the Week pane `0/25` → `0/26`, `p1`
+  listed).
+* **A second missing-month hole sat beside gap 4246** (gap 4395, closed here): a reseal whose read-modify-write met a
+  MISSING month file kept its new records alone in memory and answered older dates from them — measured in a clone
+  before the change, `Scope::All` over a 50-day log answered **8** days.
+* `kernel_log.rs` is compiled by `#[path]` into 69 crates (the door, T5, the grammar suite and every crate including
+  `tests/support/replay.rs`), so its own unit tests run in each: the five added here add 345 to the workspace (§7).
+
+### 1. D90 — `tm interrupt` ends a running break first (gap 4340 CLOSED; P86)
+
+`day::interrupt` ends a running break through `end_break` — the function `tm break`'s ending arm calls — at the
+interruption's instant, BEFORE it logs the `interrupt`: the break's own line (`planned_min`, `actual_min`, `where`)
+precedes the interruption's, and the day file's journal gets `tm break`'s line (`break_ended_note`, now the one
+spelling for both verbs, as `break_ended_line` is for the human line).  `--json` carries `break_ended`, `tm break`'s
+own report of the ending; with no break running nothing moves (no key, `interrupted`, the `interrupt` line alone).
+`tm interrupt --help` and §13 (a new paragraph) say the rule; `cli_conformance.rs` holds the two to it.
+
+On the brief's day (start 09:00, break 09:10, interrupt 09:20, resume 09:40, stop 10:00) the kernel's replay meets
+the break with the clock RUNNING (`Replay.brkFx` stops it across the break) and the interruption after it, and the
+host's union of idle spans reads the same 30 minutes: `tm stop`, `tm now`, the TUI's timer and `tm review day` agree.  Deleting `.tm/state.json` after the interruption rebuilds
+the same runtime (D42); `tm undo` compensates both lines and the break runs again.  `cli_start_paused.rs`'
+`every_pause_writer_agrees_with_the_rebuild` compares 69 of its 104 sequences across the delete (35 end with a break
+running and are skipped by name): a sequence in which `interrupt` follows a running `break` now ends with no break
+running, so it is compared rather than skipped.
+
+### 2. D91 — a TUI past midnight closes in memory (gap 4342 CLOSED; P87)
+
+**One builder, three readers, no second copy.**
+* `kernel_bridge::apply` is split: `answer` builds the request (destinations, sections, `now`), makes the one call
+  and reads the documents back, writing nothing; `apply` reads the tree guarded, asks `answer`, writes what changed.
+* `closing::run` is split: `leaves` reads the report, the §10.1 events (in `run`'s order) and the advanced stamps off
+  the kernel's answer; `run` writes them.  `closing::close_in_memory` asks `answer` with the same commands and holds
+  `leaves`' result: the changed and created documents, the event lines rendered by the kernel stamped `now` (the
+  bytes `Ctx::append_event` appends), the stamps.
+* `Ctx::held` (with `Ctx::hold`/`Ctx::release`) is where it is held; every request built from a context reads the
+  plan directory through `Ctx::reading` (the store, or a `MemStore` with the held documents laid over it) and the
+  log through `Ctx::log_now` (the file, a torn last line ended, the held lines after it — `append_text`'s rule):
+  `kernel_capacity::request_on` (the capacity and planner requests), `day::call_the_walls` (the walls and week-cut
+  requests) and the close's own.
+* The TUI's `read_as_tm_plan` rolls the state and closes in memory, at every date change and every reload past
+  midnight; a refusal holds nothing and says so on the status line (the files as they stand, as `tm plan` reads
+  them after a refused close); a fault ends the TUI as everywhere.
+* **One close, from the files as read**: a held close is let go at the next date change and asked again, so a TUI
+  open across two midnights holds what `tm plan` runs then — ONE catch-up, its `close` keyed and stamped at that
+  instant — never a second close stacked on the first (whose lines would carry the first midnight's key).
+* **The editor opens an item where it IS** (gap 4396, found and closed here): the App's tree is the held one, the
+  editor writes to disk, so an item in a file the close changed is found by its key in the tree as read
+  (`Ctx::tree_as_read`, `tui::on_disk`) — `^p1` in Monday's day file, not at the week file's line.
+
+**The pinned test flips**: d84_on_a_day_with_unfinished_work_the_tui_and_tm_plan_ask_about_different_documents
+failed on this change exactly as written (`gap 4342 closed? the documents agree: ["log.ckpt.resealDay"]`) and is
+renamed `d91_on_a_day_with_unfinished_work_the_tui_closes_in_memory_and_asks_what_tm_plan_asks`: nothing written
+across the date change; the held week file is `tm plan`'s written one byte for byte (`^p1 … demoted:D07`); the held
+lines are `demote` then `close day 2026-09-07`; the requests agree but for `log.ckpt.resealDay`; the kernel plans
+one day from both.  Beside it: two midnights, a torn log, and the editor.  R3's builder is unchanged in shape: the
+TUI's request at R3 is now `tm plan`'s on a tree with unfinished day work too.
+
+### 3. D93 — a digest per sealed month file (gap 4246 CLOSED; gap 4395 closed with it)
+
+`ckpt.json` is **format 4**: beside `manifest` it carries `digests`, month → `kernel_log::month_digest` of the file's
+bytes, written with each month file; `Snapshot::from_text` refuses a manifest month without its digest or a digest
+for no month.  A month file is checked every time it is read: `ReplayCache::load_months` answers `None` for one
+whose bytes do not match, and every caller already answers `None` with a rebuild from the log (gap 3711's path),
+naming it once on stderr; `write_generation`'s read-modify-write of a month that is missing OR does not match
+returns `Err(month)` and the reseal rebuilds instead (`MONTH_CORRUPT`; the old in-memory branch is gone with gap
+4395).  A format-3 cache — every cache before this change — is not read, so it is rebuilt once.
+
+**Why FNV-1a-64 is enough** (`month_digest`'s doc, `a_digest_moves_with_every_single_byte_edit`): the hash §9.8's
+prefix digest already is, no new dependency; every step (XOR a byte, multiply by an odd prime mod 2^64) is a
+bijection of the state, so any single-byte change of a fixed-length file changes the digest WITH CERTAINTY (tested
+exhaustively over a month file's shape, 255 × its length edits, and over random texts); any other accidental change
+escapes only by a 64-bit collision.  It is not cryptographic, and the threat is not an adversary: whoever can edit
+`.tm/cache/` can edit `.tm/log.jsonl`.
+
+`cli_replay_cache_kernel.rs`' bite poisoned a month file and asserted it SERVED under this kernel's id; D93 refuses
+that file by its digest, so the poison now re-digests the manifest (a file a kernel could have WRITTEN — the case the
+kernel id is the key for), and the bite and the claim are unchanged.
+
+### 4. Parity
+
+**Parity P86 taken**: `tm interrupt` while a break is running ends the break first — the break's line logged as `tm break` logs its end (`day::end_break`), at the interruption's instant and before the `interrupt` line, with `tm break`'s journal line — so no clock-stopping mark is logged inside a running break, and `tm stop`, `tm now`, the TUI's timer and `tm review day` read the block's minutes one way; fork 4748911's `tm interrupt` left the break running in `.tm/state.json`, its line written at its end after the interruption's, and the kernel's replay credited the break's head as block time where the host's union of idle spans did not (the owner's D90, W-43 track H, README gap 4340)
+
+**Parity P87 taken**: a TUI left open past local midnight holds §6.3's automatic close IN MEMORY at every date change and every reload past midnight — the documents, the `demote`/`move`/`close` lines and the stamps the close would write (`closing::close_in_memory`, `Ctx::reading`, `Ctx::log_now`), ONE close from the files as read, writing nothing — so its tree and the request it builds are `tm plan`'s after its own close; fork 4748911's TUI planned past midnight from the files as they stood, unclosed, until a CLI verb ran the close (the owner's D91, W-43 track H, README gap 4342)
+
+**Behaviour rows**, driven on both binaries (`0984304` and this step's; `scratchpad/w43-h/drive/`):
+
+| world | `0984304` | this step |
+|---|---|---|
+| D90 (`d90.sh`): `start ^m1` 09:00, `break 20m` 09:10, `tm interrupt` 09:20 | `interrupted`; the break runs on | `break ended · 10m of 20m · interrupted`; the `break` line (09:10, 10m) before the `interrupt` line |
+| the same, `tm now` at 09:50 (after `tm resume` 09:40) | `10m of 360m` | `20m of 360m` |
+| the same, the TUI at 09:50 (a pty, `d90-tui.sh`) | Now pane `elapsed 10m`; no break drawn | `elapsed 20m`; `09:10 break 10m`, `09:20 lost 20m` |
+| the same, `tm stop` at 10:00 | `stopped ^m1 after 10m · 350m left`; the break's line written then, `actual_min: 50` | `stopped ^m1 after 30m · 330m left` |
+| the same, `tm review day` | `block_min 20` | `block_min 30` |
+| D91 (`d91-tui.sh`, a pty, `TM_TUI_CLOCK_RUNS`): §4.3's tree, `^p1` left open, `^t3` from 23:30, the TUI opened 23:59:40 | at Tue 00:00:11 `Week W37 · 0/25`, no `p1` | `Week W37 · 0/26`, `p1 Call the ba… 0/1` — the week `tm plan`'s close writes |
+| the same, every file under the plan directory across midnight | 17 files byte-identical | 17 files byte-identical |
+| D93 (`d93.sh`): energy-14d, cache warm, ONE byte of the sealed 2026-08-25 record (`blocksDone` 4 → 3) | `review day --date 2026-08-25`: `blocks_done 3`, twice, silent | `blocks_done 4`; stderr once `… does not match its digest); rebuilt from the log`; then silent |
+| the same, a copy with no cache | `blocks_done 4` | `blocks_done 4` |
+| a reseal over a deleted September month file, `Scope::All` (a clone, before gap 4395's fix) | 8 days of 50, "kept in memory" | 50 days, a cache-less replay's answer |
+
+### 5. Plants (D40), each in `scratchpad/w43-h/clone`, its `git status --porcelain` + `git diff` hashed before and after (equal every time), the shared tree's too (`e3b0c44298fc` before and after)
+
+| plant | caught by |
+|---|---|
+| A1 `tm interrupt` ends no break | `cli_interrupt_break`: 5 of 6 FAILED |
+| A2 the journal line a constant | the D90 world test FAILED |
+| A3 the human line a constant | 2 FAILED |
+| A4 no `break_ended` in the JSON | 3 FAILED |
+| A5 the break ended AFTER the interruption is logged (fork 4748911's order, at 09:20) | 4 FAILED: the D90 world, the JSON, the no-block world, `undo` |
+| B1 a month file read with no digest check | `a_month_file_that_does_not_match_its_digest_is_never_served`, `a_month_file_one_byte_corrupted_…` FAILED |
+| B2 the reseal merges with no digest check | `a_reseal_never_merges_…` FAILED |
+| B3 no digest recorded on a write | 9 FAILED |
+| B4 `FORMAT` stays 3 | 2 FAILED (`cli_sealed_month_digest`) |
+| B5 `month_digest` a constant | 5 FAILED |
+| B6 `from_text` checks no digest keys | `a_snapshot_round_trips_…` FAILED |
+| B7 a reseal reads a missing or corrupt month as empty | both reseal tests FAILED |
+| C1 the TUI rolls and does not close | all 4 D91 tests FAILED |
+| C2 / C3 the request reads the documents / the log off the disk | 3 FAILED each |
+| C4 a second close stacked on the first | the two-midnight test FAILED |
+| C5 `hold` keeps the tree as read (the held documents, the old candidates) | all 4 D91 tests FAILED |
+| C6 the editor opens the App's location | the editor test FAILED |
+| C7 `leaves` logs no `close` | `cli_close_kernel` 2 FAILED and 2 D91 tests (the CLI and the TUI read one `leaves`) |
+| C8 `apply` writes nothing | `cli_close_kernel` 16 of 19 FAILED |
+| C9 `log_now` ends no torn line | the torn-log test FAILED |
+| C10 the walls request reads the documents off the disk | **NOTHING** — gap 4398 |
+
+### 6. Gaps 4390-4400
+
+**Closed here**: **4340** (D90), **4342** (D91, with the pinned test), **4246** (D93), and two found and closed in
+the step, **4395** and **4396**.
+
+**Gap 4390 — `planner_invariants`' D87 arm still leaves gap 4340's world out.**  1. *What.*  The arm skips "a timer
+mark strictly inside the break" by name (the W-42 repair); since D90 the binary writes no such log from `tm
+interrupt`, so the world the harness draws there is one `tm` no longer writes.  2. *Why not changed.*
+`tm/tests/planner_invariants.rs` is track C's.  3. *Cost.*  None to the binary; the arm's exclusion is wider than the
+binary needs.  4. *Clears it.*  Track C or the land step: draw that world as D90 writes it (the break ended at the
+interruption) and hold it to the one reading.
+
+**Gap 4391 — two verbs end a running break and one writes the journal line.**  1. *What.*  `tm interrupt` writes `tm
+break`'s `break ended 10m/20m` (D90 asked for what `tm break`'s ending logs); `tm start`, which ends a running break
+the same way, writes only its `start` line, as fork 4748911 did.  2. *Why not changed.*  `tm start`'s journal is the
+fork's and no decision moves it.  3. *Cost.*  The day file's journal does not say when a break `tm start` ended
+stopped (the log does).  4. *Clears it.*  The owner, if the journal should say it for every verb that ends a break.
+
+**Gap 4392 — the TUI's host replay does not carry the held close's lines.**  1. *What.*  `Ctx::hold` keeps the replay
+the context read; the held `demote`/`move`/`close` lines reach the kernel through every request's `log` section, not
+the host's `Replay`.  2. *Why.*  Replaying them would reseal `.tm/cache/replay` — a write on a timer (D81, D84) —
+and the facts a candidate or the planner's day reads (block minutes, instances, event names) take nothing from them.
+3. *Cost.*  The Review screen past midnight reads Monday's demotion stamps without the held one until a verb writes
+the close.  4. *Clears it.*  A replay that holds a tail in memory without resealing.
+
+**Gap 4393 — the rest of `tm plan`'s housekeeping is not held.**  1. *What.*  At the date change `tm plan` also
+resolves §5.1's waiting timeouts and logs D61's wall marks; the TUI holds the close alone.  2. *Why not changed.*  D91
+names the close.  3. *Cost.*  On a tree where an `on-event:` timeout elapses at midnight, or a calendar wall began
+while a block runs, the TUI's request still differs from `tm plan`'s by those writes (the D91 worlds have neither).
+4. *Clears it.*  The owner, if the TUI should hold every housekeeping write in memory.
+
+**Gap 4394 — `ckpt.json`'s checkpoint carries no digest of its own.**  1. *What.*  D93 digests the month files; a hand
+edit of the `ckpt` text that still reads is trusted (D13).  2. *Why not changed.*  D93 names the month files.  3.
+*Cost.*  A corrupted checkpoint that parses answers until the next genesis.  4. *Clears it.*  A digest of the
+checkpoint's text in the same file, if the owner wants it.
+
+**Gap 4395 — a reseal over a missing month file served its new records alone (CLOSED).**  Measured in a clone before
+the change (§0, §4): `write_generation`'s missing-file branch kept the reseal's records in memory under the new
+generation, and `records_of` answered every older date from them.  The read-modify-write now refuses a month that is
+missing or does not match its digest, and the reseal rebuilds:
+`a_reseal_over_a_missing_month_file_rebuilds_and_answers_as_a_cache_less_replay`.
+
+**Gap 4396 — the TUI's editor opened the held location on disk (CLOSED).**  §2.
+
+**Gap 4397 — R3's swap class is TWENTY-THREE.**  1. *What.*  Three tests added here reach `planner::plan` through
+an `App` (`tui::load`, then `advance_clock`): `d91_a_tui_open_across_two_midnights_holds_one_close_from_the_files_as_read`,
+`d91_a_torn_last_log_line_is_ended_as_tm_plans_append_ends_it` and `d91_the_editor_opens_an_item_where_it_is_on_disk`,
+beside gap 4347's twenty (the renamed pinned test is one of the twenty).  2. *Why not changed.*  Gap 4090: the class
+has no static property.  3. *Cost.*  A swap counting twenty meets three failures it did not expect.  4. *Clears it.*
+R3, counting twenty-three — and re-running its simulation, which alone sees a new member.
+
+**Gap 4398 — C10: the walls request's read through the held close is pinned by no test.**  1. *What.*
+`day::call_the_walls` reads the documents through `Ctx::reading` (one reader for every request), and plant C10
+(reading them off the disk) failed nothing.  2. *Why.*  Its answer is invariant under a close: walls are read from
+every file and a close never takes a wall out of the tree (it carries one), and the held lines move no pause.  3.
+*Cost.*  A change of that read is seen by no test.  4. *Clears it.*  A test reading the walls request's bytes (no
+trace of it exists), or a close that moves a wall's file in a way the walls answer reads.
+
+**Gap 4399 — files outside the brief's list.**  `tm/src/cli/ctx.rs` and `kernel_bridge.rs` (no track lists them:
+`Ctx::held` and `kernel_bridge::answer` are D91's one builder), `tm-spec-v1.md` §13 (a new paragraph, apart from the
+D79/D86 one) and `tm/tests/cli_replay_cache_kernel.rs` (§3).  Recorded for the land step.
+
+**Gap 4400 — the held close is stamped at the date change, and R3's tick is later.**  1. *What.*  The held lines carry
+the instant of the date change (the context's `now` then); a request built at a later tick of the same day would
+carry that stamp where `tm plan` run at that tick stamps its own close with the tick's instant.  The equality the
+tests hold is at the date change's instant, where the two are one.  2. *Why not changed.*  Before R3 nothing builds
+a kernel request from the TUI's context between date changes (the TUI plans with the fork planner over its `App`),
+and whether a `demote`/`close` line's `t` moves the kernel's day is unmeasured.  3. *Cost.*  None today.  4. *Clears
+it.*  R3: a per-tick request asks the close again at its instant (`read_as_tm_plan` after moving the context's
+clock, as the date change does), or measures that the stamp moves nothing.
+
+### 7. Acceptance, capped (`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`; 16 GB for the drives, the plants and the latency runs)
+
+Every measurement ran in `scratchpad/w43-h/clone`, which carries this commit's tree; the code's `git diff` hash
+(`53366b93f8d2`) was the same at the start and end of every workspace run, and equal to this worktree's.
+
+* **`check.sh`, seventeen lines, all ok, exit 0**, in the clone (check 9's gate never ran in the worktree), on the
+  final tree, 29.7 s with the kernel built (load 11.4-13.4): lake build ok; totality ok; axiom audit **6,232**
+  theorems (no Lean file is touched); Negative.lean rejected; FFI **95**; corpus **29/37 and 4/5**; stage goals
+  **0**; prose citations **56,586** (54,227 resolved, 2,359 allowed: 205 vocabulary, 488 counted — one counted entry
+  added, the renamed test the W-42 repair's block cites), 0 allow entries unused; new definitions mutated **676**
+  new or changed since 86c4dc6, 676 rostered, **0 owed**; parity **P1-P87**, one declared hole (P85, track K's),
+  next free P88; no two names, 3,372 bodies, 0 UNANSWERED; every emitted definition reached, **1,501** reachable,
+  **1,100** exempt, 0 UNANSWERED; fields 17/17; inputs 33 of 37; sent 169 key paths; written 220; the kernel replays
+  94 modules.
+* **`cargo test --workspace --no-fail-fast`, FOUR complete runs** (D46) on this commit's code: runs 2, 3 and 4 each
+  **135 result lines, 2,494 passed, 0 failed, 32 ignored, 0 warnings** (9 m 45 s, 9 m 22 s, 9 m 33 s; load 9.8-12.1, track C's clone running its own).  Run 1 FAILED
+  one test, `cli_latency`'s three-year row 6 (`tm drop ^z15` killed at its 1 s limit during the stall loop), at load
+  13-18 with another session's `cargo test --workspace` running in the main checkout — gap 1333's class, measured as
+  such: the same test alone, alternating this clone and a base clone at `0984304` three times each (load 10.9-13.0),
+  passes every time on both sides, the stall loop's worst day **733 / 710 / 668 ms** here and **708 / 653 / 669 ms**
+  at the base; `cli_latency --include-ignored`, **7 passed** on both sides (`scratchpad/w43-h/lat.out`,
+  `lat-all.out`).  What D93 costs is the FNV over the month files a read loads: 0.72 ns a byte at the workspace's
+  opt-level 1 (`scratchpad/w43-h/fnvbench`), and energy-14d's month files are 22,576 bytes for eleven sealed days, so
+  a three-year cache's ~2 MB is ~2 ms per read of every month and per genesis's write.
+* **The count, against the brief's 2,135 over 133, by arithmetic**: +6 `cli_interrupt_break`, +4
+  `cli_sealed_month_digest`, +1 `cli_conformance`, +3 the TUI's (four D91 tests for the one pinned test), and **+5 ×
+  69**: `kernel_log.rs`'s five new unit tests run in every crate that compiles the file — the binary, the door, T5,
+  the grammar suite and each crate that includes `tests/support/replay.rs` (69, counted off the run's own lines) — so
+  2,135 + 14 + 345 = 2,494, and two new result lines.
+* **The named suites, inside runs 2, 3 and 4**: T5 `kernel_replay_parity` 42 (4 ignored), the door `kernel_log_door`
+  36, `cli_switch_acceptance` 16, `cli_latency` 6 (1 ignored), `kernel_call_counts` 2, `one_padder` 9, `one_renderer`
+  32, `kernel_row_cells` 33, `kernel_item_grammar` 6, `kernel_planner_wire` 27, `planner_classes` 66 (6 ignored),
+  `planner_invariants` 44 (2 ignored), `cli_conformance` 6, `cli_json_matrix` 8 — the suites that compile
+  `kernel_log.rs` five more each, for the reason above — and the new `cli_interrupt_break` 6 and
+  `cli_sealed_month_digest` 4, with `cli_replay_cache_kernel` 1, `cli_sealed_month_missing` 2, `cli_start_paused` 4.
+  FFI: check 5's 95 and check 6's corpus.  No `.proptest-regressions` file moved in any run.
+* **Not run, by name**: the `TM_ORACLE` arms (no fork oracle was rebuilt; no frozen comparand moved and none was
+  re-blessed).
+
+<!-- =====================================================================
+     APPENDED 2026-10-03: stage 6 (the planner), run **W-43**, **TRACK G**
+     — one reading of a date (README gap 4346), honest theorem names (gap
+     4344) and the process document caught up (gap 4325).  Worktree
+     `.claude/worktrees/w43-g` (branch `w43-g`, off `0984304`); mutations,
+     plants and drives in clones and scratch trees under
+     `scratchpad/w43-g/`, never in the shared tree; the main checkout on
+     `rebuild-on-lean` throughout.  Gap range **4430-4459**.  Parity:
+     **P88** (pre-allocated to this track).
+     ===================================================================== -->
+
+## Stage 6 — W-43 track G: one reading of a date, honest theorem names, and the ledger caught up
+
+*The record: an item line reads a date as the host reads it (§1; P88 for what it still reads otherwise, §3), seven names say what they state (§2), and AGENTS.md is re-measured (§6). Gaps 4346, 4344 and 4325 close; 4430-4432 open (§7).*
+
+### 0. The brief, measured before it was acted on
+
+**The date readers, by function name** — `scratchpad/w43-g/probe-main.rs`, one program built twice, against the
+worktree's `tm-core` and against fork 4748911's (extracted fresh by `build-oracle.sh`), output byte-identical
+(`probe-host.out` = `probe-fork.out`); the kernel's column read off `#eval` at `0984304`
+(`scratchpad/w43-g/kernel-readers.lean`).  `model.rs`' readers are byte-identical at `4748911` and `0984304`
+(`awk` over both `git show`s), and both lock files pin chrono 0.4.45.
+
+| field | host = fork 4748911 | kernel at `0984304` |
+|---|---|---|
+| `due:` date | `Moment::parse` → `model::parse_date`: 10 UTF-8 bytes, chrono `%Y-%m-%d` (`%Y` signed) | `Field.parseMoment` → `Field.parseDate`: four digits, two, two |
+| `due:` date-time | `Moment::parse` → `model::parse_datetime`: 16 bytes, `%Y-%m-%dT%H:%M` | `Field.parseMomentDT`: split at `T`, `parseDate` + `parseClock` |
+| `waiting:` | `col.parse("waiting", parse_date)` | `Field.viewWaiting` → `Field.parseDate` |
+| `at:` | `model::parse_interval`: `parse_datetime` start; end `parse_datetime` if it holds a `T`, else `parse_time` (5 bytes, `%H:%M`) | `Field.parseInterval` → `parseDT`, `parseEnd`/`parseEndShort` (`parseClock`) |
+| `win:` | `WindowRange::parse`: a `T` → `parse_interval`; else split at `-`, `parse_time` twice | `Field.parseWindow` → `parseInterval`, else `parseWindowDaily` (`parseClock` twice) |
+| `pref:` | `Pref::parse` → `parse_time` | `Field.parsePref` → `parseClock` |
+| `demoted:` | `Stamp::parse_list`: split `,`, trim, `W`/`D` + ASCII digits, `u32` | `Field.parseStamps` → `readNat`, unbounded |
+| `every:` | `Rule::parse`: no date anchor (`month:N` through `u8`) | `Field.parseRule` (`readRustNat` since the W-42 repair) |
+| log `inst=`, a stamp key's date | fork `log.rs` `parse_date(inst)`, `parse_date(from)`; `recur::parse_instance_key` | `Log.instDate?`, `Log.stampFromKey` — exact ports |
+
+Measured on both binaries' readers (`probe-*.out`, `kernel-readers.lean`):
+
+| input | host = fork | kernel at `0984304`: line / `Log.instDate?` |
+|---|---|---|
+| `+026-09-09` | 0026-09-09 | none / 0026-09-09 |
+| `+2026-9-09`, `+2026-09-9`, `+0026-9-09` | 2026-09-09, 2026-09-09, 0026-09-09 | none / the same |
+| `+10000-1-7`, `+20260-1-7` | 10000-01-07, 20260-01-07 | none / the same |
+| `0000-01-01`, `-000-01-01`, `-001-01-01` | year 0, year 0, year −1 | none / none |
+| `+2026-09-09` (11 bytes), `2026-9-09` (9) | refused | refused |
+| `+026-09-07T12:50`, `+2026-09-07T8:15`, `+2026-9-07T08:15`, `+10000-1-7T08:15` | read | none |
+| `0000-01-01T09:00`, `-001-01-01T09:00` | read (year 0, −1) | none |
+| `D4294967296` (`demoted:`) | refused (`u32` overflow) | `[day 4294967296]` |
+| every `HH:MM` probe (`12:50`, `1:50`, `+1:50`, `12:5`, `24:00`) | `parse_time` | `parseClock`: the same answers |
+
+### 1. Gap 4346: one reading of a date
+
+**What the item line reads with now** (`Line.lean`; the readers' header is the argument):
+
+| field | the kernel since W-43 | is chrono's because |
+|---|---|---|
+| `due:` date, `waiting:` | `Log.instDate?` — `parse_date`: RFC 3339's four-two-two through `Field.parseDate` first, then 10 UTF-8 bytes and chrono's `%Y-%m-%d` items | `Field.instDate?_is_chronos_parse_date`, on every input |
+| `due:` date-time, `at:`, absolute `win:` | `Field.parseDT` — `parse_datetime`: the old split at `T` first, then 16 bytes and `%Y-%m-%dT%H:%M` (`Log.chronoYmd`, `LogStamp.lit`, `Log.chronoHM`) | `Field.parseDT_is_chronos_parse_datetime` |
+| `at:`'s short end, daily `win:`, `pref:` | `Field.parseTime` — `parse_time`: `parseClock` first, then 5 bytes and `%H:%M` | `Field.parseTime_is_chronos_parse_time` |
+| the log's `inst=` and a stamp key's date | `Log.instDate?`, unchanged in what it answers | the same theorem: one definition, two callers |
+
+**One definition, moved below the line.**  `Log.instDate?` is fork `model::parse_date`, the function the fork's
+line grammar AND its log replay read a date with, and until W-43 the kernel had two readings of it: the log's
+(chrono's, D9 C5) and the line's (`Field.parseDate`, four-two-two).  The log's readers lived above `Line.lean`
+in the import order (`Stamp.lean`, `Log.lean`), so they MOVED into `Line.lean` with their names and bodies —
+`LogStamp.StampErr`, `LogStamp.trimWs` (but for its body, below), `LogStamp.lit`, `LogStamp.numIn`,
+`Log.chronoYear`, `Log.chronoDateParts` (now through the shared prefix `Log.chronoYmd`), `Log.chronoDateValid`,
+`Log.utf8Len`, `Log.instDate?` (now with the RFC 3339 branch first, below) — and every line that cites them reads
+them by the name it always did: **75 lines of eleven modules** at `0984304` besides `Stamp.lean` and `Log.lean`
+themselves (`Replay.lean` 16, the `Seal*` group 56 over eight files, `Recur.lean` 2, `Boundary.lean` 1;
+`git grep` of the nine names), so no file of another track moved but for the deletion of the moved definitions
+from `Log.lean` (one contiguous block and the note left in its place, nothing else in that file).  New: `Log.chronoYmd`
+(the `%Y-%m-%d` items and what they leave, read once for `parse_date` and `parse_datetime`), `Log.chronoHM`
+(the `%H:%M` items), `Log.dayOfParts?` (chrono's date as a `Cal.Day`), `Field.parseTime`.  One body changed in
+the move: `LogStamp.trimWs` is `str::trim_start` written as its own recursion.  Its one-line body
+(`s.dropWhile isSp`) was inlined at every call, so it was emitted and reached by none — it stood in
+`reach-exempt.txt` under `## Stamp.lean` — and an unreached definition in `Line.lean` would be a new exemption
+that check 12's shrink-only file refuses (its key is the module and the name).  Recursive, it is called; the
+entry is deleted and the file shrinks, 1,100 → 1,099.  `LogStamp.trimWs_eq_dropWhile` proves the recursion
+drops what `s.dropWhile isSp` dropped, on every input (appended at the end of `Line.lean`, so no line a check-9
+pin names moves, README gap 2136).
+
+**The RFC 3339 branch, and why it is there (§5.10a's finding).**  Built through chrono's items alone, the
+first full build was killed at the 40 GB cap while elaborating `PlannerWit.lean` (`scratchpad/w43-g/build3.log`,
+rc 143; `journalctl`: "A process of this unit has been killed by the OOM killer"), whose `decide` witnesses load
+plans and read their dates; at `0984304` the same file takes 7.57 GB and 6:00 (`plannerwit-head.err`, the clone,
+`/usr/bin/time -v`).  Each of the three readers now reads RFC 3339's shape first — the reader it was — and
+chrono's items only where that fails, and each carries a theorem saying the result IS chrono's on every input,
+so the branch is an evaluation order and not a second reading: the strict reader answers only what chrono
+answers the same way (`Field.chronoYmd_of_parseDate`, `Log.chronoYmd_digits`, `Log.chronoHM_digits`).
+`PlannerWit.lean` with the branch: **7.97 GB, 6:08** (`plannerwit-new.err`, 16 GB cap).  The cap was never
+raised and no witness was touched.
+
+**Laws restated** (old ⇒ new?):
+
+| law as stage 3 stated it | why it is false since W-43 | refuted by | the law beside it |
+|---|---|---|---|
+| parseDT_wf: a date-time the line reads is `dayWf` | chrono reads `+10000-1-7T08:15` | `Field.parseDT_wf_is_refuted` | `Field.parseDT_wf_unless_signed` (new ⇒ old on a word with no `+`) |
+| parseMoment_wf | `due:+10000-1-7` | `Field.parseMoment_wf_is_refuted` | `Field.parseMoment_wf_unless_signed`, `Field.instDate?_dayWf_unless_signed` |
+| parseEnd_spec: from a writable start, the end is writable or the rolled day | a long end past 9999 | `Field.parseEnd_spec_is_refuted` | `Field.parseEnd_orders_its_ends` (its first conjunct, which still holds; no wf hypothesis) |
+| parseInterval_spec: a parsed start is writable | `at:+10000-1-7T08:15/09:00` | `Field.parseInterval_spec_is_refuted` | `Field.parseInterval_orders_its_ends` |
+| parseInterval_wf_unless_rollover: the rollover is the only failure | the same interval, its end on its start's day | `Field.parseInterval_wf_unless_rollover_is_refuted` | `Field.parseInterval_wf_unless_its_end_is_past_9999` (the rollover is one way an end gets past 9999) |
+| parseWindow_wf_unless_rollover | `win:+10000-1-7T08:15/09:00` | `Field.parseWindow_wf_unless_rollover_is_refuted` | `Field.parseWindow_wf_unless_its_end_is_past_9999` |
+| editValOf_due_refuses_only_what_parseMoment_refuses | the edit refuses `+10000-1-7`, which the line reads | `editValOf_due_refuses_only_what_parseMoment_refuses_is_refuted` | `editValOf_due_refuses_only_a_bad_value_or_a_signed_year` |
+| editValOf_waiting_refuses_only_what_parseDate_refuses | the edit reads `+026-09-01` (the line's reader since W-43), `parseDate` does not | `editValOf_waiting_refuses_only_what_parseDate_refuses_is_refuted` | `editValOf_waiting_refuses_only_a_bad_value_or_a_signed_year` |
+| editValOf_interval_refuses_only_a_bad_value_or_the_rollover | `at:+10000-1-7T08:15/09:00` | `editValOf_interval_refuses_only_a_bad_value_or_the_rollover_is_refuted` | `editValOf_interval_refuses_only_a_bad_value_or_an_end_past_9999` |
+| editValOf_window_refuses_only_a_bad_value_or_the_rollover | `win:+10000-1-7T08:15/09:00` | `editValOf_window_refuses_only_a_bad_value_or_the_rollover_is_refuted` | `editValOf_window_refuses_only_a_bad_value_or_an_end_past_9999` |
+
+Each was a law about a hole — it held because the line refused every signed spelling — so D5's rule is the
+refute-and-rename, with the law stated on the subdomain where it holds and the subdomain in its name (§3.1
+item 4).  `Field.parseDate_dayWf` is unchanged and still true: `parseDate` is RFC 3339's reader, kept for a log
+stamp's date (`Stamp.lean`'s `rfc3339`) and the kernel's own wire (`now`, a candidate's `due`).  Re-proved
+over the new definitions with their statements unchanged: `Field.parse_render_DT`, `Field.parseDT_clock_none`,
+`Field.parse_render_moment`, `Field.parse_render_interval`, `Field.parse_render_window`, `Field.parse_render_pref`,
+`Field.view_set_waiting`, `Field.view_render_waiting`, `Field.row_waiting_date`, `Field.moment_date_form`,
+`Field.moment_datetime_form`, `Field.overnight_window_roundtrips`; new: the round trips
+`Field.the_line_reads_back_the_date_it_writes` and `Field.parse_render_time`, and the witnesses
+`Field.the_line_reads_a_signed_year_as_chrono_does`, `Field.a_date_before_year_one_is_no_date_on_the_line`,
+`Field.the_line_refuses_a_date_chrono_refuses`, `Field.parseTime_is_chronos_not_rfc3339s`,
+`a_signed_year_is_edited_as_the_host_reads_it` (Cmd.lean: the edit writes `due:+026-09-09` as `0026-09-09`,
+`renderDate`'s spelling — D49's one writer — and refuses `+10000-1-7` and `0000-01-01` by name).
+
+### 2. Gap 4344: seven names say what they state
+
+W-42 narrowed `CanonicalItem` (a box ENDED by its first token's separator) and kept seven names.  Each is
+renamed with the suffix `_box_ended` — `Tm.parse_serialize_box_ended`, `Tm.setEst_canonical_box_ended`,
+`Tm.Field.setKey_canonical_box_ended`, `Tm.Field.unsetKey_canonical_box_ended`,
+`Tm.Field.setLead_canonical_box_ended`, `Tm.Field.renderItem_canonical_box_ended`,
+`Tm.canonicalKeyed_of_canonical_box_ended` — and nothing else changed: statements and proofs are byte-identical
+but for the name, every Lean citation moved (`Line.lean`, `Cmd.lean`, `Check.lean`, and one doc citation each in
+`Boundary.lean` and `Lookahead.lean`), and the append-only README blocks that cite the old names are counted in
+`citations-allow.txt`.  `CanonicalItem`'s docstring says so.
+
+### 3. Parity
+
+The change REMOVES a departure from fork 4748911 — every signed spelling of a date the host reads (`+026-09-09`,
+`+2026-9-09`, `+2026-9-07T12:50`, `+10000-1-7`) is now read by the kernel as the host reads it — and leaves one,
+which is registered: the kernel's calendar starts at 0001-01-01.
+
+**Parity P88 taken**: an item line's date outside the kernel's calendar — before 0001-01-01 (`due:0000-01-01`, `due:-001-01-01`, a `waiting:`, an `at:` or `win:` date-time in year 0 or before) or past 9999 (`due:+10000-1-7`, which the line reads since W-43) — is refused where fork 4748911 reads chrono's year: the kernel's line reads no date before 0001-01-01 (`Log.instDate?`, `Field.parseDT`; `Day := Nat` from 0001-01-01, AGENTS §4), the planner's wire refuses by name a candidate the host built with such a deadline (`badCandidate <i> due`, the RFC 3339 reader the wire reads a date with), so `tm check` exits 2 naming the day R3's `tm plan` would refuse, and `tm edit` refuses by name (`badValue`) to write such a date, which no ten-byte render writes back, and writes a signed spelling it reads in `renderDate`'s (`due=+026-09-09` writes `due:0026-09-09`, D49's one writer); the fork says "no problems", plans the day and writes the value as typed (W-43 track G, README gap 4346; P33's residue on the item line)
+
+| parity | what diverges | this branch | fork 4748911 | decided by |
+|---|---|---|---|---|
+| **P88** | an item line's date before 0001-01-01 or past 9999 | no date on the line before 0001-01-01 (`Field.a_date_before_year_one_is_no_date_on_the_line`); the host's candidate refused on the wire (`badCandidate <i> due`, `tm check` exit 2); the edit refused by name past 9999, and a signed spelling written as `renderDate` spells it (`a_signed_year_is_edited_as_the_host_reads_it`) | chrono's year; the day planned; the value written as typed | §4's `Day := Nat`; the wire's RFC 3339 date; `renderDate`'s ten bytes |
+
+### 4. Driven on three binaries
+
+`scratchpad/w43-g/drive/drive.sh` on `plan-basic` at `2026-09-07T09:00-05:00`, against fork 4748911's `tm`
+(built from the oracle's extraction, `fork.out`), `0984304`'s (built in the clone, `head.out`) and this branch's
+(`branch.out`):
+
+| world | fork 4748911 | `0984304` | this branch |
+|---|---|---|---|
+| `tm edit ^d2 due=+026-09-09` | `due:+026-09-09` written as typed, exit 0 | `kernel refusal: badValue`, exit 1 | `due:0026-09-09` written (`renderDate`'s spelling, D49), exit 0 |
+| `tm edit ^d2 due=+2026-9-09` | written as typed, exit 0 | `badValue`, exit 1 | `due:2026-09-09` written, exit 0 |
+| `tm edit ^d2 due=+10000-1-7` | written as typed, exit 0 | `badValue`, exit 1 | `badValue`, exit 1 (read, and no ten-byte render writes it back) |
+| `tm edit ^d2 due=0000-01-01` | written as typed, exit 0 | `badValue`, exit 1 | `badValue`, exit 1 (no `Cal.Day`) |
+| `^g1` respelled `at:+2026-9-07T12:50/13:50`, `tm check` | `no problems`, exit 0 | `error[kernel-load] … itemCheck … (fileKindShape)`, exit 2: the kernel read no `at:` on a calendar line and refused the WHOLE TREE | `no problems`, exit 0 |
+| the same tree, `tm drop ^a1` | `dropped ^a1`, exit 0 | the automatic close refused, `nothing was written`, exit 1 | `dropped ^a1`, exit 0 |
+| `^d2` respelled `due:0000-01-01`, `tm check` | `no problems`, exit 0 | `error[planner-refusal] … badCandidate 0 due`, exit 2 | `badCandidate 0 due`, exit 2 (P88) |
+| `^d2` respelled `due:+10000-1-7`, `tm check` | `no problems`, exit 0 | `badCandidate 13 due`, exit 2 | `badCandidate 13 due`, exit 2 (P88: the line reads it now, the wire does not) |
+| all four lines of `kernel_date_worlds.rs` signed, `tm check` and `tm plan` | `no problems`; the day | `fileKindShape`, exit 2; `tm plan` exit 1, nothing written | `no problems`; **the day byte-identical to the fork's** |
+
+The fifth and sixth rows are gap 4346 at its worst, and stronger than the gap said: not a day planned
+otherwise after R3 but every kernel-backed verb refused today, on a tree the fork reads, because a calendar
+line's `at:` is its shape (`shapesWf`'s file-kind rule) and the kernel read none.
+
+### 5. Plants, each in the clone `scratchpad/w43-g/clone`, `git status --porcelain` and `git diff` hashed before and after (equal for every plant but the last row, below)
+
+| plant | where | caught by |
+|---|---|---|
+| `due:`'s date read with `Field.parseDate` again | `Line.lean` `parseMoment` | `parseMoment_wf_is_refuted`, `the_line_reads_a_signed_year_as_chrono_does`, `the_line_refuses_a_date_chrono_refuses` (each a `decide` proving its statement false), and two proofs (`parse_render_moment`, `parseMoment_wf_unless_signed`) |
+| `parseDT` without chrono's items (the RFC 3339 branch alone) | `Line.lean` | `parseDT_is_chronos_parse_datetime`, `parseDT_wf_is_refuted`, `parseEnd_spec_is_refuted`, `parseInterval_spec_is_refuted`, `parseInterval_wf_unless_rollover_is_refuted`, `parseWindow_wf_unless_rollover_is_refuted`, `the_line_reads_a_signed_year_as_chrono_does`, and two proofs |
+| `waiting:` read with `Field.parseDate` again | `Line.lean` `viewWaiting` | `view_set_waiting`, `view_render_waiting` |
+| the `waiting:` edit read with `Field.parseDate` again | `Cmd.lean` `editValOf` | `editValOf_waiting_refuses_only_a_bad_value_or_a_signed_year`, the refutation `editValOf_waiting_refuses_only_what_parseDate_refuses_is_refuted` (the old law holds of the plant, so its refutation fails), `a_signed_year_is_edited_as_the_host_reads_it` |
+| the readers through chrono's items alone (no RFC 3339 branch) | the whole kernel, built | `PlannerWit.lean` killed at the 40 GB cap (§1) — the finding the branch answers |
+| `kernel_date_worlds.rs` against `0984304`'s code | the clone, every tracked file checked out at `0984304` and this step's test beside them | **9 passed, 2 failed**: `the_kernel_plans_the_signed_world_as_its_unsigned_twin` (`the kernel refused the request: {"err":{"itemCheck":"fileKindShape"}}`) and `tm_check_says_nothing_on_the_signed_world` (`tm check` exit 2, `error[kernel-load] … (fileKindShape)`); the host's reader and both P88 tests pass there, as they should, the residue being `0984304`'s too.  A first run, before the test's own defect was fixed (an edit applied twice to `backlog.md`), is not counted |
+
+The last row's restore copied the worktree as it stood when the plant ended, and this block's §8 had been written in
+the worktree meanwhile: the porcelain listing hashed equal (`e59fce7a7693`), the diff hash moved `776405e73e67` →
+`a43461bc0937`, and the clone then equalled the worktree (`a43461bc0937`), so the move is this README's and AGENTS.md's
+text and nothing the plant wrote.  The same run read cheats 269-273 (266-270 on track G's branch, renumbered at the land) against `0984304`'s kernel: 269 COMPILES there (the
+line read no date from `+026-09-09`), so the change is what refuses it; 270, 271 and 273 are refused there too (they
+guard readings the change kept — year 0, the sixteen bytes, the edit past 9999), and 272 names `Field.parseTime`, which
+`0984304` lacks.  The archive there: 24,691,320 bytes.
+
+And D40, run in the clone only (`scratchpad/w43-g/mutations-run.sh`; `mut-*.log`): the twenty definitions this step
+added, moved or changed — `LogStamp.trimWs`, `LogStamp.lit`, `LogStamp.numIn`, `Log.chronoYear`, `Log.chronoYmd`,
+`Log.chronoDateParts`, `Log.chronoHM`, `Log.chronoDateValid`, `Log.dayOfParts?`, `Log.utf8Len`, `Log.instDate?`,
+`Field.parseTime`, `Field.parseDT`, `Field.parseMomentDT`, `Field.parseMoment`, `Field.parseEndShort`,
+`Field.parseWindowDaily`, `Field.parsePref`, `Field.viewWaiting` and `editValOf` — **every one PINNED** (sixteen
+of them by a synthesised constant, `lit` and `numIn` among them, whose `Except StampErr` has no `default`), and
+`trimWs` again after its body became a recursion (three constants, the identity among them, PINNED); the moved
+definitions' rows are keyed to `Line.lean`, and the one row they orphaned (`trimWs` under `Stamp.lean`) is deleted.
+The pin sites this step's edits moved were re-run and rewritten, not edited (`--verify --write`): 17 rows of
+`Line.lean`, `Tm.isIndent`'s, and four of `Cmd.lean`'s (`carryEst`, `EditVal.rendered`, `locWordOk`, `setEstTo`).
+The gate: **694 new or changed since `86c4dc6`, 694 rostered, 0 owed** (236 unfoldable, 160 witness fixtures,
+40 pinned by nothing, 2 literal — none of the 40 this step's).
+
+### 6. Gap 4325: AGENTS.md caught up, by re-measurement
+
+Sections touched, none of them §4, each change an italic status note beside the sentence it supersedes and no
+sentence deleted:
+
+* **§2.3** — the root import order re-derived from `TmKernel.lean` (94 lines: 36 modules and the 58 of the
+  `Seal*` group); bullets for the seventeen modules no bullet named (`Fast`, and the sixteen stage 6 added —
+  `PlanOnce` among them, each imported in the commit that created it); W-43 notes on the `Line`, `Stamp` and
+  `Log` bullets; the import count (78 at stage 5's close, 94 now).
+* **§2.4** — `kernel`'s names re-derived from `kerrName`: twelve strings, eleven `KErr`; tabbedLine gone since
+  W-42 track G.
+* **§7.3** — the grammar figures through a freshly built oracle: 138/43 and 2,048/1,395 at `0984304` and on this
+  tree, byte-identical reports; the stage-5 "run to quote" marked as of its date.
+* **§8.1** — gap 32's trap closed (W-42 track G, D83); gap 5's closed (K3a, D31); gap 33's measured and open.
+* **§10.1** — the package table re-measured over the 94 modules (`wc -l` and `leanfiles.qualified_theorem_names`
+  per file, the roster check 3 reads), the audit, the archive, `check.sh`'s lines.
+
+### 7. Gaps 4430-4459
+
+**Gap 4346 — CLOSED here** (§1): the line reads every date the host reads but the ones P88 names.  **Gap 4344 —
+CLOSED here** (§2).  **Gap 4325 — CLOSED here** (§6), with W-42's gap 4160, its AGENTS.md half.
+
+**Gap 4430 — a `demoted:` stamp past `u32`.**  1. *What.*  Fork `Stamp::parse` reads the number after `D`/`W`
+into a `u32`, so `demoted:D4294967296` fails the key (a `tm check` problem, no stamps); `Field.parseStamp` reads
+it with `readNat`, unbounded, and holds `[day 4294967296]` (measured, §0).  2. *Why not changed.*  It is a width
+(R10), not a date; bounding the reader puts a hypothesis on `Field.parse_render_stamp` that every writer of a stamp
+— the close's `D<dd>`/`W<ww>` in `Close.lean`, `Report.lean` and `Cmd.lean` — must then discharge, files of no
+track this run.  3. *Cost.*  A hand-typed stamp past `u32` counts toward the month review's "≥ 2 stamps" to the
+kernel and not to the host.  4. *Clears it.*  `Field.parseStamp` bounded by `u32::MAX`, with the round trip's
+bound threaded through the stamp writers (all of whose stamps are below 54).
+
+**Gap 4431 — `LogStamp.yearOf` is a second reader of chrono's `%Y`.**  1. *What.*  The log stamp's fallback reads
+its year with `yearOf` (B2), which classifies a sign (`beforeOrigin`, `pastYear9999`) where `Log.chronoYear` (C5)
+returns the year; both read chrono's `Numeric(Year)`.  The classification is unobservable — `parseStamp` returns
+`rfc3339`'s error and discards the fallback's.  And `yearOf` refuses every signed year past 9999 although
+the instant can be inside `Cal.Instant`'s range: MEASURED, fork 4748911's `parse-entry` reads
+`"t":"+10000-01-01T00:30+01:00"` as epoch 253402299000 (9999-12-31T23:30Z) and the kernel's `LogStamp.parseStamp`
+refuses it (`scratchpad/w43-g/stamp-probe.lean`); P23's text names "a year ≥ 10000" among its refusals, so the
+class is registered in words, though its instant is not past the origin's other end.  2. *Why not changed.*  One
+reader would put `chronoYear` under the fallback, which would read that stamp — a change to what the log reads,
+held to fork 4748911's frozen per-line verdicts (T1-T3), which are not this track's.  3. *Cost.*  §5.3's class in
+the log grammar, held by nothing.  4. *Clears it.*  The step that holds the log grammar: `fallback` reads `chronoYmd`'s
+prefix, its frozen verdicts re-asked of the fork.
+
+**Gap 4432 — two docstrings call `Field.parseDate` "the one date grammar".**  1. *What.*  `GridCut.lean`'s
+`emit.walls.week` reader and `Boundary.lean`'s optional-date reader say so; since D9 C5 the kernel has had a second
+(chrono's, `Log.instDate?`), and since W-43 the item line reads it.  2. *Why not changed.*  Neither file is this
+track's beyond renames.  3. *Cost.*  A reader of the wire's code meets a claim that is no longer the whole truth
+(the wire's reader is RFC 3339's, as it should be).  4. *Clears it.*  The step holding either file: "RFC 3339's
+date grammar, the wire's".
+
+### 8. Acceptance, capped
+
+`git status --porcelain` and the code's `git diff` hashed before and after every measurement and equal each time; the
+other tracks of W-43 ran on this machine throughout, so every log carries `uptime` at its start and end.
+
+* **`check.sh`, seventeen lines, all ok, exit 0** — in `scratchpad/w43-g/clone`, on this commit's tree, 9 min 3 s (the
+  kernel rebuilt from the plant's build of `0984304`, §5): lake build ok; totality ok; axiom audit **6,279**
+  theorems (6,232 at `0984304`, 57 new, 10 retired by their refutations; the seven renames renamed in place);
+  Negative.lean rejected (cheats 269-273, each `decide` proving its statement false); FFI **95**; corpus **29/37 files
+  and 4/5 whole plans** (unchanged); stage goals **0**; prose citations 57,103 (54,693 resolved, 2,410 allowed, 503
+  counted), 0 allow entries unused; new definitions mutated **694** new or changed since 86c4dc6, 694 rostered, **0
+  owed**; parity **P1-P88**, three declared holes (P85-P87, tracks K and H), next free P89; no two names, 3,376
+  bodies, 0 UNANSWERED; every emitted definition reached, **1,506** reachable over 9 sent sections (1,501 at
+  `0984304`: `chronoYmd`, `chronoHM`, `dayOfParts?`, `parseTime` and the recursive `trimWs`), **1,099** exempt
+  (1,100), 0 UNANSWERED; fields 17/17; inputs 33 of 37; sent 169 key paths over 10 sections; written 220; the kernel
+  replays 94 modules.  The run before it, on the same code, was green on every line but parity (P88's anchor had moved
+  with this block's text).
+* **`cargo test --workspace --no-fail-fast`, THREE complete runs (D46) on this commit's code** (runs 3-5 of
+  `scratchpad/w43-g/ws-run*.log`; the code's hash `3d2da4e8c0dd` at each start and end): each **134 result lines,
+  2,146 passed, 0 failed, 32 ignored, 0 warnings** (18 min 26 s for the first, which rebuilt the kernel; 8 min 34 s
+  for each of the others), no `.proptest-regressions` file changed — W-42's repair's 2,135 plus `kernel_date_worlds`'
+  11.  Runs 1 and 2, on earlier states of this tree (their code changed between start and end), were green too and are
+  not counted.
+* **The named suites, inside each run**: T5 `kernel_replay_parity` 32 (4 ignored), the door `kernel_log_door` 26,
+  `cli_switch_acceptance` 16, `cli_latency` 6 (1 ignored), `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 27,
+  `kernel_row_cells` 28, `kernel_item_grammar` 6, `kernel_planner_wire` 27, `planner_classes` 56 (6 ignored),
+  `planner_invariants` 39 (2 ignored), `cli_conformance` 5, `cli_json_matrix` 8; and `kernel_log_grammar` 17 (2
+  ignored), `kernel_separator_worlds` 12, `cli_break_in_block` 5, and this step's `kernel_date_worlds` 11 (its five,
+  and the six `kernel_log` unit tests its `#[path]` include brings).  FFI: check 5's 95, check 6's corpus.
+* **`cli_latency --include-ignored`, three runs, nothing else of this track running** (load 1.4-1.7): 7 passed each,
+  24.8-25.1 s.  T18's day: the planner call 7.7-8.1 ms (example), 63.6-64.2 ms (T11), 89.9-91.0 ms and 185.6-193.7 ms
+  (T14); `tm check` 19.1-19.3 ms, 581-589 ms, 142-145 ms, 239-248 ms; the what-if 12.7-12.9 ms, 62.9-64.3 ms,
+  125.6-129.9 ms, 319.7-347.7 ms.  No band was touched.
+* **The oracle's input sets 1 and 2** through fork 4748911's oracle, extracted and built fresh this step: 138 corpus
+  lines, 43 with nothing to report; 2,048 generated lines, 1,395 — on this commit's tree, the report identical line
+  for line to `0984304`'s (AGENTS §7.3's note).
+* **Not run, by name**: the `TM_ORACLE` arms of T1-T3 and T5 (their frozen arms ran in every run above; what the log
+  reads with `Log.instDate?` is unchanged on every input, `Field.instDate?_is_chronos_parse_date`); the §5.13 drive of
+  the TUI (the CLI drives are §4's).
+
+<!-- =====================================================================
+     APPENDED 2026-10-03: stage 6 (the planner), run **W-43**, **TRACK C**
+     — the comparand R3 needs: gap 4168's day frozen out of the tree, the
+     planner's oracle arm reading the fork's own minutes, P81's answer
+     frozen, and a re-filed frozen line seen by a gate.  Rust, the oracle
+     and fixtures only; no `.lean` file.  Worktree `.claude/worktrees/w43-c`,
+     branch `w43-c` off `0984304`.  Gap range **4460-4489**: 4460-4467
+     taken, 4468 free.  Parity: none issued, none PARITY-PENDING (no
+     divergence was needed).  Burn-down unchanged (0).
+     ===================================================================== -->
+
+## Stage 6 — W-43 track C: the comparand R3 needs — gap 4168's day frozen out of the tree, the planner's oracle arm asking the fork its own minutes, P81's answer frozen, and a frozen line that moves to a new key seen by every gate
+
+### 0. The brief, measured before it was acted on
+
+* **Gap 4247 was CLOSED at the W-42 land (§3), not open — and its closure stood on gap 4241's edge.**  The land's oracle
+  arm asked fork 4748911 a log with the inner break moved ahead of the block's `start` and asserted that the KERNEL's
+  replay read that log as fork 4748911's does — a break stepped before a `start` whose span reaches into the block,
+  which is exactly the shape the owner's D92 (track K, this run) nets.  Measured over every frozen planner and grid
+  world (`scratchpad/w43-c/d92_census.py`): NO frozen world holds that shape; the reordering trick was the one place
+  that BUILT it.  So D92, landing beside this step, would re-open gap 4247 through the instrument; it is re-closed here
+  without any reordering (§2).
+* **Gap 4248 needs more than `forkclass::ANSWERS`.**  The classes re-bless ran in the fork region, IN-TREE, and the
+  in-tree fork plans over the kernel's replay, which since D87 nets the eight `worked` lines' break — so D64's clause 2
+  refused those lines on every in-tree run (measured by the W-42 land, §2 point 5): no re-bless could introduce `p81`.
+  The re-bless moved onto the oracle and out of the region (§2).
+* **Gap 4249**: its world — gap 4243's, a break inside a pause counted twice by the host — closed at the W-42 repair
+  (P84, the union of idle spans); measured empty here (§4).  **Gap 4250**: the owner's D92 answered gap 4241, so the
+  in-tree check (1) went to the oracle (§2).  **Gap 4251**: T5's comparison (`kernel_replay_parity.rs`,
+  `kernel_log_door.rs`, `support/p81.rs`) is track K's this run and D92 moves the same comparison — left by name (§4).
+* **Gap 4320's key-change half** stood on HEAD as the W-42 repair wrote it ("neither the gate nor §1 (9)'s history
+  test calls two keys one line"), and the history gates read a LIST of ten files (§3).
+* **Two files this step needed are on no track's list**: `tm/tests/fork_rebless_history.rs` (the plain-run history
+  gate, where gap 4320's blind spot was declared) and `kernel/citations-allow.txt` (§3, §9).  No other track holds
+  either; both are edited here, and said.
+
+### 1. Gap 4168 — the separator days, frozen out of the tree: CLOSED
+
+`tm/tests/fixtures/fork-4748911-planner-separators.jsonl` (new) holds the unedited `plan-basic` tree — the
+comparator's control — and the four hand-typed worlds of `kernel_separator_worlds.rs`, each with its WORLD by value,
+the edited line, and **fork 4748911's day on it by value** (`shipped`), asked of a FRESHLY BUILT `tm-oracle plan`
+(gap 196) over the grants the shipped binary ranks the fork's candidates by (D53, `forkplan::capacity_grants`).  It
+was introduced through the gate: `the_frozen_separator_days_are_blessed` (`tm/tests/planner_separator_days.rs`, new)
+holds every line against the file's committed history (`frozenhist::held`; none held a key, so 5 were added), refuses a
+committed line whose world or shipped day moves, and asserts at every bless that no registered number departs on the
+world (`no_departure`: the comparand IS the shipped day, its `shipped` null).
+
+| line | `^t4`'s line | fork 4748911's day | `^t4` rows |
+|---|---|---|---|
+| unedited | `- [ ] 3 1b Claude Code drafts tests     @m2 ^t4` | `408a786317fc8e65`, 18 rows | 2 |
+| tab-box | a tab after `]` | `408a786317fc8e65` | 2 |
+| tab-ci | a tab after the `ci` digit | `408a786317fc8e65` | 2 |
+| nbsp-ci | a no-break space after the `ci` digit | `408a786317fc8e65` | 2 |
+| nbsp-box | a no-break space after `]` | `6dc6ce49d13be1a0`, 18 rows | 0 |
+
+**Measured on the way: the separator suite's own world is not one the binary holds.**  It plans with
+`.tm/state.json`'s default; `forkclass::binary_holds` refuses it by clause 5 (the binary writes the day's `date` on
+every load).  So the frozen world carries that date, and the suite's own construction is held too: the kernel plans
+both constructions as the frozen day (10 days, 10 of 10 hashes equal, default run), and the oracle (TM_ORACLE) and the
+in-tree fork (the region) plan the suite's construction as the same frozen day.  **The fork's own days say what the
+host's reader says**: the three spaced twins ARE the unedited tree's day, by value, and `nbsp-box` plans no `^t4` row.
+
+What holds it after R3, outside every region: `the_kernel_plans_every_frozen_separator_day_as_the_fork_did`,
+`the_fork_reads_the_edited_worlds_as_the_host_does`, `every_frozen_separator_world_is_the_edited_fixture` (rebuilt
+from the fixture by value, and one the binary holds) and the bite tests; the oracle arm and the bless ask fork 4748911
+out of the tree.  The in-tree region (`the_frozen_separator_days_are_the_in_tree_forks_answer_today`, and
+`no_departure`'s bite) is deleted at R3.  `kernel_separator_worlds.rs`' prose still says the claim "rests on the reader
+comparison" after R3 — that file is no track's this run (gap 4464).
+
+### 2. Gaps 4247, 4248 and 4250 — the comparand asks each backend its OWN minutes, and P81's answer is frozen: CLOSED
+
+* **The fork's reading of the running block is the backend's own** (`forkplan::ForkPlan::worked`).  P55 and P46 move
+  the running estimate by what the FORK reads as the block's worked minutes (fork `active_run`'s reading); the
+  comparand read that off `Built::worked` — the KERNEL's replay — for every backend.  The in-tree fork plans over that
+  replay, so for it the two were one; fork 4748911 reads its own, and since D87 the two differ on a break inside the
+  block.  `tm-oracle plan` gained a `worked` op (fork `active_run`'s reading over the fork's own replay; an oracle
+  built before W-43 refuses it by name and is STALE, gap 196); `comparand_with` asks it once per state and moves P55's
+  and P46's estimate by it (`p55_state_at`, `is_p46_at`, `p46_state_at`).  Probed: the eight `worked` lines read 34,
+  22, 34, 75, 79, 64, 86, 32 — W-42 track R's "fork 4748911's reading", value for value.
+* **The oracle arm asks every line as it stands** (`the_frozen_lines_are_the_forks_oracle_answer_today`): 229 of
+  229, 8 carrying P81's answer, 3,078 oracle requests, no reordered log.  The in-tree region's check (1) — the
+  reordered log — is gone with its three helpers (as_the_fork_reads_it, as_d87_asks_it, break_alone; their
+  historical citations counted in `citations-allow.txt`); the region now holds what the in-tree fork CAN answer:
+  P81's answer is the frozen one, and over the kernel's replay it draws that day.
+* **P81's answer, frozen** (`forkplan::p81_after`, `forkclass::ANSWERS`): `{"p81": true, "hash", "day"}` wherever
+  `p81::netted_breaks` (fork 4748911's own machine, read off the log) finds a break — the comparand asked the D87 day
+  through `p81::as_d87_asks` (the one definition, nested in `forkplan.rs`) with the `paused` row over the break drawn
+  as the break alone, owed only over what P56's wall cut leaves.  `compare_line` holds the kernel to it; P81's RULE
+  (`p81::planned_day` on the frozen `day`) is held to the frozen answer by value on every run (`p81_rule_unmet`).
+* **Introduced through the gate**: the classes re-bless now asks the ORACLE and sits outside the region (it survives
+  R3).  Dry run, no reason named: every answer of all 100 lines reproduced but `p81` on the eight, refused by name;
+  named `P81` (D70's introduction, adds-only): 8 lines changed, 0 refused, the file written byte-identical to the dry
+  run.  **The eight answers are byte-identical, day and hash, to the values W-42 track R computed in-tree with its own
+  D87 log shape** (`scratchpad/w42-r/resume/p81-values.jsonl`, matched by draw) — two backends, two log shapes.
+
+The frozen lines touched, each gaining `p81` and nothing else:
+
+| class (line) | draw | `derived.from` | `day` (fork 4748911's reading) | `p81` (asked the D87 day) |
+|---|---|---|---|---|
+| `running/home` (worked) | 2373 | `running/home` | `1a37f9f245886788` | `f37b559c861c23d6` |
+| `running/travel` (worked) | 2314 | `running/travel` | `11212d39418da452` | `346025f825e08a02` |
+| `running/spent` (worked) | 289 | `running/spent` | `b14cef9b5deafb3c` | `874e04853b697448` |
+| `running/home` (worked) | 1402 | `overtime/home` | `73ba86de572cb8da` | `998a5e7e0f831f62` |
+| `overtime/late` (worked) | 2364 | `overtime/late` | `5cc7226dc3c32c69` | `b6a114aee77339d7` |
+| `running/travel` (worked) | 1260 | `overtime/travel` | `088e65ca921b4722` | `7334584d08022a95` |
+| `overtime/spent` (worked) | 2427 | `overtime/spent` | `372fdee4608555a4` | `08b851037e2ac5d1` |
+| `wall-on-now/travel` (worked) | 2049 | `wall-on-now/travel` | `728f0ae563d84efc` | `ba9d0943ecffd50e` |
+
+### 3. Gap 4320's key-change half — a frozen line that moves to a new key is held as one line: CLOSED; and the frozen files read by a property (gap 4461)
+
+A frozen line's key is a label; the classes file's is its class, a FUNCTION of the world through the kernel's reading
+(`forkclass::class_of`), so a registered number that moves the reading moves the key — D87 re-filed two `worked` lines
+at the W-42 land.  `frozenhist::refiles` pairs a key that LEFT with the one arrived line that holds its world byte for
+byte; `frozenhist::refiled_allows` holds the pair as an in-place line is held (the shipped fork's answer and every key
+of the world and provenance byte for byte) but for the fields its key is made of, which move only under a newly SET
+parity flag the old line carried no flag of; a key that left with no such twin is a finding, but for a derived line
+dropped with its parent re-drawn under D64(b) (`frozenhist::left_with_a_redrawn_parent`).  Asked by the plain run
+(`fork_rebless_history.rs`' history test, judged from the commit that brought the history test in, as before) and by
+the classes' re-bless (registration checked there).  The tree's one re-file is licensed by P81 now that its lines carry
+the flag (`fork_frozen_refile::the_classes_files_refiled_lines_carry_their_licence`).  The history gates read EVERY
+frozen file by a PROPERTY (`frozenhist::frozen_files`: a `fork-4748911-*.jsonl` whose every line carries a fork day —
+11 files, the separators among them; the D21 family excluded by the same property), where they named ten by hand.
+A file the working copy introduces reads an empty history (`every_frozen_comparand_reads_its_committed_history`
+refuses only a file HEAD dropped while a committed version held lines).  On the committed tree the plain run holds
+3,734 line-version pairs, 2 of them a line moved to a new key, and counts 44 changes before the history test landed
+without judging them: the W-41 land's 42 grid changes, and the W-42 land's two re-files, whose lines carried no flag
+of P81 THEN — the rule would have refused them; the pair is licensed only now (the census above).
+
+### 4. Gaps 4249 and 4251, re-derived
+
+* **4249** — measured (`scratchpad/w43-c/census4249.log`, one 287-case run): "reservations compared 30 (0 on a
+  differing day)".  The class P55's reservation half bit on is empty since the W-42 repair's union; what is left is the
+  owner's choice the gap named (retire the clause as subsumed by P81, or keep it) — gap 4465.
+* **4251** — stands, track K's: the frozen carry (`p81::carry`) is applied in `kernel_replay_parity.rs` and
+  `kernel_log_door.rs`, and D92 (`P85`) moves the same comparison this run; freezing the fork's asked answers belongs
+  with the track that holds the comparison (gap 4466).
+
+### 5. Plants — every new or changed definition bent, one at a time, in the scratch clone (`scratchpad/w43-c/plants.py`, `plants2.py`; the clone `scratchpad/w43-c/clone` at this step's tree; its `git status --porcelain` hashed before and after each, `d41d8cd9…` = empty every time)
+
+| plant | where | caught by, and the name it gave |
+|---|---|---|
+| the oracle's reading replaced by the kernel's (gap 4247's own bug) | `Oracle::worked` | the oracle arm: `running/home (worked): … "34m so far" against "24m so far"`, `shipped: null against …` on the eight |
+| the oracle's `worked` op answering `null` (an oracle built aside) | oracle `worked_one` | the oracle arm, the same eight lines |
+| P55 never departs | `p55_state_at` | the oracle arm: `running/home (worked): p55: null against {"p55":true}` |
+| P46 never departs | `is_p46_at` | the in-tree region: "overtime/lounge: d57", "overtime/home: d57" |
+| P46's state the identity | `p46_state_at` | the in-tree region: "overtime/lounge: day", "…: shipped" |
+| P81's answer never computed | `p81_after` | the in-tree region: "running/home (worked): p81 over the kernel's replay" |
+| the kernel held to `day`, not `p81` | `compare_line` | the surviving arm: `running/home (worked): the rows differ at 1 (fork 16 rows, kernel 17)` |
+| P81's rule never asked | `p81_rule_unmet` | the surviving arm: `P81's answer moves 0 of the 0 line(s) carrying it` |
+| the tally does not count P81's answer | `ClassTally` | the surviving arm: `the kernel was held to P81's frozen answer on 0 line(s) of the 8` |
+| `p81` dropped from the answers | `ANSWERS` | `p67s_answer_is_its_own_and_departs_only_where_its_rule_does`: "running/home: carries p81, an answer … does not list" |
+| a frozen file left out of the property | `frozen_files` | `separators.jsonl is not found by the property`; the plain run: `the property finds 10` |
+| every file taken for a comparand | `carries_a_fork_day` | "fork-4748911-log-lines.jsonl: … carry neither a name nor a class" |
+| an unset flag read as set | `flags` | the bite: `a new flag, unset: [81]` — **at first NOT CAUGHT**: the bite had no case of a flag the NEW line carries unset, so one was added and it bit |
+| no key fields | `key_fields` | the bite: the class move read as provenance |
+| nothing paired | `refiles` | `the_classes_files_refiled_lines_carry_their_licence`: the tree's re-file "left with no line holding its world" |
+| every re-file allowed | `refiled_allows` | the bite: `a class moved by hand, no flag: []` |
+| a re-drawn parent's child never let go | `left_with_a_redrawn_parent` | the bite: `a derived line dropped with its re-drawn parent was held` |
+| the frozen world without the binary's `date` | `world_of` | `unedited: the suite builds another world now (world.state.date …)` on all five |
+| the no-departure assertion a no-op | `no_departure` | its bite: `no_departure let a world D60's order departs on through` |
+| a name carried twice let through | `lines_of` | `a_frozen_separator_name_carried_twice_is_refused`: `test did not panic as expected` |
+| the kernel asked another location | `kernel_of` | `unedited: diagnostics.dropped_tail[3]: kernel "t3" fork "d2"` |
+| a class line re-filed BY HAND, no flag (data) | the classes file | the plain run: "idle/home (window) moved to idle/lounge (window): its key moved (class, secondary, derived) and it carries no newly set parity flag" |
+| the same, a fake flag, its shipped day bent | the classes file | the plain run: `it moved the SHIPPED fork's answer` |
+| a frozen line deleted by hand | the classes file | the plain run: `left the file and no line that arrived holds its world` |
+| the classes re-bless over a hand re-file (dry run, oracle) | the classes file | the re-bless refused: `… its key moved … no newly set parity flag` |
+| the `nbsp-box` day bent (a `^t4` row) | the separators file | the default comparison: "nbsp-box: the rows differ at 2", and the suite's construction too; the plain run: "nbsp-box moved the SHIPPED fork's answer" |
+
+Every plant was caught by name; one only after the bite it exposed was strengthened (`flags`).  Three plants first ran
+with a mistyped expectation or an attribute Rust refuses on an expression (P3, P10, P17c in `plants1.log`) and were
+re-run (`plants3.log`).  `shipped_day`'s check that the shipped binary's drawing is fork 4748911's on these worlds
+could fail on no input of the file (no log, nothing for P56 to cut) and was DELETED rather than kept as a check no
+input can fail.
+
+### 6. R3, simulated in the clone — every fork planner and review entry unreachable, every comparand compares, one kernel answer corrupted per item (`scratchpad/w43-c/r3sim.py`, `r3run.sh`; never the worktree committed from)
+
+**The deletion table** — every `BEGIN THE FORK PLANNER` region under `tm/tests` deleted: **21 regions, 6,086 lines**
+(the W-42 land's 20 and 6,099, plus this step's separator region and less what left `planner_classes.rs`' region):
+`planner_invariants.rs` 3,745, `planner_classes.rs` 679, `planner_w40_runs.rs` 248, `planner_dynamics.rs` 213,
+`planner_p56_cut.rs` 192, `planner_w38_order.rs` 155, `support/forkplan.rs` 133, `planner_regressions.rs` 107,
+`planner_w37_rows.rs` 101, `planner_fixtures.rs` 94, `tui_kernel_answers.rs` 80, `planner_w39_conference.rs` 65,
+`kernel_unplaced_banner.rs` 42, `planner_w39_arrival.rs` 41, `planner_w41_starts.rs` 38, `planner_separator_days.rs` 34,
+`kernel_separator_worlds.rs` 32, `planner_common/mod.rs` 32, `emit_planner.rs` 30, `priority_plan_basic.rs` 13,
+`support/forkclass.rs` 12.
+
+| configuration | the workspace (`--no-fail-fast`, 135 result lines) | what failed, by name |
+|---|---|---|
+| R3 exactly: the five fork PLANNER entries panic from any process but `tm` | 2,047 passed, **22 failed**, 24 ignored | **20** the body swap's class, each through `App::replan`/`App::extend_drops` (gap 4347's twenty: the binary's 4 `tui::tests`, `p77_…`, `tui_today_ghost` 3, `tui_today_prompts` 11, `worked_midnight_timer` 1); **2** the region gates R3's deletion commit rewrites (`every_bless_holds_its_lines_against_the_committed_history`, `every_test_that_reaches_the_fork_keeps_it_in_one_region`).  Every comparand suite passed |
+| and the three REVIEW entries too (`day_review`, `week_review`, `month_review`) | 1,995 passed, **74 failed**, 24 ignored | the 22 above, and **52** reaching the shipped binary's OWN review code in-process — `review_day` 18, `review_edges` 9, `review_month` 7, `review_week` 12, and the TUI's Review screen 6 (2 of them `tui_kernel_answers`' grid tests, whose KERNEL side is that screen).  No comparand computes its FORK side through either entry: the fork's planner and its grid are reached only out of the tree |
+
+**One kernel answer corrupted per item** (bends in `support/planreq.rs`' `kernel_day_of`, the one reader every
+comparand's kernel side goes through; the planner-and-review configuration):
+
+| bend | what it bends | every comparand suite | the items |
+|---|---|---|---|
+| `work` | the first Block row neither running nor open, a minute longer | each fails by name (`planner_classes` 5, `planner_separator_days` 2, `planner_fixtures` 1, `planner_p56_cut` 1, `planner_w41_starts` 3, `tui_kernel_answers` 3) but the conference days, which hold no Block row | gap 4168: `nbsp-box: the rows differ at 2`; gaps 4247/4248: `running/home (worked): the rows differ at 0` |
+| `t4` | the first Block row's item made `t4` | the same | the same two |
+| `wall` | the first Wall row a minute longer | `planner_w39_conference`: `wednesday 08:00: the rows differ at 0`; the separators again | `nbsp-box: the rows differ at 6` |
+
+And gap 4320's item, which is not a kernel answer: a class line re-filed by hand fails the plain run by name (§5,
+G1-G3), on this tree and on the simulated one alike — the history gate needs no fork.
+
+
+### 7. Acceptance, capped (`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`; 16 GB for the oracle)
+
+`git status --porcelain` hashed before and after every measurement below and equal each time; other tracks were
+building and testing on the same machine throughout (load 7-30), and the load is quoted where a number could feel it.
+
+* **`check.sh`, all seventeen lines ok, exit 0** — in `scratchpad/w43-c/clone` at this commit's tree (so check 9's
+  gate ran in a clone), 29.6 s warm on the final tree (5 min 49 s on the first run, which replayed the 94 modules): lake build ok;
+  totality ok; axiom audit **6,232** theorems (Classical.choice 3,283, Quot.sound 4,783, propext 5,827; 402 on none);
+  Negative.lean rejected; FFI **95**; corpus **29/37 and 4/5**; stage goals **0**; prose citations 56,662 (54,298
+  resolved, 2,364 allowed, 490 counted), 0 allow entries unused; new definitions mutated 676 rostered, **0 owed**;
+  parity **P1-P84**, no hole, next free P85; no two names, 3,372 bodies, 0 UNANSWERED; every emitted definition
+  reached, **1,501** reachable, **1,100** exempt, 164 answered by the CSIMP class, 0 UNANSWERED; fields 17/17; inputs
+  33 of 37; sent 169 key paths; written 220; the kernel replays 94 modules.  The first run FAILED one line, the parity
+  register: this block spelled track K's pre-allocated `P85` bare, which check 10 reads as an issuance above the top;
+  quoted in backticks, as check 10 asks of a number this track does not take.
+* **`cargo test --workspace --no-fail-fast`, THREE complete runs (D46)** in the worktree
+  (`scratchpad/w43-c/ws-runs.log`; the porcelain and the code's hash `c3ae6f6e7136` equal at every start and end): each **135 result
+  lines, 2,153 passed, 0 failed, 34 ignored, 0 warnings** (9 min 29 s, 9 min 46 s, 10 min 31 s; load 9-19) — the
+  repair's 133 lines and 2,135 passed, plus this step's two files (18 passed, 2 ignored).  No `.proptest-regressions`
+  file moved.
+* **The named suites, inside each run**: T5 `kernel_replay_parity` 32 (4 ignored), the door `kernel_log_door` 26,
+  `cli_switch_acceptance` 16, `cli_latency` 6 (1 ignored), `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 27,
+  `kernel_row_cells` 28, `kernel_item_grammar` 6, `kernel_planner_wire` 27, `planner_classes` 56 (6 ignored),
+  `planner_invariants` 39 (2 ignored), `cli_conformance` 5, `cli_json_matrix` 8; and `planner_separator_days` 13 (2
+  ignored), `fork_frozen_refile` 5, `fork_rebless_history` 9, `kernel_separator_worlds` 12, `tui_kernel_answers` 37 (2
+  ignored), `planner_p56_cut` 12 (4 ignored), `planner_w41_starts` 17 (2 ignored), `fork_week_grid` 14 (3 ignored).
+  FFI: check 5's 95, check 6's corpus.
+* **`cli_latency --include-ignored`, one run** (load 10.6-18.8): 7 passed, 29.3 s; no band touched.
+* **Every planner and grid `TM_ORACLE` arm, on the final tree, over the oracle built fresh at this step**
+  (`scratchpad/w43-c/oracle-arms2.log`, one arm at a time, 16 GB cap, load 9.8-20.9), each `test result: ok`: the
+  frozen class, batch and driven lines **229 of 229** (8 carrying P81's answer, 3,078 requests); the separator days
+  (40); the start days (20); the TUI days (234); the P56 days **24 of 24** (432), the seeded P56 cross-check and 16
+  fresh P56 days; the fresh draws **287 of 287** compared (3,330 requests: what-ifs 126; P45 24, P46 9, P47 10, P51
+  187, P52 3, P55 0, P56 6) and the in-tree/oracle cross-check equal on all 287 (P56's cut on 6 raw days); the week
+  grids, frozen and 16 fresh.  The first pass (`oracle-arms1.log`, before the last test edits) said the same.  Not run
+  here, by name: T5's and the grammar's oracle arms (track K's files; unchanged by this step).
+
+### 8. Gaps 4460-4469
+
+**Gap 4247 — CLOSED again** (§2): the reordered log its W-42 closure stood on is the shape D92 nets (track K's, this
+run); it is closed by the backend's own reading instead.
+**Gap 4248 — CLOSED** (§2).  **Gap 4250 — CLOSED** (§2): check (1) asks the oracle.  **Gap 4168 — CLOSED** (§1).
+**Gap 4320 — CLOSED**, both halves (the W-42 repair's in-place half, §3's key-change half).
+
+**Gap 4460 — the comparand read the kernel's minutes as the fork's: CLOSED here** (§2).  1. *What.*  P55 and P46 were
+computed from `Built::worked`, the kernel's replay, for the oracle as for the in-tree fork.  2. *Done.*
+`ForkPlan::worked`, the oracle's `worked` op.  3. *Residue.*  Every `TM_ORACLE` arm needs an oracle built at or after
+this step; an older one is refused by name ("it is STALE, rebuild it").  4. *Nothing owed.*
+
+**Gap 4461 — the history gates named ten frozen files by hand: CLOSED here** (§3, `frozenhist::frozen_files`).
+Residue: a future frozen file whose lines carry neither a `name` nor a `class` FAILS the property by name (no key).
+
+**Gap 4462 — the classes re-bless could no longer run in-tree: CLOSED here** (§2): it asks the oracle and sits
+outside the fork region, so the classes file can still be re-blessed under D64 after R3.
+
+**Gap 4463 — six blesses still plan in-tree, so their files are final at R3.**  1. *What.*  The batch's and the driven
+days' re-blesses, the plan-basic days', the fixture days' (`planner_fixtures.rs`), the conference days' and the P56
+days' (both backends) live in fork regions; R3 deletes them, and after it a registered number that moves one of those
+files' days has no gate to re-bless through (the TUI, starts, week-grid, classes and separator blesses ask the oracle
+and survive).  2. *Why not changed.*  None is needed before R3 (no line of those files is moved by a pending number),
+and three of the six are in files no track holds this run (`planner_fixtures.rs`, `planner_w39_conference.rs`, `planner_p56_cut.rs`).  3. *Cost.*  A future parity number on one of those worlds
+needs a bless written first.  4. *Clears it.*  The classes re-bless's shape (§2), per file, when a number needs it.
+
+**Gap 4464 — `kernel_separator_worlds.rs`' prose about gap 4168 is stale.**  1. *What.*  Its module doc and region
+banner say that after R3 the `nbsp-box` claim rests on the reader comparison alone; the frozen separator days (§1) now
+hold it.  2. *Why not changed.*  The file is on no track's list this run (W-42 track G's).  3. *Cost.*  A reader of that
+file underrates what survives R3.  4. *Clears it.*  Whoever holds the file next, or R3's deletion commit, which rewrites
+the region anyway.
+
+**Gap 4465 — P55's reservation clause bites on nothing (gap 4249's residue).**  1. *What.*  §4: 0 of 30 reservations
+on a day the two readings differ, since the host takes the union of idle spans.  2. *Why not changed.*  Retiring a
+parity clause is the owner's.  3. *Cost.*  A census row that counts an empty class.  4. *Clears it.*  The owner:
+retire P55's reservation clause as subsumed by P81, or keep it.
+
+**Gap 4466 — the frozen carry (gap 4251) stands with track K.**  1. *What.*  T5 and the door suite move frozen fork
+answers by `p81::carry`, a model; freezing the fork's asked answers is the clearance.  2. *Why not changed.*  The
+comparison is in track K's files this run, and D92 (`P85`) moves the same comparison.  3. *Cost.*  As gap 4251 wrote it.
+4. *Clears it.*  Track K or the Land, beside `P85`'s carry: freeze the asked answers for every frozen input P81 or `P85`
+moves.
+
+**Gap 4467 — the in-tree/oracle cross-check holds a P81 world unequal by design.**  1. *What.*
+`the_forks_oracle_answers_as_the_in_tree_fork_on_every_fresh_draw` (planner_invariants' region) demands the two
+backends' answers equal; on a world whose log holds a break P81 nets they differ (the in-tree fork reads the kernel's
+netted replay — the frozen `worked` lines are exactly that).  No fresh draw holds one (P55 0 of 287 in §7's run).
+2. *Why not changed.*  The region is deleted at R3; the property it would need is "equal but for P81's answer".
+3. *Cost.*  A fresh draw with such a break would fail the cross-check by name, not silently.  4. *Clears it.*  R3.
+
+### 9. For the Land
+
+* **Branch `w43-c`**, one commit (§7).  **Files outside the brief's list for this track, edited and said**:
+  `tm/tests/fork_rebless_history.rs` (the plain-run history gate: its two ten-file lists replaced by
+  `frozenhist::frozen_files`, the key-change judgment added beside the in-place one, and a working-copy-introduced file
+  allowed an empty history) — no track holds it; `kernel/citations-allow.txt` (the three deleted helpers' historical
+  citations, counted, under this track's banner).  New files: `tm/tests/planner_separator_days.rs`,
+  `tm/tests/fork_frozen_refile.rs`, `tm/tests/fixtures/fork-4748911-planner-separators.jsonl`.
+* **Track K's `support/p81.rs` is READ by `forkplan.rs` now** (nested as `forkplan::p81`): `netted_breaks` and
+  `as_d87_asks`.  If K changes either signature, `forkplan.rs` fails to compile, by name; if K widens `netted_breaks`
+  to D92's breaks, `p81_after` would freeze those as P81's — no frozen planner world holds D92's shape (§0), so no frozen
+  line moves, but the answer's name would then be `P85`'s too.
+* **Every `TM_ORACLE` arm needs an oracle rebuilt at this step** (the `worked` op).  No parity number is issued.
+
+<!-- =====================================================================
+     APPENDED 2026-10-03: stage 6 (the planner), run **W-43**, **LAND**
+     — the four tracks merged and composed (K: D92; H: D90, D91, D93;
+     G: one date reader; C: the comparand), the composition defect they
+     made together, the two owed items the land could close, and R3's
+     readiness re-measured on the merged tree.  Gaps 4490-4499.
+     ===================================================================== -->
+
+## Stage 6 — W-43 land: an interrupt ends a break, the TUI closes in memory, a break into a block is netted, the cache checks its files, one date reader — and what R3 still is
+
+Merged in a worktree of its own (`.claude/worktrees/land-w43`, branch `land-w43`), in the order K, H, G, C; the
+branch `rebuild-on-lean` is fast-forwarded to ONE octopus commit whose tree is the tree measured below (AGENTS §6.5
+item 8), never to the intermediate merges.  Scratch: `scratchpad/land-w43/`.
+
+### 0. The brief, measured before it was acted on
+
+* **Every track is green by its own block, and every branch is clean.**  Each of `w43-k` (`cd14952`), `w43-h`
+  (`29def6d`), `w43-g` (`938b97d`) and `w43-c` (`ef9013f`) is one commit on `0984304`; each worktree's
+  `git status --porcelain` was empty before the merge; each block's acceptance says seventeen `check.sh` lines ok and
+  three or more green workspace runs (K 3, H 4 of which 3 green and one a load failure measured as gap 1333's class,
+  G 3, C 3).  Nothing was cut off and nothing was left uncommitted.
+* **No parity number moves.**  K took P85, H P86 and P87, G P88 — every pre-allocated slot was used, so nothing is
+  renumbered; the land deleted the `hole` lines H and G carried for the numbers issued on other branches and
+  re-anchored P86-P88 at their issuance lines in the concatenated README (`parity.py`: P1-P88, next free P89).
+* **Cheats collided.**  K took 266-268 and G 266-270, both "numbered from the highest in the checkout (265)" as each
+  said the land would renumber; G's are **269-273** now, in `Negative.lean` and in G's own block (its two sentences
+  that name them say so).  `grep -o '^/- CHEAT [0-9A-Z]*' Negative.lean | sort | uniq -d` prints nothing.
+* **The brief's acceptance figures are `f5a9585`'s** (2,135 passed over 133 lines; 6,232 theorems; stage goals 0;
+  check 12 1,501 / 1,100); the merged tree's are §6.  The burn-down is **1**, as track K said it would be: the goal is
+  named in §4 (4).
+* **Collisions the brief expected did not happen as files**: every conflict was in an append-only file
+  (`README.md`, `Check.lean`, `Negative.lean`, `citations-allow.txt`, `mutations.txt`, `parity.txt`), resolved by
+  keeping both sides in merge order.  **The collision that did happen is a test** (§1).
+
+### 1. Gap 4490 — the composition defect: K's cache test, written beside D93 and not after it (CLOSED)
+
+The first workspace run on the merged tree FAILED one test, `cli_break_into_block`'s
+`a_sealed_record_holding_the_reading_before_d92_is_rebuilt_and_never_served`, at its bite: *"the record was not
+served under this kernel's own id"* — `left: 250, right: 260`.  Track K wrote the record the kernel before D92 sealed
+into the August month file and asserted that, under THIS kernel's id, it is served (so the cache is really read);
+track H's D93 makes a month file whose bytes do not match the manifest's digest a file that is never served.  Each
+track was green alone; together the bite measured the digest, not the kernel id.  The fix is the one H made to
+`cli_replay_cache_kernel.rs`' poison for the same reason: the record is written WITH its digest (FNV-1a-64, computed
+in the test, not borrowed), so it is a file a kernel could have written — the case the kernel id is the key for — and
+the bite and the claim are unchanged.  Green on every run since.
+
+### 2. Two items owed to the land, closed here
+
+**Gap 4366 — CLOSED.**  `PlanCheck.lean`'s break-law note and `Planner.lean`'s P9 note said the refutation of
+`plan_places_no_block_over_a_break` stands; each now says it fell under D92, was deleted, and the goal is back
+(gap 4362), naming the deleted theorem without backticks as a dead name.  Line-neutral in both files, so no
+`mutations.txt` pin site moved; `citations-allow.txt`'s count for the qualified name fell 3 -> 1 (the W-18 merge's
+README block alone), and check 8 says `0 allow entries unused`.
+
+**Gap 4390 — CLOSED.**  `planner_invariants`' D87 arm (`the_kernel_reads_the_hosts_worked_minutes`) left out "a
+timer mark strictly inside the break" — gap 4340's world, which since D90 `tm interrupt` no longer writes.  Measured
+before the change: over **3,031** draws the generator put an `interrupt` inside a logged break **0** times, so
+re-reading the exclusion alone would have changed nothing (a first patch did exactly that and its counter read 0 —
+reverted).  The arm now DRAWS D90's world: a new strategy value (`interrupted`, weight one half) puts an interruption
+`k` minutes into the logged break and a `resume` `lost` minutes later, on a stretch of the log nothing else is
+stamped in, written as the binary writes it (the `break` line with `actual_min = k`, at the interruption's instant
+and before the `interrupt` line; `resume` with `lost_min`), and holds the host's union of idle spans and the kernel's
+replay to ONE reading like every other logged break.  The census gains its count (`… whose break an interruption
+ended, D90`) and a floor.  **Plant, in `scratchpad/land-w43/clone`** (porcelain hashed before and after; the shared
+tree's unchanged): the same world in fork 4748911's order — `interrupt` and `resume` first, the `break` line written
+at its end with its whole span — FAILED by name, `D87: a break logged inside the running block left the host's
+reading and the log's apart (P81)` (`right: Some(51)`).  Census over eleven default runs of the arm: **4-10** D90
+days held to one reading a run (§5).
+
+### 3. R3, re-measured on the merged tree
+
+**The call sites the swap changes**, read off the code: `cli/planning.rs`' `planner::plan` (`tm plan`,
+`planning::build_ranked`), `tui/app.rs`' `planner::plan` in `App::replan`, and `App::extend_drops`' three calls
+(`planner::overtime_drops`, `planner::plan` twice, `planner::diff`).  `tm-core/src/planner.rs` (2,485 lines) has no
+caller in `tm-core` but `lib.rs`' `pub mod planner`; the types the binary renders are `tm_core::dayplan`'s, not the
+planner's.
+
+**R3 simulated** (`scratchpad/land-w43/r3clone`, C's `r3sim.py` over the merged tree: the 21 fork-planner regions
+deleted, **6,130** lines; the five fork planner entries panic from any process but `tm`; never the worktree
+committed from):
+
+| configuration | the workspace (`--no-fail-fast`, 139 result lines) | what failed |
+|---|---|---|
+| R3 exactly (planner entries) | 2,428 passed, **25 failed**, 24 ignored | **23** the body swap's class, each through `App`: the binary's `tui::tests` **7** (two `d84` tests, four `d91` tests — H's three new ones and the renamed pinned test — and `the_meeting_pause_is_said_on_the_status_line`), `planner_w41_request`'s `p77_…` 1, `tui_today_ghost` 3, `tui_today_prompts` 11, `worked_midnight_timer` 1 — gap 4397's twenty-three, measured; **2** the region gates R3's deletion commit rewrites (`every_bless_holds_its_lines_against_the_committed_history`, `every_test_that_reaches_the_fork_keeps_it_in_one_region`).  **Every comparand suite passed.** |
+| and the three review entries | 2,376 passed, 77 failed, 24 ignored | the 25 above and 52 reaching the binary's own review code in-process — not R3's (R3 deletes the planner, not the reviews) |
+
+**Which frozen comparand holds each surface after the deletion** (bytes on disk, compared in plain `cargo test
+--workspace`; the oracle arms ask fork 4748911 itself out of the tree under `TM_ORACLE`, §5):
+
+| surface the swap changes | frozen comparand after R3 | asked live (`TM_ORACLE`) |
+|---|---|---|
+| `tm plan`'s day (`planning::build_ranked`) | `fork-4748911-planner-classes.jsonl` (100 lines), `-basic-days` (147), `-batch` (128), `-driven` (1), `-days` (4), `-conference` (3), `-p56` (24), `-starts` (2), `-separators` (5) | the 229 frozen class, batch and driven lines; 40 separator, 20 start, 24 P56 requests; 287 fresh draws |
+| the TUI's replan (`App::replan`) | `fork-4748911-planner-tui.jsonl` (13) | 234 requests |
+| the TUI's what-if (`App::extend_drops`) | the `whatif` answers of `-classes` (100), `-batch` (128), `-p56` (24), `-tui` (13), `-driven` (1), `-starts` (1) | 120 what-ifs among the fresh draws |
+| the week grid (not swapped; the review stays) | `fork-4748911-week-grid.jsonl` (46) | the frozen grids and 16 fresh weeks |
+
+**The answer, by name.**  R3 is the body swap and the deletion, **with these and nothing else**:
+1. the body swap's class, now **twenty-three** tests (gaps 3476, 4327, 4347 and 4397 — H's three D91 tests joined
+   gap 4347's twenty);
+2. gaps **3583** and **4046** (a log run holding today's day record whole) and **4321** (the `tui Midnight` line
+   re-drawn under D64(b));
+3. gap **4400** (H's): a request built at a later tick of a held-close day asks the close again at that tick, or
+   measures that the stamp moves nothing — the TUI first builds a kernel request between date changes AT R3;
+4. gap **4491** (§7): the D87 arm's one-reading assertion — the host's worked minutes against the kernel's replay
+   on generated worlds, P84 and D90 among them — lives in `planner_invariants`' fork region and is deleted with it,
+   though it compares no fork; R3's deletion commit lifts it out, or the assertion is lost;
+5. **gap 4367, by track K's own answer: "Track C or the land, before R3"** — a frozen planner world whose log holds a
+   break run into the running block's start, introduced under D70 with P85 and asked of the fork.  Not done here.
+   What the land measured beside it, which does not change K's answer: before R3 nothing compares that surface with
+   the fork either — the in-tree fork plans over the kernel's replay, which nets the break since D92 — so R3's
+   deletion takes no comparison of it away; what is missing is a comparison that has never existed.
+
+The region gates (`every_bless_holds_its_lines_against_the_committed_history`,
+`every_test_that_reaches_the_fork_keeps_it_in_one_region`) are rewritten by the deletion commit itself, as W-42's
+land and track C said.  Gaps 4463 (six in-region blesses final at R3), 4467 (the in-tree/oracle cross-check, deleted
+with its region) and 4365/4466 (T5's frozen carry a model; R3 does not touch it) are R3's consequences, not its
+preconditions.
+
+### 4. The composition tests
+
+1. **H's held close with K's replay**: `tui::tests::d91_on_a_day_with_unfinished_work_the_tui_closes_in_memory_and_asks_what_tm_plan_asks`
+   — the TUI's request after midnight equals `tm plan`'s after its close but for `log.ckpt.resealDay` — passed in
+   every merged run (§6), as did the two-midnight, torn-log and editor tests; and driven through a pty (§8).
+2. **C's gate over every frozen file on the merged tree**: `every_bless_holds_its_lines_against_the_committed_history`,
+   `every_frozen_comparand_reads_its_committed_history`, `every_frozen_comparand_file_is_found_by_its_property`,
+   `the_classes_files_refiled_lines_carry_their_licence` and `a_hand_refiled_line_is_refused_and_a_licensed_one_passes_over_history`
+   passed in every merged run.  No track's merge changed a frozen line: `git diff 0984304 -- tm/tests/fixtures/` is
+   track C's two files alone (the classes file's eight `p81` answers and the new separators file).
+3. **The oracle arms**, over an oracle built fresh from this tree's `build-oracle.sh` (C's `worked` op in it): §5.
+4. **The burn-down**: check 7 says `1 outstanding, all stage 6` — `Goals.plan_places_no_block_over_a_break`, back
+   under track K's gap 4362; AGENTS §3.2 and §8.4 say so beside their W-41 sentences.
+
+### 5. The oracle arms and the census
+
+`scratchpad/land-w43/oracle-arms.sh`, one arm at a time, 16 GB, `TM_ORACLE` = `scratchpad/land-w43/oracle/target/debug/tm-oracle`
+built at 09:24; porcelain equal before and after; load 3-26 (the R3 simulation's build ran beside two of them).  Every
+arm `test result: ok`:
+
+* **T5** (`stage5_parity_the_kernel_replays_and_fits_as_the_fork_point_does`): 469 logs over 6 zones, 8,442 `Replay`
+  keys, 195,375 scalar values; **P81** asked on 48 breaks in 23 inputs (22 whose asked answer is not the fork's
+  answer to the log as given); **P85** asked on **162 clock starts in 2 inputs** (both); P21's 49 last-ulp loads, each
+  displaying the same `round1` load and `load_blocks`; nothing else.
+* **The grammar** (`the_fork_reads_back_every_rendering_the_kernel_writes`): 1,375 kernel renderings read back to the
+  fork's own entry.
+* **`cli_end_at`** (back-dated ends): 3 inputs, 54 `Replay` keys, 293 scalar values, 0 other exceptions.
+* **The frozen planner lines** (`the_frozen_lines_are_the_forks_oracle_answer_today`): **229 of 229** (8 carrying
+  P81's answer, asked the D87 day; 3,078 oracle requests).
+* **The separator days** 40 requests; **the start days** 20; **the TUI days** 234; **the P56 days 24 of 24** (432
+  requests), the seeded P56 cross-check, and 16 fresh P56 days (16 compared).
+* **The fresh draws** (`the_kernel_plans_every_fresh_draw_as_the_forks_oracle_plans_it`): **287 of 287** compared
+  with fork 4748911's planner out of the tree, 0 the binary cannot hold, 3,234 oracle requests: what-ifs 120; P45
+  days 18, P46 2, P47 8, P51 195, P52 0, P55 0, P56 4; and the in-tree/oracle cross-check on every fresh draw.
+* **The week grids**: the frozen grids, and 16 fresh weeks (34 named cells, 1,321 minutes moved to `wall`).
+
+**`planner_invariants`, five full runs of the suite** (44 passed, 2 ignored each, 116-118 s), W-42's D87 census,
+last line of each:
+
+* 70 running breaks drawn, 27 open rows compared on one whose readings differ; 9 logged-break days held to one reading (7 with a timer mark, P84; 6 whose break an interruption ended, D90); 5 reservations compared on a logged-break day
+* 60 running breaks drawn, 24 open rows compared on one whose readings differ; 9 logged-break days held to one reading (4 with a timer mark, P84; 4 whose break an interruption ended, D90); 7 reservations compared on a logged-break day
+* 77 running breaks drawn, 31 open rows compared on one whose readings differ; 9 logged-break days held to one reading (6 with a timer mark, P84; 5 whose break an interruption ended, D90); 7 reservations compared on a logged-break day
+* 74 running breaks drawn, 28 open rows compared on one whose readings differ; 9 logged-break days held to one reading (7 with a timer mark, P84; 6 whose break an interruption ended, D90); 6 reservations compared on a logged-break day
+* 65 running breaks drawn, 26 open rows compared on one whose readings differ; 12 logged-break days held to one reading (7 with a timer mark, P84; 6 whose break an interruption ended, D90); 7 reservations compared on a logged-break day
+
+And W-36's census beside it, run 1: 287 cases, 134 with a running block, 23 with a break logged inside it; the host's reading differed from the log's on 32 days; open rows compared 72 (27 on a differing day); reservations compared 29 (0 on a differing day); assigned rows compared 532; cases with no kernel §7 answer 0.
+
+Five runs at the earlier weight 0.8 (`pi{1..5}-w08.log`) gave 5-9 D90 days and 0-3 plain logged-break days held to one reading a run, which is why the weight is one half (gap 4492).
+
+### 6. Acceptance, capped (`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`; 16 GB for the oracle, the drives and the latency runs)
+
+* **`check.sh`, seventeen lines, all ok, exit 0**, in a clone of the final tree (`scratchpad/land-w43/clone2`; check
+  9's gate never ran in the worktree committed from): 10:36:03-10:41:20 (load 1.4 at the start), 5 m 17 s wall, exit 0: the build ok; totality ok; **the axiom audit
+  6,298** theorems (`0984304`'s 6,232: K +19, G +47); `Negative.lean` rejected; FFI **95**; the corpus **29/37 files
+  and 4/5 plans**; **stage goals 1, all stage 6** (§4 (4)); prose citations 57,917 (55,497 resolved, 2,420 allowed,
+  509 counted, 0 allow entries unused — the figure before this sentence was written; `citations.py` re-run after it,
+  ok); check 9 **709** rostered, **0 owed**; parity **P1-P88**, next free **P89**; check 11 3,385 bodies, 0
+  UNANSWERED; check 12 **1,507** reachable, **1,099** exempt, 164 by the CSIMP class, 0 UNANSWERED (`ratchet.py`
+  exit 0); check 13 fields 17/17, inputs 33 of 37, sent 169, written 220, 0 UNANSWERED; check 14 94 modules.  The
+  first `check.sh` on the bare merge (08:27, before §1-§2) said the same seventeen oks.
+* **`cargo test --workspace --no-fail-fast`, SIX runs on the merged tree**, the porcelain and the diff hashed equal at
+  each start and end (`scratchpad/land-w43/ws{1..6}.log`): run 1 (the merge alone) **FAILED one test**, gap 4490's
+  (§1) — 2,536 passed, 1 failed, 34 ignored over 139; runs 2 and 3 (the fix) and runs **4, 5 and 6 (the final code,
+  every file a test compiles unchanged since)** each **139 result lines, 2,537 passed, 0 failed, 34 ignored, 0
+  warnings** (8 m 43 s - 8 m 46 s; load 1.0-3.9).  The count, by arithmetic: `f5a9585`'s 2,135 + K 4 + H 359 + G 11 +
+  C 18 = 2,527, and **+10**: G's `kernel_date_worlds` and C's `planner_separator_days` include
+  `tests/support/replay.rs` and so compile `kernel_log.rs`, whose five unit tests H added run in each (H's +5 x 69
+  counted the crates that existed on H's branch).  133 + 6 new result lines = 139; 32 + C's 2 ignored = 34.  No
+  `.proptest-regressions` file moved.
+* **The named suites, inside runs 4-6**: T5 `kernel_replay_parity` 44 (4 ignored), the door `kernel_log_door` 36,
+  `cli_switch_acceptance` 16, `cli_latency` 6 (1 ignored), `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 32,
+  `kernel_row_cells` 33, `kernel_item_grammar` 6, `kernel_planner_wire` 27, `planner_classes` 66 (6 ignored),
+  `planner_invariants` 44 (2 ignored), `cli_conformance` 6, `cli_json_matrix` 8; and the tracks' new ones,
+  `cli_break_into_block` 2, `cli_interrupt_break` 6, `cli_sealed_month_digest` 4, `kernel_date_worlds` 16,
+  `planner_separator_days` 18 (2 ignored), `fork_frozen_refile` 5, `fork_rebless_history` 9.  FFI: check 5's 95 and
+  check 6's corpus.
+* **`cli_latency --include-ignored`, three runs** (load 1.4-2.1, nothing else running; `lat{1,2,3}.log`,
+  `lat-ranges.txt`): 7 passed each.  Ranges: T18's planner call **7.5-8.2 ms** on the example tree, **62.3-63.2 ms**
+  on T11's, **88.3-90.1 / 183.6-188.5 ms** on T14's 3- and 10-year trees; a later verb 66.0-71.0 ms, at one year
+  101.3-111.4, at three years 152.0-156.9; the first verb at three years 2,146.8-2,211.7 ms; `review week` at three
+  years 445.7-465.9; ten stalled days, worst 638.0-643.1 ms.  No band touched.  (Taken at the code before the
+  `interrupted` weight moved 0.8 -> 0.5 in `planner_invariants.rs`, a test file no latency row compiles.)
+* **The oracle arms**: §5, every one green (taken at the same 0.8 code; the two `planner_invariants` oracle arms are
+  other tests in that file).
+* **The R3 simulation**: §3, in a clone.
+
+### 7. Gaps 4490-4499
+
+**Gap 4490 — CLOSED** (§1).  **Gaps 4366 and 4390 — CLOSED** (§2).
+
+**Gap 4491 — R3's deletion takes the generated one-reading arm with the fork.**  1. *What.*  The assertion that the
+host's worked minutes (`Replay::running_worked_min`, the union of idle spans) equal the kernel replay's on a logged
+break — P84's and, since §2, D90's — is made only inside `planner_invariants`' `the_kernel_reads_the_hosts_worked_minutes`,
+which sits in a `BEGIN THE FORK PLANNER` region because the same arm compares the planner's rows with the fork's.
+The R3 simulation (§3) deletes it.  Outside the regions only hand-written worlds hold the one reading
+(`cli_break_in_block.rs`, `cli_break_into_block.rs`, `cli_interrupt_break.rs`, `cli_start_paused.rs`).  2. *Why not
+changed.*  The arm's world builder and census are woven through the region; splitting them is the deletion commit's
+rewrite, which the land does not pre-empt.  3. *Cost.*  After R3 a change that splits the two readings on a world no
+hand-written test draws is seen by nothing generated.  4. *Clears it.*  R3's deletion commit: the one-reading half of
+the arm lifted out of the region (it reads no fork), with its census and its two floors.
+
+**Gap 4492 — the D90 floor is a probability.**  1. *What.*  §2's floor (`r[5] > 0`) asks that at least one D90 day
+was held to one reading in a run; eleven default runs gave 4-10.  2. *Why.*  The world needs a logged break, an
+interruption inside it and a quiet stretch of the log, and raising its weight crowded out the plain logged-break days
+(at weight 0.8 they fell from 8 in a run before the change to 0-3), so the weight is one half.  3. *Cost.*  A run with no such day fails
+the floor by name, not silently — D46's reading applies: a red floor is a finding about the draw, to be re-run and
+reported, never reverted.  4. *Clears it.*  A world builder that places the interruption deterministically, if the
+floor is ever seen red.
+
+**Gap 4367 stays open, by track K's answer** (§3, item 5).
+
+### 8. Driven, on the merged binary (`land-w43/target/debug/tm`, built at the land's commit; transcripts unabridged in `scratchpad/land-w43/drive/*.out`)
+
+**Gap 4340's world, an interruption inside a running break (D90, P86)** (`drive/d90.sh` → `drive/d90.out`): one reading — `tm stop` 30m, `tm review day` `block_min 30`, the journal's `break ended 10m/20m` before `interrupt ^m1`, the `break` line (`actual_min 10`) before the `interrupt` line.
+
+```text
+$ tm init --example
+[exit 0]
+$ tm --now 2026-09-07T07:00:00-05:00 wake 07:00
+wake 07:00 · slept 0m
+[exit 0]
+$ tm --now 2026-09-07T09:00:00-05:00 start ^m1 --energy 3
+▶ ^m1 Finish ch.5 exercises · 09:00 · pred 4 rep 3
+[exit 0]
+$ tm --now 2026-09-07T09:10:00-05:00 break 20m
+break 20m
+[exit 0]
+$ tm --now 2026-09-07T09:20:00-05:00 interrupt
+break ended · 10m of 20m · interrupted
+[exit 0]
+$ tm --now 2026-09-07T09:20:00-05:00 --json now  | print("interrupt json:", json.dumps(d))
+interrupt json: {"now": "09:20", "date": "2026-09-07", "blocks_done": 0, "budget_blocks": 6, "active": {"id": "m1", "title": "Finish ch.5 exercises", "started": "09:00", "est_min": 360, "elapsed_min": 10, "paused": true}, "current": {"start": "09:20", "end": "09:40", "minutes": 20, "kind": "routine", "energy": 1, "item": "a3", "mark": "\u26a0", "text": "09:20  1 p0 \u26a0 Pick up package                   20m     due today"}, "next": [{"start": "09:40", "end": "10:10", "minutes": 30, "kind": "routine", "energy": null, "item": "laundry", "mark": "", "text": "09:40  \u00b7      laundry 30m"}, {"start": "10:10", "end": "11:10", "minutes": 60, "kind": "block", "energy": 2, "item": "m4", "mark": "", "text": "10:10  2 p5   Pick winter courses          @O3  2b"}, {"start": "11:10", "end": "11:30", "minutes": 20, "kind": "routine", "energy": null, "item": "shower", "mark": "", "text": "11:10  \u00b7      shower 20m"}]}
+$ tm --now 2026-09-07T09:30:00-05:00 --json now  | print("active:", json.dumps(d.get("active")), "break:", json.dumps(d.get("break")), "interrupt:", json.dumps(d.get("interrupt")))
+active: {"id": "m1", "title": "Finish ch.5 exercises", "started": "09:00", "est_min": 360, "elapsed_min": 10, "paused": true} break: null interrupt: null
+$ tm --now 2026-09-07T09:40:00-05:00 resume
+resumed · lost 20m
+[exit 0]
+$ tm --now 2026-09-07T09:50:00-05:00 --json now  | print("active:", json.dumps(d.get("active")), "break:", json.dumps(d.get("break")))
+active: {"id": "m1", "title": "Finish ch.5 exercises", "started": "09:00", "est_min": 360, "elapsed_min": 20, "paused": false} break: null
+$ tm --now 2026-09-07T09:50:00-05:00 now
+▶ ^m1 Finish ch.5 exercises · started 09:00 · 20m of 360m
+09:50  5 p3 ▶ Finish ch.5 exercises        @O1  6b     running · 340m left
+  09:50–10:00 · elapsed 0m · left 10m
+next
+10:00  1 p0 ⚠ Pick up package                   20m     due today
+10:20  ·      laundry 30m
+10:50  2 p5   Pick winter courses          @O3  2b
+0/6 blocks
+[exit 0]
+$ tm --now 2026-09-07T10:00:00-05:00 stop
+stopped ^m1 after 30m · 330m left
+[exit 0]
+$ tm --now 2026-09-07T10:01:00-05:00 --json review day  | r=d["review"]; print("review day block_min:", r["block_min"], "load:", r["load"], "blocks_done:", r.get("blocks_done"))
+review day block_min: 30 load: 30.0 blocks_done: 0
+--- log tail
+{"t":"2026-09-07T09:00:00-05:00","ev":"start","id":"m1","pred":4,"rep":3,"hsw":2.0,"slept_min":0,"loc":"lounge","blocks_done":0,"since_break_min":0}
+{"t":"2026-09-07T09:10:00-05:00","ev":"break","planned_min":20,"actual_min":10}
+{"t":"2026-09-07T09:20:00-05:00","ev":"interrupt","id":"m1"}
+{"t":"2026-09-07T09:40:00-05:00","ev":"resume","lost_min":20,"dropped":[]}
+{"t":"2026-09-07T09:40:00-05:00","ev":"plan","hash":"b9bb3da7202c9862","replans_today":0,"drift_min":0}
+{"t":"2026-09-07T10:00:00-05:00","ev":"stop","id":"m1","remaining_min":330}
+--- journal
+09:00 start ^m1 pred=4 rep=3
+09:10 break 20m
+09:20 break ended 10m/20m
+09:20 interrupt ^m1
+09:40 resume lost=20m
+10:00 stop ^m1 30m · 330m left
+
+## Notes
+```
+
+**A hand-edited log with a break running into a block's start (D92, P85)** (`drive/hand-d92.sh` → `drive/hand-d92.out`): the 25-minute break at 09:00 inserted by hand before `^m1`'s 09:10 start; `tm review day` reads 35 (09:25-10:00), the plan draws `^m1` from 09:25 after the break, and the same with the replay cache deleted.  (`tm stop`'s 50m was said before the hand edit, when the log held no break.)
+
+```text
+$ tm init --example
+[exit 0]
+$ tm --now 2026-09-07T07:00:00-05:00 wake 07:00
+wake 07:00 · slept 0m
+[exit 0]
+$ tm --now 2026-09-07T09:10:00-05:00 start ^m1 --energy 3
+▶ ^m1 Finish ch.5 exercises · 09:10 · pred 4 rep 3
+[exit 0]
+$ tm --now 2026-09-07T10:00:00-05:00 stop
+stopped ^m1 after 50m · 310m left
+[exit 0]
+--- the log before the hand edit (tail)
+{"t":"2026-09-07T07:00:00-05:00","ev":"wake","slept_min":0}
+{"t":"2026-09-07T09:10:00-05:00","ev":"start","id":"m1","pred":4,"rep":3,"hsw":2.17,"slept_min":0,"loc":"lounge","blocks_done":0,"since_break_min":0}
+{"t":"2026-09-07T10:00:00-05:00","ev":"stop","id":"m1","remaining_min":310}
+# hand edit: a 25-minute break at 09:00 inserted before ^m1's 09:10 start (runs into it until 09:25)
+--- the log after the hand edit (tail)
+{"t":"2026-09-07T07:00:00-05:00","ev":"wake","slept_min":0}
+{"t":"2026-09-07T09:00:00-05:00","ev":"break","planned_min":25,"actual_min":25,"where":"walk"}
+{"t":"2026-09-07T09:10:00-05:00","ev":"start","id":"m1","pred":4,"rep":3,"hsw":2.17,"slept_min":0,"loc":"lounge","blocks_done":0,"since_break_min":0}
+{"t":"2026-09-07T10:00:00-05:00","ev":"stop","id":"m1","remaining_min":310}
+$ tm --now 2026-09-07T10:01:00-05:00 review day
+ Day 2026-09-07 · 0/6 blocks · load 35.0 · lost 0 · leak 0m · adherence -
+ done      -    demoted  -    underused 0    replans 0 · drift 0m
+ energy    pred 4   rep 3    MAE 1.0  bias −1.0
+ estimates -
+ breaks    planned 25m ×1 · actual 25 (walk) · rest debt 0
+ sleep     0m
+ tomorrow  first candidate m3 (p3) · t1 p3 · t3 p3
+[exit 0]
+$ tm --now 2026-09-07T10:01:00-05:00 --json review day | block_min, load
+  block_min 35 load 35.0
+$ tm --now 2026-09-07T10:01:00-05:00 plan
+2026-09-07 · window 10:01–19:01 · budget 6 blocks
+09:00  ·      break 25m                                walk
+09:25  5 p3   Finish ch.5 exercises        @O1  5h10m
+10:01  1 p0 ⚠ Pick up package                   20m     due today
+10:21  ·      laundry 30m
+10:51  2 p5   Pick winter courses          @O3  2b
+11:30  ·      lunch 30m
+12:00  ·      groceries 45m
+12:45  ·      rest 5m
+12:50  ⏰     Meeting w/ host                   1h
+13:50  2 p5   Pick winter courses          @O3  2b
+14:50  ·      break 20m
+15:10  ·      shower 20m
+15:30  ·      rest 30m
+16:00  ·      workout 1h
+17:00  ·      rest 30m
+17:30  ·      dinner 30m
+18:00  ○      Severance S3E4                    1h
+19:00  ○      Factorio                          2h
+19:01  ───    window ends 19:01
+21:30  🌙     wind-down · bed 22:00
+22:00  ·      sleep 8h30m
+· 0 underused · 0 ci-5 lost
+· plan honesty 1.19 — planned above a realistic budget
+· t5 blocked by t4
+· deferred: t4 · a1 · p1
+· waiting: a4
+· dropped: m3 · t1 · t3 · m2 · t4 · d2 · d1 · a1 · c2 · p1 · x2
+[exit 0]
+$ tm --now 2026-09-07T10:01:00-05:00 check
+no problems
+[exit 0]
+--- the same tree with its replay cache deleted
+$ tm --now 2026-09-07T10:01:00-05:00 --json review day | block_min, load
+  block_min 35 load 35.0
+```
+
+**A signed year in `due:` (gap 4346, P88)** (`drive/signed.sh` → `drive/signed.out`): the edits write `renderDate`'s spelling or refuse by name; an eleven-byte `+2026-11-20` is refused by `tm check` as fork 4748911's `parse_date` refuses it, and `tm plan` and `tm drop` still run on that tree; `+10000-1-7` is P88's refusal.
+
+```text
+$ tm --now 2026-09-07T09:00:00-05:00 edit ^d2 due=+026-09-09
+- [ ] 5 10b Workshop paper draft  @O2 due:0026-09-09 #soundcode ^d2
+[exit 0]
+7:- [ ] 5 10b Workshop paper draft  @O2 due:0026-09-09 #soundcode ^d2
+$ tm --now 2026-09-07T09:00:00-05:00 edit ^d2 due=+2026-9-09
+- [ ] 5 10b Workshop paper draft  @O2 due:2026-09-09 #soundcode ^d2
+[exit 0]
+7:- [ ] 5 10b Workshop paper draft  @O2 due:2026-09-09 #soundcode ^d2
+$ tm --now 2026-09-07T09:00:00-05:00 edit ^d2 due=+10000-1-7
+tm: kernel refusal: badValue — "due" refuses this value (the key's own field grammar, one reader end to end) (the value was "+10000-1-7")
+[exit 1]
+7:- [ ] 5 10b Workshop paper draft  @O2 due:2026-11-20 #soundcode ^d2
+$ tm --now 2026-09-07T09:00:00-05:00 edit ^d2 due=0000-01-01
+tm: kernel refusal: badValue — "due" refuses this value (the key's own field grammar, one reader end to end) (the value was "0000-01-01")
+[exit 1]
+7:- [ ] 5 10b Workshop paper draft  @O2 due:2026-11-20 #soundcode ^d2
+# hand edit: backlog.md due:2026-11-20 -> due:+2026-11-20
+7:- [ ] 5 10b Workshop paper draft  @O2 due:+2026-11-20 #soundcode ^d2
+$ tm --now 2026-09-07T09:00:00-05:00 check
+backlog.md:7: error[bad-value]: `due:+2026-11-20`: invalid date or date-time: "+2026-11-20"
+1 error, 0 warnings
+[exit 2]
+$ tm --now 2026-09-07T09:00:00-05:00 plan
+2026-09-07 · window 09:00–18:00 · budget 6 blocks
+09:00  1 p0 ⚠ Pick up package                   20m     due today
+09:20  ·      laundry 30m
+09:50  4 p3   Exercises 5.3–5.5            @m1  2b
+10:50  4 p3   Rollback path passes tests   @O2  6b
+11:30  ·      lunch 30m
+12:00  3 p3   Claude Code drafts tests     @m2  1b
+12:50  ⏰     Meeting w/ host                   1h
+13:50  3 p3   Claude Code drafts tests     @m2  1b
+14:50  ·      break 20m
+15:10  2 p5   Pick winter courses          @O3  2b
+16:00  ·      workout 1h
+17:00  2 p5   Pick winter courses          @O3  2b
+17:30  ·      dinner 30m
+18:00  ───    window ends 18:00
+18:00  ·      groceries 45m
+18:45  ·      shower 20m
+19:05  ○      Severance S3E4                    1h
+21:30  🌙     wind-down · bed 22:00
+22:00  ·      sleep 8h30m
+· 0 underused · 0 ci-5 lost
+· plan honesty 1.67 — planned above a realistic budget
+· t5 blocked by t4
+· waiting: a4
+· dropped: m1 · m3 · t1 · d2 · d1 · a1 · c2 · p1 · x2
+[exit 0]
+$ tm --now 2026-09-07T09:00:00-05:00 drop ^a1
+dropped ^a1
+[exit 0]
+# hand edit: due:2026-11-20 -> due:+10000-1-7
+$ tm --now 2026-09-07T09:00:00-05:00 check
+error[planner-refusal]: kernel refusal: badCandidate 13 due — a candidate record's key is absent, of the wrong type, or outside its bound (the key names the record's position and the key) — the day `tm plan` asks the kernel for is refused
+1 error, 0 warnings
+[exit 2]
+```
+
+**A ten-byte signed year in `due:`, by hand** (`drive/signed2.sh` → `drive/signed2.out`): the line reads `+2026-9-08` as 2026-09-08 (impossible by Tuesday, as the host reads it).  The last command's JSON parse failed in the DRIVE SCRIPT (its `run` echoes the command line before the JSON), not in `tm`; the text rows above it are the answer.
+
+```text
+# hand edit: backlog.md ^d2 due:2026-11-20 -> due:+2026-9-08 (ten bytes, a signed year)
+7:- [ ] 5 10b Workshop paper draft  @O2 due:+2026-9-08 #soundcode ^d2
+$ tm --now 2026-09-07T09:00:00-05:00 check
+no problems
+[exit 0]
+24:· d2 Workshop paper draft impossible: 9.4b short by 2026-09-08
+25:· hot: d2
+28:· dropped: d2 · m1 · m3 · t1 · d1 · a1 · c2 · p1 · x2
+29:IMPOSSIBLE d2 Workshop paper draft: needs 13b, 3.6b available by Tue
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/usr/lib/python3.12/json/__init__.py", line 293, in load
+    return loads(fp.read(),
+           ^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/decoder.py", line 337, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/decoder.py", line 355, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+```
+
+**A corrupted sealed month file (D93)** (`drive/d93.sh` → `drive/d93.out`): one byte of the sealed 2026-08-25 record changed; the file is refused by its digest, named once on stderr, rebuilt from the log, and answered as a cache-less replay answers.
+
+```text
+ckpt.json: format 4 True
+one byte changed at 222 of 2026-08.g68144be7fb41069a.json
+$ tm --json review day --date 2026-08-25   (run 1)
+  blocks_done 4 block_min 260
+  stderr: replay cache .tm/cache/replay changed underneath (a sealed month file is missing or does not match its digest); rebuilt from the log
+$ tm --json review day --date 2026-08-25   (run 2)
+  blocks_done 4 block_min 260
+$ the same on a copy with no cache
+  blocks_done 4 block_min 260
+```
+
+**A TUI through a pty past midnight on a tree with unfinished day work (D91, P87)** (`drive/d91-tui.sh` → `drive/d91-tui.out`): nothing written by the TUI's load or across the date change; at 00:00:11 the Week pane reads `0/26` with `p1` listed and the timeline is `tm plan`'s at that instant on a copy whose close was written (`p1 … demoted:D07`).
+
+```text
+$ tm wake 06:05 --slept 8h10m (Mon 06:05); tm arrive lounge (07:00); tm start ^t3 --energy 3 (23:30) — ^p1 left open
+wake 06:05 · slept 490m
+arrive lounge 07:00 · window 07:00–16:00 · budget 6 blocks
+▶ ^t3 Exercises 5.3–5.5 · 23:30 · pred 2 rep 3
+$ (sleep 34; printf q) | TM_TUI_CLOCK_RUNS=1 script -q -f -T tui91-land.timing -O tui91-land.raw -c "stty cols 120 rows 40; tm --dir <plan> --now 2026-09-07T23:59:40-05:00 tui"
+[exit 0]
+--- files changed by the TUI's own load (t0 -> +10 s):
+--- files changed across the date change (+10 s -> +31 s):
+(none: byte-identical, 17 files)
+--- the frame at +8 s (Monday 23:59:48):
+tm · Mon 2026-09-07 · 23:59 · lounge · wake 06:05 (8h10m) · pred 3 rep 3 ·  ● 0/6 · leak 0m · adherence 0% · window → 1…
+                             ██████                                         ████                            ▲ 23:59
+      ██████████████████████████████████████                                                                plan @07:00
+┌ Timeline ──────────────────────────────────┐┌ Now ─────────────────────────────────┐┌ Week W37 · 0/25 ───────────────┐
+│12:50  ⏰     Meeting w/ host        1h     ││ci4 p3 Exercises 5.3–5.5  @m1         ││  m1 Finish ch.5…     ░░░░░░ 0/6│
+│16:00  ───    window ends 16:00             ││elapsed 29m ▐██████████████░▌ est 2b …││  m2 Rollback pa…     ░░░░░░ 0/6│
+│23:30  4 p3   Exercises 5.3–5…  @m1  2b    …││next —                                ││  m3 Read ch.6        ░░░░░░ 0/3│
+│23:59  4 p3 ▶ Exercises 5.3–5…  @m1  2b    …││                                      ││  m4 Pick winter…     ░░░░░░ 0/2│
+│23:59  ·      sleep 8h30m                   ││d done  x extend  s stop  b break  i …││  d1 CS 234 pset…     ░░░░░░ 0/6│
+│                                            ││0-5 energy  l location  K skip  n not…││⚠ x1 Midterm          ░░░░░░ 0/2│
+│                                            ││                                      ││──── HOT / overdue ─────────────│
+│                                            ││                                      ││⚠ x1 Midterm · wall             │
+│                                            ││                                      ││⚠ laundry · overdue             │
+│                                            ││                                      ││⚠ g1 Meeting w/ host · wall     │
+│                                            ││                                      ││──── Waiting ───────────────────│
+│                                            ││                                      ││? a4 Ask Prof. Lee about the re…│
+│                                            ││                                      ││──── Diagnostics ───────────────│
+│                                            ││                                      ││0 underused · 0 ci-5 lost       │
+│                                            ││                                      ││t5 blocked by t4                │
+│                                            ││                                      ││waiting: a4                     │
+│                                            ││                                      ││dropped: m1 · m3 · t1 · m2 · t4…│
+│                                            ││                                      ││                                │
+│                                            ││                                      ││                                │
+│                                            ││                                      ││                                │
+│                                            ││                                      ││                                │
+│                                            ││                                      ││                                │
+│                                            ││                                      ││                                │
+│                                            ││                                      ││                                │
+│                                            ││                                      ││                                │
+│                                            ││                                      ││                                │
+│                                            ││                                      ││                                │
+│                                            ││                                      ││                                │
+│                                            ││                                      ││                                │
+│                                            │└──────────────────────────────────────┘│                                │
+│                                            │┌ Energy today ────────────────────────┐│                                │
+│                                            ││pred  4  5  5  5  5  4  4  4  3  3    ││                                │
+│                                            ││rep   ·  ·  ·  ·  ·  ·  ·  ·  ·  ·    ││                                │
+│                                            ││     07 08 09 10 11 12 13 14 15 16    ││                                │
+└────────────────────────────────────────────┘└──────────────────────────────────────┘└────────────────────────────────┘
+:                                                            j/k move · Enter open · e edit · r replan · R sync · ? help
+--- the frame at +31 s (Tuesday 00:00:11):
+tm · Tue 2026-09-08 · 00:00 · lounge · wake 06:05 · pred 4 ·  ● 0/6 · leak 0m · adherence - · lost 0
+▒▒∙∙∙∙░░░   ▒▒▒∙∙∙∙∙∙∙∙∙▒▒▒                       ▒▒▒▒▒▒▒▒          ████████████                            ▲ 00:00
+··········································································································  plan —
+┌ Timeline ──────────────────────────────────┐┌ Now ─────────────────────────────────┐┌ Week W37 · 0/26 ───────────────┐
+│00:00  4 p3 ▶ Exercises 5.3–5…  @m1  2b    …││ci4 p3 Exercises 5.3–5.5  @m1         ││  m1 Finish ch.5…     ░░░░░░ 0/6│
+│00:30  4 p3   Exercises 5.3–5…  @m1  2b     ││elapsed 30m ▐███████████████▌ est 2b …││  m2 Rollback pa…     ░░░░░░ 0/6│
+│01:30  4 p3   Rollback path p…  @O2  6b     ││next 00:30 Exercises 5.3–5.5 · 01:30 …││  m3 Read ch.6        ░░░░░░ 0/3│
+│02:30  ·      break 20m                     ││                                      ││  m4 Pick winter…     ░░░░░░ 0/2│
+│02:50  4 p3   Rollback path p…  @O2  6b     ││d done  x extend  s stop  b break  i …││  d1 CS 234 pset…     ░░░░░░ 0/6│
+│03:50  4 p3   Rollback path p…  @O2  6b     ││0-5 energy  l location  K skip  n not…││⚠ x1 Midterm          ░░░░░░ 0/2│
+│04:50  ·      break 20m                     ││                                      ││  p1 Call the ba…     ░░░░░░ 0/1│
+│05:10  4 p3   Rollback path p…  @O2  6b     ││                                      ││──── HOT / overdue ─────────────│
+│06:00  ·      breakfast 30m                 ││                                      ││⚠ x1 Midterm · wall             │
+│06:30  ○      Severance S3E4         1h     ││                                      ││⚠ breakfast · due today         │
+│07:30  ·      rest 30m                      ││                                      ││⚠ lunch · due today             │
+│08:00  ───    window ends 08:00             ││                                      ││⚠ dinner · due today            │
+│09:00  ·      laundry 30m                   ││                                      ││⚠ laundry · overdue             │
+│09:30  ○      Factorio               2h     ││                                      ││──── Waiting ───────────────────│
+│11:30  ·      lunch 30m                     ││                                      ││? a4 Ask Prof. Lee about the re…│
+│17:30  ·      dinner 30m                    ││                                      ││──── Diagnostics ───────────────│
+│18:00  ·      groceries 45m                 ││                                      ││0 underused · 30m ci-5 lost     │
+│18:45  ·      shower 20m                    ││                                      ││plan honesty 1.17 — planned abo…│
+│21:30  🌙     wind-down · bed…              ││                                      ││t5 blocked by t4                │
+│22:00  ·      sleep 8h30m                   ││                                      ││waiting: a4                     │
+│                                            ││                                      ││dropped: m1 · m3 · t1 · t4 · d2…│
+│                                            ││                                      ││                                │
+│                                            ││                                      ││                                │
+│                                            ││                                      ││                                │
+│                                            ││                                      ││                                │
+│                                            ││                                      ││                                │
+│                                            ││                                      ││                                │
+│                                            ││                                      ││                                │
+│                                            ││                                      ││                                │
+│                                            │└──────────────────────────────────────┘│                                │
+│                                            │┌ Energy today ────────────────────────┐│                                │
+│                                            ││pred  4  4  4  4  4  4  4  4  5       ││                                │
+│                                            ││rep   ·  ·  ·  ·  ·  ·  ·  ·  ·       ││                                │
+│                                            ││     00 01 02 03 04 05 06 07 08       ││                                │
+└────────────────────────────────────────────┘└──────────────────────────────────────┘└────────────────────────────────┘
+:                                                            j/k move · Enter open · e edit · r replan · R sync · ? help
+--- `tm plan` at Tuesday 00:00:11 on a copy (its close WRITTEN):
+2026-09-08 · window 00:00–08:00 · budget 6 blocks
+00:00  4 p3 ▶ Exercises 5.3–5.5            @m1  2b     running · 30m left
+00:30  4 p3   Exercises 5.3–5.5            @m1  2b
+01:30  4 p3   Rollback path passes tests   @O2  6b
+02:30  ·      break 20m
+02:50  4 p3   Rollback path passes tests   @O2  6b
+03:50  4 p3   Rollback path passes tests   @O2  6b
+04:50  ·      break 20m
+05:10  4 p3   Rollback path passes tests   @O2  6b
+06:00  ·      breakfast 30m
+06:30  ○      Severance S3E4                    1h
+07:30  ·      rest 30m
+08:00  ───    window ends 08:00
+09:00  ·      laundry 30m
+09:30  ○      Factorio                          2h
+11:30  ·      lunch 30m
+17:30  ·      dinner 30m
+18:00  ·      groceries 45m
+18:45  ·      shower 20m
+21:30  🌙     wind-down · bed 22:00
+22:00  ·      sleep 8h30m
+· 0 underused · 30m ci-5 lost
+· plan honesty 1.17 — planned above a realistic budget
+· t5 blocked by t4
+· waiting: a4
+· dropped: m1 · m3 · t1 · t4 · d2 · d1 · m4 · x2 · p1 · a1 · c2
+--- the week file `tm plan` wrote, ^p1's line:
+- [ ] 2 20m Call the bank about the card demoted:D07  ^p1
+```
+
+### 9. Status note
+
+* 08:16 — four track branches found committed and clean; land worktree made; merged K, H, G, C (conflicts in
+  append-only files only; cheats 266-270 of G's renumbered 269-273; parity re-anchored).
+* 08:27 — `check.sh` 17/17 on the merge; workspace run 1: gap 4490 (§1).  Fixed; runs 2-3 green.
+* 08:42-09:20 — gaps 4390 (drawn, planted) and 4366 closed; the latency runs; the drives.
+* 09:24-09:43 — the fresh oracle and every arm; the R3 simulation (both configurations).
+* 09:58-10:35 — runs 4-6 and five `planner_invariants` runs on the final code; this block; the final `check.sh`.

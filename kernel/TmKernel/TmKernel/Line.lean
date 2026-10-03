@@ -38,7 +38,7 @@ Round trip B (`parse ∘ serialize = id`) holds on `CanonicalItem`, which is
 decidable.
 
 **The setters preserve `CanonicalItem`, and that is proved here**, not
-deferred: see `setEst_canonical` below.  Both branches are covered — the
+deferred: see `setEst_canonical_box_ended` below.  Both branches are covered — the
 replace branch, and the insert branch that once produced a line the kernel
 could not parse back, by inserting a token before an id token that was the
 line's first and leaving it without the separator it needs.  `CanonicalItem`
@@ -414,7 +414,7 @@ the box are separators (`boxLead`), and the first token after it begins with a t
 first token has no separator, which the kernel accepted before W-42 and wrote back so, would
 re-read as box-less.  These two conjuncts are W-42's, and they are **not** vacuous on the lines
 the old predicate admitted: `round_trip_B_without_the_box_end_is_refuted` is the line they now
-exclude. -/
+exclude, and the seven laws stated over it carry the suffix _box_ended since W-43 (README gap 4344). -/
 def CanonicalItem (i : Id) (r : RawItem) : Bool :=
   r.boxed && r.indent.all isIndent && r.boxLead.all isSp &&
     r.toks.head?.all (fun t => t.sep.head?.any isBoxEnd) && toksWf r.toks &&
@@ -422,9 +422,9 @@ def CanonicalItem (i : Id) (r : RawItem) : Bool :=
      | [t] => t.word == '^' :: i
      | _   => false)
 
-/-- **Round trip B.**  Anything the kernel writes, it reads back identically.
-This is the direction that matters after an edit. -/
-theorem parse_serialize (i : Id) (g : Glyph) (r : RawItem) (h : CanonicalItem i r = true) :
+/-- **Round trip B**, over a canonical record whose box is ENDED (W-42's narrowing, named since W-43):
+anything the kernel writes, it reads back identically — the direction that matters after an edit. -/
+theorem parse_serialize_box_ended (i : Id) (g : Glyph) (r : RawItem) (h : CanonicalItem i r = true) :
     parseItem (serializeItem i g r) = .ok (some i, g, r) := by
   unfold CanonicalItem at h
   simp only [Bool.and_eq_true] at h
@@ -568,7 +568,7 @@ space produced `- [ ] est:45m^m1`, in which `est:45m^m1` is a single word and
 the line no longer has an id token at all — one `tm edit est=` turned a line the
 kernel accepted into a line the kernel reads as prose.  So when the id token has
 no separator of its own, the inserted word takes that position and the id token
-takes the space.  `setEst_canonical` below is the proof that this is now
+takes the space.  `setEst_canonical_box_ended` below is the proof that this is now
 airtight, and it closes the gap this module's header used to record. -/
 def insertBeforeId (w : List Char) : List Tok → List Tok
   | []      => [⟨[' '], w⟩]
@@ -918,7 +918,7 @@ theorem insertBeforeId_endsBox (w : List Char) (ts : List Tok)
 /-- **The obligation the header used to defer.**  `tm edit ^id est=v` takes a
 canonical line to a canonical line — the id token survives, every token stays
 well shaped, and no two words run together. -/
-theorem setEst_canonical (i : Id) (v : Nat) (r : RawItem) (h : CanonicalItem i r = true) :
+theorem setEst_canonical_box_ended (i : Id) (v : Nat) (r : RawItem) (h : CanonicalItem i r = true) :
     CanonicalItem i (setEst v r) = true := by
   obtain ⟨hb, hind, hlead, hend, htw, hids⟩ := (canonical_iff i r).1 h
   refine (canonical_iff i (setEst v r)).2 ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
@@ -964,7 +964,7 @@ same item: same id, same box, same tokens. -/
 theorem setEst_line_reparses (i : Id) (g : Glyph) (v : Nat) (r : RawItem)
     (h : CanonicalItem i r = true) :
     parseItem (serializeItem i g (setEst v r)) = .ok (i, g, setEst v r) :=
-  parse_serialize i g (setEst v r) (setEst_canonical i v r h)
+  parse_serialize_box_ended i g (setEst v r) (setEst_canonical_box_ended i v r h)
 
 
 
@@ -1464,17 +1464,540 @@ theorem renderClock_head_digit (c : Clock) :
       refine ⟨a, by simp, padTo_digits 2 _ a (by rw [hp]; simp)⟩
 
 
+/-! The one width fact (`readNat_lt_pow_length`) and its digit twin, here since W-43 because chrono's
+readers below need them (they stood with the parse ⇒ wf bridges until then). -/
+
+theorem readNat_foldl_none (l : List Char) :
+    l.foldl (fun acc c => match acc, charDigit c with
+                          | some a, some d => some (a * 10 + d)
+                          | _, _ => none) (none : Option Nat) = none := by
+  induction l with
+  | nil => rfl
+  | cons c t ih => simpa using ih
+
+theorem charDigit_lt {c : Char} {d : Nat} (h : charDigit c = some d) : d < 10 := by
+  unfold charDigit at h
+  split at h <;> simp_all <;> omega
+
+theorem readNat_foldl_lt (l : List Char) : ∀ (a b : Nat),
+    l.foldl (fun acc c => match acc, charDigit c with
+                          | some a, some d => some (a * 10 + d)
+                          | _, _ => none) (some a) = some b →
+      b < (a + 1) * 10 ^ l.length := by
+  induction l with
+  | nil => intro a b h; simp at h; subst h; simp
+  | cons c t ih =>
+      intro a b h
+      cases hcd : charDigit c with
+      | none =>
+          simp only [List.foldl_cons, hcd] at h
+          rw [readNat_foldl_none] at h; simp at h
+      | some d =>
+          simp only [List.foldl_cons, hcd] at h
+          have hd := charDigit_lt hcd
+          have := ih _ _ h
+          have hle : (a * 10 + d + 1) ≤ (a + 1) * 10 := by omega
+          calc b < (a * 10 + d + 1) * 10 ^ t.length := this
+            _ ≤ ((a + 1) * 10) * 10 ^ t.length := Nat.mul_le_mul_right _ hle
+            _ = (a + 1) * 10 ^ (c :: t).length := by
+                simp [List.length_cons, Nat.pow_succ]; rw [Nat.mul_assoc, Nat.mul_comm 10]
+
+/-- **The one width fact** gap 40 names: a numeral read from `k` characters is
+below `10 ^ k`. -/
+theorem readNat_lt_pow_length {l : List Char} {n : Nat} (h : readNat l = some n) :
+    n < 10 ^ l.length := by
+  unfold readNat at h
+  split at h
+  · simp at h
+  · have := readNat_foldl_lt l 0 n h
+    simpa using this
+
+/-- What `readNat` reads is digits: a non-digit sends the fold to `none` for good. -/
+theorem readNat_foldl_digits : ∀ (l : List Char) (a v : Nat),
+    l.foldl (fun acc c => match acc, charDigit c with
+                          | some a, some d => some (a * 10 + d)
+                          | _, _ => none) (some a) = some v →
+      ∀ c ∈ l, isDigitC c = true
+  | [], _, _, _ => by simp
+  | c :: t, a, v, h => by
+      cases hc : charDigit c with
+      | none =>
+          simp only [List.foldl_cons, hc] at h
+          rw [readNat_foldl_none] at h
+          cases h
+      | some d =>
+          simp only [List.foldl_cons, hc] at h
+          intro x hx
+          rcases List.mem_cons.1 hx with rfl | hx
+          · simp [isDigitC, hc]
+          · exact readNat_foldl_digits t _ v h x hx
+
+theorem readNat_all_digits {l : List Char} {v : Nat} (h : readNat l = some v) :
+    ∀ c ∈ l, isDigitC c = true := by
+  unfold readNat at h
+  split at h
+  · cases h
+  · exact readNat_foldl_digits l 0 v h
+
+end Field
+
+/-! ## chrono's readers: the one reading of a date (W-43, README gap 4346)
+
+An item line's dates and times are read, in `tm-core`, by chrono 0.4.45's generic parser through
+three functions of `model.rs`: **`parse_date`** (`due:`'s date and `waiting:` — exactly ten UTF-8
+bytes, then `NaiveDate::parse_from_str(s, "%Y-%m-%d")`), **`parse_datetime`** (`due:`'s date-time
+and both ends of an `at:` or of an absolute `win:` — sixteen bytes, `%Y-%m-%dT%H:%M`) and
+**`parse_time`** (`at:`'s short end, a daily `win:` and `pref:` — five bytes, `%H:%M`).  Fork 4748911
+reads with the same three: their source is byte-identical there, and both lock files pin chrono
+0.4.45.  `parse_date` is also what the fork's log replay reads a routine's `inst=` with.
+
+chrono's `%Y` is SIGNED: whitespace (`str::trim_start`), then `-` or `+` with any number of digits,
+or one to four unsigned digits.  So `due:+026-09-09` is the year 26 to the host, `+2026-9-09` is
+2026-09-09 (with the sign the ten bytes leave room for a one-digit month), and `+10000-1-7` is
+10000-01-07.  Until W-43 the item line read its dates with a stricter reader of its own,
+`Field.parseDate` (four digits, two, two), which refused every signed spelling: a hand-typed signed
+year was a date to `tm check` and no date to the kernel, and after R3 `tm plan` would have planned it
+as fork 4748911 does not, with nothing to refuse it (README gap 4346).  It is D83's story told of a
+date instead of a separator, and it gets D83's answer: the kernel reads what the host reads.
+
+So the line reads through the log's readers now, and the kernel has ONE reading of a date.  They are
+stage 5's ports — `LogStamp.trimWs`, `LogStamp.lit` and `LogStamp.numIn` are chrono's
+`str::trim_start`, `Item::Literal` and unsigned `Item::Numeric` (D9 step B2, written for the log's
+`"t"`, which is why they report a `StampErr`); `Log.chronoYear` is the signed `%Y` and
+`Log.instDate?` is `parse_date` (D9 step C5, written for a routine's `inst=`) — MOVED here from
+`Stamp.lean` and `Log.lean` with their names, because the item line is read below both modules; their bodies are kept
+but `trimWs`'s (a recursion here, `LogStamp.trimWs_eq_dropWhile`) and `chronoDateParts`' and `instDate?`'s (below).  The
+names are cited on 75 lines of eleven other modules at `0984304`, and renaming would move every one for no new fact.  New here: `Log.chronoYmd`
+(the `%Y-%m-%d` items and what they leave, so `parse_date` and `parse_datetime` read one prefix),
+`Log.chronoHM` (the `%H:%M` items, likewise for `parse_datetime` and `parse_time`), `Log.dayOfParts?`
+(the date chrono reads, as a `Cal.Day`) and the item line's `Field.parseTime`; `Field.parseDT` is
+`parse_datetime` since W-43.
+
+**Each of the three reads RFC 3339's shape first, and chrono's items only where that fails** —
+`Log.instDate?` through `Field.parseDate`, `Field.parseDT` through the split at `T` it was, `Field.parseTime`
+through `parseClock` — and each carries the theorem that the result IS chrono's reading on every input
+(`Field.instDate?_is_chronos_parse_date`, `Field.parseDT_is_chronos_parse_datetime`,
+`Field.parseTime_is_chronos_parse_time`, with the bridges below): the strict reader answers only where
+chrono's items answer the same value, so the branch is an order of evaluation and not a second reading.  It
+is there because `decide` evaluates the strict reader in a fraction of the steps: built through chrono's
+items alone, `PlannerWit.lean`, whose witnesses load plans by `decide` and read every date in them, was
+killed at the 40 GB memory cap where it takes 7.6 GB at `0984304` (README W-43 track G, §1).
+
+`Field.parseDate` and `Field.parseClock` stay what they were: RFC 3339's `full-date` and the
+`HH:MM` of its `partial-time` (`DateTime::parse_from_rfc3339`: four digits, two, two, no sign and no
+whitespace — `Stamp.lean`'s `rfc3339` reads them), which is also the kernel's own wire spelling of a
+date (a request's `now`, a candidate's `due`).  chrono has two readers there, and so does the kernel;
+an item line reads with the generic one.
+
+**What the kernel still reads otherwise — parity P88.**  A date before 0001-01-01 (`0000-01-01`,
+`-001-01-01`, or a date-time in such a year) is a date to chrono and no `Cal.Day` (`Day := Nat`, its
+origin 0001-01-01, AGENTS §4), so `instDate?` and `parseDT` answer `none`, as `instDate?` already did
+for a routine's `inst=` (parity P33). -/
+
+namespace LogStamp
+
+/-- Why a `"t"` string is not a stamp. -/
+inductive StampErr
+  /-- fewer characters than the grammar needs -/
+  | tooShort
+  /-- not a date, or a date that does not exist -/
+  | badDate
+  /-- the date and the time are not separated by `T`, `t` or a space -/
+  | badSeparator
+  /-- not a time of day -/
+  | badTime
+  /-- a `.` with no digit after it -/
+  | badFraction
+  /-- not an offset, or an offset of a day or more -/
+  | badOffset
+  /-- characters after the offset -/
+  | tooLong
+  /-- the instant is before 0001-01-01T00:00:00Z, the origin of `Cal.Instant` -/
+  | beforeOrigin
+  /-- the instant is at or after 10000-01-01T00:00:00Z (`Cal.Instant.wf`, R10) -/
+  | pastYear9999
+deriving DecidableEq, Repr
+
+/-- `str::trim_start`, as its own recursion — a one-line body is inlined and reached by no call (W-43); `trimWs_eq_dropWhile` is the `dropWhile isSp` it was. -/
+def trimWs : List Char → List Char | [] => [] | c :: t => if isSp c then trimWs t else c :: t
+
+/-- `Item::Literal`: exactly `c`. -/
+def lit (c : Char) (e : StampErr) : List Char → Except StampErr (List Char)
+  | [] => .error .tooShort
+  | x :: t => if x == c then .ok t else .error e
+
+/-- An unsigned `Item::Numeric` of width `w`: whitespace, then one to `w` digits, in `[lo, hi]`
+(`Parsed`'s setters' ranges). -/
+def numIn (w lo hi : Nat) (e : StampErr) (s : List Char) : Except StampErr (Nat × List Char) :=
+  match readNat (((trimWs s).take w).takeWhile Field.isDigitC) with
+  | none => .error e
+  | some v =>
+    if lo ≤ v ∧ v ≤ hi then .ok (v, (trimWs s).drop (((trimWs s).take w).takeWhile Field.isDigitC).length)
+    else .error e
+
+/-- `str::trim_start` keeps a string that does not begin with whitespace. -/
+theorem trimWs_cons {c : Char} (t : List Char) (h : isSp c = false) : trimWs (c :: t) = c :: t := by
+  simp [trimWs, h]
+
+/-- `Item::Literal` consumes its character. -/
+theorem lit_cons (c : Char) (e : StampErr) (t : List Char) : lit c e (c :: t) = .ok t := by
+  simp [lit]
+
+/-- An unsigned numeric item over exactly `w` digits reads them and leaves what follows. -/
+theorem numIn_digits {w lo hi : Nat} {e : StampErr} {ds : List Char} (rest : List Char) {v : Nat}
+    (hlen : ds.length = w) (hd : ∀ c ∈ ds, Field.isDigitC c = true) (hne : ds ≠ [])
+    (hv : readNat ds = some v) (hlo : lo ≤ v) (hhi : v ≤ hi) :
+    numIn w lo hi e (ds ++ rest) = .ok (v, rest) := by
+  have htrim : trimWs (ds ++ rest) = ds ++ rest := by
+    cases ds with
+    | nil => exact absurd rfl hne
+    | cons a t => exact trimWs_cons (t ++ rest) (isSp_of_digit a (hd a (by simp)))
+  have htake : (ds ++ rest).take w = ds := List.take_left' hlen
+  have htw : ds.takeWhile Field.isDigitC = ds := by
+    have := (takeWhile_append_all Field.isDigitC ds [] hd (fun x hx => by simp at hx)).1
+    simpa using this
+  unfold numIn
+  rw [htrim, htake, htw, hv]
+  simp [hlo, hhi]
+
+/-- What an accepted numeric item reads is inside its range. -/
+theorem numIn_ok_range {w lo hi : Nat} {e : StampErr} {s rest : List Char} {v : Nat}
+    (h : numIn w lo hi e s = .ok (v, rest)) : lo ≤ v ∧ v ≤ hi := by
+  unfold numIn at h
+  split at h
+  · cases h
+  · split at h
+    · rename_i hr
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, _⟩ := h
+      exact hr
+    · cases h
+
+end LogStamp
+
+namespace Log
+
+/-- **chrono's `%Y`, signed** (`format::parse::parse_internal`'s `Numeric(Year, _)`, width 4, signed):
+whitespace (`str::trim_start`), then `-` or `+` with one or more ASCII digits and no width bound, or one
+to four unsigned digits.  The value must fit `Parsed::set_year`'s `i32` (a larger magnitude is
+`OUT_OF_RANGE`, as is an `i64` overflow, which the `i32` bound subsumes).  The year as an `Int`: stage 5
+D9 C5's port, so a negative year and a signed year past 9999 are years here as they are to chrono
+(B2's `LogStamp.yearOf` refuses both, which a timestamp's `beforeOrigin` and `pastYear9999` need). -/
+def chronoYear (s : List Char) : Option (Int × List Char) :=
+  match LogStamp.trimWs s with
+  | '-' :: t =>
+    match readNat (t.takeWhile Field.isDigitC) with
+    | some v => if v ≤ 2147483648 then some (-(v : Int), t.dropWhile Field.isDigitC) else none
+    | none => none
+  | '+' :: t =>
+    match readNat (t.takeWhile Field.isDigitC) with
+    | some v => if v ≤ 2147483647 then some ((v : Int), t.dropWhile Field.isDigitC) else none
+    | none => none
+  | _ =>
+    match LogStamp.numIn 4 0 9999 .badDate s with
+    | .ok (v, rest) => some ((v : Int), rest)
+    | .error _ => none
+
+/-- chrono's `%Y-%m-%d` items (W-43): `chronoYear`, then B2's readers of the fallback (`lit`, `numIn`:
+whitespace before each number, one or two digits for month and day), and what they leave.  It is the
+prefix `parse_date` and `parse_datetime` share, read once: `chronoDateParts` demands the end after it,
+`Field.parseDT` a literal `T` and `chronoHM`. -/
+def chronoYmd (s : List Char) : Option (Int × Nat × Nat × List Char) :=
+  match chronoYear s with
+  | none => none
+  | some (y, s) =>
+    match LogStamp.lit '-' .badDate s with
+    | .error _ => none
+    | .ok s =>
+      match LogStamp.numIn 2 1 12 .badDate s with
+      | .error _ => none
+      | .ok (m, s) =>
+        match LogStamp.lit '-' .badDate s with
+        | .error _ => none
+        | .ok s =>
+          match LogStamp.numIn 2 1 31 .badDate s with
+          | .error _ => none
+          | .ok (d, rest) => some (y, m, d, rest)
+
+/-- chrono's generic `%Y-%m-%d` (`NaiveDate::parse_from_str`): `chronoYmd`, then the end.  The year,
+month and day as written; validity is `chronoDateValid`'s. -/
+def chronoDateParts (s : List Char) : Option (Int × Nat × Nat) :=
+  (chronoYmd s).bind (fun r => if r.2.2.2.isEmpty then some (r.1, r.2.1, r.2.2.1) else none)
+
+/-- chrono's `%H:%M` items (W-43): `Numeric(Hour)` (whitespace, one or two digits, 0 to 23, which is
+`Parsed::set_hour`'s range), `Literal(":")`, `Numeric(Minute)` (0 to 59), and what they leave — the
+time half of `parse_datetime` and the whole of `parse_time`. -/
+def chronoHM (s : List Char) : Option (Nat × Nat × List Char) :=
+  match LogStamp.numIn 2 0 23 .badTime s with
+  | .error _ => none
+  | .ok (h, s) =>
+    match LogStamp.lit ':' .badTime s with
+    | .error _ => none
+    | .ok s =>
+      match LogStamp.numIn 2 0 59 .badTime s with
+      | .error _ => none
+      | .ok (m, rest) => some (h, m, rest)
+
+/-- **`NaiveDate::from_ymd_opt`** for a proleptic Gregorian year that may be zero or negative: the year in
+chrono's range (`MIN_YEAR = (i32::MIN >> 13) + 1`, `MAX_YEAR = (i32::MAX >> 13) - 1`), and the month and
+day valid in it.  A year's leap rule repeats every 400 years, so it is read at the year of its class in
+`[400, 800)` (as `isoWeekOfKey` does). -/
+def chronoDateValid (y : Int) (m d : Nat) : Bool :=
+  decide (-262143 ≤ y) && decide (y ≤ 262142) &&
+    Cal.Date.valid ⟨((y % 400 + 400) % 400 + 400).toNat, m, d⟩
+
+/-- **The date chrono reads, as a `Cal.Day`** (W-43): a year, month and day chrono's
+`NaiveDate::from_ymd_opt` accepts (`chronoDateValid`), in year 1 or later.  Year 0 and a negative year
+are dates to chrono and no `Cal.Day` (`Day := Nat` starts at 0001-01-01), so they are `none` here:
+parity P33 for a routine's `inst=`, P88 for an item line's date. -/
+def dayOfParts? (y : Int) (m d : Nat) : Option Nat :=
+  if 1 ≤ y ∧ chronoDateValid y m d then some (Cal.toDay ⟨y.toNat, m, d⟩) else none
+
+/-- Rust's `str::len`: a string's length in **UTF-8 bytes**, not in characters (a `foldl`, D9-21).
+chrono's numeric items skip Unicode whitespace (`LogStamp.trimWs`), so a 10-character date spelled
+with a no-break space is 11 bytes, and `parse_date` refuses it before chrono reads it
+(`the_date_grammars_count_bytes_not_characters`; stage 5 D9 C4's repair). -/
+def utf8Len (s : List Char) : Nat := s.foldl (fun n c => n + c.utf8Size) 0
+
+/-- `str::len` is the character count when every character is one byte. -/
+theorem utf8Len_of_ascii {l : List Char} (h : ∀ c ∈ l, c.utf8Size = 1) : utf8Len l = l.length := by
+  have hgo : ∀ (l : List Char) (a : Nat), (∀ c ∈ l, c.utf8Size = 1) →
+      l.foldl (fun n c => n + c.utf8Size) a = a + l.length := by
+    intro l
+    induction l with
+    | nil => intro a _; simp
+    | cons c t ih =>
+        intro a hl
+        simp only [List.foldl_cons, List.length_cons]
+        rw [ih _ (fun x hx => hl x (by simp [hx])), hl c (by simp)]
+        omega
+  unfold utf8Len
+  rw [hgo l 0 h]
+  simp
+
+/-- A decimal digit is one byte. -/
+theorem utf8Size_of_digit {c : Char} (h : Field.isDigitC c = true) : c.utf8Size = 1 := by
+  rcases Field.isDigitC_cases h with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> rfl
+
+/-- The 400-year cycle: a year and the year of its class in `[400, 800)` have one leap rule. -/
+theorem isLeap_cycle (y : Nat) : Cal.isLeap (y % 400 + 400) = Cal.isLeap y := by
+  unfold Cal.isLeap
+  have h4 : (y % 400 + 400) % 4 = y % 4 := by omega
+  have h100 : (y % 400 + 400) % 100 = y % 100 := by omega
+  have h400 : (y % 400 + 400) % 400 = y % 400 := by omega
+  rw [h4, h100, h400]
+
+/-- chrono accepts every `Cal` date of a year it can hold. -/
+theorem chronoDateValid_of_valid {y m d : Nat} (hv : Cal.Date.valid ⟨y, m, d⟩ = true)
+    (hy : y ≤ 262142) : chronoDateValid (y : Int) m d = true := by
+  have hc : ((((y : Int) % 400 + 400) % 400 + 400).toNat) = y % 400 + 400 := by omega
+  have hv' := (Cal.valid_iff _).1 hv
+  simp only at hv'
+  unfold chronoDateValid
+  rw [hc]
+  simp only [Bool.and_eq_true, decide_eq_true_eq]
+  refine ⟨⟨by omega, by omega⟩, ?_⟩
+  rw [Cal.valid_iff]
+  simp only [isLeap_cycle]
+  omega
+
+/-- …and a date chrono accepts in year 1 or later is a `Cal` date. -/
+theorem valid_of_chronoDateValid {y : Int} {m d : Nat} (h1 : 1 ≤ y)
+    (h : chronoDateValid y m d = true) : Cal.Date.valid ⟨y.toNat, m, d⟩ = true := by
+  have hc : (((y % 400 + 400) % 400 + 400).toNat) = y.toNat % 400 + 400 := by omega
+  unfold chronoDateValid at h
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+  obtain ⟨_, hv⟩ := h
+  rw [hc] at hv
+  have hv' := (Cal.valid_iff _).1 hv
+  simp only [isLeap_cycle] at hv'
+  rw [Cal.valid_iff]
+  simp only
+  omega
+
+/-- What `dayOfParts?` answers is the date it was given, a `Cal` date. -/
+theorem dayOfParts?_some {y : Int} {m d n : Nat} (h : dayOfParts? y m d = some n) :
+    1 ≤ y ∧ Cal.Date.valid ⟨y.toNat, m, d⟩ = true ∧ n = Cal.toDay ⟨y.toNat, m, d⟩ := by
+  unfold dayOfParts? at h
+  split at h
+  · rename_i hc
+    simp only [Option.some.injEq] at h
+    exact ⟨hc.1, valid_of_chronoDateValid hc.1 hc.2, h.symm⟩
+  · cases h
+
+/-- **Unsigned, a year is at most four digits.**  `chronoYear`'s third arm reads one to four digits
+(`numIn 4 0 9999`), its `-` arm a year of 0 or before; only a `+` reaches a year past 9999. -/
+theorem chronoYear_le_unless_plus {s rest : List Char} {y : Int}
+    (h : chronoYear s = some (y, rest)) (hp : (LogStamp.trimWs s).head? ≠ some '+') : y ≤ 9999 := by
+  unfold chronoYear at h
+  split at h
+  · split at h
+    · split at h
+      · simp only [Option.some.injEq, Prod.mk.injEq] at h
+        omega
+      · cases h
+    · cases h
+  · rename_i t ht
+    rw [ht] at hp
+    exact absurd rfl hp
+  · split at h
+    · rename_i v r hn
+      simp only [Option.some.injEq, Prod.mk.injEq] at h
+      have := (LogStamp.numIn_ok_range hn).2
+      omega
+    · cases h
+
+/-- `chronoYmd`'s first item is `chronoYear`. -/
+theorem chronoYmd_year {s rest : List Char} {y : Int} {m d : Nat}
+    (h : chronoYmd s = some (y, m, d, rest)) : ∃ r, chronoYear s = some (y, r) := by
+  unfold chronoYmd at h
+  split at h
+  · cases h
+  · rename_i y' r hy
+    split at h
+    · cases h
+    · split at h
+      · cases h
+      · split at h
+        · cases h
+        · split at h
+          · cases h
+          · simp only [Option.some.injEq, Prod.mk.injEq] at h
+            exact ⟨r, by rw [hy, h.1]⟩
+
+/-- **The `%Y-%m-%d` items on RFC 3339's shape** — four digits, a dash, two, a dash, two: they read the
+year, the month and the day, and leave what follows. -/
+theorem chronoYmd_digits {ys ms ds : List Char} (rest : List Char) {y m d : Nat}
+    (hyl : ys.length = 4) (hml : ms.length = 2) (hdl : ds.length = 2)
+    (hy : readNat ys = some y) (hm : readNat ms = some m) (hd : readNat ds = some d)
+    (hm1 : 1 ≤ m) (hm12 : m ≤ 12) (hd1 : 1 ≤ d) (hd31 : d ≤ 31) :
+    chronoYmd (ys ++ '-' :: (ms ++ '-' :: (ds ++ rest))) = some ((y : Int), m, d, rest) := by
+  have hy9 : y ≤ 9999 := by
+    have := Field.readNat_lt_pow_length hy
+    rw [hyl] at this
+    omega
+  have hyd := Field.readNat_all_digits hy
+  have hne : ys ≠ [] := by intro hz; rw [hz] at hyl; cases hyl
+  have hyear : chronoYear (ys ++ '-' :: (ms ++ '-' :: (ds ++ rest)))
+      = some ((y : Int), '-' :: (ms ++ '-' :: (ds ++ rest))) := by
+    unfold chronoYear
+    have hnum := LogStamp.numIn_digits (lo := 0) (hi := 9999) (e := .badDate)
+      ('-' :: (ms ++ '-' :: (ds ++ rest))) hyl hyd hne hy (Nat.zero_le _) hy9
+    cases hp : ys with
+    | nil => exact absurd hp hne
+    | cons a t =>
+        have ha : Field.isDigitC a = true := hyd a (by rw [hp]; simp)
+        rw [hp] at hnum
+        have htrim : LogStamp.trimWs (a :: t ++ '-' :: (ms ++ '-' :: (ds ++ rest)))
+            = a :: t ++ '-' :: (ms ++ '-' :: (ds ++ rest)) :=
+          LogStamp.trimWs_cons _ (isSp_of_digit a ha)
+        have hnm : a ≠ '-' := fun hz => by rw [hz] at ha; exact absurd ha (by decide)
+        have hnp : a ≠ '+' := fun hz => by rw [hz] at ha; exact absurd ha (by decide)
+        rw [htrim]
+        simp only [List.cons_append]
+        split
+        · rename_i heq; simp only [List.cons.injEq] at heq; exact absurd heq.1 hnm
+        · rename_i heq; simp only [List.cons.injEq] at heq; exact absurd heq.1 hnp
+        · simp only [List.cons_append] at hnum
+          rw [hnum]
+  have hmon := LogStamp.numIn_digits (lo := 1) (hi := 12) (e := .badDate)
+    ('-' :: (ds ++ rest)) hml (Field.readNat_all_digits hm)
+    (by intro hz; rw [hz] at hml; cases hml) hm hm1 hm12
+  have hday := LogStamp.numIn_digits (lo := 1) (hi := 31) (e := .badDate)
+    rest hdl (Field.readNat_all_digits hd)
+    (by intro hz; rw [hz] at hdl; cases hdl) hd hd1 hd31
+  unfold chronoYmd
+  rw [hyear]
+  simp only [LogStamp.lit_cons]
+  rw [hmon]
+  simp only [LogStamp.lit_cons]
+  rw [hday]
+
+/-- **The `%H:%M` items on RFC 3339's shape** — two digits, a colon, two: they read the hour and the
+minute, and leave what follows. -/
+theorem chronoHM_digits {hs ms : List Char} (rest : List Char) {h m : Nat}
+    (hhl : hs.length = 2) (hml : ms.length = 2) (hh : readNat hs = some h) (hm : readNat ms = some m)
+    (hh23 : h ≤ 23) (hm59 : m ≤ 59) :
+    chronoHM (hs ++ ':' :: (ms ++ rest)) = some (h, m, rest) := by
+  have hhour := LogStamp.numIn_digits (lo := 0) (hi := 23) (e := .badTime)
+    (':' :: (ms ++ rest)) hhl (Field.readNat_all_digits hh)
+    (by intro hz; rw [hz] at hhl; cases hhl) hh (Nat.zero_le _) hh23
+  have hmin := LogStamp.numIn_digits (lo := 0) (hi := 59) (e := .badTime)
+    rest hml (Field.readNat_all_digits hm)
+    (by intro hz; rw [hz] at hml; cases hml) hm (Nat.zero_le _) hm59
+  unfold chronoHM
+  rw [hhour]
+  simp only [LogStamp.lit_cons]
+  rw [hmin]
+
+/-- A string of digits and the separators an RFC 3339 date-time spells (`-`, `T`, `:`) is one byte a
+character. -/
+theorem utf8Len_of_dateish {l : List Char}
+    (h : ∀ x ∈ l, Field.isDigitC x = true ∨ x = '-' ∨ x = 'T' ∨ x = ':') : utf8Len l = l.length :=
+  utf8Len_of_ascii (fun x hx => by
+    rcases h x hx with hd | rfl | rfl | rfl
+    · exact utf8Size_of_digit hd
+    · rfl
+    · rfl
+    · rfl)
+
+/-- A `Cal` date of a year below 10000 is the day `dayOfParts?` reads. -/
+theorem dayOfParts?_of_valid {y m d : Nat} (hv : Cal.Date.valid ⟨y, m, d⟩ = true) (hy : y < 10000) :
+    dayOfParts? (y : Int) m d = some (Cal.toDay ⟨y, m, d⟩) := by
+  have h1 : 1 ≤ y := ((Cal.valid_iff _).1 hv).1
+  unfold dayOfParts?
+  rw [if_pos ⟨by omega, chronoDateValid_of_valid hv (by omega)⟩]
+  rfl
+
+end Log
+
+namespace Field
+
+/-- **`parse_time`** (`model.rs`, W-43): exactly five bytes (`s.len() != 5`), then chrono's `%H:%M`
+(`Log.chronoHM`) and the end.  The item line's `at:` short end, a daily `win:` and `pref:` read
+through it.  It reads RFC 3339's `HH:MM` first (`parseClock`), which chrono reads the same way
+(`parseTime_is_chronos_parse_time`, with the bridges below), because `decide` evaluates the strict reader
+in a fraction of the steps; chrono's own items answer the rest.  It is not `parseClock`: chrono's numeric
+items skip whitespace, so ` 9:05` is 09:05 to it and nothing to RFC 3339 — a word never holds one. -/
+def parseTime (w : List Char) : Option Clock :=
+  match parseClock w with
+  | some c => some c
+  | none =>
+    if Log.utf8Len w = 5 then
+      (Log.chronoHM w).bind (fun r => if r.2.2.isEmpty then mkClock? r.1 r.2.1 else none)
+    else none
+
+/-- A rendered clock is five one-byte characters. -/
+theorem renderClock_utf8Len (c : Clock) : Log.utf8Len (renderClock c) = 5 := by
+  rw [Log.utf8Len_of_ascii (fun x hx => by
+    rcases renderClock_chars c x hx with h | h
+    · exact Log.utf8Size_of_digit h
+    · rw [h]; rfl)]
+  exact renderClock_length c
+
+/-- **The time round trip**: `parse_time` reads back every clock the kernel writes. -/
+theorem parse_render_time (c : Clock) : parseTime (renderClock c) = some c := by
+  unfold parseTime
+  rw [parse_render_clock]
+
 /-! ## Dates
 
 `due:2026-09-11` is `Cal`'s calendar, not a second one: a date **is** a day
 number, and `Cal.ofDay` / `Cal.toDay` is the proved bijection between the two.
-`parseDate` therefore cannot accept 2026-02-30, and nothing here re-derives a
-leap rule.
+No reader here can accept 2026-02-30, and nothing here re-derives a leap rule.
+
+An item line reads its dates with chrono's readers since W-43 (the section above,
+README gap 4346): `due:`'s date and `waiting:` through `Log.instDate?`, a
+date-time through `parseDT`.  `parseDate` below is RFC 3339's `full-date` — four
+digits, two, two — which is what a log stamp's date and the kernel's own wire
+(`now`, a candidate's `due`) are written in, and what `renderDate` writes.
 
 Widths are checked the way `parse_date` checks them (`s.len() != 10`), so
 `2026-9-11` is not a date — which means the round trip needs the year to fit
 in four digits.  `dayWf` is that side condition, decidable, and stated rather
-than assumed. -/
+than assumed.  chrono reads a SIGNED year past 9999 (`+10000-1-7`), which no
+render can write back, so a date the line reads need not be `dayWf`; it is
+unless its year carries a `+` (`instDate?_dayWf_unless_signed`). -/
 
 /-- Decidable: this day number's year fits the four-digit field. -/
 def dayWf (n : Nat) : Bool := decide ((Cal.ofDay n).year < 10000)
@@ -1510,6 +2033,9 @@ def renderDate (n : Nat) : List Char :=
 def mkDate? (y m d : Nat) : Option Nat :=
   if Cal.Date.valid ⟨y, m, d⟩ then some (Cal.toDay ⟨y, m, d⟩) else none
 
+/-- RFC 3339's `full-date` (`DateTime::parse_from_rfc3339`): four digits, two, two, and a real date.
+`Stamp.lean`'s `rfc3339` and the kernel's wire read a date with it; an item line does not (it reads
+`Log.instDate?`, chrono's `parse_date`, since W-43). -/
 def parseDate (w : List Char) : Option Nat :=
   (splitFirst '-' w).bind (fun p =>
     (splitFirst '-' p.2).bind (fun q =>
@@ -1524,6 +2050,31 @@ theorem date_accepts_feb29_2024 :
     parseDate ['2','0','2','4','-','0','2','-','2','9'] = some (Cal.toDay ⟨2024, 2, 29⟩) := by decide
 theorem date_rejects_unpadded : parseDate ['2','0','2','6','-','9','-','1','1'] = none := by decide
 theorem date_rejects_year_zero : parseDate ['0','0','0','0','-','0','1','-','0','1'] = none := by decide
+
+end Field
+
+namespace Log
+
+/-- **`parse_date`** (`model.rs`): exactly 10 bytes (`s.len() != 10`), then chrono's `%Y-%m-%d`, as a
+`Day` (`dayOfParts?`).  Year 0 and negative years are dates to chrono and not a `Cal.Day`, so they are
+`none` here (P23's residue; for a routine's done date, parity P33; for an item line's, P88).  A signed
+year past 9999 (`+10000-1-7`) is a date to chrono and is one here (stage 5 D9 C5, through `chronoYear`).
+Since W-43 it is the item line's date as well — `due:`'s date form and `waiting:` — so a date has one
+reading in the kernel (README gap 4346).
+
+**It reads RFC 3339's shape first** (`Field.parseDate`: four digits, two, two), which chrono reads the
+same way — `Field.instDate?_is_chronos_parse_date`, with the bridges below, says this function IS chrono's
+reading on every input — because `decide` evaluates the strict reader in a fraction of the steps.  Read
+through chrono's items alone, every date a witness loads by `decide` paid for them, and `PlannerWit.lean`
+(7.6 GB at `0984304`) was killed at the 40 GB cap (README W-43 track G, §1). -/
+def instDate? (s : List Char) : Option Nat :=
+  match Field.parseDate s with
+  | some n => some n
+  | none => if utf8Len s = 10 then (chronoDateParts s).bind (fun (y, m, d) => dayOfParts? y m d) else none
+
+end Log
+
+namespace Field
 
 /-- **The date round trip.** -/
 theorem parse_render_date (n : Nat) (h : dayWf n = true) : parseDate (renderDate n) = some n := by
@@ -1550,6 +2101,13 @@ theorem parse_render_date (n : Nat) (h : dayWf n = true) : parseDate (renderDate
       = Cal.ofDay n := rfl
   rw [this, Cal.toDay_ofDay]
 
+/-- **The item line's date round trip** (W-43): `parse_date` reads back every date the kernel writes,
+so `due:`'s date and `waiting:` survive an edit as they did under `parseDate`. -/
+theorem the_line_reads_back_the_date_it_writes (n : Nat) (h : dayWf n = true) :
+    Log.instDate? (renderDate n) = some n := by
+  unfold Log.instDate?
+  rw [parse_render_date n h]
+
 theorem renderDate_chars (n : Nat) : ∀ c ∈ renderDate n, isDigitC c = true ∨ c = '-' := by
   intro c hc
   unfold renderDate at hc
@@ -1564,6 +2122,19 @@ theorem renderDate_chars (n : Nat) : ∀ c ∈ renderDate n, isDigitC c = true �
         rcases h1 with rfl | h1
         · exact Or.inr rfl
         · exact Or.inl (padTo_digits 2 _ c h1)
+
+/-- A rendered date is ten one-byte characters. -/
+theorem renderDate_utf8Len (n : Nat) (h : dayWf n = true) : Log.utf8Len (renderDate n) = 10 := by
+  have hy : (Cal.ofDay n).year < 10000 := by simpa [dayWf] using h
+  have hm := ofDay_month_bounds n
+  have hd := ofDay_day_bounds n
+  rw [Log.utf8Len_of_ascii (fun x hx => by
+    rcases renderDate_chars n x hx with h | h
+    · exact Log.utf8Size_of_digit h
+    · rw [h]; rfl)]
+  unfold renderDate
+  simp only [List.length_append, List.length_cons]
+  rw [padTo4_length _ hy, padTo2_length _ hm.2, padTo2_length _ hd.2]
 
 theorem renderDate_avoid (n : Nat) (x : Char) (h1 : isDigitC x = false) (h2 : x ≠ '-') :
     ∀ c ∈ renderDate n, c ≠ x := by
@@ -1600,9 +2171,30 @@ def DT.wf (x : DT) : Bool := dayWf x.day
 
 def renderDT (x : DT) : List Char := renderDate x.day ++ 'T' :: renderClock x.time
 
+/-- **`parse_datetime`** (`model.rs`, W-43): exactly sixteen bytes (`s.len() != 16`), then chrono's
+`%Y-%m-%dT%H:%M` — `Log.chronoYmd`'s date, a literal `T` (`Item::Literal`, `LogStamp.lit`),
+`Log.chronoHM`'s time and the end — as a `Cal.Day` (`Log.dayOfParts?`) and a `Clock`.  `due:`'s
+date-time and both ends of an `at:` or an absolute `win:` read through it.  Until W-43 it split the
+word at its first `T` and read `parseDate` and `parseClock`, which refused every signed year chrono
+reads (README gap 4346).  It reads RFC 3339's `YYYY-MM-DDTHH:MM` first — the reader it was — which
+chrono reads the same way (`parseDT_is_chronos_parse_datetime`, with the bridges below), because
+`decide` evaluates the strict reader in a fraction of the steps; chrono's own items answer the rest. -/
 def parseDT (w : List Char) : Option DT :=
-  (splitFirst 'T' w).bind (fun p =>
-    (parseDate p.1).bind (fun d => (parseClock p.2).map (fun t => DT.mk d t)))
+  match (splitFirst 'T' w).bind (fun p =>
+      (parseDate p.1).bind (fun d => (parseClock p.2).map (fun t => DT.mk d t))) with
+  | some x => some x
+  | none =>
+  if Log.utf8Len w = 16 then
+    (Log.chronoYmd w).bind (fun ymd =>
+      match LogStamp.lit 'T' .badSeparator ymd.2.2.2 with
+      | .error _ => none
+      | .ok s =>
+        (Log.chronoHM s).bind (fun hm =>
+          if hm.2.2.isEmpty then
+            (Log.dayOfParts? ymd.1 ymd.2.1 ymd.2.2.1).bind (fun d =>
+              (mkClock? hm.1 hm.2.1).map (fun t => DT.mk d t))
+          else none))
+  else none
 
 theorem renderDT_chars (x : DT) :
     ∀ c ∈ renderDT x, isDigitC c = true ∨ c = '-' ∨ c = 'T' ∨ c = ':' := by
@@ -1629,18 +2221,25 @@ theorem renderDT_avoid (x : DT) (y : Char) (h1 : isDigitC y = false) (h2 : y ≠
   · exact h3 h
   · exact h4 h
 
-theorem parse_render_DT (x : DT) (h : x.wf = true) : parseDT (renderDT x) = some x := by
-  unfold renderDT parseDT
-  rw [splitFirst_append 'T' (renderDate x.day) (renderClock x.time)
-        (renderDate_avoid x.day 'T' rfl (by decide))]
-  simp only [Option.bind_some]
-  rw [parse_render_date x.day (by simpa [DT.wf] using h)]
-  simp only [Option.bind_some]
-  rw [parse_render_clock]
-  rfl
+/-- **The date-time round trip**, stated over the two halves a render writes. -/
+theorem parseDT_render (d : Nat) (t : Clock) (h : dayWf d = true) :
+    parseDT (renderDate d ++ 'T' :: renderClock t) = some ⟨d, t⟩ := by
+  have hs : (splitFirst 'T' (renderDate d ++ 'T' :: renderClock t)).bind (fun p =>
+      (parseDate p.1).bind (fun d => (parseClock p.2).map (fun t => DT.mk d t))) = some ⟨d, t⟩ := by
+    rw [splitFirst_append 'T' (renderDate d) (renderClock t) (renderDate_avoid d 'T' rfl (by decide))]
+    simp only [Option.bind_some]
+    rw [parse_render_date d h]
+    simp only [Option.bind_some]
+    rw [parse_render_clock]
+    rfl
+  unfold parseDT
+  rw [hs]
 
-/-- A clock is never a date-time: it carries no `T`, so the long form and the
-short form cannot be confused. -/
+theorem parse_render_DT (x : DT) (h : x.wf = true) : parseDT (renderDT x) = some x :=
+  parseDT_render x.day x.time (by simpa [DT.wf] using h)
+
+/-- A clock is never a date-time: it carries no `T`, and it is five bytes where a date-time is
+sixteen, so the long form and the short form cannot be confused. -/
 theorem parseDT_clock_none (t : Clock) : parseDT (renderClock t) = none := by
   have hns : splitFirst 'T' (renderClock t) = none := by
     apply splitFirst_none
@@ -1651,7 +2250,8 @@ theorem parseDT_clock_none (t : Clock) : parseDT (renderClock t) = none := by
     · exact absurd h (by decide)
   unfold parseDT
   rw [hns]
-  rfl
+  simp only [Option.bind_none]
+  rw [if_neg (by rw [renderClock_utf8Len]; decide)]
 
 
 /-! ### `due:` — a date or a date-time
@@ -1677,14 +2277,17 @@ def renderMoment : Moment → List Char
   | .date d       => renderDate d
   | .dateTime d t => renderDate d ++ 'T' :: renderClock t
 
+/-- `due:`'s date-time form: `parse_datetime` (`parseDT`). -/
 def parseMomentDT (w : List Char) : Option Moment :=
-  (splitFirst 'T' w).bind (fun p =>
-    (parseDate p.1).bind (fun d => (parseClock p.2).map (fun t => Moment.dateTime d t)))
+  (parseDT w).map (fun x => Moment.dateTime x.day x.time)
 
+/-- **`Moment::parse`** (`model.rs`): `parse_date`, else `parse_datetime` — the two need ten and
+sixteen bytes, so at most one answers and the order is immaterial.  Since W-43 the date form reads
+through `Log.instDate?`, chrono's `parse_date` (README gap 4346). -/
 def parseMoment (w : List Char) : Option Moment :=
   match parseMomentDT w with
   | some m => some m
-  | none   => (parseDate w).map Moment.date
+  | none   => (Log.instDate? w).map Moment.date
 
 /-- **The `due:` round trip**, in both forms. -/
 theorem parse_render_moment (m : Moment) (h : m.wf = true) :
@@ -1692,27 +2295,29 @@ theorem parse_render_moment (m : Moment) (h : m.wf = true) :
   cases m with
   | date d =>
       have hd : dayWf d = true := h
+      have hdt : parseDT (renderDate d) = none := by
+        have hns : splitFirst 'T' (renderDate d) = none :=
+          splitFirst_none 'T' (renderDate d) (renderDate_avoid d 'T' rfl (by decide))
+        unfold parseDT
+        rw [hns]
+        simp only [Option.bind_none]
+        rw [if_neg (by rw [renderDate_utf8Len d hd]; decide)]
       have hnone : parseMomentDT (renderDate d) = none := by
         unfold parseMomentDT
-        rw [splitFirst_none 'T' (renderDate d) (renderDate_avoid d 'T' rfl (by decide))]
+        rw [hdt]
         rfl
       show parseMoment (renderDate d) = _
       unfold parseMoment
       rw [hnone]
-      show (parseDate (renderDate d)).map Moment.date = _
-      rw [parse_render_date d hd]
+      show (Log.instDate? (renderDate d)).map Moment.date = _
+      rw [the_line_reads_back_the_date_it_writes d hd]
       rfl
   | dateTime d t =>
       have hd : dayWf d = true := h
       have hsome : parseMomentDT (renderDate d ++ 'T' :: renderClock t)
           = some (Moment.dateTime d t) := by
         unfold parseMomentDT
-        rw [splitFirst_append 'T' (renderDate d) (renderClock t)
-              (renderDate_avoid d 'T' rfl (by decide))]
-        simp only [Option.bind_some]
-        rw [parse_render_date d hd]
-        simp only [Option.bind_some]
-        rw [parse_render_clock t]
+        rw [parseDT_render d t hd]
         rfl
       show parseMoment (renderDate d ++ 'T' :: renderClock t) = _
       unfold parseMoment
@@ -1727,9 +2332,9 @@ theorem moment_datetime_form :
       = some (.dateTime (Cal.toDay ⟨2026, 9, 11⟩) ⟨1439, by decide⟩) := by decide
 
 /-- The short end form: a bare `HH:MM` on the start's day, rolled forward when
-it precedes the start (`parse_interval`). -/
+it precedes the start (`parse_interval`), read by `parse_time` (`parseTime`, W-43). -/
 def parseEndShort (s : DT) (b : List Char) : Option DT :=
-  (parseClock b).map (fun t => if t.val < s.time.val then DT.mk (s.day + 1) t else DT.mk s.day t)
+  (parseTime b).map (fun t => if t.val < s.time.val then DT.mk (s.day + 1) t else DT.mk s.day t)
 
 def parseEnd (s : DT) (b : List Char) : Option DT :=
   match parseDT b with
@@ -1773,7 +2378,7 @@ theorem parse_render_interval (s e : DT) (h : intervalWf s e = true) :
     unfold parseEnd
     rw [parseDT_clock_none e.time]
     unfold parseEndShort
-    rw [parse_render_clock e.time]
+    rw [parse_render_time e.time]
     simp only [Option.map_some, if_neg htime]
     rw [hday]
   · rw [if_neg hday]
@@ -1805,7 +2410,7 @@ def renderWindow : WindowRange → List Char
 
 def parseWindowDaily (w : List Char) : Option WindowRange :=
   (splitFirst '-' w).bind (fun p =>
-    (parseClock p.1).bind (fun a => (parseClock p.2).map (fun b => WindowRange.daily a b)))
+    (parseTime p.1).bind (fun a => (parseTime p.2).map (fun b => WindowRange.daily a b)))
 
 def parseWindow (w : List Char) : Option WindowRange :=
   match parseInterval w with
@@ -1854,9 +2459,9 @@ theorem parse_render_window (r : WindowRange) (h : windowWf r = true) :
       unfold parseWindowDaily
       rw [splitFirst_append '-' (renderClock f) (renderClock t) (renderClock_no_dash f)]
       simp only [Option.bind_some]
-      rw [parse_render_clock f]
+      rw [parse_render_time f]
       simp only [Option.bind_some]
-      rw [parse_render_clock t]
+      rw [parse_render_time t]
       rfl
   | absolute s e =>
       unfold renderWindow parseWindow
@@ -1890,7 +2495,7 @@ def parsePref (w : List Char) : Option Pref :=
   | some rest => (parseDur rest).map Pref.wakePlus
   | none      =>
     if w = ['w','a','k','e'] then some (.wakePlus (.simple 0 .minutes))
-    else (parseClock w).map Pref.clock
+    else (parseTime w).map Pref.clock
 
 theorem pref_bare_wake : parsePref ['w','a','k','e'] = some (.wakePlus (.simple 0 .minutes)) := by
   decide
@@ -1916,13 +2521,13 @@ theorem parse_render_pref (p : Pref) : parsePref (renderPref p) = some p := by
         exact Bool.noConfusion hdig
       rw [hnone]
       show (if renderClock t = ['w','a','k','e'] then _
-            else (parseClock (renderClock t)).map Pref.clock) = _
+            else (parseTime (renderClock t)).map Pref.clock) = _
       have hne : renderClock t ≠ ['w','a','k','e'] := by
         intro hc
         have hl := renderClock_length t
         rw [hc] at hl
         exact absurd hl (by decide)
-      rw [if_neg hne, parse_render_clock t]
+      rw [if_neg hne, parse_render_time t]
       rfl
 
 
@@ -3343,7 +3948,7 @@ def viewAfter     (r : RawItem) : Option (List Dep)   := (lookupKey .after r).bi
 def viewLoc       (r : RawItem) : Option Loc          := (lookupKey .loc r).bind parseLoc
 def viewEstKey    (r : RawItem) : Option Dur          := (lookupKey .est r).bind parseDurND
 def viewDemoted   (r : RawItem) : Option (List Stamp) := (lookupKey .demoted r).bind parseStamps
-def viewWaiting   (r : RawItem) : Option Nat          := (lookupKey .waiting r).bind parseDate
+def viewWaiting   (r : RawItem) : Option Nat          := (lookupKey .waiting r).bind Log.instDate?
 def viewBuffer    (r : RawItem) : Option Dur          := (lookupKey .buffer r).bind parseDur
 def viewCiKey     (r : RawItem) : Option (Fin 6)      := (lookupKey .ci r).bind parseCi
 
@@ -4090,8 +4695,8 @@ theorem view_set_demoted (ss : List Stamp) (r : RawItem) (h : ss ≠ []) :
 theorem view_set_waiting (n : Nat) (r : RawItem) (h : dayWf n = true) :
     viewWaiting (setWaiting n r) = some n := by
   unfold viewWaiting setWaiting; rw [lookupKey_setKey]
-  show parseDate (renderDate n) = _
-  exact parse_render_date n h
+  show Log.instDate? (renderDate n) = _
+  exact the_line_reads_back_the_date_it_writes n h
 
 theorem view_set_buffer (d : Dur) (r : RawItem) : viewBuffer (setBuffer d r) = some d := by
   unfold viewBuffer setBuffer; rw [lookupKey_setKey]
@@ -4304,7 +4909,7 @@ theorem setKeyIn_head_sep (k : Key) (v : List Char) (ts : List Tok) :
     · rw [setKeyIn_cons_neg k v t ts' (by simpa using hk)]; rfl
 
 /-- **Whatever a key setter writes, the kernel reads back.** -/
-theorem setKey_canonical (i : Id) (k : Key) (v : List Char) (r : RawItem)
+theorem setKey_canonical_box_ended (i : Id) (k : Key) (v : List Char) (r : RawItem)
     (hv : wordWf v = true) (h : CanonicalItem i r = true) :
     CanonicalItem i (setKey k v r) = true := by
   obtain ⟨hb, hind, hlead, hend, htw, hids⟩ := (canonical_iff i r).1 h
@@ -4347,7 +4952,7 @@ back to the same item — same id, same box, same tokens. -/
 theorem setKey_line_reparses (i : Id) (g : Glyph) (k : Key) (v : List Char) (r : RawItem)
     (hv : wordWf v = true) (h : CanonicalItem i r = true) :
     parseItem (serializeItem i g (setKey k v r)) = .ok (i, g, setKey k v r) :=
-  parse_serialize i g (setKey k v r) (setKey_canonical i k v r hv h)
+  parse_serialize_box_ended i g (setKey k v r) (setKey_canonical_box_ended i k v r hv h)
 
 /-! ### Flags: the one setter whose domain has to be bounded
 
@@ -5130,7 +5735,8 @@ theorem view_render_waiting
     viewWaiting (renderItem i f) = f.waiting := by
   unfold viewWaiting
   rw [lookupKey_render i f Key.waiting htitle hunp hextra, kv_waiting f]
-  exact bind_map_render f.waiting renderDate parseDate (fun a hx => parse_render_date a (optWf_some hv hx))
+  exact bind_map_render f.waiting renderDate Log.instDate?
+    (fun a hx => the_line_reads_back_the_date_it_writes a (optWf_some hv hx))
 
 include htitle hunp hextra in
 theorem view_render_buffer :
@@ -6375,7 +6981,7 @@ theorem idToks_render (i : Id) (f : Fields) (h : Fields.canonicalWf i f = true) 
 
 /-- **The line the kernel writes from a `Fields` is canonical**, so round trip
 A applies to it. -/
-theorem renderItem_canonical (i : Id) (f : Fields) (h : Fields.canonicalWf i f = true) :
+theorem renderItem_canonical_box_ended (i : Id) (f : Fields) (h : Fields.canonicalWf i f = true) :
     CanonicalItem i (renderItem i f) = true := by
   have hwf : Fields.wf i f = true := by
     simp only [Fields.canonicalWf, Bool.and_eq_true] at h; exact h.1
@@ -6400,7 +7006,7 @@ theorem render_round_trip (i : Id) (g : Glyph) (f : Fields)
       ∧ viewFields (renderItem i f) = f := by
   have hwf : Fields.wf i f = true := by
     simp only [Fields.canonicalWf, Bool.and_eq_true] at h; exact h.1
-  exact ⟨parse_serialize i g (renderItem i f) (renderItem_canonical i f h),
+  exact ⟨parse_serialize_box_ended i g (renderItem i f) (renderItem_canonical_box_ended i f h),
     field_round_trip i f hwf⟩
 
 
@@ -6442,7 +7048,7 @@ theorem demo_round_trips : viewFields (renderItem ['t','3'] demoFields) = demoFi
 theorem demo_line_reparses :
     parseItem (serializeItem ['t','3'] Glyph.todo (renderItem ['t','3'] demoFields))
       = .ok (['t','3'], Glyph.todo, renderItem ['t','3'] demoFields) :=
-  parse_serialize _ _ _ (renderItem_canonical _ _ demo_wf)
+  parse_serialize_box_ended _ _ _ (renderItem_canonical_box_ended _ _ demo_wf)
 
 set_option maxRecDepth 20000
 
@@ -6569,7 +7175,7 @@ theorem row_est_1b : parseDurND ['1','b'] = some (.simple 1 .blocks) := by decid
 theorem row_demoted_stamps : parseStamps ['W','3','6',',','W','3','7'] = some [.week 36, .week 37] := by decide
 
 /-- `waiting:` (tool-written) -/
-theorem row_waiting_date : parseDate ['2','0','2','6','-','0','9','-','0','5'] = some (Cal.toDay ⟨2026, 9, 5⟩) := by decide
+theorem row_waiting_date : Log.instDate? ['2','0','2','6','-','0','9','-','0','5'] = some (Cal.toDay ⟨2026, 9, 5⟩) := by decide
 
 /-- `buffer:` -/
 theorem row_buffer_2h : parseDur ['2','h'] = some (.simple 2 .hours) := by decide
@@ -6756,7 +7362,7 @@ theorem idWords_endBox (b : Bool) (ts : List Tok) :
   · rfl
 
 /-- **`tm edit ^id <key>=` takes a canonical line to a canonical line.** -/
-theorem unsetKey_canonical (i : Id) (k : Key) (r : RawItem) (h : CanonicalItem i r = true) :
+theorem unsetKey_canonical_box_ended (i : Id) (k : Key) (r : RawItem) (h : CanonicalItem i r = true) :
     CanonicalItem i (unsetKey k r) = true := by
   obtain ⟨hb, hind, hlead, hend, htw, hids⟩ := (canonical_iff i r).1 h
   refine (canonical_iff i (unsetKey k r)).2 ⟨hb, hind, hlead, ?_, ?_, ?_⟩
@@ -6772,7 +7378,7 @@ theorem unsetKey_canonical (i : Id) (k : Key) (r : RawItem) (h : CanonicalItem i
 theorem unsetKey_line_reparses (i : Id) (g : Glyph) (k : Key) (r : RawItem)
     (h : CanonicalItem i r = true) :
     parseItem (serializeItem i g (unsetKey k r)) = .ok (i, g, unsetKey k r) :=
-  parse_serialize i g (unsetKey k r) (unsetKey_canonical i k r h)
+  parse_serialize_box_ended i g (unsetKey k r) (unsetKey_canonical_box_ended i k r h)
 
 /-- `setFlag` is not vacuous either: on §4.1's own line it succeeds, and the
 flag it writes is the flag the view reports. -/
@@ -6800,54 +7406,22 @@ is `dayWf` (`parseDate_dayWf`), and `due`, `waiting` and both ends of a long
 rolls a clock that precedes the start onto the next day (`parseEndShort`), and
 on 9999-12-31 the next day has a five-digit year no `renderDate` can write
 back: `at:9999-12-31T23:00/01:00` parses, and `intervalWf` refuses it.
-`parseInterval_wf_unless_rollover` says that is the *only* way a parsed
-interval fails `intervalWf`; `parseWindow_wf_unless_rollover` carries it to
-`win:`'s absolute form. -/
 
-theorem readNat_foldl_none (l : List Char) :
-    l.foldl (fun acc c => match acc, charDigit c with
-                          | some a, some d => some (a * 10 + d)
-                          | _, _ => none) (none : Option Nat) = none := by
-  induction l with
-  | nil => rfl
-  | cons c t ih => simpa using ih
-
-theorem charDigit_lt {c : Char} {d : Nat} (h : charDigit c = some d) : d < 10 := by
-  unfold charDigit at h
-  split at h <;> simp_all <;> omega
-
-theorem readNat_foldl_lt (l : List Char) : ∀ (a b : Nat),
-    l.foldl (fun acc c => match acc, charDigit c with
-                          | some a, some d => some (a * 10 + d)
-                          | _, _ => none) (some a) = some b →
-      b < (a + 1) * 10 ^ l.length := by
-  induction l with
-  | nil => intro a b h; simp at h; subst h; simp
-  | cons c t ih =>
-      intro a b h
-      cases hcd : charDigit c with
-      | none =>
-          simp only [List.foldl_cons, hcd] at h
-          rw [readNat_foldl_none] at h; simp at h
-      | some d =>
-          simp only [List.foldl_cons, hcd] at h
-          have hd := charDigit_lt hcd
-          have := ih _ _ h
-          have hle : (a * 10 + d + 1) ≤ (a + 1) * 10 := by omega
-          calc b < (a * 10 + d + 1) * 10 ^ t.length := this
-            _ ≤ ((a + 1) * 10) * 10 ^ t.length := Nat.mul_le_mul_right _ hle
-            _ = (a + 1) * 10 ^ (c :: t).length := by
-                simp [List.length_cons, Nat.pow_succ]; rw [Nat.mul_assoc, Nat.mul_comm 10]
-
-/-- **The one width fact** gap 40 names: a numeral read from `k` characters is
-below `10 ^ k`. -/
-theorem readNat_lt_pow_length {l : List Char} {n : Nat} (h : readNat l = some n) :
-    n < 10 ^ l.length := by
-  unfold readNat at h
-  split at h
-  · simp at h
-  · have := readNat_foldl_lt l 0 n h
-    simpa using this
+**Since W-43 (README gap 4346) the line's dates are chrono's, and a second way
+in is a signed year.**  `parseDate` still demands four characters and
+`parseDate_dayWf` still holds of it, but the item line reads `Log.instDate?` and
+`parseDT`, chrono's `parse_date` and `parse_datetime`, whose `%Y` takes a `+`
+and any number of digits: `+10000-1-7` is 10000-01-07 to the host and to the
+kernel, and no render writes it back.  So the bridges are restated on the
+subdomain where they hold and the subdomain is named:
+`instDate?_dayWf_unless_signed`, `parseDT_wf_unless_signed` and
+`parseMoment_wf_unless_signed` (only a `+` reaches a year past 9999:
+`Log.chronoYear_le_unless_plus`), and an interval's failure is its END past
+9999, of which the rollover is one case
+(`parseInterval_wf_unless_its_end_is_past_9999`,
+`parseWindow_wf_unless_its_end_is_past_9999`).  Each statement they replace is
+refuted beside it by a signed spelling, `parseDT_wf_is_refuted` and its five
+siblings. -/
 
 theorem mkDate?_some {y m d n : Nat} (h : mkDate? y m d = some n) :
     Cal.Date.valid ⟨y, m, d⟩ = true ∧ n = Cal.toDay ⟨y, m, d⟩ := by
@@ -6877,40 +7451,269 @@ theorem parseDate_dayWf {w : List Char} {n : Nat} (h : parseDate w = some n) :
   · simp at h
 
 
-theorem parseDT_wf {w : List Char} {x : DT} (h : parseDT w = some x) : x.wf = true := by
-  unfold parseDT at h
-  simp only [Option.bind_eq_some_iff, Option.map_eq_some_iff] at h
-  obtain ⟨p, _, d, hd, t, _, hx⟩ := h
-  rw [← hx]
-  exact parseDate_dayWf hd
+/-- What RFC 3339's `full-date` reads (`parseDate`): four digits, a dash, two, a dash, two, and a `Cal`
+date. -/
+theorem parseDate_shape {w : List Char} {n : Nat} (h : parseDate w = some n) :
+    ∃ ys ms ds y m d, w = ys ++ '-' :: (ms ++ '-' :: ds) ∧ ys.length = 4 ∧ ms.length = 2 ∧
+      ds.length = 2 ∧ readNat ys = some y ∧ readNat ms = some m ∧ readNat ds = some d ∧
+      Cal.Date.valid ⟨y, m, d⟩ = true ∧ n = Cal.toDay ⟨y, m, d⟩ := by
+  unfold parseDate at h
+  simp only [Option.bind_eq_some_iff] at h
+  obtain ⟨⟨ys, r⟩, hsp, ⟨ms, ds⟩, hsq, h⟩ := h
+  split at h
+  · rename_i hlen
+    simp only [Option.bind_eq_some_iff] at h
+    obtain ⟨y, hy, m, hm, d, hd, hmk⟩ := h
+    obtain ⟨hv, hn⟩ := mkDate?_some hmk
+    have hw := splitFirst_sound '-' w ys r hsp
+    have hr := splitFirst_sound '-' r ms ds hsq
+    exact ⟨ys, ms, ds, y, m, d, by rw [hw, hr], hlen.1, hlen.2.1, hlen.2.2, hy, hm, hd, hv, hn⟩
+  · cases h
 
-theorem parseMoment_wf {w : List Char} {m : Moment} (h : parseMoment w = some m) :
-    m.wf = true := by
+/-- What RFC 3339's `HH:MM` reads (`parseClock`): two digits, a colon, two. -/
+theorem parseClock_shape {w : List Char} {c : Clock} (h : parseClock w = some c) :
+    ∃ hs ms hh mm, w = hs ++ ':' :: ms ∧ hs.length = 2 ∧ ms.length = 2 ∧ readNat hs = some hh ∧
+      readNat ms = some mm ∧ hh < 24 ∧ mm < 60 ∧ mkClock? hh mm = some c := by
+  unfold parseClock at h
+  simp only [Option.bind_eq_some_iff] at h
+  obtain ⟨⟨hs, ms⟩, hsp, h⟩ := h
+  split at h
+  · rename_i hlen
+    simp only [Option.bind_eq_some_iff] at h
+    obtain ⟨hh, h1, mm, h2, hmk⟩ := h
+    have hr : hh < 24 ∧ mm < 60 := by
+      unfold mkClock? at hmk
+      split at hmk
+      · rename_i hc; exact hc
+      · cases hmk
+    exact ⟨hs, ms, hh, mm, splitFirst_sound ':' w hs ms hsp, hlen.1, hlen.2, h1, h2, hr.1, hr.2, hmk⟩
+  · cases h
+
+/-- RFC 3339's date, as chrono's `%Y-%m-%d` items read it: the same year, month and day. -/
+theorem chronoYmd_of_parseDate {ys ms ds : List Char} (rest : List Char) {y m d : Nat}
+    (hyl : ys.length = 4) (hml : ms.length = 2) (hdl : ds.length = 2) (hy : readNat ys = some y)
+    (hm : readNat ms = some m) (hd : readNat ds = some d) (hv : Cal.Date.valid ⟨y, m, d⟩ = true) :
+    Log.chronoYmd (ys ++ '-' :: (ms ++ '-' :: (ds ++ rest))) = some ((y : Int), m, d, rest) ∧
+      Log.dayOfParts? (y : Int) m d = some (Cal.toDay ⟨y, m, d⟩) := by
+  have hvv := (Cal.valid_iff _).1 hv
+  simp only at hvv
+  have hd31 : d ≤ 31 := by
+    have := Cal.monthLen_le_31 (Cal.isLeap y) (show m < 13 by omega)
+    omega
+  have hy10 : y < 10000 := by
+    have := readNat_lt_pow_length hy
+    rw [hyl] at this
+    exact this
+  exact ⟨Log.chronoYmd_digits rest hyl hml hdl hy hm hd hvv.2.1 hvv.2.2.1 hvv.2.2.2.1 hd31,
+    Log.dayOfParts?_of_valid hv hy10⟩
+
+/-- **`instDate?` is chrono's `parse_date`, on every input** (W-43): the RFC 3339 branch it reads
+first answers only where chrono's items answer the same day. -/
+theorem instDate?_is_chronos_parse_date (s : List Char) :
+    Log.instDate? s = if Log.utf8Len s = 10 then
+      (Log.chronoDateParts s).bind (fun (y, m, d) => Log.dayOfParts? y m d) else none := by
+  unfold Log.instDate?
+  split
+  · rename_i n hn
+    obtain ⟨ys, ms, ds, y, m, d, rfl, hyl, hml, hdl, hy, hm, hd, hv, rfl⟩ := parseDate_shape hn
+    have hyd := readNat_all_digits hy
+    have hmd := readNat_all_digits hm
+    have hdd := readNat_all_digits hd
+    have hlen : Log.utf8Len (ys ++ '-' :: (ms ++ '-' :: ds)) = 10 := by
+      rw [Log.utf8Len_of_dateish (fun x hx => by
+        simp only [List.mem_append, List.mem_cons] at hx
+        rcases hx with hx | rfl | hx | rfl | hx
+        · exact Or.inl (hyd x hx)
+        · exact Or.inr (Or.inl rfl)
+        · exact Or.inl (hmd x hx)
+        · exact Or.inr (Or.inl rfl)
+        · exact Or.inl (hdd x hx))]
+      simp only [List.length_append, List.length_cons, hyl, hml, hdl]
+    rw [if_pos hlen]
+    have he : ys ++ '-' :: (ms ++ '-' :: ds) = ys ++ '-' :: (ms ++ '-' :: (ds ++ [])) := by simp
+    obtain ⟨hymd, hday⟩ := chronoYmd_of_parseDate [] hyl hml hdl hy hm hd hv
+    unfold Log.chronoDateParts
+    rw [he, hymd]
+    simp only [Option.bind_some, List.isEmpty_nil, if_true]
+    rw [hday]
+  · rfl
+
+/-- **`parseDT` is chrono's `parse_datetime`, on every input** (W-43). -/
+theorem parseDT_is_chronos_parse_datetime (w : List Char) :
+    parseDT w = if Log.utf8Len w = 16 then
+      (Log.chronoYmd w).bind (fun ymd =>
+        match LogStamp.lit 'T' .badSeparator ymd.2.2.2 with
+        | .error _ => none
+        | .ok s =>
+          (Log.chronoHM s).bind (fun hm =>
+            if hm.2.2.isEmpty then
+              (Log.dayOfParts? ymd.1 ymd.2.1 ymd.2.2.1).bind (fun d =>
+                (mkClock? hm.1 hm.2.1).map (fun t => DT.mk d t))
+            else none))
+    else none := by
+  unfold parseDT
+  split
+  · rename_i x hx
+    simp only [Option.bind_eq_some_iff, Option.map_eq_some_iff] at hx
+    obtain ⟨⟨p1, p2⟩, hsp, n, hn, c, hc, rfl⟩ := hx
+    have hw := splitFirst_sound 'T' w p1 p2 hsp
+    obtain ⟨ys, ms, ds, y, m, d, rfl, hyl, hml, hdl, hy, hm, hd, hv, rfl⟩ := parseDate_shape hn
+    obtain ⟨hs, ns, hh, mm, rfl, hhl, hnl, hh1, hm1, hh24, hm60, hmk⟩ := parseClock_shape hc
+    subst hw
+    have hyd := readNat_all_digits hy
+    have hmd := readNat_all_digits hm
+    have hdd := readNat_all_digits hd
+    have hhd := readNat_all_digits hh1
+    have hnd := readNat_all_digits hm1
+    have hlen : Log.utf8Len ((ys ++ '-' :: (ms ++ '-' :: ds)) ++ 'T' :: (hs ++ ':' :: ns)) = 16 := by
+      rw [Log.utf8Len_of_dateish (fun x hx => by
+        simp only [List.mem_append, List.mem_cons] at hx
+        rcases hx with ((hx | rfl | hx | rfl | hx) | rfl | hx | rfl | hx)
+        · exact Or.inl (hyd x hx)
+        · exact Or.inr (Or.inl rfl)
+        · exact Or.inl (hmd x hx)
+        · exact Or.inr (Or.inl rfl)
+        · exact Or.inl (hdd x hx)
+        · exact Or.inr (Or.inr (Or.inl rfl))
+        · exact Or.inl (hhd x hx)
+        · exact Or.inr (Or.inr (Or.inr rfl))
+        · exact Or.inl (hnd x hx))]
+      simp only [List.length_append, List.length_cons, hyl, hml, hdl, hhl, hnl]
+    rw [if_pos hlen]
+    have he : (ys ++ '-' :: (ms ++ '-' :: ds)) ++ 'T' :: (hs ++ ':' :: ns) =
+        ys ++ '-' :: (ms ++ '-' :: (ds ++ 'T' :: (hs ++ ':' :: ns))) := by simp
+    obtain ⟨hymd, hday⟩ := chronoYmd_of_parseDate ('T' :: (hs ++ ':' :: ns)) hyl hml hdl hy hm hd hv
+    rw [he, hymd]
+    simp only [Option.bind_some, LogStamp.lit_cons]
+    have hn' : hs ++ ':' :: ns = hs ++ ':' :: (ns ++ []) := by simp
+    rw [hn', Log.chronoHM_digits [] hhl hnl hh1 hm1 (by omega) (by omega)]
+    simp only [Option.bind_some, List.isEmpty_nil, if_true]
+    rw [hday]
+    simp only [Option.bind_some, hmk, Option.map_some]
+  · rfl
+
+/-- **`parseTime` is chrono's `parse_time`, on every input** (W-43). -/
+theorem parseTime_is_chronos_parse_time (w : List Char) :
+    parseTime w = if Log.utf8Len w = 5 then
+      (Log.chronoHM w).bind (fun r => if r.2.2.isEmpty then mkClock? r.1 r.2.1 else none)
+    else none := by
+  unfold parseTime
+  split
+  · rename_i c hc
+    obtain ⟨hs, ns, hh, mm, rfl, hhl, hnl, hh1, hm1, hh24, hm60, hmk⟩ := parseClock_shape hc
+    have hhd := readNat_all_digits hh1
+    have hnd := readNat_all_digits hm1
+    have hlen : Log.utf8Len (hs ++ ':' :: ns) = 5 := by
+      rw [Log.utf8Len_of_dateish (fun x hx => by
+        simp only [List.mem_append, List.mem_cons] at hx
+        rcases hx with hx | rfl | hx
+        · exact Or.inl (hhd x hx)
+        · exact Or.inr (Or.inr (Or.inr rfl))
+        · exact Or.inl (hnd x hx))]
+      simp only [List.length_append, List.length_cons, hhl, hnl]
+    rw [if_pos hlen]
+    have hn' : hs ++ ':' :: ns = hs ++ ':' :: (ns ++ []) := by simp
+    rw [hn', Log.chronoHM_digits [] hhl hnl hh1 hm1 (by omega) (by omega)]
+    simp only [Option.bind_some, List.isEmpty_nil, if_true]
+    exact hmk.symm
+  · rfl
+
+/-- `dayWf` holds below a day it holds of: the year is monotone in the day. -/
+theorem dayWf_of_le {a b : Nat} (hab : a ≤ b) (hb : dayWf b = true) : dayWf a = true := by
+  have hya : (Cal.ofDay a).year = Cal.yearOfZ (a + 366) := rfl
+  have hyb : (Cal.ofDay b).year = Cal.yearOfZ (b + 366) := rfl
+  have hm := Cal.yearOfZ_mono (show a + 366 ≤ b + 366 by omega)
+  simp only [dayWf, decide_eq_true_eq, hya, hyb] at hb ⊢
+  omega
+
+/-- **The item line's date is writable unless its year is signed** (W-43): `parse_date` reads a year
+past 9999 only after a `+`, so a date the line reads from an unsigned word is `dayWf`. -/
+theorem instDate?_dayWf_unless_signed {w : List Char} {n : Nat} (h : Log.instDate? w = some n)
+    (hu : (LogStamp.trimWs w).head? ≠ some '+') : dayWf n = true := by
+  rw [instDate?_is_chronos_parse_date] at h
+  split at h
+  · simp only [Option.bind_eq_some_iff] at h
+    obtain ⟨⟨y, m, d⟩, hp, hd⟩ := h
+    obtain ⟨h1, hv, rfl⟩ := Log.dayOfParts?_some hd
+    unfold Log.chronoDateParts at hp
+    simp only [Option.bind_eq_some_iff] at hp
+    obtain ⟨⟨y', m', d', r⟩, hymd, he⟩ := hp
+    split at he
+    · simp only [Option.some.injEq, Prod.mk.injEq] at he
+      obtain ⟨rfl, rfl, rfl⟩ := he
+      obtain ⟨r', hyr⟩ := Log.chronoYmd_year hymd
+      have hy := Log.chronoYear_le_unless_plus hyr hu
+      simp only [dayWf, Cal.ofDay_toDay _ hv, decide_eq_true_eq]
+      omega
+    · cases he
+  · cases h
+
+/-- **…and so is its date-time** (`parse_datetime`, `parseDT`). -/
+theorem parseDT_wf_unless_signed {w : List Char} {x : DT} (h : parseDT w = some x)
+    (hu : (LogStamp.trimWs w).head? ≠ some '+') : x.wf = true := by
+  rw [parseDT_is_chronos_parse_datetime] at h
+  split at h
+  · simp only [Option.bind_eq_some_iff] at h
+    obtain ⟨⟨y, m, d, r⟩, hymd, h⟩ := h
+    split at h
+    · cases h
+    · simp only [Option.bind_eq_some_iff] at h
+      obtain ⟨⟨hh, mm, rr⟩, _, h⟩ := h
+      split at h
+      · simp only [Option.bind_eq_some_iff, Option.map_eq_some_iff] at h
+        obtain ⟨n, hn, t, _, rfl⟩ := h
+        obtain ⟨h1, hv, rfl⟩ := Log.dayOfParts?_some hn
+        obtain ⟨r', hyr⟩ := Log.chronoYmd_year hymd
+        have hy := Log.chronoYear_le_unless_plus hyr hu
+        show dayWf _ = true
+        simp only [dayWf, Cal.ofDay_toDay _ hv, decide_eq_true_eq]
+        omega
+      · cases h
+  · cases h
+
+/-- **…and so is `due:`'s moment**, in either form. -/
+theorem parseMoment_wf_unless_signed {w : List Char} {m : Moment} (h : parseMoment w = some m)
+    (hu : (LogStamp.trimWs w).head? ≠ some '+') : m.wf = true := by
   unfold parseMoment at h
   split at h
   · rename_i m' hdt
     simp only [Option.some.injEq] at h
     rw [← h]
     unfold parseMomentDT at hdt
-    simp only [Option.bind_eq_some_iff, Option.map_eq_some_iff] at hdt
-    obtain ⟨p, _, d, hd, t, _, hm⟩ := hdt
+    simp only [Option.map_eq_some_iff] at hdt
+    obtain ⟨x, hx, hm⟩ := hdt
     rw [← hm]
-    exact parseDate_dayWf hd
+    exact parseDT_wf_unless_signed hx hu
   · simp only [Option.map_eq_some_iff] at h
     obtain ⟨d, hd, hm⟩ := h
     rw [← hm]
-    exact parseDate_dayWf hd
+    exact instDate?_dayWf_unless_signed hd hu
 
-theorem parseEnd_spec {s e : DT} {b : List Char} (hs : s.wf = true) (h : parseEnd s b = some e) :
-    s.abs ≤ e.abs ∧ (e.wf = true ∨ e.day = s.day + 1) := by
+/-- **Refuted** (W-43): stage 3's parseDT_wf — every date-time the line reads is `dayWf` — is false
+since the line reads chrono's `parse_datetime`.  `+10000-1-7T08:15` is 10000-01-07 08:15 to the host
+and to the kernel, and no render writes it back. -/
+theorem parseDT_wf_is_refuted : ¬ ∀ (w : List Char) (x : DT), parseDT w = some x → x.wf = true := by
+  intro h
+  exact absurd (h ['+','1','0','0','0','0','-','1','-','7','T','0','8',':','1','5']
+    ⟨Cal.toDay ⟨10000, 1, 7⟩, ⟨495, by decide⟩⟩ (by decide)) (by decide)
+
+/-- **Refuted** (W-43): stage 3's parseMoment_wf, by `due:+10000-1-7`. -/
+theorem parseMoment_wf_is_refuted :
+    ¬ ∀ (w : List Char) (m : Moment), parseMoment w = some m → m.wf = true := by
+  intro h
+  exact absurd (h ['+','1','0','0','0','0','-','1','-','7'] (.date (Cal.toDay ⟨10000, 1, 7⟩))
+    (by decide)) (by decide)
+
+/-- An end `parseEnd` reads is never before its start: a long end is checked, a short one rolls. -/
+theorem parseEnd_orders_its_ends {s e : DT} {b : List Char} (h : parseEnd s b = some e) :
+    s.abs ≤ e.abs := by
   unfold parseEnd at h
   split at h
-  · rename_i e' he'
-    split at h
+  · split at h
     · rename_i hle
       simp only [Option.some.injEq] at h
       rw [← h]
-      exact ⟨hle, Or.inl (parseDT_wf he')⟩
+      exact hle
     · simp at h
   · unfold parseEndShort at h
     simp only [Option.map_eq_some_iff] at h
@@ -6918,53 +7721,138 @@ theorem parseEnd_spec {s e : DT} {b : List Char} (hs : s.wf = true) (h : parseEn
     have hst := s.time.isLt
     have htt := t.isLt
     split at ht
-    · rename_i hlt
-      rw [← ht]
-      refine ⟨?_, Or.inr rfl⟩
+    · rw [← ht]
       unfold DT.abs; simp only [Nat.add_mul]; omega
     · rename_i hge
       rw [← ht]
-      refine ⟨?_, Or.inl hs⟩
       unfold DT.abs; dsimp only; omega
 
-/-- **The `at:` bridge, and exactly where it fails.** -/
-theorem parseInterval_spec {w : List Char} {s e : DT} (h : parseInterval w = some (s, e)) :
-    s.wf = true ∧ s.abs ≤ e.abs ∧ (e.wf = true ∨ e.day = s.day + 1) := by
+/-- **Refuted** (W-43): stage 3's parseEnd_spec — from a writable start, an end is writable or the
+rolled next day — by a long end past 9999: `+10000-1-7T08:15` after 9999-12-30 23:00. -/
+theorem parseEnd_spec_is_refuted :
+    ¬ ∀ (s e : DT) (b : List Char), s.wf = true → parseEnd s b = some e →
+      s.abs ≤ e.abs ∧ (e.wf = true ∨ e.day = s.day + 1) := by
+  intro h
+  have := h ⟨Cal.toDay ⟨9999, 12, 30⟩, ⟨1380, by decide⟩⟩ ⟨Cal.toDay ⟨10000, 1, 7⟩, ⟨495, by decide⟩⟩
+    ['+','1','0','0','0','0','-','1','-','7','T','0','8',':','1','5'] (by decide) (by decide)
+  exact absurd this.2 (by decide)
+
+/-- An interval `parseInterval` reads is never backwards. -/
+theorem parseInterval_orders_its_ends {w : List Char} {s e : DT}
+    (h : parseInterval w = some (s, e)) : s.abs ≤ e.abs := by
   unfold parseInterval at h
   simp only [Option.bind_eq_some_iff, Option.map_eq_some_iff] at h
-  obtain ⟨p, _, s', hs', e', he', hse⟩ := h
+  obtain ⟨p, _, s', _, e', he', hse⟩ := h
   simp only [Prod.mk.injEq] at hse
   obtain ⟨rfl, rfl⟩ := hse
-  have hsw := parseDT_wf hs'
-  exact ⟨hsw, parseEnd_spec hsw he'⟩
+  exact parseEnd_orders_its_ends he'
 
-theorem parseInterval_wf_unless_rollover {w : List Char} {s e : DT}
-    (h : parseInterval w = some (s, e)) (hbad : intervalWf s e = false) :
-    e.day = s.day + 1 ∧ dayWf (s.day + 1) = false := by
-  obtain ⟨hs, hle, hor⟩ := parseInterval_spec h
-  rcases hor with he | hd
-  · simp [intervalWf, hs, he, hle] at hbad
-  · refine ⟨hd, ?_⟩
-    cases hw : dayWf (s.day + 1) with
-    | false => rfl
-    | true =>
-        have he : e.wf = true := by unfold DT.wf; rw [hd]; exact hw
-        simp [intervalWf, hs, he, hle] at hbad
+/-- **The `at:` bridge, and exactly where it fails** (restated at W-43): a parsed interval that is not
+writable has an END past 9999.  The rollover `at:9999-12-31T23:00/01:00` is one way to get there; a
+signed long end, or a signed start the end must follow, is the other. -/
+theorem parseInterval_wf_unless_its_end_is_past_9999 {w : List Char} {s e : DT}
+    (h : parseInterval w = some (s, e)) (hbad : intervalWf s e = false) : dayWf e.day = false := by
+  have hle := parseInterval_orders_its_ends h
+  have hday : s.day ≤ e.day := by
+    have := s.time.isLt; have := e.time.isLt
+    unfold DT.abs at hle; omega
+  cases he : dayWf e.day with
+  | false => rfl
+  | true =>
+      have hs := dayWf_of_le hday he
+      simp [intervalWf, DT.wf, hs, he, hle] at hbad
 
-theorem parseWindow_wf_unless_rollover {w : List Char} {g : WindowRange}
+/-- **Refuted** (W-43): stage 3's parseInterval_spec (a parsed start is writable) and its
+parseInterval_wf_unless_rollover (the rollover is the only failure), both by
+`at:+10000-1-7T08:15/09:00`: a start past 9999, an end on the same day. -/
+theorem parseInterval_spec_is_refuted :
+    ¬ ∀ (w : List Char) (s e : DT), parseInterval w = some (s, e) →
+      s.wf = true ∧ s.abs ≤ e.abs ∧ (e.wf = true ∨ e.day = s.day + 1) := by
+  intro h
+  have := h ['+','1','0','0','0','0','-','1','-','7','T','0','8',':','1','5','/','0','9',':','0','0']
+    ⟨Cal.toDay ⟨10000, 1, 7⟩, ⟨495, by decide⟩⟩ ⟨Cal.toDay ⟨10000, 1, 7⟩, ⟨540, by decide⟩⟩ (by decide)
+  exact absurd this.1 (by decide)
+
+theorem parseInterval_wf_unless_rollover_is_refuted :
+    ¬ ∀ (w : List Char) (s e : DT), parseInterval w = some (s, e) → intervalWf s e = false →
+      e.day = s.day + 1 ∧ dayWf (s.day + 1) = false := by
+  intro h
+  have := h ['+','1','0','0','0','0','-','1','-','7','T','0','8',':','1','5','/','0','9',':','0','0']
+    ⟨Cal.toDay ⟨10000, 1, 7⟩, ⟨495, by decide⟩⟩ ⟨Cal.toDay ⟨10000, 1, 7⟩, ⟨540, by decide⟩⟩
+    (by decide) (by decide)
+  exact absurd this.1 (by decide)
+
+/-- **The `win:` bridge**, restated at W-43: a parsed window that is not writable is an absolute one
+whose end is past 9999. -/
+theorem parseWindow_wf_unless_its_end_is_past_9999 {w : List Char} {g : WindowRange}
     (h : parseWindow w = some g) (hbad : windowWf g = false) :
-    ∃ s e, g = .absolute s e ∧ e.day = s.day + 1 ∧ dayWf (s.day + 1) = false := by
+    ∃ s e, g = .absolute s e ∧ dayWf e.day = false := by
   unfold parseWindow at h
   split at h
   · rename_i se hse
     simp only [Option.some.injEq] at h
     rw [← h] at hbad ⊢
-    exact ⟨se.1, se.2, rfl, parseInterval_wf_unless_rollover hse hbad⟩
+    exact ⟨se.1, se.2, rfl, parseInterval_wf_unless_its_end_is_past_9999 hse hbad⟩
   · unfold parseWindowDaily at h
     simp only [Option.bind_eq_some_iff, Option.map_eq_some_iff] at h
     obtain ⟨p, _, a, _, b, _, hg⟩ := h
     rw [← hg] at hbad
     simp [windowWf] at hbad
+
+/-- **Refuted** (W-43): stage 3's parseWindow_wf_unless_rollover, by `win:+10000-1-7T08:15/09:00`. -/
+theorem parseWindow_wf_unless_rollover_is_refuted :
+    ¬ ∀ (w : List Char) (g : WindowRange), parseWindow w = some g → windowWf g = false →
+      ∃ s e, g = .absolute s e ∧ e.day = s.day + 1 ∧ dayWf (s.day + 1) = false := by
+  intro h
+  obtain ⟨s, e, hg, hd, _⟩ := h
+    ['+','1','0','0','0','0','-','1','-','7','T','0','8',':','1','5','/','0','9',':','0','0']
+    (.absolute ⟨Cal.toDay ⟨10000, 1, 7⟩, ⟨495, by decide⟩⟩ ⟨Cal.toDay ⟨10000, 1, 7⟩, ⟨540, by decide⟩⟩)
+    (by decide) (by decide)
+  simp only [WindowRange.absolute.injEq] at hg
+  obtain ⟨rfl, rfl⟩ := hg
+  exact absurd hd (by decide)
+
+/-- **A signed year, read as the host reads it** (W-43, README gap 4346): `due:+026-09-09` is the
+year 26, `+2026-9-09` and `+2026-09-9` are 2026-09-09, and `+10000-1-7` is 10000-01-07 — `tm-core`'s
+`parse_date` answers each so, and fork 4748911's the same (README W-43 track G, §0); `waiting:` reads
+the same reader; and `+2026-09-07T8:15` is sixteen bytes `parse_datetime` reads. -/
+theorem the_line_reads_a_signed_year_as_chrono_does :
+    parseMoment ['+','0','2','6','-','0','9','-','0','9'] = some (.date (Cal.toDay ⟨26, 9, 9⟩)) ∧
+    parseMoment ['+','2','0','2','6','-','9','-','0','9'] = some (.date (Cal.toDay ⟨2026, 9, 9⟩)) ∧
+    parseMoment ['+','2','0','2','6','-','0','9','-','9'] = some (.date (Cal.toDay ⟨2026, 9, 9⟩)) ∧
+    parseMoment ['+','1','0','0','0','0','-','1','-','7'] = some (.date (Cal.toDay ⟨10000, 1, 7⟩)) ∧
+    parseDT ['+','2','0','2','6','-','0','9','-','0','7','T','8',':','1','5'] =
+      some ⟨Cal.toDay ⟨2026, 9, 7⟩, ⟨495, by decide⟩⟩ := by
+  decide
+
+/-- **What the kernel reads otherwise — parity P88**: a date before 0001-01-01 is no `Cal.Day`, so the
+line reads no date where chrono reads year 0 or a negative year (`0000-01-01`, `-001-01-01`, `-000-01-01`
+and a date-time in year 0); and a length `parse_date` refuses is refused here (`+2026-09-09` is eleven
+bytes). -/
+theorem a_date_before_year_one_is_no_date_on_the_line :
+    parseMoment ['0','0','0','0','-','0','1','-','0','1'] = none ∧
+    parseMoment ['-','0','0','1','-','0','1','-','0','1'] = none ∧
+    parseMoment ['-','0','0','0','-','0','1','-','0','1'] = none ∧
+    parseDT ['0','0','0','0','-','0','1','-','0','1','T','0','9',':','0','0'] = none ∧
+    parseMoment ['+','2','0','2','6','-','0','9','-','0','9'] = none := by
+  decide
+
+/-- chrono refuses a date that does not exist, as the line's old reader did: the year 26 is not a leap
+year and the year 24 is. -/
+theorem the_line_refuses_a_date_chrono_refuses :
+    parseMoment ['+','0','2','6','-','0','2','-','2','9'] = none ∧
+    parseMoment ['+','0','2','4','-','0','2','-','2','9'] = some (.date (Cal.toDay ⟨24, 2, 29⟩)) ∧
+    parseMoment ['2','0','2','6','-','0','2','-','3','0'] = none := by
+  decide
+
+/-- `parse_time` is chrono's `%H:%M`, not RFC 3339's `HH:MM`: chrono's numeric items skip whitespace
+(` 9:05` is 09:05 to it and nothing to `parseClock`), which no word holds, so on the line the two answer
+alike — `12:50` read, `1:50` and `24:00` refused. -/
+theorem parseTime_is_chronos_not_rfc3339s :
+    parseTime [' ','9',':','0','5'] = some ⟨545, by decide⟩ ∧ parseClock [' ','9',':','0','5'] = none ∧
+    parseTime ['1','2',':','5','0'] = some ⟨770, by decide⟩ ∧ parseTime ['1',':','5','0'] = none ∧
+    parseTime ['2','4',':','0','0'] = none := by
+  decide
 
 theorem parseRule_wf {w : List Char} {u : Rule} (h : parseRule w = some u) : u.wf = true := by
   unfold parseRule at h
@@ -7686,7 +8574,7 @@ theorem parseLine_serializeItem (i : Id) (g : Glyph) (r : RawItem)
           simp only [beq_iff_eq] at hids
           simp [hft, keyOf, hids]
 
-theorem canonicalKeyed_of_canonical (i : Id) (r : RawItem) (h : CanonicalItem i r = true) :
+theorem canonicalKeyed_of_canonical_box_ended (i : Id) (r : RawItem) (h : CanonicalItem i r = true) :
     CanonicalKeyed i r = true := by
   obtain ⟨hb, hind, hlead, hend, htw, hids⟩ := (canonical_iff i r).1 h
   unfold CanonicalKeyed
@@ -7761,5 +8649,19 @@ theorem rule_month_signed : parseRule ['m','o','n','t','h',':','+','5'] = some (
     parseRule ['m','o','n','t','h',':','-','5'] = none := by decide
 
 end Field
+
+namespace LogStamp
+/-- **The recursion is the `dropWhile` it replaced** (W-43, README gap 4346): `trimWs` was
+`s.dropWhile isSp` in `Stamp.lean`, and the move made it a recursion of its own so that the compiler
+emits a call to it (check 12); it drops the same characters on every input.  Written here, at the end
+of the module, so no line a check-9 pin names moves (README gap 2136). -/
+theorem trimWs_eq_dropWhile (s : List Char) : trimWs s = s.dropWhile isSp := by
+  induction s with
+  | nil => rfl
+  | cons c t ih =>
+    cases h : isSp c
+    · simp [trimWs, h]
+    · simp [trimWs, h, ih]
+end LogStamp
 
 end Tm

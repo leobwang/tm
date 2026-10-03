@@ -5092,13 +5092,15 @@ proptest! {
         case in case_strategy(),
         logged in prop::option::of((0u32..=60, 5u32..=30)),
         running in prop::option::of((0u32..=40, 5u32..=30)),
+        interrupted in prop::option::weighted(0.5, (1u32..=29, 1u32..=20)),
     ) {
         /// W-42's census beside W-36's: `[running breaks drawn, open rows compared on a
         /// running-break day whose readings differ, logged-break days whose readings were held
         /// equal (D87's one reading), reservations compared on a logged-break day, logged-break
         /// days held to one reading whose log holds a pause, unpause, interrupt or resume from the
-        /// block's start on (P84, README gap 4332)]`.
-        static W42_WORKED: Mutex<[u64; 5]> = Mutex::new([0; 5]);
+        /// block's start on (P84, README gap 4332), logged-break days held to one reading whose
+        /// break an interruption ended (D90, README gaps 4340 and 4390)]`.
+        static W42_WORKED: Mutex<[u64; 6]> = Mutex::new([0; 6]);
         let mut w = build(&case);
         let tz = w.cfg.tz;
         // A break LOGGED inside the running block, begun `into` minutes after it started and
@@ -5107,6 +5109,7 @@ proptest! {
         let mut drew = 0u64;
         let mut one_reading = false;
         let mut marked = false;
+        let mut d90 = false;
         if let (Some((into, len)), Some(a)) = (logged, w.state.active.clone()) {
             let started = local_dt(tz, date(), a.started);
             let t = started + Duration::minutes(i64::from(into));
@@ -5123,10 +5126,49 @@ proptest! {
                         e["t"].as_str().and_then(|s| DateTime::parse_from_rfc3339(s).ok())
                     })
                 };
-                let line = format!(
-                    "{{\"t\":\"{}\",\"ev\":\"break\",\"planned_min\":{len},\"actual_min\":{len}}}\n",
-                    t.format("%Y-%m-%dT%H:%M:%S%:z")
-                );
+                let stamp = |m: DateTime<Tz>| m.format("%Y-%m-%dT%H:%M:%S%:z").to_string();
+                // **D90 (README gaps 4340 and 4390, the W-43 land): an interruption taken during
+                // the break ENDS it.**  `tm interrupt` ends a running break first, as `tm break`'s
+                // ending arm does (`day::end_break`, P86): the break's line carries the minutes up
+                // to the interruption and is written at that instant, before the `interrupt` line,
+                // and `tm resume` writes its `resume` later.  So gap 4340's world — a timer mark
+                // inside a logged break, which this arm used to leave out by name — is drawn as the
+                // binary now writes it, on a stretch of the log nothing else is stamped in, and held
+                // to the one reading below like every other logged break.
+                let d90_world = interrupted
+                    .map(|(k, lost)| (1 + (k - 1) % (len - 1), lost))
+                    .map(|(k, lost)| {
+                        let m = t + Duration::minutes(i64::from(k));
+                        (m, m + Duration::minutes(i64::from(lost)), k, lost)
+                    })
+                    .filter(|&(_, r, _, _)| {
+                        r <= w.now
+                            && w.log.lines().all(|l| {
+                                at(l).is_none_or(|x| x < t.fixed_offset() || x > r.fixed_offset())
+                            })
+                    });
+                let (line, end) = match d90_world {
+                    Some((m, r, k, lost)) => (
+                        format!(
+                            "{{\"t\":\"{}\",\"ev\":\"break\",\"planned_min\":{len},\"actual_min\":{k}}}\n\
+                             {{\"t\":\"{}\",\"ev\":\"interrupt\",\"id\":\"{}\"}}\n\
+                             {{\"t\":\"{}\",\"ev\":\"resume\",\"lost_min\":{lost},\"dropped\":[]}}\n",
+                            stamp(t),
+                            stamp(m),
+                            a.id,
+                            stamp(r)
+                        ),
+                        m,
+                    ),
+                    None => (
+                        format!(
+                            "{{\"t\":\"{}\",\"ev\":\"break\",\"planned_min\":{len},\"actual_min\":{len}}}\n",
+                            stamp(t)
+                        ),
+                        end,
+                    ),
+                };
+                d90 = d90_world.is_some();
                 let mut before = String::new();
                 let mut after = String::new();
                 for l in w.log.split_inclusive('\n') {
@@ -5148,11 +5190,11 @@ proptest! {
                 // kernel keeps such a block paused (`close_pause_does_not_clear_paused`) where `tm
                 // resume` runs it, README gap 3521's divergence, which is not a break's; and a
                 // timer mark stamped strictly INSIDE the break — the kernel steps the break at its
-                // line, after that mark, so it credits the break's head before the mark to the
-                // block where the host's union nets it: README gap 4340, reachable in the binary
-                // only through `tm interrupt` during a running break (a typed `tm pause` there
-                // logs `unpause`, and D61 writes no wall pause while a break runs,
-                // `WallTimer.step`'s `stoppedAt`).
+                // line, after that mark, so it would credit the break's head before the mark to the
+                // block where the host's union nets it: README gap 4340, which the binary no longer
+                // writes — since D90 `tm interrupt` ENDS the break first, and that world is drawn
+                // above (the D90 world); a typed `tm pause` there logs `unpause`, and D61 writes no
+                // wall pause while a break runs (`WallTimer.step`'s `stoppedAt`).
                 let mut held = false;
                 let mut resumed_held = false;
                 let mut inside = false;
@@ -5291,6 +5333,7 @@ proptest! {
             r[2] += u64::from(drew == 1 && one_reading && host.is_some());
             r[3] += u64::from(drew == 1 && fres.is_some());
             r[4] += u64::from(drew == 1 && one_reading && marked && host.is_some());
+            r[5] += u64::from(drew == 1 && d90 && one_reading && host.is_some());
             *r
         };
         let generated: u64 = std::env::var("TM_PROPTEST_CASES")
@@ -5308,6 +5351,7 @@ proptest! {
             prop_assert!(r[0] > 0 && r[1] > 0, "no open row was compared on a running-break day whose readings differ");
             prop_assert!(r[2] > 0, "no logged-break day held the two readings equal (D87's one reading)");
             prop_assert!(r[3] > 0, "no reservation was compared on a day whose log holds a break inside the block");
+            prop_assert!(r[5] > 0, "no logged-break day whose break an interruption ended was held to one reading (D90)");
         }
         eprintln!(
             "planner_invariants W-36 worked census: {} cases, {} with a running block, {} with a break \
@@ -5318,9 +5362,9 @@ proptest! {
         );
         eprintln!(
             "planner_invariants W-42 worked census (D87): {} running breaks drawn, {} open rows compared on \
-             one whose readings differ; {} logged-break days held to one reading ({} with a timer mark, P84); \
-             {} reservations compared on a logged-break day",
-            r[0], r[1], r[2], r[4], r[3]
+             one whose readings differ; {} logged-break days held to one reading ({} with a timer mark, P84; \
+             {} whose break an interruption ended, D90); {} reservations compared on a logged-break day",
+            r[0], r[1], r[2], r[4], r[5], r[3]
         );
     }
 }

@@ -109,7 +109,7 @@
 CLASS unsent plan -- W-33 repair, 2026-09-25 (README gaps 2229 and 2560): W-24's row renderer (`Emit.lean`, `EmitWire.lean`), reached from the export through `Tm.EmitWire.runRowsP`'s `plan` arm, which no request the shipped binary builds carries; the definitions the day planner and the renderer share are reached through `planner` and `plan` together and are answered by the two lines at once. EXIT: R3, as above -- when the binary sends `plan`, this line FAILS as STALE and is deleted.
 CLASS proof PlanCheck -- W-35 repair, 2026-09-26 (README gaps 2923 and 2803): L26's checker battery (D28) -- `PlanCheck.lean`'s definitions are the predicates and axes the proved laws quantify over (`planOk`, `impossibleKept`, `owedByItsGrant` and the rest), and D28 made L26 a THEOREM rather than a runtime check, so nothing calls them: no library module imports `PlanCheck` but the witness module `PlannerWit` and the manifest `TmKernel.lean`, which `reach.proof_violations` checks on every run. Until this line the file listed them by name -- 61 entries in three sections, one more per step (W-35 track K's `owedByItsGrant`, gap 2803). EXIT: a library module other than a witness module imports `PlanCheck` (a runtime check of the battery, which D28 declined) -- `proof_violations` then FAILS this line, and every unreached definition of the module is NOT EXEMPT by name until it is reached (W-41, 2026-10-01: no longer "or listed in a new dated section" -- this file is strictly shrink-only, D51, the campaign's D81 call and README gaps 3953 and 4043).
 
-EXEMPT 1100
+EXEMPT 1099
 
 ## Arith.lean -- The exact-arithmetic layer. 18 of its 46 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.Arith.Bin.ix
@@ -357,7 +357,7 @@ Tm.jtailAcc
 Tm.notDigitStart
 Tm.numEnd
 
-## Line.lean -- The item line. 172 of its 252 emitted definitions are reached (re-derived on 2026-10-02 at W-42 track G, when the owner's D83 made the item grammar the host's: `isBoxEnd`, `parseBare`, `afterSlots` and `Field.endBox` added, all reached through `parseLine` and the edit path, and `tokBare` deleted; 165 of 249 before); the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
+## Line.lean -- The item line. 184 of its 264 emitted definitions are reached (re-derived on 2026-10-03 at W-43 track G, when README gap 4346 made the item line read a date through chrono's readers: `LogStamp.trimWs`, `LogStamp.lit`, `LogStamp.numIn`, `Log.chronoYear`, `Log.chronoDateParts`, `Log.chronoDateValid`, `Log.utf8Len` and `Log.instDate?` moved here from `Stamp.lean` and `Log.lean`, and `Log.chronoYmd`, `Log.chronoHM`, `Log.dayOfParts?` and `Field.parseTime` added, all twelve reached through the log op, the loader and the edit path -- `trimWs` since it is its own recursion, where its one-line body was inlined and its entry stood under `## Stamp.lean`; 172 of 252 before, re-derived on 2026-10-02 at W-42 track G, when the owner's D83 made the item grammar the host's: `isBoxEnd`, `parseBare`, `afterSlots` and `Field.endBox` added, all reached through `parseLine` and the edit path, and `tokBare` deleted; 165 of 249 before); the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.CanonicalItem
 Tm.CanonicalKeyed
 Tm.Field.DT.wf
@@ -430,7 +430,7 @@ Tm.setEst
 Tm.setEstIn
 Tm.setLeadWord
 
-## Log.lean -- the typed event grammar of `.tm/log.jsonl` (stage 5, D9 track, step B3). 57 of its 109 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
+## Log.lean -- the typed event grammar of `.tm/log.jsonl` (stage 5, D9 track, step B3). 52 of its 104 emitted definitions are reached (re-derived on 2026-10-03 at W-43 track G, when `chronoYear`, `chronoDateParts`, `chronoDateValid`, `utf8Len` and `instDate?`, all five reached, moved to `Line.lean` under their names: 57 of 109 before); the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.Log.Entry.canonical
 Tm.Log.Event.canonical
 Tm.Log.Event.isStateChange
@@ -614,7 +614,7 @@ Tm.Recur.weekIdxMod
 Tm.Recur.wholeDays
 Tm.Recur.windowOn
 
-## Replay.lean -- the kernel replays `.tm/log.jsonl` (stage 5, D9 track, phase C). 66 of its 206 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
+## Replay.lean -- the kernel replays `.tm/log.jsonl` (stage 5, D9 track, phase C). 67 of its 207 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.Replay.Ci6.fifths
 Tm.Replay.Ci6.sum
 Tm.Replay.Ci6.toList
@@ -914,10 +914,9 @@ Tm.Seal.resealOfWith
 Tm.Seal.resumeRunWith
 Tm.Seal.trimRun
 
-## Stamp.lean -- the log's timestamps (stage 5, D9 track, step B2). 22 of its 27 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
+## Stamp.lean -- the log's timestamps (stage 5, D9 track, step B2). 20 of its 24 emitted definitions are reached (re-derived on 2026-10-03 at W-43 track G, when `lit` and `numIn`, reached, and `trimWs`, whose entry stood below, moved to `Line.lean` under their names: 22 of 27 before); the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.LogStamp.accepted
 Tm.LogStamp.stampBefore
-Tm.LogStamp.trimWs
 
 ## State.lean -- Entity versus observation. 20 of its 38 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.Core.budget

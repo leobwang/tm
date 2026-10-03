@@ -694,6 +694,43 @@ pub(super) fn genesis_error(e: kernel_log::GenesisError) -> CliError {
     }
 }
 
+/// **What an automatic close computed IN MEMORY and did not write** — the owner's **D91** (W-43
+/// track H, README gap 4342). A TUI left open past local midnight asks the kernel for the documents
+/// §6.3's automatic close would leave and plans from them, writing nothing (D84: nothing writes on a
+/// timer); this is what it holds ([`super::closing::close_in_memory`]). No CLI verb holds one: its
+/// close is written.
+#[derive(Clone, Debug)]
+pub struct Held {
+    /// Every plan document the close changed or created, by path, as the kernel answered it.
+    pub docs: BTreeMap<String, String>,
+    /// The log lines the close would have appended, each with its newline, in order — the bytes
+    /// [`Ctx::append_line`] appends.
+    pub log: String,
+    /// What the context had read before the close was held: `.tm/state.json`'s stamps, the files
+    /// and the tree, which [`Ctx::release`] puts back.
+    before: (store::Closed, PlanFiles, Tree),
+}
+
+/// **The plan directory as a request reads it** ([`Ctx::reading`]): the store itself, or — while an
+/// automatic close is held in memory (D91) — a [`store::MemStore`] of `config.toml` and every plan
+/// file with the held documents laid over them.
+pub enum Reading<'a> {
+    /// The plan directory on disk.
+    Disk(&'a FsStore),
+    /// The plan directory as the close the TUI holds would leave it.
+    Held(store::MemStore),
+}
+
+impl Reading<'_> {
+    /// The store to read through.
+    pub fn store(&self) -> &dyn Store {
+        match self {
+            Reading::Disk(s) => *s,
+            Reading::Held(m) => m,
+        }
+    }
+}
+
 /// One loaded plan directory.
 pub struct Ctx {
     /// The store over the plan root ([`FsStore::root`] is the directory).
@@ -744,6 +781,11 @@ pub struct Ctx {
     pub model: Model,
     /// Items whose `on-event:` timeout elapsed and went back to `[ ]` (§5.1).
     pub timed_out: Vec<Id>,
+    /// **The automatic close a TUI past midnight holds in memory** (the owner's D91, README gap
+    /// 4342) — `None` for every CLI verb. Every request built from this context reads the plan
+    /// directory through [`Ctx::reading`] and the log through [`Ctx::log_now`], so with one held it
+    /// asks the kernel what `tm plan` asks after its own close.
+    pub held: Option<Held>,
 }
 
 impl Ctx {
@@ -886,6 +928,7 @@ impl Ctx {
             scope,
             model,
             timed_out: Vec::new(),
+            held: None,
         };
         // **D42**, before the automatic close and before any verb reads
         // `cx.state`: the cache is reconciled with the log it is a cache of.
@@ -1315,6 +1358,90 @@ impl Ctx {
             Ok(store.read_bytes(LOG_PATH)?)
         } else {
             Ok(Vec::new())
+        }
+    }
+
+    /// **The log as a request reads it** — the file's bytes, and the lines an automatic close
+    /// holds in memory (the owner's D91) appended as [`Ctx::append_line`] appends them, a torn last
+    /// line ended first (`Store::append_text`'s rule, P19). With nothing held, the file's bytes.
+    pub fn log_now(&self) -> Result<Vec<u8>, CliError> {
+        let mut bytes = Ctx::log_bytes(&self.store)?;
+        if let Some(held) = self.held.as_ref().filter(|h| !h.log.is_empty()) {
+            if !bytes.is_empty() && !bytes.ends_with(b"\n") {
+                bytes.push(b'\n');
+            }
+            bytes.extend_from_slice(held.log.as_bytes());
+        }
+        Ok(bytes)
+    }
+
+    /// **The plan directory as a request reads it** (the owner's D91): the store, or with an
+    /// automatic close held in memory a mirror of `config.toml` and every plan file with the held
+    /// documents laid over them — the documents `tm plan` reads after its own close, which created
+    /// a file it filed into and rewrote the ones it took from. One reader for every request built
+    /// from this context: the capacity and planner request, the walls request, and the in-memory
+    /// close's own.
+    pub fn reading(&self) -> Result<Reading<'_>, CliError> {
+        let Some(held) = &self.held else {
+            return Ok(Reading::Disk(&self.store));
+        };
+        let mirror = store::MemStore::new();
+        if self.store.exists(store::CONFIG_PATH) {
+            mirror.insert(store::CONFIG_PATH, &self.store.read_text(store::CONFIG_PATH)?);
+        }
+        for rel in self.store.list_files()? {
+            if !held.docs.contains_key(&rel) {
+                mirror.insert(&rel, &self.store.read_text(&rel)?);
+            }
+        }
+        for (rel, text) in &held.docs {
+            mirror.insert(rel, text);
+        }
+        Ok(Reading::Held(mirror))
+    }
+
+    /// **Hold an automatic close in memory** (the owner's D91): its changed and created documents,
+    /// its log lines and its stamps (`closed`), in place of any close held before ([`Ctx::release`]
+    /// first); the files and the tree are read again from the plan directory as it would then stand
+    /// ([`Ctx::reading`], parsed by the one `read_tree`). The replay is the one this context read:
+    /// the lines a close logs — `demote`, `move`, `close` — feed none of the facts a candidate or the
+    /// planner's day reads, and replaying the held lines here could reseal `.tm/cache/replay`, a
+    /// write on a timer (README gap 4392).
+    pub fn hold(&mut self, docs: BTreeMap<String, String>, lines: &[String], closed: store::Closed) -> Result<(), CliError> {
+        self.release();
+        let log = lines.iter().map(|l| format!("{l}\n")).collect();
+        let stamps = std::mem::replace(&mut self.state.closed, closed);
+        self.held = Some(Held { docs, log, before: (stamps, self.files.clone(), self.tree.clone()) });
+        // A tree that cannot be read as held is not held: the context is put back as it was read.
+        let files = match self.reading().and_then(|r| Ok(r.store().read_tree()?)) {
+            Ok(files) => files,
+            Err(e) => {
+                self.release();
+                return Err(e);
+            }
+        };
+        self.tree = files.tree();
+        self.files = files;
+        Ok(())
+    }
+
+    /// **The tree as this context read it from disk** while a close is held in memory (the owner's
+    /// D91) — `None` when nothing is held, when [`Ctx::tree`] is that tree. The TUI's editor opens an
+    /// item where it IS, and a file the held close changed is not that file on disk.
+    pub fn tree_as_read(&self) -> Option<&Tree> {
+        self.held.as_ref().map(|h| &h.before.2)
+    }
+
+    /// **Let go of a held close** (the owner's D91): the stamps, files and tree this context read
+    /// before it, and nothing held. A close the TUI holds is asked again from the plan directory as
+    /// it stands at every date change — ONE close, as `tm plan` runs one from the files it reads,
+    /// never a second stacked on the first, whose lines would carry the first midnight's stamps and
+    /// keys where `tm plan`'s one catch-up carries this one's.
+    pub fn release(&mut self) {
+        if let Some(Held { before: (closed, files, tree), .. }) = self.held.take() {
+            self.state.closed = closed;
+            self.files = files;
+            self.tree = tree;
         }
     }
 

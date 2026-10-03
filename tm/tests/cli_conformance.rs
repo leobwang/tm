@@ -383,3 +383,23 @@ fn every_at_flag_is_read_by_the_one_parser() {
     }
     assert_eq!(refused, 6 * 4);
 }
+
+/// **§13, `--help` and the runtime agree on `tm interrupt`'s rule** — the owner's D90 (W-43 track
+/// H, README gap 4340, parity P86): the spec says a running break ends first, `tm interrupt
+/// --help` says it, and the runtime does it (`cli_interrupt_break.rs`, the day of gap 4340 on every
+/// surface that reads a block's minutes).
+#[test]
+fn section_13_and_the_help_agree_that_tm_interrupt_ends_a_running_break_first() {
+    let dir = TempDir::new().expect("temp dir");
+    let help = help_of(&dir, &["interrupt".to_string()]).split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(help.contains("A running break ends first, logged as `tm break` logs its end"), "{help}");
+    let spec = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tm-spec-v1.md"),
+    )
+    .expect("the spec");
+    let section = spec.split("## 13. CLI").nth(1).and_then(|s| s.split("\n## 14.").next()).expect("§13");
+    assert!(
+        section.contains("`tm interrupt` while a break is running ends the break first"),
+        "§13 says D90's rule"
+    );
+}

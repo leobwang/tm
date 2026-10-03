@@ -163,22 +163,16 @@ fn the_base_is_the_ratchets() {
 #[test]
 fn every_frozen_comparand_reads_its_committed_history() {
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
-    let files: [(&str, Box<dyn Fn(&serde_json::Value) -> Option<String>>); 10] = [
-        ("fork-4748911-planner-classes.jsonl", Box::new(frozenhist::class_key)),
-        ("fork-4748911-planner-batch.jsonl", Box::new(frozenhist::key_of("draw"))),
-        ("fork-4748911-planner-driven.jsonl", Box::new(frozenhist::key_of("name"))),
-        ("fork-4748911-planner-p56.jsonl", Box::new(frozenhist::key_of("draw"))),
-        ("fork-4748911-planner-starts.jsonl", Box::new(frozenhist::key_of("name"))),
-        ("fork-4748911-planner-tui.jsonl", Box::new(frozenhist::key_of("name"))),
-        ("fork-4748911-planner-basic-days.jsonl", Box::new(frozenhist::key_of("name"))),
-        ("fork-4748911-planner-conference.jsonl", Box::new(frozenhist::key_of("name"))),
-        ("fork-4748911-planner-days.jsonl", Box::new(frozenhist::key_of("name"))),
-        ("fork-4748911-week-grid.jsonl", Box::new(frozenhist::key_of("name"))),
-    ];
+    // **Every frozen file, by a property** (W-43 track C, README gap 4461): until W-43 this named
+    // ten files by hand, so a comparand frozen after them was held by nothing here.
+    let files = frozenhist::frozen_files().unwrap_or_else(|e| panic!("{e}"));
+    assert!(files.len() >= 11, "the property finds {} frozen comparand files", files.len());
     for (name, key) in files {
-        let held = frozenhist::held(&fixtures.join(name), key).unwrap_or_else(|e| panic!("{e}"));
-        assert!(!held.head.is_empty(), "{name}: HEAD holds no line");
-        println!("{}", held.census(name));
+        let held = frozenhist::held(&fixtures.join(&name), key).unwrap_or_else(|e| panic!("{e}"));
+        // A file no committed version holds yet is one the working copy introduces (the commit that
+        // carries it gives it a history); one HEAD dropped while a committed version held lines is not.
+        assert!(!held.head.is_empty() || held.ever.is_empty(), "{name}: HEAD holds no line and a committed version did");
+        println!("{}", held.census(&name));
     }
 }
 
@@ -196,25 +190,20 @@ fn every_frozen_comparand_reads_its_committed_history() {
 /// and (2) **every key of the world and the provenance** (all but `frozenhist::is_answer`'s) are
 /// byte-identical — unless the newer version is a D64(b) re-draw (`frozenhist::redrawn`), whose
 /// world moved and whose fork was asked again. So a hand-moved world, class, test list or shipped
-/// day fails a plain run on the commit that moved it. WHAT IT CANNOT SEE, declared: a key that
-/// LEAVES the file (two keys, one leaving and one arriving, are not one line moving — README gap
-/// 4320, R's re-filed classes, which pass), and a comparand answer moved with the shipped day held
-/// (that is D64(a)/(c)'s to license, and only a bless knows its reason).
+/// day fails a plain run on the commit that moved it. And since W-43 track C (README gap 4320) a
+/// key that LEAVES the file is judged too: paired with the arrived line that holds its world
+/// (`frozenhist::refiles`), it is held as one line moving, its key's own fields licensed only by a
+/// newly set parity flag (`frozenhist::refiled_allows`); a key that leaves with no such twin is a
+/// finding. WHAT IT CANNOT SEE, declared: a comparand answer moved with the shipped day held (that
+/// is D64(a)/(c)'s to license, and only a bless knows its reason), and a line deleted with its world
+/// re-used by another line in the same commit (the pair is then judged as a re-file).
 #[test]
 fn every_committed_frozen_line_kept_its_world_and_the_shipped_answer() {
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
-    let files: [(&str, Box<dyn Fn(&serde_json::Value) -> Option<String>>); 10] = [
-        ("fork-4748911-planner-classes.jsonl", Box::new(frozenhist::class_key)),
-        ("fork-4748911-planner-batch.jsonl", Box::new(frozenhist::key_of("draw"))),
-        ("fork-4748911-planner-driven.jsonl", Box::new(frozenhist::key_of("name"))),
-        ("fork-4748911-planner-p56.jsonl", Box::new(frozenhist::key_of("draw"))),
-        ("fork-4748911-planner-starts.jsonl", Box::new(frozenhist::key_of("name"))),
-        ("fork-4748911-planner-tui.jsonl", Box::new(frozenhist::key_of("name"))),
-        ("fork-4748911-planner-basic-days.jsonl", Box::new(frozenhist::key_of("name"))),
-        ("fork-4748911-planner-conference.jsonl", Box::new(frozenhist::key_of("name"))),
-        ("fork-4748911-planner-days.jsonl", Box::new(frozenhist::key_of("name"))),
-        ("fork-4748911-week-grid.jsonl", Box::new(frozenhist::key_of("name"))),
-    ];
+    // **Every frozen file, by a property** (W-43 track C, README gap 4461): until W-43 this named
+    // ten files by hand, so a comparand frozen after them was held by nothing here.
+    let files = frozenhist::frozen_files().unwrap_or_else(|e| panic!("{e}"));
+    assert!(files.len() >= 11, "the property finds {} frozen comparand files", files.len());
     // **From the commit that brought this check in, never before it** — a property of the
     // history, not a sha written here: the first first-parent commit since the base whose
     // `tm/tests/fork_rebless_history.rs` holds this function (`HEAD` until that commit exists, so
@@ -227,13 +216,34 @@ fn every_committed_frozen_line_kept_its_world_and_the_shipped_answer() {
     let mut pairs = 0usize;
     let mut before = 0usize;
     let mut moved = Vec::new();
+    let mut refiled = 0usize;
     for (name, key) in files {
-        let versions = frozenhist::versions(&fixtures.join(name), key).unwrap_or_else(|e| panic!("{e}"));
+        let versions = frozenhist::versions(&fixtures.join(&name), key).unwrap_or_else(|e| panic!("{e}"));
         let commits = versions.len() - 1;
         let from = (0..commits).find(|i| holds_me(&versions[*i].0)).unwrap_or(commits - 1);
         for (i, w) in versions.windows(2).enumerate() {
             let ((was, old), (now, new)) = (&w[0], &w[1]);
             let judged = i >= from;
+            // **A line that moved to a new KEY is held as one line** (W-43 track C, README gap 4320):
+            // paired with the arrived line that holds its world, it is held as an in-place line is,
+            // but for the fields its key is made of, which move only under a newly set parity flag
+            // (`frozenhist::refiled_allows`); a line that left with no such twin is a finding.
+            let tag2 = |what: String| format!("{name}: {what} between {} and {}", &was[..was.len().min(9)], &now[..now.len().min(9)]);
+            let (paired, unpaired) = frozenhist::refiles(old, new);
+            let mut found: Vec<String> =
+                unpaired.into_iter().filter(|(k, _)| !frozenhist::left_with_a_redrawn_parent(k, old, new)).map(|(_, why)| tag2(why)).collect();
+            for (k, k2) in &paired {
+                pairs += 1;
+                refiled += 1;
+                if let Err(e) = frozenhist::refiled_allows(&old[k], &new[k2]) {
+                    found.push(tag2(format!("`{k}` moved to `{k2}`: {e}")));
+                }
+            }
+            if judged {
+                moved.extend(found);
+            } else {
+                before += found.len();
+            }
             for (k, a) in old {
                 let Some(b) = new.get(k) else { continue };
                 pairs += 1;
@@ -263,8 +273,8 @@ fn every_committed_frozen_line_kept_its_world_and_the_shipped_answer() {
     assert!(pairs > 0, "no line was held by two versions — the history compared nothing");
     assert!(moved.is_empty(), "{} change(s) no clause of D64 that needs no fork licenses:\n{}", moved.len(), moved.join("\n"));
     println!(
-        "held {pairs} line-version pair(s) across the ten frozen files' history and the working copy; \
-         {before} change(s) before this check landed, counted and not judged"
+        "held {pairs} line-version pair(s) across every frozen file's history and the working copy ({refiled} of them a \
+         line moved to a new key); {before} change(s) before this check landed, counted and not judged"
     );
 }
 

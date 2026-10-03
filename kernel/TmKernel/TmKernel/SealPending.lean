@@ -71,10 +71,10 @@ theorem arm_pending (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Ma
     · simp only [List.filterMap_cons, Effect.machineOf?, List.filterMap_nil, List.mem_singleton] at hm
       subst hm
       left
-      show (m.block.map (Replay.resumeBlock · t)).bind (·.obs) = m.block.bind (·.obs)
+      show (m.block.map (Replay.resumeBlock · t (Replay.restartAt m t))).bind (·.obs) = m.block.bind (·.obs)
       cases m.block with
       | none => rfl
-      | some b => exact Replay.resumeBlock_obs b t
+      | some b => exact Replay.resumeBlock_obs b t _
   case stop id rem =>
     split at hm
     · split at hm

@@ -39,8 +39,8 @@ every caller writes them qualified (`LogStamp.parseStamp`, `LogStamp.StampErr`).
 
 ## The grammar (chrono's, exactly, inside the instant range)
 
-`rfc3339`: at least 19 characters; `YYYY-MM-DD` read by `Field.parseDate` (the one date
-grammar, AGENTS §5.3), or `0000-12-31` (below); a separator `T`, `t` or a space; `HH:MM` read
+`rfc3339`: at least 19 characters; `YYYY-MM-DD` read by `Field.parseDate` (RFC 3339's `full-date`;
+chrono's generic `%Y-%m-%d` is `Log.instDate?`'s, which an item line reads since W-43), or `0000-12-31` (below); a separator `T`, `t` or a space; `HH:MM` read
 by `Field.parseClock`; `:SS` with second `60` read as second 59 plus 10⁹ ns (chrono's leap
 rule); an optional `.` and at least one digit, the first nine counted and the rest skipped;
 then `Z`, `z` or a sign (`+`, `-`, or U+2212 MINUS SIGN, which chrono accepts) with `HH:MM`
@@ -87,27 +87,10 @@ open Cal (Instant Offset VInstant VOffset)
 
 /-! ## Reading -/
 
-/-- Why a `"t"` string is not a stamp. -/
-inductive StampErr
-  /-- fewer characters than the grammar needs -/
-  | tooShort
-  /-- not a date, or a date that does not exist -/
-  | badDate
-  /-- the date and the time are not separated by `T`, `t` or a space -/
-  | badSeparator
-  /-- not a time of day -/
-  | badTime
-  /-- a `.` with no digit after it -/
-  | badFraction
-  /-- not an offset, or an offset of a day or more -/
-  | badOffset
-  /-- characters after the offset -/
-  | tooLong
-  /-- the instant is before 0001-01-01T00:00:00Z, the origin of `Cal.Instant` -/
-  | beforeOrigin
-  /-- the instant is at or after 10000-01-01T00:00:00Z (`Cal.Instant.wf`, R10) -/
-  | pastYear9999
-deriving DecidableEq, Repr
+/- `StampErr` (why a `"t"` string is not a stamp) and chrono's three item readers this module's
+fallback reads — `trimWs` (`str::trim_start`), `lit` (`Item::Literal`) and `numIn` (an unsigned
+`Item::Numeric`) — are defined in `Line.lean` since W-43, with their names and their bodies but `trimWs`'s, a
+recursion there that `LogStamp.trimWs_eq_dropWhile` proves is the `dropWhile isSp` it was: the item line reads its dates through them below this module (README gap 4346). -/
 
 /- **Rust's `char::is_whitespace` is `Text.isSp`** (owner D83): `str::trim_start` and chrono's
 `colon_or_space` read the Unicode `White_Space` property, which since W-42 is the item line's
@@ -207,23 +190,6 @@ def rfc3339 (s : List Char) : Except StampErr (VInstant × VOffset) :=
           | .ok o =>
             build base clk.val (if sec = 60 then 59 else sec)
               ((if sec = 60 then 1000000000 else 0) + ns) o
-
-/-- `str::trim_start`. -/
-def trimWs (s : List Char) : List Char := s.dropWhile isSp
-
-/-- `Item::Literal`: exactly `c`. -/
-def lit (c : Char) (e : StampErr) : List Char → Except StampErr (List Char)
-  | [] => .error .tooShort
-  | x :: t => if x == c then .ok t else .error e
-
-/-- An unsigned `Item::Numeric` of width `w`: whitespace, then one to `w` digits, in `[lo, hi]`
-(`Parsed`'s setters' ranges). -/
-def numIn (w lo hi : Nat) (e : StampErr) (s : List Char) : Except StampErr (Nat × List Char) :=
-  match readNat (((trimWs s).take w).takeWhile Field.isDigitC) with
-  | none => .error e
-  | some v =>
-    if lo ≤ v ∧ v ≤ hi then .ok (v, (trimWs s).drop (((trimWs s).take w).takeWhile Field.isDigitC).length)
-    else .error e
 
 /-- `%Y`: whitespace, then `-` or `+` with any number of digits, or one to four digits.  A
 negative year is before the origin; `-0…0` is year 0; a signed year of more than four
