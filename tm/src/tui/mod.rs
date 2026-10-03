@@ -279,40 +279,61 @@ fn load(g: &Globals) -> Result<(Ctx, App), CliError> {
     Ok((ctx, app))
 }
 
-/// **`.tm/state.json` as `tm plan` reads it at the context's instant — in
-/// memory** (the owner's D84, W-42 track H, README gap 4050, parity P83). The
-/// CLI's housekeeping rolls the state at the first verb of a new local date
-/// (`RuntimeState::roll_to`, `ctx.rs`' `roll_day`) and writes it; the TUI
-/// reads its plan directory without housekeeping, so past midnight it held
-/// the stale state, and its plan inputs were collected on the stale date — the
-/// candidates and ranking of its last load, and §8.2 step 2's routine
-/// instances on `planwire::plan_date` (yesterday's breakfast, not today's).
-/// It reads the state through the same one rule here and writes nothing (D81:
-/// nothing writes on a timer); `planwire::plan_date` keeps its meaning, fork
-/// `PlanInput::date`. A state of today's date, or of none, is read as it is.
-fn read_as_tm_plan(ctx: &mut Ctx) {
+/// **The plan directory as `tm plan` reads it at the context's instant — in
+/// memory**: `.tm/state.json` as its roll leaves it (the owner's D84, W-42
+/// track H, README gap 4050, parity P83) and the documents as its automatic
+/// close leaves them (the owner's D91, W-43 track H, README gap 4342).
+///
+/// The CLI's housekeeping rolls the state at the first verb of a new local date
+/// (`RuntimeState::roll_to`, `ctx.rs`' `roll_day`) and then runs §6.3's
+/// automatic close, and writes both; the TUI reads its plan directory without
+/// housekeeping, so past midnight it held the stale state and the unclosed
+/// files. It reads the state through the same one rule here, and asks the
+/// kernel for the documents the close would leave
+/// (`closing::close_in_memory`: the same request, held — the log lines and the
+/// stamps too), and writes nothing (D81: nothing writes on a timer);
+/// `planwire::plan_date` keeps its meaning, fork `PlanInput::date`. A state of
+/// today's date, or of none, is read as it is, and a close that is not due asks
+/// nothing.
+///
+/// Returns a sentence for the status line when the close could not be held — a
+/// refusal by name, or a file that could not be read — in which case the TUI
+/// plans from the files as they stand, as `tm plan` does after a refused close;
+/// a kernel fault is an error.
+fn read_as_tm_plan(ctx: &mut Ctx) -> Result<Option<String>, CliError> {
     ctx.state.roll_to(ctx.today);
+    match crate::cli::closing::close_in_memory(ctx) {
+        Ok(crate::cli::closing::InMemory::Refused(why)) => {
+            Ok(Some(format!("the automatic close was refused, so these are the files as they stand: {why}")))
+        }
+        Ok(_) => Ok(None),
+        Err(e) if e.is_kernel_fault() => Err(e),
+        Err(e) => Ok(Some(format!("the automatic close could not be asked, so these are the files as they stand: {e}"))),
+    }
 }
 
 /// **[`read_as_tm_plan`] at `now`, for a context already read** — the date
-/// change's whole re-collection of the plan directory (D84): the clock moves
-/// and the state is read as `tm plan`'s roll leaves it; the files, the tree,
-/// the replay and the model stay as they were read, and nothing touches the
-/// disk. The candidates and the kernel's ranking for the new date follow from
-/// it in [`adopt_read`].
-fn advance(ctx: &mut Ctx, now: DateTime<Tz>) {
+/// change's whole re-collection of the plan directory (D84): the clock moves,
+/// the state is read as `tm plan`'s roll leaves it, and the files and the tree
+/// are the ones the automatic close leaves, held in memory (D91); the replay
+/// and the model stay as they were read, and nothing touches the disk. The
+/// candidates and the kernel's ranking for the new date follow from it in
+/// [`adopt_read`].
+fn advance(ctx: &mut Ctx, now: DateTime<Tz>) -> Result<Option<String>, CliError> {
     ctx.now = now.fixed_offset();
     ctx.now_tz = now;
     ctx.today = now.date_naive();
-    read_as_tm_plan(ctx);
+    read_as_tm_plan(ctx)
 }
 
 /// **The App drawn from `read`** — the ranking is the kernel's, and a refused
 /// capacity request (a file saved half-edited into a tree the kernel cannot
 /// load, or a configured value it cannot read, parity P26) keeps the last
 /// ranking, adopts the rest, and says so on the status line; a kernel fault
-/// still ends the TUI. One body for [`reload`] and [`recollect`].
-fn adopt_read(app: &mut App, read: &Ctx, week_cut: PauseCut, cut_refused: Option<String>) -> Result<(), CliError> {
+/// still ends the TUI. One body for [`reload`] and [`recollect`]. `said` is a
+/// sentence the read itself raised (an automatic close it could not hold, D91),
+/// shown when nothing above it is.
+fn adopt_read(app: &mut App, read: &Ctx, week_cut: PauseCut, cut_refused: Option<String>, said: Option<String>) -> Result<(), CliError> {
     let (data, refused) = match data_of(read, week_cut.clone()) {
         Ok(data) => (data, None),
         Err(e) if !e.is_kernel_fault() => {
@@ -326,6 +347,8 @@ fn adopt_read(app: &mut App, read: &Ctx, week_cut: PauseCut, cut_refused: Option
         app.message = Some(format!("priorities not refreshed: {why}"));
     } else if let Some(why) = cut_refused {
         app.message = Some(format!("week grid not refreshed: {why}"));
+    } else if let Some(said) = said {
+        app.message = Some(said);
     }
     Ok(())
 }
@@ -335,15 +358,18 @@ fn adopt_read(app: &mut App, read: &Ctx, week_cut: PauseCut, cut_refused: Option
 /// 4124, parity P83): from the context it last read ([`advance`]), the
 /// candidates and the kernel's ranking for `now`'s date, and with the state
 /// read as `tm plan`'s roll leaves it, §8.2 step 2's routine instances for that
-/// date — so the request R3's swap sends from here is the one `tm plan` builds
-/// at that instant (`kernel_capacity::planner_request`). It WRITES NOTHING:
-/// no fresh read of the plan directory, whose replay would reseal
-/// `.tm/cache/replay` (the ranking's own `log` section resumes from the
-/// checkpoint the process already holds), and no roll of `.tm/state.json` —
-/// the CLI's housekeeping's write on a timer, which the owner declined.
+/// date — and since the owner's D91 (W-43 track H, README gap 4342) from the
+/// documents as `tm plan`'s automatic close leaves them, the close asked of the
+/// kernel and held ([`read_as_tm_plan`]) — so the request R3's swap sends from
+/// here is the one `tm plan` builds at that instant
+/// (`kernel_capacity::planner_request`). It WRITES NOTHING: no fresh read of
+/// the plan directory, whose replay would reseal `.tm/cache/replay` (the
+/// ranking's own `log` section resumes from the checkpoint the process already
+/// holds), no roll of `.tm/state.json` and no close written — the CLI's
+/// housekeeping's writes on a timer, which the owner declined.
 fn recollect(app: &mut App, read: &mut Ctx, now: DateTime<Tz>) -> Result<(), CliError> {
-    advance(read, now);
-    adopt_read(app, read, app.week_cut.clone(), None)
+    let said = advance(read, now)?;
+    adopt_read(app, read, app.week_cut.clone(), None, said)
 }
 
 /// **One turn of the clock**: at a date change the TUI re-collects in memory
@@ -367,7 +393,7 @@ fn reload(app: &mut App, read: &mut Ctx, g: &Globals, clock: &Clock) -> Result<(
     let screen = app.screen;
     let now = clock.now(&app.cfg);
     let mut ctx = Ctx::load_scoped(&at(g, now), false, |state, today| tui_scope(screen, state, today))?;
-    read_as_tm_plan(&mut ctx);
+    let said = read_as_tm_plan(&mut ctx)?;
     // **The heat grid's Pauses are cut by the kernel** (README gaps 3432 and
     // 3528, W-39 track T), as `tm review week` cuts them — read only where the
     // Review screen is shown, the one screen that draws the grid, because it
@@ -382,7 +408,7 @@ fn reload(app: &mut App, read: &mut Ctx, g: &Globals, clock: &Clock) -> Result<(
     } else {
         (app.week_cut.clone(), None)
     };
-    adopt_read(app, &ctx, week_cut, cut_refused)?;
+    adopt_read(app, &ctx, week_cut, cut_refused, said)?;
     *read = ctx;
     Ok(())
 }
@@ -600,6 +626,7 @@ fn perform(
             app.message = Some(message);
         }
         Effect::Editor { file, line } => {
+            let (file, line) = on_disk(read, &file, line);
             let message = editor(app, root, &file, line);
             app.message = Some(message);
         }
@@ -729,6 +756,24 @@ fn verb(g: &Globals, args: &[String]) -> Result<String, CliError> {
     };
     let said = crate::cli::kernel_bridge::take_notices();
     Ok(if said.is_empty() { status } else { format!("{status} · {}", said.join(" · ")) })
+}
+
+/// **Where the item the App shows at `file:line` is ON DISK** — the owner's D91 (W-43 track H,
+/// README gap 4396). While an automatic close is held in memory past midnight, the App's tree is
+/// the plan directory as that close would leave it, and the editor writes to disk: an item in a
+/// file the held close changed is found by its key in the tree as read
+/// ([`Ctx::tree_as_read`]) and opened there — `^p1` in the day file it still has, not at the line
+/// of the week file the close would file it into. Any other location is the disk's already.
+fn on_disk(read: &Ctx, file: &str, line: usize) -> (String, usize) {
+    let changed = read.held.as_ref().is_some_and(|h| h.docs.contains_key(file));
+    let at = read.files.file(file).and_then(|f| f.items().find(|i| i.src.line == line));
+    match (changed, at, read.tree_as_read()) {
+        (true, Some(item), Some(as_read)) => match as_read.get(&tm_core::tree::Tree::key_of(item)) {
+            Some(there) => (there.src.file.clone(), there.src.line),
+            None => (file.to_string(), line),
+        },
+        _ => (file.to_string(), line),
+    }
 }
 
 /// Open a file at a line in `cfg.tui.editor` (§16's `code -g {file}:{line}`).
@@ -1116,21 +1161,11 @@ mod tests {
         assert_eq!(stale_resp["ok"]["plan"], plan_resp["ok"]["plan"], "the stale read is asked `tm plan`'s day");
     }
 
-    /// **README gap 4342, PINNED: on a tree whose Monday still holds unfinished
-    /// day-file work, the TUI past midnight and `tm plan` ask the kernel about
-    /// different DOCUMENTS** (W-42's reuse critic; track H's gap 4261). The
-    /// world above with `^p1` left open: `tm plan`'s load at 00:30 runs the
-    /// automatic close (§6.3) and writes it — `^p1` demoted into the week file
-    /// with `demoted:D07` — while the TUI, writing nothing (D81, D84), re-collects
-    /// the files as they stand. So the equality the test above asserts holds
-    /// only on a world with nothing to close, and that world was its
-    /// precondition (§5.2). This test pins the divergence BY VALUE so a change
-    /// that closes it — an in-memory close at the date change, which the
-    /// request builder cannot take today because it reads the documents off
-    /// the disk (`kernel_capacity::request_on`) — fails here and is seen.
-    #[test]
-    fn d84_on_a_day_with_unfinished_work_the_tui_and_tm_plan_ask_about_different_documents() {
-        let _env = kernel_env();
+    /// **The Midnight world with Monday's `^p1` LEFT OPEN in the day file's `# Pinned`** — the tree
+    /// README gap 4342 was found on: woken Monday 06:05, arrived 07:00, `^t3` started at 23:30 and
+    /// left running, the TUI opened at 23:50 (its housekeeping) — so `tm plan` past midnight first
+    /// closes Monday, demoting `^p1` into the week file, and logs it.
+    fn unfinished_world() -> (tempfile::TempDir, Globals, Ctx, App) {
         let (tmp, g) = fixture();
         for (when, args) in [
             ("2026-09-07T06:05:00-05:00", &["wake", "06:05", "--slept", "8h10m"][..]),
@@ -1141,23 +1176,165 @@ mod tests {
             let said = verb(&at_str(&g, when), &argv).expect("a verb of the world");
             assert!(said.ends_with(": ok"), "`tm {}`: {said}", args.join(" "));
         }
-        let (mut read, mut app) = load(&at_str(&g, "2026-09-07T23:50:00-05:00")).expect("the TUI opens at 23:50");
+        let (read, app) = load(&at_str(&g, "2026-09-07T23:50:00-05:00")).expect("the TUI opens at 23:50");
+        (tmp, g, read, app)
+    }
+
+    /// `tm plan`'s request at `now`, on a copy of the plan directory as it stands (its housekeeping,
+    /// the automatic close included, WRITTEN in the copy), and the copy's root.
+    fn tm_plans_request(tmp: &tempfile::TempDir, plan: &Path, now: DateTime<Tz>, name: &str) -> (String, PathBuf) {
+        let copy = tmp.path().join(name);
+        copy_dir(plan, &copy);
+        let plan_g = Globals { dir: Some(copy.clone()), now: Some(now.fixed_offset()), json: false };
+        let plan_ctx = Ctx::load(&plan_g, true).expect("tm plan's load, its housekeeping run");
+        (crate::cli::kernel_capacity::planner_request(&plan_ctx, false).expect("tm plan's request"), copy)
+    }
+
+    /// **D91: on a tree whose Monday still holds unfinished day-file work, the TUI past midnight
+    /// CLOSES IN MEMORY and asks the kernel what `tm plan` asks after its own close** (the owner's
+    /// D91, W-43 track H, README gap 4342). Until D91 this test PINNED the divergence, as
+    /// d84_on_a_day_with_unfinished_work_the_tui_and_tm_plan_ask_about_different_documents: the
+    /// TUI re-collected the files as they stood while `tm plan` closed Monday and wrote it. At the
+    /// date change (00:30 Tuesday, through the loop's own step, [`advance_clock`]):
+    ///
+    /// * every byte of the plan directory, `.tm/` and its replay cache included, is the same after
+    ///   the date change — the close is asked of the kernel and held, never written;
+    /// * what is held is what `tm plan`'s close WRITES: `^p1` demoted into the week file with
+    ///   `demoted:D07`, the `demote` and `close` lines it logs, and Monday stamped closed;
+    /// * R3's builder over what the TUI holds and over `tm plan`'s own load at 00:30 agree KEY FOR
+    ///   KEY but for the replay checkpoint's reseal day, which `tm plan`'s read wrote — the
+    ///   documents, and the log section, whose tail carries the close's two lines;
+    /// * the kernel plans ONE day from the two (the whole `ok.plan`, its hash included).
+    #[test]
+    fn d91_on_a_day_with_unfinished_work_the_tui_closes_in_memory_and_asks_what_tm_plan_asks() {
+        let _env = kernel_env();
+        let (tmp, g, mut read, mut app) = unfinished_world();
         let plan = g.dir.clone().expect("the plan directory");
+        assert!(read.held.is_none(), "nothing is held before midnight");
+        let before = tree_bytes(&plan);
         let tuesday = DateTime::parse_from_rfc3339("2026-09-08T00:30:00-05:00").expect("now").with_timezone(&app.cfg.tz);
         assert!(advance_clock(&mut app, &mut read, tuesday).expect("the date change"));
-        let tui: serde_json::Value =
-            serde_json::from_str(&crate::cli::kernel_capacity::planner_request(&read, false).expect("the TUI's request")).expect("JSON");
-        let copy = tmp.path().join("tm-plan");
-        copy_dir(&plan, &copy);
-        let plan_g = Globals { dir: Some(copy.clone()), now: Some(tuesday.fixed_offset()), json: false };
-        let plan_ctx = Ctx::load(&plan_g, true).expect("tm plan's load, its housekeeping run");
-        let tm_plan: serde_json::Value =
-            serde_json::from_str(&crate::cli::kernel_capacity::planner_request(&plan_ctx, false).expect("tm plan's request")).expect("JSON");
-        let week = std::fs::read_to_string(copy.join("week/2026-W37.md")).expect("the week file tm plan's close wrote");
-        assert!(week.lines().any(|l| l.ends_with("^p1") && l.contains("demoted:D07")), "the close did not demote ^p1:\n{week}");
+        assert!(tree_bytes(&plan) == before, "the date change wrote nothing under the plan directory");
+
+        let held = read.held.as_ref().expect("the automatic close is held");
+        let week = held.docs.get("week/2026-W37.md").expect("the close filed into the week");
+        assert!(week.lines().any(|l| l.ends_with("^p1") && l.contains("demoted:D07")), "the held week file:\n{week}");
+        let lines: Vec<serde_json::Value> = held.log.lines().map(|l| serde_json::from_str(l).expect("a log line")).collect();
+        let evs: Vec<&str> = lines.iter().map(|e| e["ev"].as_str().unwrap_or_default()).collect();
+        assert_eq!(evs, ["demote", "close"], "{}", held.log);
+        assert_eq!((lines[1]["period"].as_str(), lines[1]["key"].as_str()), (Some("day"), Some("2026-09-07")));
+        assert_eq!(app.state.closed.day, Some(tui_date(2026, 9, 7)), "Monday is closed in memory");
+        assert!(
+            app.files.file("week/2026-W37.md").is_some_and(|f| f.items().any(|i| i.id.as_str() == "p1")),
+            "the App's files hold the week as the close leaves it"
+        );
+
+        let tui_text = crate::cli::kernel_capacity::planner_request(&read, false).expect("the TUI's request");
+        let tui: serde_json::Value = serde_json::from_str(&tui_text).expect("JSON");
+        let (plan_text, copy) = tm_plans_request(&tmp, &plan, tuesday, "tm-plan");
+        let written = std::fs::read_to_string(copy.join("week/2026-W37.md")).expect("the week file tm plan's close wrote");
+        assert_eq!(&written, week, "the TUI holds the week file `tm plan`'s close writes, byte for byte");
+        let tm_plan: serde_json::Value = serde_json::from_str(&plan_text).expect("JSON");
         let mut differ = Vec::new();
         json_diff(&tui, &tm_plan, "", &mut differ);
-        assert!(differ.iter().any(|p| p.starts_with("docs")), "gap 4342 closed? the documents agree: {differ:?}");
+        assert_eq!(differ, ["log.ckpt.resealDay"], "key for key, but for the checkpoint `tm plan`'s read resealed");
+        let (tui_resp, _) = crate::cli::kernel_bridge::call_text(&tui_text).expect("the kernel plans the TUI's request");
+        let (plan_resp, _) = crate::cli::kernel_bridge::call_text(&plan_text).expect("the kernel plans tm plan's request");
+        assert!(tui_resp["ok"]["plan"].is_object(), "a day: {}", tui_resp["ok"]);
+        assert_eq!(tui_resp["ok"]["plan"], plan_resp["ok"]["plan"], "one day from the two requests, hash and all");
+    }
+
+    /// **D91 across two midnights: the TUI holds ONE close, from the files as read** — never a
+    /// second stacked on the first. Left open Monday 23:50 to Wednesday 00:30, it closes Monday in
+    /// memory at Tuesday's date change and, at Wednesday's, lets that go and asks the kernel again
+    /// from the files as they stand — what `tm plan` at Wednesday 00:30 runs: ONE catch-up, its lines
+    /// stamped and keyed at that instant (`close` keyed 2026-09-08). Still nothing written, and the
+    /// request is `tm plan`'s key for key but for the reseal day. A reload past midnight holds the
+    /// same close.
+    #[test]
+    fn d91_a_tui_open_across_two_midnights_holds_one_close_from_the_files_as_read() {
+        let _env = kernel_env();
+        let (tmp, g, mut read, mut app) = unfinished_world();
+        let plan = g.dir.clone().expect("the plan directory");
+        let before = tree_bytes(&plan);
+        let tz = app.cfg.tz;
+        let tuesday = DateTime::parse_from_rfc3339("2026-09-08T00:30:00-05:00").expect("now").with_timezone(&tz);
+        let wednesday = DateTime::parse_from_rfc3339("2026-09-09T00:30:00-05:00").expect("now").with_timezone(&tz);
+        assert!(advance_clock(&mut app, &mut read, tuesday).expect("Tuesday"));
+        assert!(advance_clock(&mut app, &mut read, wednesday).expect("Wednesday"));
+        assert!(tree_bytes(&plan) == before, "two date changes wrote nothing");
+        let held = read.held.as_ref().expect("a close is held");
+        let lines: Vec<serde_json::Value> = held.log.lines().map(|l| serde_json::from_str(l).expect("a log line")).collect();
+        assert_eq!(lines.len(), 2, "one close's lines, not two closes': {}", held.log);
+        assert_eq!(lines[1]["key"], "2026-09-08", "keyed at Wednesday, as `tm plan`'s catch-up keys it");
+        assert!(lines.iter().all(|e| e["t"].as_str().is_some_and(|t| t.starts_with("2026-09-09T00:30"))), "{}", held.log);
+        assert_eq!(app.state.closed.day, Some(tui_date(2026, 9, 8)));
+
+        let tui_text = crate::cli::kernel_capacity::planner_request(&read, false).expect("the TUI's request");
+        let tui: serde_json::Value = serde_json::from_str(&tui_text).expect("JSON");
+        let (plan_text, _) = tm_plans_request(&tmp, &plan, wednesday, "tm-plan-wed");
+        let tm_plan: serde_json::Value = serde_json::from_str(&plan_text).expect("JSON");
+        let mut differ = Vec::new();
+        json_diff(&tui, &tm_plan, "", &mut differ);
+        assert_eq!(differ, ["log.ckpt.resealDay"], "key for key, but for the reseal day");
+
+        // A reload past midnight (a file event, no verb) reads the directory again and holds the
+        // same close: its request is the one the date change built, but for the reseal day the
+        // reload's own read wrote.
+        let g_wed = at_str(&g, "2026-09-09T00:30:00-05:00");
+        reload(&mut app, &mut read, &g_wed, &Clock::of(&g_wed)).expect("a reload past midnight");
+        let reloaded: serde_json::Value =
+            serde_json::from_str(&crate::cli::kernel_capacity::planner_request(&read, false).expect("the reload's request")).expect("JSON");
+        let mut differ = Vec::new();
+        json_diff(&reloaded, &tm_plan, "", &mut differ);
+        assert!(differ.iter().all(|p| p == "log.ckpt.resealDay"), "{differ:?}");
+        assert!(read.held.is_some(), "the reload holds the close");
+    }
+
+    /// **D91 over a torn log: the held lines are appended as `tm plan`'s close appends them** — after
+    /// the last line is ended (`Store::append_text`'s rule, parity P19), so the TUI's log section is
+    /// `tm plan`'s byte for byte. The world above with its log's final newline cut off.
+    #[test]
+    fn d91_a_torn_last_log_line_is_ended_as_tm_plans_append_ends_it() {
+        let _env = kernel_env();
+        let (tmp, g, mut read, mut app) = unfinished_world();
+        let plan = g.dir.clone().expect("the plan directory");
+        let log = plan.join(".tm/log.jsonl");
+        let bytes = std::fs::read(&log).expect("the log");
+        assert_eq!(bytes.last(), Some(&b'\n'));
+        std::fs::write(&log, &bytes[..bytes.len() - 1]).expect("tear the last line");
+        let tuesday = DateTime::parse_from_rfc3339("2026-09-08T00:30:00-05:00").expect("now").with_timezone(&app.cfg.tz);
+        assert!(advance_clock(&mut app, &mut read, tuesday).expect("the date change"));
+        let ours = read.log_now().expect("the TUI's log");
+        assert_eq!(&ours[..bytes.len()], &bytes[..], "the torn line is ended before the held lines");
+        let (plan_text, copy) = tm_plans_request(&tmp, &plan, tuesday, "tm-plan-torn");
+        assert_eq!(std::fs::read(copy.join(".tm/log.jsonl")).expect("tm plan's log"), ours, "the log `tm plan`'s close wrote");
+        let tui: serde_json::Value =
+            serde_json::from_str(&crate::cli::kernel_capacity::planner_request(&read, false).expect("the TUI's request")).expect("JSON");
+        let tm_plan: serde_json::Value = serde_json::from_str(&plan_text).expect("JSON");
+        let mut differ = Vec::new();
+        json_diff(&tui, &tm_plan, "", &mut differ);
+        assert!(differ.iter().all(|p| p == "log.ckpt.resealDay"), "{differ:?}");
+    }
+
+    /// **D91: the editor opens an item where it is ON DISK** (README gap 4396). Past midnight the
+    /// App shows `^p1` where the held close files it — the week file — and the editor writes to
+    /// disk, where the close is not written and `^p1` is still in Monday's day file.
+    #[test]
+    fn d91_the_editor_opens_an_item_where_it_is_on_disk() {
+        let _env = kernel_env();
+        let (_tmp, _g, mut read, mut app) = unfinished_world();
+        let p1 = tm_core::model::Id::new("p1");
+        let monday = read.tree.get(&p1).map(|i| (i.src.file.clone(), i.src.line)).expect("^p1 before midnight");
+        assert_eq!(monday.0, "day/2026-09-07.md");
+        assert_eq!(on_disk(&read, &monday.0, monday.1), monday, "nothing held: the location is the disk's");
+        let tuesday = DateTime::parse_from_rfc3339("2026-09-08T00:30:00-05:00").expect("now").with_timezone(&app.cfg.tz);
+        advance_clock(&mut app, &mut read, tuesday).expect("the date change");
+        let shown = app.tree.get(&p1).map(|i| (i.src.file.clone(), i.src.line)).expect("^p1 in the App");
+        assert_eq!(shown.0, "week/2026-W37.md", "the App shows the close's tree");
+        assert_eq!(on_disk(&read, &shown.0, shown.1), monday, "the editor opens the line ^p1 has on disk");
+        let other = app.tree.get(&tm_core::model::Id::new("t3")).map(|i| (i.src.file.clone(), i.src.line)).expect("^t3");
+        assert_eq!(on_disk(&read, &other.0, other.1), other, "an untouched file's location is kept");
     }
 
     /// A date.

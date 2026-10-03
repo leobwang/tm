@@ -18,6 +18,13 @@
 //! cache is rewritten under this binary's id with a new generation. It holds before D87 and after
 //! it, which is the point: it is the instrument a change of the replay's reading relies on, not a
 //! test of one reading.
+//!
+//! **Since the owner's D93 (W-43 track H, README gap 4246) the poison re-digests the month file in
+//! the manifest** ([`poison`]): a sealed month file now carries a digest, and a hand edit that
+//! leaves the digest behind is refused by the digest alone (`cli_sealed_month_digest.rs`) — so it
+//! no longer reaches this file's question. A kernel that WROTE a stale reading writes a consistent
+//! file and its digest, and that file is what the kernel id is the key for; a digest-consistent
+//! poison is that file, and the bite and the claim below are unchanged.
 
 mod cli_common;
 
@@ -111,11 +118,33 @@ fn sealed_blocks_done(path: &Path) -> u64 {
         .unwrap_or_else(|| panic!("{}: no blocksDone at [{ACC_AT}][{BLOCKS_DONE_AT}]", path.display()))
 }
 
-/// Write `blocks_done` into the sealed record, keeping every other byte of meaning.
-fn poison(path: &Path, blocks_done: u64) {
+/// FNV-1a-64, the digest the manifest records for each month file (`kernel_log::month_digest`, the
+/// owner's D93) — computed here, not borrowed, so this file's poison is checked against an
+/// independent reading of the rule.
+fn fnv1a64_hex(bytes: &[u8]) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for &b in bytes {
+        h ^= u64::from(b);
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{h:016x}")
+}
+
+/// Write `blocks_done` into the sealed record, keeping every other byte of meaning — and the
+/// manifest's digest of the file with it (D93), so the file is one a kernel could have WRITTEN: the
+/// case the kernel id is the key for. The digest is replaced as text, because `ckpt.json` carries
+/// the kernel's checkpoint verbatim and a parse would reorder its keys.
+fn poison(tm: &Tm, path: &Path, blocks_done: u64) {
+    let before = fs::read(path).expect("read the month file");
     let mut month = read_json(path);
     month["days"][SEALED_DAY][ACC_AT][BLOCKS_DONE_AT] = Value::from(blocks_done);
-    fs::write(path, serde_json::to_string(&month).expect("serialise") + "\n").expect("write the month file");
+    let text = serde_json::to_string(&month).expect("serialise") + "\n";
+    fs::write(path, &text).expect("write the month file");
+    let ckpt_path = cache_dir(tm).join("ckpt.json");
+    let ckpt = fs::read_to_string(&ckpt_path).expect("read ckpt.json");
+    let (old, new) = (fnv1a64_hex(&before), fnv1a64_hex(text.as_bytes()));
+    assert_eq!(ckpt.matches(&format!("\"{old}\"")).count(), 1, "ckpt.json records the month file's digest once: {ckpt}");
+    fs::write(&ckpt_path, ckpt.replace(&format!("\"{old}\""), &format!("\"{new}\""))).expect("write ckpt.json");
 }
 
 /// What `tm review day --date` says about the sealed day.
@@ -141,7 +170,7 @@ fn a_replay_cache_another_kernel_wrote_is_rebuilt_and_never_served() {
 
     // THE BITE: under this kernel's id the cache is trusted, so a poisoned record IS served.
     // Without this, the claim below could hold because the sealed record is never read at all.
-    poison(&august, truth - 1);
+    poison(&tm, &august, truth - 1);
     assert_eq!(
         reviewed_blocks_done(&tm),
         truth - 1,

@@ -118,6 +118,9 @@ pub enum Command {
     /// Take a break.
     Break(BreakArgs),
     /// An interruption began.
+    ///
+    /// A running break ends first, logged as `tm break` logs its end, at the
+    /// interruption's instant — as `tm start` ends one before its block starts.
     Interrupt,
     /// The interruption ended.
     Resume,

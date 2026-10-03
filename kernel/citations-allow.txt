@@ -1289,3 +1289,9 @@ with_minute
 # And the W-41 repair's P78 test, restated when the hole it pinned closed (`ci:+5` read 5 by the kernel, gap 4330):
 # the W-41 repair's block cites it by the name it carried then.
 2 a_ci_the_kernel_reads_otherwise_is_named_at_its_line
+
+# W-43 TRACK H (README gaps 4390-4399).  The W-42 repair's pinned test of README gap 4342 was RENAMED when D91 closed
+# the gap it pinned (it now asserts the opposite, as d91_on_a_day_with_unfinished_work_the_tui_closes_in_memory_and_
+# asks_what_tm_plan_asks).  The W-42 repair's append-only block cites it by the name it carried then; track H's own
+# block names it without backticks.
+1 tui::tests::d84_on_a_day_with_unfinished_work_the_tui_and_tm_plan_ask_about_different_documents

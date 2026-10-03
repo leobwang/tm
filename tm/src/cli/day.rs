@@ -658,10 +658,13 @@ fn call_the_walls(
     at: DateTime<chrono_tz::Tz>,
     week: Option<tm_core::model::IsoWeek>,
 ) -> Result<(serde_json::Value, String), CliError> {
-    let docs = super::kernel_bridge::text_docs(&ctx.store)?;
+    // The plan directory and the log as every request from this context reads them
+    // (`Ctx::reading`, `Ctx::log_now`): with a close the TUI holds in memory past midnight, what
+    // `tm plan` reads after its own (the owner's D91).
+    let docs = super::kernel_bridge::text_docs(ctx.reading()?.store())?;
     let cache = ctx.store.root().join(".tm/cache/replay");
     let tz_wire = super::tz_table::wire_for(Some(&cache), ctx.cfg.tz);
-    let bytes = Ctx::log_bytes(&ctx.store)?;
+    let bytes = ctx.log_now()?;
     let now_day = super::kernel_log::day_of(ctx.today);
     let dates = week.map(|w| w.dates());
     let log = match dates.as_ref().and_then(|d| d.first().zip(d.last())) {
@@ -1806,7 +1809,7 @@ pub fn take_break(g: &Globals, args: &super::BreakArgs) -> Result<i32, CliError>
     day_note(
         &ctx,
         match out.actual_min {
-            Some(a) => format!("break ended {a}m/{}m", out.planned_min),
+            Some(a) => break_ended_note(a, out.planned_min),
             None => format!(
                 "break {}m{}",
                 out.planned_min,
@@ -1821,7 +1824,7 @@ pub fn take_break(g: &Globals, args: &super::BreakArgs) -> Result<i32, CliError>
     emit(
         ctx.json,
         || match out.actual_min {
-            Some(a) => format!("break ended · {a}m of {}m", out.planned_min),
+            Some(a) => break_ended_line(a, out.planned_min),
             None => format!(
                 "break {}m{}",
                 out.planned_min,
@@ -1836,6 +1839,19 @@ pub fn take_break(g: &Globals, args: &super::BreakArgs) -> Result<i32, CliError>
     Ok(0)
 }
 
+/// **The day file's journal line for an ended break** — the ONE spelling, written by `tm
+/// break`'s ending arm and by `tm interrupt` when it ends a running break first (the owner's
+/// D90): `break ended 10m/20m`.
+fn break_ended_note(actual: u32, planned: u32) -> String {
+    format!("break ended {actual}m/{planned}m")
+}
+
+/// **The human line for an ended break** — `tm break`'s, and the clause `tm interrupt` adds
+/// when it ended one first (D90): `break ended · 10m of 20m`.
+fn break_ended_line(actual: u32, planned: u32) -> String {
+    format!("break ended · {actual}m of {planned}m")
+}
+
 /// `tm interrupt --json` / `tm resume --json`.
 #[derive(Debug, Serialize)]
 pub struct InterruptOut {
@@ -1847,9 +1863,25 @@ pub struct InterruptOut {
     pub lost_min: Option<u32>,
     /// Items dropped from today's plan as a consequence (§9).
     pub dropped: Vec<String>,
+    /// **The break `tm interrupt` ended first** (the owner's D90, README gap 4340, parity
+    /// P86) — `tm break`'s own report of its ending, `action` `ended`; absent when no break
+    /// was running, and on `tm resume`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub break_ended: Option<BreakOut>,
 }
 
 /// `tm interrupt`.
+///
+/// **A running break ends FIRST** — the owner's **D90** (README gap 4340, parity **P86**), as
+/// `tm start` ends one before its `start`: the break's own `break` line is logged by
+/// [`end_break`], the one function `tm break`'s ending arm calls, at the interruption's
+/// instant, with `tm break`'s journal line ([`break_ended_note`]); then the interruption. So no
+/// clock-stopping mark is ever logged inside a running break. Fork 4748911 logged the
+/// `interrupt` and left the break running in `.tm/state.json`, its line written at its END —
+/// after the interruption's — and the kernel's replay, which steps the interruption first,
+/// credited the break's head as block time while the host's union of idle spans did not: on
+/// the day `tests/cli_interrupt_break.rs` drives, `tm stop` said 10 minutes beside `tm review
+/// day`'s 20, and on gap 4340's own (the break ended at 09:30) 30 beside 40.
 pub fn interrupt(g: &Globals) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
     if ctx.state.interrupt.is_some() {
@@ -1857,6 +1889,16 @@ pub fn interrupt(g: &Globals) -> Result<i32, CliError> {
     }
     super::kernel_bridge::gate(&ctx, "interrupt")?;
     let rec = Recorder::start(&ctx, "interrupt")?;
+    let running = ctx.state.break_.clone();
+    let ended = match (running, end_break(&mut ctx)?) {
+        (Some(br), Some(actual)) => Some(BreakOut {
+            action: "ended".to_string(),
+            planned_min: br.planned_min,
+            actual_min: Some(actual),
+            place: br.place,
+        }),
+        _ => None,
+    };
     let id = ctx.state.active.as_ref().map(|a| a.id.to_string());
     ctx.state.interrupt = Some(InterruptState {
         started: Some(ctx.now_tz.time()),
@@ -1868,6 +1910,9 @@ pub fn interrupt(g: &Globals) -> Result<i32, CliError> {
     ctx.save_state()?;
     ctx.append_event(Event::Interrupt { id: id.clone() })?;
     ctx.reload()?;
+    if let Some(b) = &ended {
+        day_note(&ctx, break_ended_note(b.actual_min.unwrap_or(0), b.planned_min))?;
+    }
     day_note(
         &ctx,
         format!(
@@ -1882,8 +1927,16 @@ pub fn interrupt(g: &Globals) -> Result<i32, CliError> {
         id,
         lost_min: None,
         dropped: Vec::new(),
+        break_ended: ended,
     };
-    emit(ctx.json, || "interrupted".to_string(), &out)?;
+    emit(
+        ctx.json,
+        || match &out.break_ended {
+            Some(b) => format!("{} · interrupted", break_ended_line(b.actual_min.unwrap_or(0), b.planned_min)),
+            None => "interrupted".to_string(),
+        },
+        &out,
+    )?;
     Ok(0)
 }
 
@@ -1965,6 +2018,7 @@ pub fn resume(g: &Globals) -> Result<i32, CliError> {
         id: int.id.map(|i| i.to_string()),
         lost_min: Some(lost),
         dropped,
+        break_ended: None,
     };
     emit(
         ctx.json,

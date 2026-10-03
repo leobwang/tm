@@ -163,6 +163,16 @@ const FLAG_CASES: &[Case] = &[
         err: &["wake", "06:05"],
         ..C
     },
+    // The owner's D90 (W-43 track H, README gap 4340, parity P86): `tm interrupt` over a running
+    // break ends the break first and reports it (`break_ended`); interrupted twice, it refuses.
+    Case {
+        verb: "interrupt (a break running)",
+        setup_ok: &[&["start", "^t3", "--energy", "4"], &["break", "20m"]],
+        ok: &["interrupt"],
+        setup_err: &[&["break", "20m"], &["interrupt"]],
+        err: &["interrupt"],
+        ..C
+    },
 ];
 
 /// stderr parsed as the one JSON error document `out::ErrorOut` emits.
@@ -379,7 +389,7 @@ fn check_all_four_legs() {
 #[test]
 fn the_table_covers_every_section_13_verb() {
     assert_eq!(CASES.len(), 32, "the table lost a verb");
-    assert_eq!(FLAG_CASES.len(), 4, "the flag table lost a leg");
+    assert_eq!(FLAG_CASES.len(), 5, "the flag table lost a leg");
     assert!(FLAG_CASES.iter().all(|c| !c.ok.is_empty()), "every flag leg has a success leg");
     let with_success = CASES.iter().filter(|c| !c.ok.is_empty()).count();
     assert_eq!(with_success, 31, "only tui may lack a success leg");

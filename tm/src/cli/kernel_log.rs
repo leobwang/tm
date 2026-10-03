@@ -24,9 +24,10 @@
 //!   the refusing chunk resent in one call. A call past the **resend cap**
 //!   ([`RESEND_LINES`], [`RESEND_BYTES`], gap 102's memory gate) is not sent: genesis fails
 //!   with the named fault [`GenesisError::ReachTooFar`] (OWNER Q9 (iii), D18).
-//! * **The files** under `.tm/cache/replay/` (D13): `ckpt.json` (format 2: the kernel id, the
-//!   zone key, the prefix's line count, byte count and FNV-1a-64, the generation and the
-//!   previous one, the manifest of month files, `meta`, and the checkpoint), immutable
+//! * **The files** under `.tm/cache/replay/` (D13): `ckpt.json` (format 4 since the owner's D93:
+//!   the kernel id, the zone key, the prefix's line count, byte count and FNV-1a-64, the
+//!   generation and the previous one, the manifest of month files and the DIGEST of each —
+//!   `digests`, FNV-1a-64 of the file's bytes — `meta`, and the checkpoint), immutable
 //!   `sealed/YYYY-MM.g<gen>.json` month files, and `tz.json` (`tz_table`'s). Every write is a
 //!   temporary file and a rename; a reseal writes new month files, then `ckpt.json`, then
 //!   collects month files named by neither manifest and older than ten minutes.
@@ -35,7 +36,11 @@
 //!   below its `horizon`. A missing month file re-reads `ckpt.json` once, then rebuilds in memory.
 //! * **Integrity** (G9, §9.8): the prefix digest is checked on every call; a differing length,
 //!   a prefix not ending in `\n`, a differing FNV, zone key, format or kernel id goes straight
-//!   to genesis.
+//!   to genesis. **A sealed month file is checked against its digest every time it is read**
+//!   (the owner's D93, README gap 4246): one that does not match — corrupted or hand-edited — is
+//!   never served and never merged into a later generation; the cache is rebuilt from the log,
+//!   as for a month file that is missing (README gap 3711), and a `ckpt.json` written before
+//!   D93 (format 3, no digests) is rebuilt once.
 //! * **Host policy** (§9.6): reseal when more than [`FOLDABLE_TRIGGER`] foldable lines were
 //!   appended since the snapshot was written (`logLines`, W4's gap 124: a tail a reseal could not
 //!   fold does not reseal again on every call), or when `now` is more than two days past the ledger
@@ -68,8 +73,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime};
 
-/// The format `ckpt.json` carries; any other goes to genesis.
-pub const FORMAT: u64 = 3;
+/// The format `ckpt.json` carries; any other goes to genesis. **4 since the owner's D93** (W-43 track H,
+/// README gap 4246): the manifest's month files each carry a digest, so a cache written before it — format 3,
+/// with none — is rebuilt once rather than trusted.
+pub const FORMAT: u64 = 4;
 /// The cache directory, relative to the plan root (D13; `tm init` excludes `.tm/cache/` from sync).
 pub const CACHE_DIR: &str = ".tm/cache/replay";
 /// The checkpoint's file inside the cache directory.
@@ -108,7 +115,7 @@ pub fn kernel_id() -> &'static str {
     tm_kernel_ffi::KERNEL_ID
 }
 
-/// FNV-1a-64 (§9.8's prefix digest).
+/// FNV-1a-64 (§9.8's prefix digest, and since the owner's D93 each sealed month file's — [`month_digest`]).
 pub fn fnv1a64(bytes: &[u8]) -> u64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for &b in bytes {
@@ -606,6 +613,10 @@ pub struct Snapshot {
     pub gen: String,
     pub prev_gen: String,
     pub manifest: BTreeMap<String, String>,
+    /// **The digest of each month file the manifest names** (the owner's D93, README gap 4246): month key to
+    /// [`month_digest`] of the file's bytes as written. The same keys as `manifest`, always ([`Snapshot::from_text`]
+    /// refuses any other); a file read whose bytes do not match is never served ([`ReplayCache::load_months`]).
+    pub digests: BTreeMap<String, String>,
     pub meta: Meta,
     pub ckpt: String,
 }
@@ -616,7 +627,7 @@ impl Snapshot {
         let head = serde_json::json!({
             "format": FORMAT, "kernel": self.kernel, "tzKey": self.tz_key, "prefixLines": self.prefix_lines, "logLines": self.log_lines,
             "prefixBytes": self.prefix_bytes, "prefixFnv": self.prefix_fnv, "gen": self.gen, "prevGen": self.prev_gen,
-            "manifest": self.manifest, "meta": self.meta.to_json(),
+            "manifest": self.manifest, "digests": self.digests, "meta": self.meta.to_json(),
         })
         .to_string();
         format!("{},\"ckpt\":{}}}\n", &head[..head.len() - 1], self.ckpt)
@@ -634,6 +645,12 @@ impl Snapshot {
         let s = |k: &str| val(k).and_then(|v| v.as_str().map(str::to_owned).ok_or_else(|| format!("{k} is not a string")));
         let n = |k: &str| val(k).and_then(|v| v.as_u64().ok_or_else(|| format!("{k} is not a number")));
         let manifest: BTreeMap<String, String> = serde_json::from_value(val("manifest")?).map_err(|e| e.to_string())?;
+        let digests: BTreeMap<String, String> = serde_json::from_value(val("digests")?).map_err(|e| e.to_string())?;
+        // Every month file the manifest names has its digest, and nothing else does (D93): a snapshot that cannot say
+        // what its months should read is not one to resume from.
+        if !digests.keys().eq(manifest.keys()) {
+            return Err("the digests do not name the manifest's months".into());
+        }
         Ok(Snapshot {
             kernel: s("kernel")?,
             tz_key: s("tzKey")?,
@@ -644,6 +661,7 @@ impl Snapshot {
             gen: s("gen")?,
             prev_gen: s("prevGen")?,
             manifest,
+            digests,
             meta: Meta::from_json(&val("meta")?)?,
             ckpt: m.get("ckpt").ok_or("no ckpt")?.get().to_string(),
         })
@@ -718,8 +736,23 @@ fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
 
 static UNWRITABLE_NOTICE: AtomicBool = AtomicBool::new(false);
 
-/// Why a reseal's write stopped before publishing: the previous manifest names a month file that is gone.
-const MONTH_MISSING: &str = "a month file the manifest names is missing";
+/// Why a reseal's write stopped before publishing: a month file it must merge is missing or does not match its digest
+/// (D93, README gaps 4246 and 4395), and the cache is rebuilt from the log instead.
+const MONTH_CORRUPT: &str = "a month file the manifest names is missing or does not match its digest";
+
+/// **A sealed month file's digest** (the owner's D93, README gap 4246): FNV-1a-64 of its bytes, the hash §9.8's
+/// prefix digest already is ([`fnv1a64`]) — no second hash and no new dependency.
+///
+/// **Why it is enough here.** The threat is accidental corruption and a hand edit, never an adversary (whoever can
+/// edit `.tm/cache/` can edit `.tm/log.jsonl` itself). Every step of FNV-1a — XOR a byte, multiply by an odd prime
+/// modulo 2^64 — is a bijection of the running state, so two inputs of one length that differ in ONE byte always
+/// digest differently (`a_digest_moves_with_every_single_byte_edit`): a flipped bit, a typed digit, a stray
+/// character is detected with certainty, not with probability. A truncation or a multi-byte change escapes it only
+/// by a 64-bit collision, about one in 1.8 × 10^19 for an edit that is not aimed at it. It is not cryptographic, and
+/// a forger who wanted to could aim one; that is not this file's threat.
+pub fn month_digest(text: &str) -> String {
+    format!("{:016x}", fnv1a64(text.as_bytes()))
+}
 
 /// **The one notice an unwritable cache prints per process** (CRIT 26), or `None` when it was already given.
 pub fn unwritable_notice(err: &std::io::Error) -> Option<String> {
@@ -798,7 +831,10 @@ impl ReplayCache {
         self.memory.as_ref().map(|m| m.0.clone())
     }
 
-    /// **The records of a snapshot's months** (by its manifest only), `None` when a named file is missing.
+    /// **The records of a snapshot's months** (by its manifest only), `None` when a named file is missing — **or
+    /// does not match the digest the manifest records for it** (the owner's D93, README gap 4246): a corrupted or
+    /// hand-edited month file is never served. Every caller answers `None` with a rebuild from the log
+    /// ([`ReplayCache::rebuild_missing`], README gap 3711), so the answer is the one a cache-less run gives.
     pub fn load_months(&self, snap: &Snapshot, months: &[String]) -> Option<(BTreeMap<u64, String>, BTreeMap<u64, String>)> {
         if let Some((ms, d, w)) = &self.memory {
             if ms.gen == snap.gen {
@@ -810,6 +846,9 @@ impl ReplayCache {
         for m in months {
             let Some(rel) = snap.manifest.get(m) else { continue };
             let text = std::fs::read_to_string(dir.join(rel)).ok()?;
+            if snap.digests.get(m) != Some(&month_digest(&text)) {
+                return None;
+            }
             let (d, w) = read_month(&text).ok()?;
             days.extend(d.into_iter().filter(|(k, _)| *k < snap.meta.ledger_day));
             window.extend(w.into_iter().filter(|(k, _)| *k < snap.meta.horizon));
@@ -830,8 +869,17 @@ impl ReplayCache {
     }
 
     /// **Write a new generation** (§9.8): each month touched by `days`/`window` read from the current manifest, the
-    /// touched keys replaced, written as a new immutable file; then `ckpt.json`; then collection. On an I/O error the
-    /// checkpoint and records are kept in memory and the notice returned.
+    /// touched keys replaced, written as a new immutable file with its digest recorded beside its name (D93); then
+    /// `ckpt.json`; then collection. On an I/O error the checkpoint and records are kept in memory and the notice
+    /// returned.
+    ///
+    /// **`Err(month)` when a month file the read-modify-write must read is missing or does not match its digest** (the
+    /// owner's D93, README gaps 4246 and 4395): nothing is published, and the caller rebuilds the cache from the log.
+    /// Merging a corrupted file would carry its records into a new file under a FRESH digest — the corruption laundered
+    /// into a file the next read trusts; and a missing one used to leave this process holding the reseal's new records
+    /// ALONE in memory, which every older-date read in the same verb then answered from (`records_of`'s generation is
+    /// the memory's): driven, a reseal over a deleted September file answered `Scope::All` with 8 days of a 50-day log.
+    /// With `all_records` nothing is read back, so a rebuild's write never answers `Err`.
     pub fn write_generation(
         &mut self,
         prev: Option<&Snapshot>,
@@ -839,11 +887,13 @@ impl ReplayCache {
         days: &BTreeMap<u64, String>,
         window: &BTreeMap<u64, String>,
         all_records: bool,
-    ) -> (Snapshot, Option<String>) {
+    ) -> Result<(Snapshot, Option<String>), String> {
         let gen = fresh_gen();
         snap.prev_gen = prev.map_or_else(String::new, |p| p.gen.clone());
         snap.gen = gen.clone();
         snap.manifest = if all_records { BTreeMap::new() } else { prev.map(|p| p.manifest.clone()).unwrap_or_default() };
+        snap.digests = if all_records { BTreeMap::new() } else { prev.map(|p| p.digests.clone()).unwrap_or_default() };
+        let mut corrupt: Option<String> = None;
         let mut touched: BTreeMap<String, (BTreeMap<u64, String>, BTreeMap<u64, String>)> = BTreeMap::new();
         for (d, r) in days {
             touched.entry(month_of(*d)).or_default().0.insert(*d, r.clone());
@@ -856,11 +906,15 @@ impl ReplayCache {
             for (month, (d, w)) in &touched {
                 let (mut md, mut mw) = (BTreeMap::new(), BTreeMap::new());
                 if !all_records {
-                    if let Some(rel) = prev.and_then(|p| p.manifest.get(month)) {
-                        // The input of a read-modify-write must be there: a month file the manifest names but another
-                        // process collected would otherwise publish a month without its older records (CRIT 7).
-                        let text = std::fs::read_to_string(dir.join(rel)).map_err(|_| std::io::Error::new(std::io::ErrorKind::NotFound, MONTH_MISSING))?;
-                        let (od, ow) = read_month(&text).map_err(|_| std::io::Error::new(std::io::ErrorKind::NotFound, MONTH_MISSING))?;
+                    if let Some((p, rel)) = prev.and_then(|p| p.manifest.get(month).map(|rel| (p, rel))) {
+                        // The input of a read-modify-write must be the file that was written: there (a month file the
+                        // manifest names but another process collected would otherwise publish a month without its
+                        // older records, CRIT 7) and matching its digest (D93). Neither is merged; both rebuild.
+                        let text = std::fs::read_to_string(dir.join(rel)).ok().filter(|t| p.digests.get(month) == Some(&month_digest(t)));
+                        let Some((od, ow)) = text.and_then(|t| read_month(&t).ok()) else {
+                            corrupt = Some(month.clone());
+                            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, MONTH_CORRUPT));
+                        };
                         md = od;
                         mw = ow;
                     }
@@ -868,27 +922,22 @@ impl ReplayCache {
                 md.extend(d.clone());
                 mw.extend(w.clone());
                 let rel = format!("{SEALED_DIR}/{month}.g{gen}.json");
-                write_atomic(&dir.join(&rel), &month_text(&md, &mw))?;
+                let text = month_text(&md, &mw);
+                write_atomic(&dir.join(&rel), &text)?;
                 snap.manifest.insert(month.clone(), rel);
+                snap.digests.insert(month.clone(), month_digest(&text));
             }
             write_atomic(&dir.join(CKPT_FILE), &snap.to_text())?;
             collect(&dir, &snap, prev);
             Ok(())
         })();
-        match result {
+        if let Some(month) = corrupt {
+            return Err(month);
+        }
+        Ok(match result {
             Ok(()) => {
                 self.memory = None;
                 (snap, None)
-            }
-            Err(e) if e.to_string() == MONTH_MISSING => {
-                // Nothing was published: the stored checkpoint stays valid for its prefix, and this process keeps its
-                // own checkpoint and the records it sealed.
-                let mut md = BTreeMap::new();
-                md.extend(days.clone());
-                let mut mw = BTreeMap::new();
-                mw.extend(window.clone());
-                self.memory = Some((snap.clone(), md, mw));
-                (snap, Some(format!("replay cache {CACHE_DIR} changed underneath; kept in memory")))
             }
             Err(e) => {
                 self.writable = false;
@@ -902,7 +951,7 @@ impl ReplayCache {
                 self.memory = Some((snap.clone(), md, mw));
                 (snap, unwritable_notice(&e))
             }
-        }
+        })
     }
 
     /// **One replay for a verb** (§9.8, §9.7, §9.6): check the stored checkpoint against the log, resume its tail (with a
@@ -974,7 +1023,16 @@ impl ReplayCache {
                         let next = snapshot_of(&rs, &tz_key, &s, bytes);
                         let days: BTreeMap<u64, String> = rs.days.iter().cloned().collect();
                         let window: BTreeMap<u64, String> = rs.window.iter().cloned().collect();
-                        let (next, notice) = self.write_generation(Some(sn), next, &days, &window, false);
+                        let (next, notice) = match self.write_generation(Some(sn), next, &days, &window, false) {
+                            Ok(written) => written,
+                            // A month the reseal must merge does not match its digest (D93): nothing was written,
+                            // and the cache is rebuilt from the log rather than built on it.
+                            Err(month) => {
+                                let mut r = self.rebuild(&now, tz, &s, max_line, want, bytes, Some(format!("{MONTH_CORRUPT} ({month})")), false)?;
+                                r.notices.push(corrupt_month_notice(&month));
+                                return Ok(r);
+                            }
+                        };
                         return Ok(Replayed {
                             answer: a,
                             outcome: Outcome::Resealed,
@@ -1032,6 +1090,7 @@ impl ReplayCache {
                 gen: String::new(),
                 prev_gen: String::new(),
                 manifest: BTreeMap::new(),
+                digests: BTreeMap::new(),
                 meta: Meta::default(),
                 ckpt: String::new(),
             };
@@ -1042,12 +1101,21 @@ impl ReplayCache {
             return Ok(Replayed { answer: g.answer, outcome: Outcome::GenesisUnpersisted, snapshot: snap, days: g.top.days, window: g.top.window, notices: vec![], rebuilt_because: why });
         }
         let prev = self.read_snapshot();
-        let (snap, notice) = self.write_generation(prev.as_ref(), snap, &g.top.days, &g.top.window, true);
+        // `all_records`: nothing is read back, so no digest can refuse this write (D93); were one to, the generation is
+        // this call's alone, kept in memory as an unwritable cache keeps it, and named.
+        let (snap, notice) = match self.write_generation(prev.as_ref(), snap.clone(), &g.top.days, &g.top.window, true) {
+            Ok(written) => written,
+            Err(month) => {
+                self.memory = Some((snap.clone(), g.top.days.clone(), g.top.window.clone()));
+                (snap, Some(corrupt_month_notice(&month)))
+            }
+        };
         Ok(Replayed { answer: g.answer, outcome: Outcome::Genesis, snapshot: snap, days: g.top.days, window: g.top.window, notices: notice.into_iter().collect(), rebuilt_because: why })
     }
 
-    /// **A sealed month file the snapshot names is missing: rebuild the cache from the log** (README
-    /// gap **3711**, the W-39 repair; D13 — the cache is derived and rebuildable). Genesis over the
+    /// **A sealed month file the snapshot names is missing — or does not match its digest (D93, README gap 4246):
+    /// rebuild the cache from the log** (README gap **3711**, the W-39 repair; D13 — the cache is derived and
+    /// rebuildable). Genesis over the
     /// whole log, written as a fresh generation that reads no old month (`write_generation`'s
     /// `all_records`), or kept in memory when the cache cannot be written; the snapshot it ends on
     /// becomes [`ReplayCache::last`], so a request section asked in the same process reads it.
@@ -1060,7 +1128,7 @@ impl ReplayCache {
         want: &Want,
     ) -> Result<Replayed, GenesisError> {
         let s = split(bytes);
-        let r = self.rebuild(&date_of(now_day), tz, &s, max_line, want, bytes, Some("a sealed month file is missing".into()), false)?;
+        let r = self.rebuild(&date_of(now_day), tz, &s, max_line, want, bytes, Some("a sealed month file is missing or does not match its digest".into()), false)?;
         self.last = Some(r.snapshot.clone());
         Ok(r)
     }
@@ -1103,6 +1171,7 @@ fn snapshot_of(rs: &Resealed, tz_key: &str, s: &Split, bytes: &[u8]) -> Snapshot
         gen: String::new(),
         prev_gen: String::new(),
         manifest: BTreeMap::new(),
+        digests: BTreeMap::new(),
         meta: rs.meta.clone(),
         ckpt: rs.ckpt.clone(),
     }
@@ -1171,11 +1240,17 @@ mod tests {
             gen: "0123456789abcdef".into(),
             prev_gen: String::new(),
             manifest: BTreeMap::from([("2026-09".to_string(), "sealed/2026-09.g0123456789abcdef.json".to_string())]),
+            digests: BTreeMap::from([("2026-09".to_string(), month_digest("{\"v\":1,\"days\":{},\"window\":{}}\n"))]),
             meta: Meta { cut: 2, ledger_day: 739870, horizon: 739855, reseal_day: 739872, max_t: Some((1, 0)), future_floor: None },
             ckpt: r#"{"v":1,"tzKey":"UTC","cut":2}"#.into(),
         };
         let back = Snapshot::from_text(&s.to_text()).expect("reads back");
         assert_eq!(back, s);
+        // D93: a manifest month without its digest, or a digest for no month, is not a snapshot to resume from.
+        for digests in [BTreeMap::new(), BTreeMap::from([("2026-08".to_string(), "0".repeat(16))])] {
+            let other = Snapshot { digests, ..s.clone() };
+            assert!(Snapshot::from_text(&other.to_text()).is_err(), "{:?}", other.digests);
+        }
         assert!(s.valid_for(b"a\nb\nc\n", "UTC").is_ok());
         assert_eq!(s.valid_for(b"a\nB\nc\n", "UTC"), Err("the prefix's digest differs"));
         assert_eq!(s.valid_for(b"a\nb", "UTC"), Err("the log is shorter than the prefix"));
@@ -1230,6 +1305,198 @@ mod tests {
             .expect("rebuilt, not a fault");
         let v: Value = serde_json::from_str(&section).expect("a section");
         assert_eq!(v["sealed"]["days"].as_array().map(Vec::len), Some(7), "the week's sealed records: {}", v["sealed"]);
+    }
+
+    /// **A digest moves with every single-byte edit** (the owner's D93, README gap 4246) — the property
+    /// [`month_digest`]'s doc argues from: every step of FNV-1a is a bijection of its state, so two texts of one
+    /// length that differ in one byte never share a digest. Exhaustive over a sealed month file's shape (every
+    /// position, every other byte value), and over random texts by the same rule.
+    #[test]
+    fn a_digest_moves_with_every_single_byte_edit() {
+        let month = r#"{"v":1,"days":{"739865":[739865,[null,[],260,4,948]]},"window":{}}"#;
+        let base = fnv1a64(month.as_bytes());
+        let mut edits = 0u32;
+        for at in 0..month.len() {
+            for b in 0u8..=255 {
+                if b == month.as_bytes()[at] {
+                    continue;
+                }
+                let mut v = month.as_bytes().to_vec();
+                v[at] = b;
+                assert_ne!(fnv1a64(&v), base, "a one-byte edit at {at} to {b:#04x} kept the digest");
+                edits += 1;
+            }
+        }
+        assert_eq!(edits, month.len() as u32 * 255);
+        let mut seed: u64 = 0x2545_f491_4f6c_dd1d;
+        let mut next = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        for _ in 0..2_000 {
+            let len = (next() % 64 + 1) as usize;
+            let text: Vec<u8> = (0..len).map(|_| next() as u8).collect();
+            let at = (next() as usize) % len;
+            let mut edited = text.clone();
+            edited[at] ^= ((next() % 255) + 1) as u8;
+            assert_ne!(fnv1a64(&edited), fnv1a64(&text), "{text:?} at {at}");
+        }
+    }
+
+    /// Forty-five days of logged wakes from 2026-08-01, and `n` more after them.
+    fn wakes(days: i64) -> String {
+        let first = chrono::NaiveDate::from_ymd_opt(2026, 8, 1).expect("a date");
+        (0..days)
+            .map(|i| format!("{{\"t\":\"{}T06:05:00-05:00\",\"ev\":\"wake\",\"slept_min\":480}}\n", first + chrono::Duration::days(i)))
+            .collect()
+    }
+
+    /// **A month file read whose bytes do not match its digest is never served** (the owner's D93, README gap
+    /// 4246): one byte of a sealed record changed, the JSON still valid — so the file still READS — and the replay
+    /// that needs it rebuilds from the log, answering exactly what a cache-less replay answers; the rebuilt files
+    /// match their digests and the edited one is named by no manifest.
+    #[test]
+    fn a_month_file_that_does_not_match_its_digest_is_never_served() {
+        let dir = tempfile::tempdir().expect("a scratch directory");
+        let root = dir.path();
+        let tz: Tz = "America/Chicago".parse().expect("a zone");
+        let tz_wire = super::super::tz_table::wire_for(Some(&root.join(CACHE_DIR)), tz);
+        let text = wakes(45);
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 9, 15).expect("a date");
+        replay_scoped(root, text.as_bytes(), tz, &tz_wire, today, Scope::All, None).expect("the replay");
+        let snap = ReplayCache::new(Some(root.join(CACHE_DIR))).read_snapshot().expect("a snapshot");
+        assert_eq!(snap.digests.keys().collect::<Vec<_>>(), snap.manifest.keys().collect::<Vec<_>>());
+        let august = root.join(CACHE_DIR).join(&snap.manifest["2026-08"]);
+        let before = std::fs::read_to_string(&august).expect("the August file");
+        assert_eq!(snap.digests["2026-08"], month_digest(&before), "the manifest records the file's own digest");
+        let at = before.find("480").expect("a night's 480 minutes") + 2;
+        let mut edited = before.clone();
+        edited.replace_range(at..at + 1, "1");
+        assert!(read_month(&edited).is_ok(), "the edit keeps the file readable");
+        std::fs::write(&august, &edited).expect("edit the August file");
+
+        // The bite: the stored snapshot's months are refused by their digests.
+        let cache = ReplayCache::new(Some(root.join(CACHE_DIR)));
+        assert!(cache.load_months(&snap, &["2026-08".to_string()]).is_none(), "an edited month file was served");
+        assert!(cache.load_months(&snap, &["2026-09".to_string()]).is_some(), "an untouched month file is served");
+
+        // A fresh process (the process caches are per root, so this one is new) asks for every record.
+        caches().lock().unwrap_or_else(|p| p.into_inner()).remove(root);
+        let read = replay_scoped(root, text.as_bytes(), tz, &tz_wire, today, Scope::All, None).expect("rebuilt, not a fault");
+        assert!(read.notices.iter().any(|n| n.contains("does not match its digest") && n.contains("rebuilt from the log")), "{:?}", read.notices);
+        let fresh = tempfile::tempdir().expect("a second scratch directory");
+        let cacheless = replay_scoped(fresh.path(), text.as_bytes(), tz, &tz_wire, today, Scope::All, None).expect("a cache-less replay");
+        assert_eq!(read.replay, cacheless.replay, "the answer is a cache-less replay's");
+
+        let again = ReplayCache::new(Some(root.join(CACHE_DIR))).read_snapshot().expect("the rebuilt snapshot");
+        assert_ne!(again.gen, snap.gen, "a new generation");
+        for (m, rel) in &again.manifest {
+            let t = std::fs::read_to_string(root.join(CACHE_DIR).join(rel)).expect("a named month file");
+            assert_eq!(again.digests[m], month_digest(&t), "{m}: the rebuilt file matches its digest");
+            assert_ne!(t, edited, "{m}: the edited file is served again");
+        }
+    }
+
+    /// **A reseal never merges a month file that does not match its digest** (the owner's D93, README gap 4246):
+    /// its read-modify-write would carry the edit into a new file under a FRESH digest, and every later read would
+    /// trust it. Genesis at 2026-09-15 seals August and early September; five more days, and a replay at 2026-09-20
+    /// reseals September — whose file has had one byte changed. The cache is rebuilt from the log instead: the
+    /// replay's records are a cache-less genesis's, and no file the new manifest names holds the edit.
+    #[test]
+    fn a_reseal_never_merges_a_month_file_that_does_not_match_its_digest() {
+        let dir = tempfile::tempdir().expect("a scratch directory");
+        let cdir = dir.path().join(CACHE_DIR);
+        let tz: Tz = "America/Chicago".parse().expect("a zone");
+        let tz_wire = super::super::tz_table::wire_for(Some(&cdir), tz);
+        let want = Want { facts: true, headers_from: None, render: vec![] };
+        let mut cache = ReplayCache::new(Some(cdir.clone()));
+        let day = |d: u32| day_of(chrono::NaiveDate::from_ymd_opt(2026, 9, d).expect("a date"));
+        let first = cache.replay(wakes(45).as_bytes(), day(15), &tz_wire, None, &want).expect("genesis");
+        assert_eq!(first.outcome, Outcome::Genesis);
+        let september = cdir.join(&first.snapshot.manifest["2026-09"]);
+        let mut text = std::fs::read_to_string(&september).expect("the September file");
+        let at = text.find("480").expect("a night's 480 minutes") + 2;
+        text.replace_range(at..at + 1, "1");
+        std::fs::write(&september, &text).expect("edit the September file");
+
+        let log = wakes(50);
+        let r = cache.replay(log.as_bytes(), day(20), &tz_wire, None, &want).expect("rebuilt, not a fault");
+        assert_eq!(r.outcome, Outcome::Genesis, "the reseal merged the edited file: {:?}", r.rebuilt_because);
+        assert!(r.rebuilt_because.as_deref().is_some_and(|w| w.starts_with(MONTH_CORRUPT) && w.contains("2026-09")), "{:?}", r.rebuilt_because);
+        assert!(r.notices.iter().any(|n| n.contains("2026-09 is missing or does not match its digest")), "{:?}", r.notices);
+
+        let fresh = tempfile::tempdir().expect("a second scratch directory");
+        let mut cacheless = ReplayCache::new(Some(fresh.path().join(CACHE_DIR)));
+        let c = cacheless.replay(log.as_bytes(), day(20), &tz_wire, None, &want).expect("a cache-less genesis");
+        assert_eq!((&r.days, &r.window), (&c.days, &c.window), "the rebuilt records are a cache-less genesis's");
+        let snap = cache.read_snapshot().expect("the rebuilt snapshot");
+        let (_, d, w) = cache.all_records(&snap).expect("every month file matches its digest");
+        assert_eq!((&d, &w), (&c.days, &c.window));
+        for rel in snap.manifest.values() {
+            assert_ne!(std::fs::read_to_string(cdir.join(rel)).expect("a named file"), text, "the edited file is named");
+        }
+    }
+
+    /// **A reseal over a MISSING month file rebuilds too** (README gap 4395, closed with D93's rule): it used to keep the
+    /// reseal's new records alone in memory and answer every older-date read in the same verb from them — driven before
+    /// this change, `Scope::All` answered 8 days of a 50-day log under the notice "kept in memory". Now the answer is a
+    /// cache-less replay's, and the rebuilt manifest names files that are there and match their digests.
+    #[test]
+    fn a_reseal_over_a_missing_month_file_rebuilds_and_answers_as_a_cache_less_replay() {
+        let tz: Tz = "America/Chicago".parse().expect("a zone");
+        let dir = tempfile::tempdir().expect("a scratch directory");
+        let root = dir.path();
+        let tz_wire = super::super::tz_table::wire_for(Some(&root.join(CACHE_DIR)), tz);
+        let (d15, d20) = (
+            chrono::NaiveDate::from_ymd_opt(2026, 9, 15).expect("a date"),
+            chrono::NaiveDate::from_ymd_opt(2026, 9, 20).expect("a date"),
+        );
+        replay_scoped(root, wakes(45).as_bytes(), tz, &tz_wire, d15, Scope::All, None).expect("genesis");
+        let snap = ReplayCache::new(Some(root.join(CACHE_DIR))).read_snapshot().expect("a snapshot");
+        std::fs::remove_file(root.join(CACHE_DIR).join(&snap.manifest["2026-09"])).expect("delete September");
+        let read = replay_scoped(root, wakes(50).as_bytes(), tz, &tz_wire, d20, Scope::All, None).expect("rebuilt, not a fault");
+        let fresh = tempfile::tempdir().expect("a second scratch directory");
+        let cacheless = replay_scoped(fresh.path(), wakes(50).as_bytes(), tz, &tz_wire, d20, Scope::All, None).expect("a cache-less replay");
+        assert_eq!(read.replay.days.len(), 50, "every day of the log");
+        assert_eq!(read.replay, cacheless.replay, "the answer is a cache-less replay's");
+        assert_eq!(read.outcome, Outcome::Genesis, "rebuilt from the log");
+        assert!(read.notices.iter().any(|n| n.contains("2026-09 is missing or does not match its digest")), "{:?}", read.notices);
+        let again = ReplayCache::new(Some(root.join(CACHE_DIR))).read_snapshot().expect("the rebuilt snapshot");
+        for (m, rel) in &again.manifest {
+            let t = std::fs::read_to_string(root.join(CACHE_DIR).join(rel)).expect("a named file is there");
+            assert_eq!(again.digests[m], month_digest(&t), "{m}");
+        }
+    }
+
+    /// **A cache written before D93 is rebuilt once** (README gap 4246): a format-3 `ckpt.json`, no digests, is not
+    /// read; the next replay is a genesis that writes format 4, and the one after resumes it.
+    #[test]
+    fn a_checkpoint_written_before_d93_is_rebuilt_once() {
+        let dir = tempfile::tempdir().expect("a scratch directory");
+        let cdir = dir.path().join(CACHE_DIR);
+        let tz: Tz = "America/Chicago".parse().expect("a zone");
+        let tz_wire = super::super::tz_table::wire_for(Some(&cdir), tz);
+        let want = Want { facts: true, headers_from: None, render: vec![] };
+        let today = day_of(chrono::NaiveDate::from_ymd_opt(2026, 9, 15).expect("a date"));
+        let log = wakes(45);
+        let mut cache = ReplayCache::new(Some(cdir.clone()));
+        let first = cache.replay(log.as_bytes(), today, &tz_wire, None, &want).expect("genesis");
+        let ckpt = cdir.join(CKPT_FILE);
+        let text = std::fs::read_to_string(&ckpt).expect("ckpt.json");
+        let digests = format!("\"digests\":{},", serde_json::to_string(&first.snapshot.digests).expect("a map"));
+        assert_eq!(text.matches(&digests).count(), 1, "{text}");
+        let old = text.replace(&digests, "").replace("\"format\":4", "\"format\":3");
+        std::fs::write(&ckpt, &old).expect("a format-3 checkpoint");
+        assert!(Snapshot::from_text(&old).is_err(), "a format-3 checkpoint is read");
+        let mut process = ReplayCache::new(Some(cdir.clone()));
+        let r = process.replay(log.as_bytes(), today, &tz_wire, None, &want).expect("rebuilt");
+        assert_eq!((r.outcome, r.rebuilt_because.as_deref()), (Outcome::Genesis, Some("no checkpoint")));
+        let snap = Snapshot::from_text(&std::fs::read_to_string(&ckpt).expect("ckpt.json")).expect("format 4 again");
+        assert!(!snap.digests.is_empty() && snap.digests.keys().eq(snap.manifest.keys()));
+        let again = process.replay(log.as_bytes(), today, &tz_wire, None, &want).expect("a resume");
+        assert_eq!((again.outcome, again.snapshot.gen.as_str()), (Outcome::Hot, snap.gen.as_str()), "rebuilt once, not twice");
     }
 
     /// **D18's named fault, raised before any call** (OWNER Q9 (iii), §17 P31, gap 120): a hand-edited first line longer
@@ -2231,10 +2498,17 @@ fn months_between(from: u64, to: u64) -> Vec<String> {
     out.into_iter().collect()
 }
 
-/// The notice a replay raises when a sealed month file its snapshot names was missing and the
-/// cache was rebuilt from the log (README gap **3711**, the W-39 repair).
+/// The notice a replay raises when a sealed month file its snapshot names was missing — or, since the
+/// owner's D93, did not match its digest — and the cache was rebuilt from the log (README gaps **3711**
+/// and **4246**).
 fn missing_month_notice() -> String {
-    format!("replay cache {CACHE_DIR} changed underneath (a sealed month file is missing); rebuilt from the log")
+    format!("replay cache {CACHE_DIR} changed underneath (a sealed month file is missing or does not match its digest); rebuilt from the log")
+}
+
+/// The notice a reseal raises when a month file it had to merge was missing or did not match its digest, and the
+/// cache was rebuilt from the log instead (the owner's D93, README gaps 4246 and 4395).
+fn corrupt_month_notice(month: &str) -> String {
+    format!("replay cache {CACHE_DIR}: the sealed month file of {month} is missing or does not match its digest; rebuilt from the log")
 }
 
 /// The sealed records a scope merges (§11.1, §9.8) — `None` when a month file the snapshot names is
