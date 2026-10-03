@@ -614,7 +614,7 @@ Tm.Recur.weekIdxMod
 Tm.Recur.wholeDays
 Tm.Recur.windowOn
 
-## Replay.lean -- the kernel replays `.tm/log.jsonl` (stage 5, D9 track, phase C). 66 of its 206 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
+## Replay.lean -- the kernel replays `.tm/log.jsonl` (stage 5, D9 track, phase C). 67 of its 207 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.Replay.Ci6.fifths
 Tm.Replay.Ci6.sum
 Tm.Replay.Ci6.toList

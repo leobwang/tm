@@ -5640,7 +5640,6 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_lift_applies_at_the_census_request
 #print axioms Tm.PlannerWit.midBreakRun_resumes_ok
 #print axioms Tm.PlannerWit.the_mid_break_day_lays_a_block_across_a_break
-#print axioms Tm.PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted
 #print axioms Tm.PlannerWit.the_break_law_applies_at_the_census_request
 
 -- ===========================================================================
@@ -8128,7 +8127,6 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Replay.the_open_block_restarts_at_the_breaks_end
 #print axioms Tm.Replay.a_break_with_no_actual_nets_its_planned_minutes
 #print axioms Tm.Replay.a_break_while_the_block_is_paused_changes_nothing
-#print axioms Tm.Replay.a_break_logged_before_its_blocks_start_is_not_netted
 #print axioms Tm.Replay.arm_split_as_c5_stated_it_is_refuted
 #print axioms Tm.Seal.brkFx_mi
 #print axioms Tm.Seal.arm_mi_of_not_brk
@@ -8153,3 +8151,33 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Field.ci_reads_a_signed_value
 #print axioms Tm.Field.rule_month_signed
 #print axioms Tm.parseCmd_refuses_every_separator_at_a_titles_edge
+
+/-
+   APPENDED 2026-10-03: stage 6, run W-43, TRACK K — the owner's D92 (README gap 4241,
+   parity P85): a break that runs INTO a block's start is not block time.  Two lines
+   removed above: Tm.PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted
+   (deleted; its goal is back in Goals.lean, gap 4362) and
+   Tm.Replay.a_break_logged_before_its_blocks_start_is_not_netted (refuted and renamed:
+   `…_is_not_netted_is_refuted` and `…_is_netted` below).
+-/
+#print axioms Tm.Replay.brkFx_brk
+#print axioms Tm.Replay.brkFx_of_stopped
+#print axioms Tm.Replay.closeSub_brk
+#print axioms Tm.Replay.closePause_brk
+#print axioms Tm.Replay.cut_brk
+#print axioms Tm.Replay.restartAt_cases
+#print axioms Tm.Replay.a_break_logged_before_its_blocks_start_is_not_netted_is_refuted
+#print axioms Tm.Replay.a_break_logged_before_its_blocks_start_is_netted
+#print axioms Tm.Replay.an_open_block_begun_inside_a_break_runs_from_its_end
+#print axioms Tm.Replay.a_done_begun_inside_a_break_credits_its_minutes_and_is_drawn_after_it
+#print axioms Tm.Replay.an_unpause_inside_a_break_restarts_the_clock_at_its_end
+#print axioms Tm.Replay.a_resume_inside_a_break_restarts_the_clock_at_its_end
+#print axioms Tm.Replay.a_break_the_start_ended_nets_nothing
+#print axioms Tm.Replay.a_break_logged_before_a_start_but_begun_after_it_is_not_netted
+#print axioms Tm.Seal.mi_of_eq
+#print axioms Tm.Seal.restartAt_mi
+#print axioms Tm.Seal.a_machine_holds_its_last_breaks_end
+#print axioms Tm.PlannerWit.intoBreakRun_resumes_ok
+#print axioms Tm.PlannerWit.the_into_break_day_keeps_its_block_off_the_break
+#print axioms Tm.PlannerWit.openIntoBreakRun_resumes_ok
+#print axioms Tm.PlannerWit.the_open_row_begun_inside_a_break_starts_at_its_end

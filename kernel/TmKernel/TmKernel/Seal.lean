@@ -489,11 +489,13 @@ def cOpenInt : Codec (At × Nat × Option Log.Id) :=
 theorem cOpenInt_nonnull : cOpenInt.NonNull := fun _ => nofun
 
 /-- The machine (fork `Machine`): the open block, **the last cut** (carried note 2: no Rust field reads it, so the
-view omits it, and only the checkpoint carries it), and the open interruption. -/
+view omits it, and only the checkpoint carries it), the open interruption, and — since the owner's D92 (README gap
+4241) — the span of the last `break` it stepped, `[start, end]`, which a later step's clock reads (`Replay.restartAt`),
+so a resumed fold restarts a clock where a whole replay does. -/
 def cMachine : Codec Machine :=
   cIso (cTuple <| tCons (cOpt cBlock cBlock_nonnull) <| tCons (cOpt cCut cCut_nonnull)
-      <| tCons (cOpt cOpenInt cOpenInt_nonnull) <| tNil)
-    (fun m => (m.block, m.lastCut, m.interrupt, ())) (fun p => ⟨p.1, p.2.1, p.2.2.1⟩) (fun _ => rfl)
+      <| tCons (cOpt cOpenInt cOpenInt_nonnull) <| tCons (cOpt (cPair cAt cAt) (cPair_nonnull cAt cAt)) <| tNil)
+    (fun m => (m.block, m.lastCut, m.interrupt, m.brk, ())) (fun p => ⟨p.1, p.2.1, p.2.2.1, p.2.2.2.1⟩) (fun _ => rfl)
 
 def cHeaderRec : Codec HeaderRec :=
   cIso (cTuple <| tCons cNat <| tCons cStr <| tCons cOptStr <| tCons cBool <| tCons cVInstant <| tCons cVOffset <| tNil)
@@ -1623,7 +1625,7 @@ def sealable (z : Cal.Tz) (T₀ L : Nat) (ls r : List Log.Line) : Bool :=
 
 /-- **The empty checkpoint** (§9.2): nothing folded, cut 0, ledger day 0. -/
 def Ckpt.empty (z : Cal.Tz) : Ckpt :=
-  ⟨ckptVersion, z.val.key, 0, 0, 0, none, none, [], [], [], false, [], ⟨none, none, none⟩, [], [], [], [], [], none,
+  ⟨ckptVersion, z.val.key, 0, 0, 0, none, none, [], [], [], false, [], ⟨none, none, none, none⟩, [], [], [], [], [], none,
    none, 0, 0, none, [], [], 0⟩
 
 /-- The meta the host reads beside a checkpoint. -/

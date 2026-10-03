@@ -84828,3 +84828,384 @@ divergences the swap would ship.  The exact remaining list before the swap:
 And WITH the swap, by name: gaps 3476 and 4327, now **twenty** tests (gap 4347), 3583, 4046, and 4321.  Gap 4340 (an
 interruption inside a running break, read two ways) is the owner's and moves no planner row, so it does not block the
 swap.
+
+<!-- =====================================================================
+     APPENDED 2026-10-03: stage 6 (the planner), run **W-43**, **TRACK K**
+     — the owner's D92: a logged break that runs INTO a block's start is
+     netted by the kernel as the host nets it.  Worktree
+     `.claude/worktrees/w43-k` (branch `w43-k` off `0984304`); clones,
+     plants, measurements and scratch evidence under `scratchpad/w43-k/`,
+     never in the shared tree.  Gap range **4360-4389**: 4360-4367 taken,
+     4368 free.  Parity **P85** taken (pre-allocated to this track).
+     Burn-down **1**: `plan_places_no_block_over_a_break` is back in
+     `Goals.lean`, a deliberately admitted debt (gap 4362).
+     ===================================================================== -->
+
+## Stage 6 — W-43 track K: a break that runs into a block's start is not block time (D92, P85), and the break law's goal back in `Goals.lean`
+
+### 0. The brief, measured before it was acted on
+
+* HEAD `0984304`, the tree clean, no worktree but `stage5-lookahead`.  The brief's figures were not re-measured
+  beside this track's own (the land and the verifier own the run-wide ones); what this track measured is below.
+* **"The generated month: 22" — confirmed, and it is the whole of the shape in T5's inputs.**  `scratchpad/w43-k/shapes.py`
+  read every T5 input (474: the 7 corpus logs, the generated month at 40 and 61 a day, the half-year, three 120-200-day
+  logs, the 12 zone cases, the 256 sequences and the 192 triple logs; dumped by a scratch test in the clone) by the
+  kernel's own machine: a clock start inside the span of the last `break` stepped before it occurs **604 times, in 6
+  inputs, every one a `loggen` log**, and 22 times in the generated month (19 blocks ended by a `done`, 81 drawn
+  minutes; 2 `stop`ped, 11 credited minutes; 1 cut by the next `start`, 4).  **0** at an `unpause`, **0** at a
+  `resume`, **0** planned-only, **0** across a day, **0** a break begun after the start it is logged ahead of.  The
+  instrument's P81 count is 48 breaks in 23 of the live arm's 469 inputs — W-42 track R's figure exactly.
+* **Not in the brief: the binary CAN write gap 4241's log**, with a `--now` in the past: `tm break 20m` at 09:00,
+  `tm break` at 09:25 (the `break` line, `actual_min` 25), `tm start ^m1` at `--now 09:10` — `tm start` ends a RUNNING
+  break, and this one had ended.  §1 drives it.  So does a clock behind the log (D78's two machines).
+* **Not in the brief: one shape the replay still reads two ways**, gap 4361 (§7): a break logged ahead of a `start`
+  but BEGUN after it — `tm --now` at 10:00 `break`, ended at 10:15, then `start` at `--now 09:50` — driven on the HEAD
+  binary: `tm stop` "after 55m", `tm review day` `block_min 70`.  It is not D92's shape (the break does not run into the
+  start) and it is not changed here.
+
+### 1. Parity P85 — issued
+
+**Parity P85 taken**: a block's clock that STARTS inside the span of the last `break` the replay stepped — at a `start` with no interruption open, an `unpause`, or a `resume` — starts at that break's end (`Replay.restartAt`, the span remembered by `Replay.Machine.brk`), so a break logged before a block's `start` and lasting into it is not block time: the block is drawn from the break's end and credited, banked and planned net of the overlap — `tm review`'s minutes, load and mix, the heat grid, an item's done minutes, the close's remaining, the planner's past and open rows, the sealed records; fork 4748911's clock started at the `start` whatever break the log held, and credited and drew the overlap while `tm stop` and `tm done` netted it (the owner's D92, W-43 track K, README gap 4241)
+
+**Behaviour rows**, driven on both binaries (`scratchpad/w43-k/drive/d92.sh`; the TUI through a pty, `tuipty.py` and
+`vt.py` as W-42 track R wrote them, keys `4`, `1`): `tm init --example`, `wake 07:00`, `break 20m` at 09:00, `break`
+at 09:25 (25 minutes), `start ^m1` at `--now 09:10`, `stop` at 10:00, the readers at 10:01.  HEAD is `tm-head`, a copy
+of the main checkout's `target/debug/tm` (built 04:03 from `f5a9585`'s code, `0984304`'s), this track the worktree's.
+
+| surface | `0984304` | this branch |
+|---|---|---|
+| the log it leaves | `break` 09:00 `actual_min 25`, `start` 09:10, `stop` 10:00 | the same bytes |
+| `tm stop` | `stopped ^m1 after 35m · 325m left` | the same |
+| `tm review day` | `load 50.0`; `--json` `block_min 50`, `load_blocks 0.83`, mix `total_min 50`, `high_share 14` | `load 35.0`; `block_min 35`, `load_blocks 0.58`, `total_min 35`, `high_share 10` |
+| `tm review week` | `load 50.0`; heat `block 50m · break 25m`; `--json` the 09:00 cell `[50, 25, 0, …]`, 75 minutes in a 60-minute hour | `load 35.0`; `block 35m · break 25m`; `[35, 25, 0, …]` |
+| `tm plan`'s past rows | `09:00 break 25m`, `09:10` block | `09:00 break 25m`, `09:25` block |
+| the TUI, Today: timeline and day bar | `09:10` block; bar `░░███▒▒…` | `09:25` block; bar `░░░██▒▒…` |
+| the TUI, screen 4 (Review), day | `load 50.0` | `load 35.0` |
+
+`tm stop`'s "after 35m" was already the host's union (P84) — what moved is every reader of the replay, which now
+reads it too.  **Pinned** by the replay witnesses of §3 and `PlannerWit` section 32, cheats 266-268, T5's and the
+door's carry (§4), and `tm/tests/cli_break_into_block.rs` (§6).
+
+### 2. Who reads the overlap (step 1)
+
+The overlap is `[start, the break's end)`.  "Span" credits or draws it, "net" does not.  Measured at `0984304` over
+`tm/src`, `tm-core/src` and the kernel; the readers are W-42 track R's for a break inside a block, met here by the
+other end of the break.
+
+| reader | what it reads | at `0984304` |
+|---|---|---|
+| `tm stop`'s "after Nm", `tm done`'s logged `actual_min`, `tm now`, the TUI's timer, §9.1's overtime prompt | `Replay::running_worked_min` → `Replay::idle_min_since`, which clips every break span in the start day's seam to `[started, now]` | **net** |
+| the replay's credit on a cut (`Replay.cut` → `closeSub` → `creditFx`): a day's `blockMin` and `ciUnknown`, the item's minutes and item-day minutes | the open block's `since`, set at the `start` | **span** |
+| the replay's credit on a `done` (`Replay.doneFx`) and the fit's duration observations | the logged `actual_min`, the host's | net |
+| the replay's `Block` segments (`closeSub`) | `since` | **span**, drawn across the `Break` |
+| the open block (`Replay.OpenBlock.since`, `workedMin`) → `Planner.openBlockRows`, `Planner.openWorkedMin` (P55: the host's minutes when the request carries them) | `since` | **span** |
+| sealed day records (`Seal.DayRecord`, `.tm/cache/replay/`) | copies of the replay's day | as the replay |
+| `tm review day`/`week`/`month` (block minutes, load, load in blocks, mix) and the TUI's Review screen | the day record | **span** for a cut block |
+| the heat grid (`heat_of` over the day's segments) | segments | **span**: the hour counts the overlap as block AND break |
+| the TUI's week pane and queue progress (`Replay::done_minutes_map`) | the item's minutes | **span** for a cut block |
+| the close's remaining (`day_remaining` → `block_minutes_on`) and priority's cap usage (`block_minutes_on`) | item-day minutes | **span** for a cut block |
+| the planner's past rows (`Planner.pastRows`; the in-tree fork planner, over the kernel's replay) | segments | **span** |
+
+### 3. The one rule (step 2)
+
+`Replay.Machine` gains `brk : Option (At × At)`, the span `[t, brkEnd t …]` of the last `break` it stepped, written by
+every break (`Replay.brkFx`, which since D87 also stops a running clock across the break) whether a clock ran or not.
+`Replay.restartAt m t` is `brk`'s end when `brk` began at or before `t` and ends after it, else `t`, and it is read at
+every place a clock starts: the `start` arm (no interruption open), the `unpause` arm (none open), and `resumeBlock`
+(which takes the restart instant beside the resume's stamp: a paused block's pause still restarts at the stamp).  One
+rule, the host's union read at the instant the clock starts; a break stepped while a clock RUNS is still P81's.
+
+**Proved, nothing admitted to the library** (the one admitted debt is the goal of §5):
+* `Replay.brkFx_cases` — re-proved with its statement unchanged (D5): with no clock running `closeSub` is the
+  identity, so a break's one machine is the second case.  New: `brkFx_brk` (every machine a break writes holds its
+  span), `brkFx_of_stopped`, `closeSub_brk`, `closePause_brk`, `cut_brk`, `restartAt_cases`.
+* `Seal.machineInstants` widens by the remembered break's end (where a later step may read the day index), written
+  inline rather than as a definition of its own, because a proof-only definition the export does not reach is a new
+  entry check 12's shrink-only exemption file cannot take: `stepQueries_sub`, `closeSub_mi`, `closePause_mi`, `cut_mi`,
+  `arm_mi_of_not_brk`, `brkFx_mi`, `arm_mi`, `stepWith_mi`, `foldQueries_sub` and `foldl_mi` re-proved with their
+  statements unchanged (`resumeBlock_since` and `resumeBlock_pausedAt` gain the restart argument); `mi_of_eq`,
+  `restartAt_mi` and the witness `a_machine_holds_its_last_breaks_end` new.  The checkpoint codec
+  (`Seal.cMachine`) carries the span, so a resumed fold restarts a clock where a whole replay does; the sixteen window
+  laws, the codec round trips and C5's `arm_split`/`arm_split_of_not_brk` (as W-42 restated them) compile on top
+  unchanged, and so do the four `simp` sets over the empty state, which close the new component unaided.
+* Replay witnesses (the D92 section at the end of `Replay.lean`, each decided under an 8 GiB cap — the module whole in
+  11.5 s, 1.38 GB):
+  `a_break_logged_before_its_blocks_start_is_netted` (55 of 60 credited, the Block drawn `[09:05, 10:00]`; W-42's
+  a_break_logged_before_its_blocks_start_is_not_netted is refuted by name and renamed, D5),
+  `an_open_block_begun_inside_a_break_runs_from_its_end`,
+  `a_done_begun_inside_a_break_credits_its_minutes_and_is_drawn_after_it`,
+  `an_unpause_inside_a_break_restarts_the_clock_at_its_end` and `a_resume_inside_a_break_restarts_the_clock_at_its_end`
+  (35, the host's union; 40 before), `a_break_the_start_ended_nets_nothing` (the binary's own log: the rule does not
+  over-bite), and `a_break_logged_before_a_start_but_begun_after_it_is_not_netted` (gap 4361's edge, named).
+
+### 4. The comparand (step 3)
+
+`tm/tests/support/p85.rs` is P85 as `p81.rs` is P81, applied after it:
+* **Frozen, by value** — `p85::carry` moves the fork's frozen answer by P85's rule read off the FORK's own segments: a
+  `Block` segment that starts inside a `Break` segment starts at its end (or goes), and a cut's credit loses the netted
+  minutes (`block_min`, `ci_unknown`, the item's minutes); the fork's open block likewise.  It refuses by name a start
+  inside two breaks, a moved stretch filed on another day, a cut short of ci-unknown minutes.  T5 (`compare_with_fork`)
+  and the door suite chain it after `p81::carry`, never by skipping a key: the generated month moves **22 clock starts
+  and 15 minutes**.  `p85_is_carried_by_value_and_a_corrupted_kernel_answer_fails_by_name` (new) holds the count, holds
+  that the answer moved by P81 alone disagrees at P85's leaves (`days.2026-01-06.block_min`, `items.570.minutes`,
+  `items.641.minutes`, `items.647.minutes`, the segments), and that a kernel answer one minute off on `^570` fails by
+  name; W-42's P81 test reads its leaves against the answer moved by P85 alone, so each test isolates its own number.
+* **Asked, live** (`TM_ORACLE`): ONE model of the block family's clock, `p81::clock_read` — the kernel's machine
+  over the fork's refusals, the last break's span remembered — reads both P81's breaks (`p81::netted_breaks`, its
+  signature unchanged for `planner_classes.rs`) and P85's clock starts (`p85::restarts`); until this track the P81
+  model had no D92 restart, and a stretch can now begin at a break's end.  `p85::as_asked_log` gives P81's breaks as
+  `p81.rs` did and each P85 start as a `pause` at the start and an `unpause` at the break's end right after its line —
+  which fork 4748911's machine nets as `restartAt` does — and `p85::as_asked_answer` takes the inserted `Pause`
+  segments off.  The live arm's cross-check holds `p85::carry ∘ p81::carry` to the asked answer.  It ran (§9).
+  No T5 input tells the model's D92 restart from none (a plant of it survived T5 and `planner_classes`), so
+  `the_clock_model_starts_a_stretch_where_the_kernels_machine_does` (new) holds it to the kernel on a hand-written log.
+* **The planner's frozen lines**: none moves (§9's `planner_classes` and `planner_invariants` runs) — the frozen
+  worlds' breaks are inside a running block (P81) or running (P45), and §2's check (1) of
+  `the_frozen_classes_are_the_forks_answer_today` moves its break ahead of the `start` but stamped five minutes AFTER
+  it, gap 4361's shape, which D92 does not reach: its premise (the open block's clock runs from its start, nothing
+  banked) still holds, so gap 4250 is unchanged.  Track C was told this track may introduce lines under D64 (a)/D70 with
+  P85, and none was needed — which also means no frozen planner line holds P85's planner half to fork 4748911 (gap
+  4367).
+* **What compares what after R3** (lesson 5): T5's frozen arms and the door compare the kernel's replay with fork
+  4748911's FROZEN answers moved by P85 (bytes on disk, which R3 does not touch); T5's live arm compares it with fork
+  4748911 itself, asked the D92 day out of the tree (`TM_ORACLE`); the replay witnesses, `PlannerWit` section 32 and
+  `cli_break_into_block.rs` compare the kernel with values a human wrote down, not with the kernel.
+
+### 5. The goal's fate (step 4) — `plan_places_no_block_over_a_break` is BACK in `Goals.lean`
+
+The refutation PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted stood on
+`theMidBreakRequest`: the census log with a planned-only break at 07:00 lasting into `m1`'s 07:05 `start` — gap 4241's
+shape exactly, and cheat 201 with it.  Under D92 that day keeps `m1`'s Block off the Break (07:15-08:05) and passes
+`noBlockOverABreak` and `planOkCore` (`PlannerWit.the_into_break_day_keeps_its_block_off_the_break`, section 32), so the
+refutation FELL.  Could it stand on another log the binary can build?  Only on gap 4361's (a `--now` in the past) or gap
+4340's (an interruption logged while a break runs, until D90) — both read two ways by the kernel and the host, so a
+refutation standing on either stands on a kernel defect and is not a discharge (lesson 4; D92's own row).  Could it be
+proved as written?  No: `PlanReq.run` is any `Seal.Run`, and gap 4361's log is a replay-built counterexample.  So:
+* the refutation is **deleted** (its audit line with it) and the goal **returns** to `Goals.lean` under STAGE 6, as
+  written at W-18, with a doc comment saying all of the above (burn-down **1**, gap 4362);
+* `PlanCheck.plan_places_no_block_over_a_break` (the law over the Block rows from `now`) stays proved;
+* `theMidBreakRequest` and `theOpenBreakRequest` move LINE FOR LINE to gap 4361's shape (the break stamped 07:10 and
+  12:05, logged ahead of the 07:05 and 12:00 starts), the one shape the replay still draws a Block across, so every
+  other law they evidence keeps its statement: `the_mid_break_day_lays_a_block_across_a_break` (its first two rows and
+  its rest row re-decided), `the_core_seven_is_false_on_three_whole_days`, `the_paying_past_fails_on_four_whole_days`,
+  `every_refuted_day_refutes_its_own_clause`, `the_open_requests_agree`, `the_battery_bites_on_the_open_row` and
+  `noBlockOverABreak_of_a_logless_day_over_the_closed_rows_is_refuted`.  Their doc comments say they stand on gap 4361:
+  `PastPays.offBreak` is needed because of it, and when it closes they fall and the clause can go.  Cheat 201 follows
+  the same day and still fails as it says;
+* D92's own planner days are appended (section 32, line-neutral above it, so no roster pin site moved):
+  `the_into_break_day_keeps_its_block_off_the_break` and `the_open_row_begun_inside_a_break_starts_at_its_end` (the
+  open row `[12:10, 14:00)` reading `110m so far` — the host's reading of that break logged with its `actual_min`, though
+  not of this planned-only one, gap 4360; fork 4748911's read 120).
+
+### 6. The cache (step 5)
+
+A checkpoint carries the identity of the kernel that wrote it (`kernel_log::kernel_id`, FNV-1a-64 of the linked
+archive) and `Snapshot::valid_for` sends one another kernel wrote to genesis (W-42 track R).  D92 changes the archive,
+and the machine's codec too (a checkpoint holds four machine fields now, so an older one does not decode).
+`tm/tests/cli_break_into_block.rs` (new) shows it by value — see §9 for what it asserts and measured.
+
+### 7. Gaps 4360-4367
+
+**Gap 4241 — CLOSED** (§3, P85).  **Gap 4250 — unchanged**: §2's check (1) of
+`the_frozen_classes_are_the_forks_answer_today` moves its break ahead of the `start` but stamped after it, gap 4361's
+shape, which D92 does not reach, so its premise holds and nothing failed (§4).
+
+**Gap 4360 — a planned-only break is read two ways.**  1. *What.*  `log::idle_spans` skips a `break` with no
+`actual_min`; the replay's `brkEnd` reads its planned minutes, so a planned-only break inside a block (P81) or run into
+its start (P85) is netted by the replay and not by `tm stop`'s minutes.  2. *Why not changed.*  No verb writes such a
+line (`day::end_break_at` always writes `actual_min`); the W-42 repair closed gap 4243 "for every world `tm` writes" and
+left this half; changing the host's reader is a host behaviour change on hand-edited logs, outside D92's text.  3.
+*Cost.*  On a hand-edited log `tm stop` and `tm review` disagree by the planned span.  4. *Clears it.*  The owner: the
+host reading `brkEnd`'s span (actual, else planned), with a behaviour row.
+
+**Gap 4361 — a break logged ahead of a `start` but begun after it is read two ways.**  1. *What.*  A `break` line the
+replay steps before a `start` whose stamp is AFTER the start's (the binary writes it with a `--now` in the past, or a
+clock behind the log by more than the break): no clock ran when it was stepped, and it did not begin before the clock
+started, so `restartAt` does not reach it; the replay credits and draws the block across it while
+`Replay::idle_min_since` nets it.  Driven on the HEAD binary (`scratchpad/w43-k/drive/late.sh`): `tm stop` "after 55m",
+`tm review day` `block_min 70`; the same on this branch (`a_break_logged_before_a_start_but_begun_after_it_is_not_netted`).
+0 in T5's 474 inputs.  2. *Why not changed.*  It is not D92's shape (the break does not run into the start), and
+netting it needs a span the clock meets AFTER it started — a pending span `closeSub` clips — which changes R8's
+per-sub-segment minutes and every law over `closeSub`.  3. *Cost.*  The one Block-over-Break the replay still draws on
+a log: `PlannerWit`'s sections 14, 19, 24 and 26 stand on it (said in each), and `plan_places_no_block_over_a_break` is
+false on it, which is why that goal cannot be discharged (gap 4362).  4. *Clears it.*  The owner: net it, or rule a
+clock behind the log out of scope.
+
+**Gap 4362 — `Goals.plan_places_no_block_over_a_break` is back in `Goals.lean`.**  §5.  1. *What.*  The goal as W-18
+wrote it, `sorry`, burn-down 1.  2. *Why.*  Its refutation stood on gap 4241's log, which D92 reads one way; re-standing
+it on gap 4361's or gap 4340's would stand on a kernel defect (lesson 4, D92's row), and it is not provable as written
+(`PlanReq.run` is any `Seal.Run`; gap 4361's log is a replay-built counterexample).  3. *Cost.*  One admitted debt.
+4. *Clears it.*  Gap 4361 closed and D90 landed (track H), then a proof over the runs the decoder builds (a restatement
+the owner rules on) or a refutation on a world with one reading.
+
+**Gap 4363 — the host reads a block's marks from its `start`'s day on; the machine reads any day.**  1. *What.*
+`Replay::idle_min_since` reads the seams from the day the replay files the block's `start` under, so a break filed
+under an EARLIER day (a wake logged between the break's stamp and the start) that runs into the start is netted by the
+replay (`Machine.brk` knows no day) and not by the host.  2. *Why not changed.*  0 in T5's inputs, and the binary
+refuses `tm wake` over a running break (D81), so it needs a `--now` in the past; `tm-core/src/log.rs` was open to this
+track only to make two readings one, and no input shows two readings.  3. *Cost.*  None observed.  4. *Clears it.*  The
+host reading the break marks of the day before its start's when they reach it, if such a log appears.
+
+**Gap 4364 — the machine remembers one break.**  1. *What.*  `Machine.brk` is the LAST break stepped; a clock that starts
+inside an earlier, longer break with a later, shorter one stepped between them is not moved, while the host's union
+nets it.  2. *Why.*  One span is the rule the logs hold (0 in T5's inputs; the binary writes no overlapping breaks — a
+second `tm break` ends the first).  3. *Cost.*  None observed.  4. *Clears it.*  Nothing unless such a log appears.
+
+**Gap 4365 — P85's frozen carry is a model.**  1. *What.*  As P81's (gap 4251): `p85::carry` moves the fork's frozen
+answers by P85's rule read off the fork's own segments; it is not fork 4748911's machine.  2. *Why.*  The frozen
+answers are bytes on disk, and asking the fork needs its build.  3. *Cost.*  In plain `cargo test --workspace` the
+carry is held to the fork's own machine asked the D92 day only through the live arm's cross-check, which runs under
+`TM_ORACLE` (§9: it ran over this tree, green).  It refuses by name the shapes it will not guess at, and none occurs in
+a frozen input.  4. *Clears it.*  Nothing while each land runs the live arm; R3 does not touch it.
+
+**Gap 4366 — two notes outside this track still describe the refutation as standing.**  1. *What.*
+`PlanCheck.lean`'s break-law note and `Planner.lean`'s P9 note cite
+PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted as the goal's refutation.  2. *Why not
+changed.*  Neither file is track K's; check 8 counts the two citations (and the README's two) as adjudicated dead names
+in `citations-allow.txt`.  3. *Cost.*  Stale prose until their owner corrects it.  4. *Clears it.*  The land or the
+repair: say the refutation is gone and the goal is back (gap 4362).
+
+**Gap 4367 — P85's planner half has no fork comparand.**  1. *What.*  No frozen planner line's world holds a break
+run into a start, so after R3 nothing holds the planner's past and open rows on such a day to fork 4748911 asked the
+D92 day; `PlannerWit` section 32 holds them to written values.  2. *Why not changed.*  A new frozen line is Track C's
+file (`tm/tests/fixtures/`), and the brief's permission was for lines D92 MOVES, of which there are none.  3. *Cost.*
+The planner's reading of P85 is pinned in Lean and in `cli_break_into_block.rs`'s `tm plan` row, not against the fork.
+4. *Clears it.*  Track C or the land, before R3: a frozen world whose log holds a break run into the running block's
+`start`, introduced under D70 with P85 and asked of the fork as `p85::as_asked_log` asks the replay.
+
+### 8. D40
+
+`mutate.py`, in clones of this tree (`scratchpad/w43-k/clone`, `scratchpad/w43-k/mutB`, `scratchpad/w43-k/mutC`; never the worktree), one definition a
+run so each row persisted (`scratchpad/w43-k/mutrun.sh`), the rows merged into this tree's `mutations.txt` by
+`mutate.write_rows`.
+
+* **The pin sites the line moves left stale, re-verified** (`--verify --write --only`, `mut-drift.out`): check 9's gate
+  stopped on 15 drifted sites in five rows — `Replay.dayArm`, `Replay.brkEnd` and `Seal.brkEndAt?` (bodies unchanged,
+  their pinning theorems moved down `Replay.lean` and `SealStep.lean`) and `Replay.arm` and `Replay.brkFx` (bodies
+  changed).  All five re-derived PINNED (`brkEnd`'s `default` UNFOLDABLE beside its synthesised constant, as before);
+  `brkFx` is now pinned first by `brkFx_cases` and `brkFx_of_stopped`.
+* **The 19 owed** — `arm` and `brkFx` above, and 17 definitions new or changed with no matching row (seven in
+  `Replay.lean` and the `Seal*` files, ten `PlannerWit` fixtures), every one run, none SURVIVED, INVALID or ALONE:
+
+| definition | constants | the first pin |
+|---|---|---|
+| `Replay.restartAt` | `default` unfoldable (no `Inhabited At`), `(⟨0, 0⟩, ⟨true, 0⟩)` | `restartAt_cases`, then `a_start_cuts_any_open_block_even_the_same_id` |
+| `Replay.resumeBlock` | `default` unfoldable, the identity `b`, `⟨[], …⟩` | `resumeBlock_obs`, then `a_block_started_during_an_interruption_runs_from_resume` |
+| `Replay.cut` | `default` unfoldable, `(⟨none, none, none, none⟩, [])` | `cut_plain`, then `cut_brk` |
+| `Seal.machineInstants` | `default`, `[]` | `stepQueries_sub`, then `mi_of_eq` |
+| `Seal.Ckpt.empty` | `default` unfoldable, a synthesised checkpoint | `the_checkpoint_of_nothing_is_the_empty_checkpoint` |
+| `Replay.State.init`, `Seal.cMachine` | `default` unfoldable (no `Inhabited State`, no `Inhabited (Codec Machine)`) | none: PINNED BY NOTHING, two more rows on that counted line — neither takes an argument of its result type and the checker synthesises no term of either |
+| `PlannerWit.midBreakLine`, `openBreakLine` (re-stamped, sections 14 and 26) | `default` unfoldable (no `Inhabited Log.Line`), `⟨0, none⟩` | `the_mid_break_day_lays_a_block_across_a_break`; `the_battery_bites_on_the_open_row` |
+| `PlannerWit.intoBreakLine`, `intoBreakLines` (section 32) | `default` unfoldable, `⟨0, none⟩`; `default`, `[]` | `the_into_break_day_keeps_its_block_off_the_break` |
+| `PlannerWit.openIntoBreakLine`, `openIntoBreakLines` (section 32) | the same | `the_open_row_begun_inside_a_break_starts_at_its_end` |
+| `PlannerWit.intoBreakRun`, `theIntoBreakRequest`, `openIntoBreakRun`, `theOpenIntoBreakRequest` | `default` unfoldable (no `Inhabited Seal.Run`, no `Inhabited PlanReq`) | WITNESS FIXTURES (`mutate.WITNESS_MODULES`), as every `Run` and request in the module |
+
+The gate over the merged roster, in the synced clone: `691 new or changed since 86c4dc6, 691 rostered (248
+unfoldable, 164 witness fixtures, 42 pinned by nothing; 2 literal), 0 owed` — 42 pinned by nothing, `State.init` and
+`cMachine` among them.
+
+**A plant beyond the roster** (the identity the checker did not try): `restartAt m t := t` — the rule ignoring the
+break — in the clone scratchpad/w43-k/mutB, Replay.lean rebuilt: `restartAt_cases` fails and six of the D92 witnesses decide false; restored
+by copying the worktree's file (the clone's code diff hashed equal before and after).
+
+**The Rust this track adds, planted** (`scratchpad/w43-k/plants.sh`, `plants2.sh`, in `scratchpad/w43-k/plantR`, a clone synced to this
+tree by `git diff` and hashed equal to it; the shared tree's `git status --porcelain` empty — sha256 `e3b0c442…` —
+before and after every plant, and the plant clone's diff equal before and after each restore):
+
+| plant | what failed |
+|---|---|
+| `p85::carry` nets nothing | T5: `t5_the_frozen_generated_month_replays_as_the_fork_point_does`, `t5_the_generated_month_and_half_year_replay_as_the_fork_does`, `p85_is_carried_by_value_…` and `p81_is_carried_by_value_…` (4 of 33); the door: `the_door_is_the_reader_it_replaces` ("P85 moved no frozen input") |
+| `p85::carry` trims the segments and nets no credit | the same four T5 tests (`items.570`, `items.641`, `items.647`, `days.2026-01-06.block_min`) |
+| the live arm inserts no P85 pair | `stage5_parity_the_kernel_replays_and_fits_as_the_fork_point_does` under `TM_ORACLE`: no `Pause` to take off, so no input was asked (`P85 was asked of the fork on no input it moves`) |
+| the clock model without D92's restart | at first NOTHING — T5's live arm and `planner_classes` both green, because no input starts a stretch inside one break and nets another inside it; so `the_clock_model_starts_a_stretch_where_the_kernels_machine_does` was added, and it FAILED (1 of 34) |
+
+### 9. Acceptance of this commit
+
+Capped: `systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0` (16 GB for `mutate.py`, the oracle, the drives
+and the census scripts; each new `decide` witness first under 8 GB and `timeout 120`).
+
+* **`check.sh`, in `scratchpad/w43-k/clone` synced to exactly this tree** (every changed file compared byte for byte
+  with the worktree's; check 9's `mutate.py --gate` never ran in the worktree), 07:16:58-07:28:02 (load 4.4 at the
+  start), 11 m 04 s wall, peak RSS 7.5 GB, exit 0, every one of the 17 lines ok: the build; totality; **the axiom audit
+  at 6,251** (6,232 at `0984304`: +19 = 21 lines appended, 2 deleted — the refutation of §5 and W-42's witness renamed;
+  the declared theorems 6,224 -> 6,243 by the same 19); `Negative.lean` rejected; FFI 95; the corpus 29/37 files and
+  4/5 plans; **stage goals 1, all stage 6** (0 at `0984304`: §5); citations ok (§10 has the figure over the final
+  README); check 9 691 rostered, 0 owed; the parity register P1-P85, next free P86; check 11 0 UNANSWERED; check 12
+  1,502 reachable, 1,100 exempt, 0 UNANSWERED; check 13 17/17, 33 of 37, 169 and 220, 0 UNANSWERED; check 14 94
+  modules.  Re-run after this README's last edit: §10.
+* **`cargo test --workspace`, THREE runs** over the code committed here (every file a test compiles was last written
+  at or before 06:27:40, before run 1 began; only this README and `kernel/mutations.txt`, which no test reads, were
+  written after): **2,139 passed / 0 failed / 32 ignored over 134 result lines, each run** — run 1 06:42:28-06:52:30
+  (load 8.8 -> 10.7), run 2 06:53:07-07:02:24 (11.7 -> 9.9), run 3 07:02:49-07:12:07 (7.3 -> 6.1); 0 compiler warnings;
+  no `.proptest-regressions` file moved.  The named suites, the same in each run: T5 (`kernel_replay_parity`) 34 (4
+  ignored), the door 26, `cli_switch_acceptance` 16, `cli_latency` 6 (1 ignored; at the loads above),
+  `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 27, `kernel_row_cells` 28, `kernel_item_grammar` 6,
+  `kernel_planner_wire` 27, `planner_classes` 56 (6 ignored), `planner_invariants` 39 (2 ignored), `cli_conformance` 5,
+  `cli_json_matrix` 8, `cli_break_in_block` 5, `cli_break_into_block` 2 (new), `cli_replay_cache_kernel` 1.  A probe run
+  before the two tests of §6 and the clock-model test: 2,136 / 0 / 32 over 133.
+* **The `TM_ORACLE` arm of T5** (`stage5_parity_the_kernel_replays_and_fits_as_the_fork_point_does`; fork 4748911's
+  `tm-oracle` built fresh by `build-oracle.sh` into `scratchpad/w43-k/oracle` at 06:01), re-run at 07:21 over the
+  committed code: green — 469 logs over 6 zones, 8,442 `Replay` keys, 195,375 scalar values; P81 asked on 48 breaks in
+  23 inputs (W-42's figure); **P85 asked on 162 clock starts in 2 inputs**, the generated month's 22 and the
+  half-year's 140, each input asked again with a `pause` at the start and an `unpause` at the break's end, and on both
+  the asked answer is not the fork's answer to the log as given (the other 442 of step 1's 604 are in the 61-a-day
+  month and the 120- and 200-day logs, which no live arm reads); P21's 49 last-ulp loads, nothing else.  The door's
+  and `planner_classes`' oracle arms were not run by this track.
+* **Driven** (§1): both binaries and the TUI through a pty; gap 4361's shape on the HEAD binary (`late.sh`).
+* **The cache** (§6): `cli_break_into_block.rs`'s second test, measured value for value in `scratchpad/w43-k/cache`
+  first: a day record holding the `0984304` kernel's reading (260 block minutes, 48 ci-unknown, the segment at 11:40,
+  against 250, 38 and 11:50) is served when it carries this binary's identity — so the test can see a stale record —
+  and is rebuilt when it carries `75dcd6da44741b7a`, the identity the `0984304` archive writes.
+
+### 10. Status note (kept current while the track runs; a usage-limit cut may land at any moment)
+
+* 2026-10-03 04:20 — worktree made off `0984304`; `kernel/TmKernel/.lake` copied from the main checkout (lake: 192
+  jobs replayed, nothing rebuilt); `cargo test --workspace --no-run` built (0 warnings).
+* 04:35 — **step 1 measured** (`scratchpad/w43-k/shapes.py` over every T5 input, dumped by a scratch test in the
+  clone `scratchpad/w43-k/clone` into `scratchpad/w43-k/dump/`, 474 inputs): the INTO shape (a `start` inside the
+  span of the last `break` stepped before it) is **604 occurrences in 6 inputs, every one a `loggen` log** — 22 in the
+  generated month (19 ended by `done`, 81 drawn minutes; 2 by `stop`, 11 credited minutes; 1 cut by the next
+  `start`, 4) — and **0** in the corpus, the zone cases, the 256 sequences and the 192 triples; 0 at an `unpause`,
+  0 at a `resume`, 0 planned-only, 0 across a day, 0 non-monotone.  The instrument's P81 count is 48 breaks in 23
+  of the live arm's 469 inputs — W-42 track R's figure exactly.
+* 05:05 — **step 2 built in the worktree**: `Machine.brk`, `Replay.restartAt` (one rule at every clock start:
+  `start`, `unpause`, `resume`), `brkFx` remembers every break's span; the checkpoint codec carries it;
+  `Seal.machineInstants` widened by the remembered break's end; every Seal law re-proved with its statement unchanged
+  (`brkFx_cases` too); the replay's D92 witnesses all decide under an 8 GiB cap (Replay.lean 11.5 s, 1.38 GB).  The
+  library builds but for `PlannerWit`'s five INTO-shape witnesses (sections 14, 18, 19 and 26) — step 4's subject.
+* 05:08 — **step 4 decided and built; the whole library builds** (6 m 42 s, capped 40G, load 15-17).  The INTO
+  witnesses are moved LINE FOR LINE to gap 4361's shape (a break logged ahead of a `start` but begun after it —
+  driven on the HEAD binary with a `--now` in the past: `tm stop` "after 55m", `tm review day` `block_min 70`), the one
+  shape the replay still draws a Block across; section 32 (appended) holds D92's two planner days; the refutation of
+  `plan_places_no_block_over_a_break` is DELETED and the goal is back in `Goals.lean` (burn-down 1, gap 4362).
+  Negative.lean: cheats 266-268 appended, 201's comment and 248's literal edited.  Next: Check.lean, check 3/4/7, the
+  Rust comparand (P85), parity.txt, the cache test, mutate in a clone, the acceptance runs.
+* 06:05 — **steps 3 and 5 built and green in the worktree; step 2's helper inlined.**  `tm/tests/support/p85.rs`
+  (frozen carry, live asking), T5 and the door chain it after P81's: T5 33 passed (4 ignored), the door 26; the
+  generated month moves 22 starts and 15 minutes.  `tm/tests/cli_break_into_block.rs` (2 tests) green: the drive's
+  values by the binary, and a sealed record holding the 0984304 kernel's reading of the day (measured value for value in
+  `scratchpad/w43-k/cache`: three leaves, 260/48/11:40 against 250/38/11:50) served under this binary's id and rebuilt
+  under `75dcd6da44741b7a`'s.  One probe workspace run before the two new tests: 2,136 passed / 0 failed / 32 ignored
+  over 133 result lines.  Seal.brkInstants was inlined into `machineInstants` (check 12 cannot take a new unreached
+  definition).  Checks 2, 3 (6,251), 4, 7 (1 goal), 8, 10 (P1-P85), 12 green in the worktree's read-only runs; check
+  14 green in the clone.  Running: check 9's drifted rows re-verified in the clone (`mut-drift.out`), then 19 owed
+  definitions in two more clones; the fork oracle rebuilt for the `TM_ORACLE` arms.
+* 06:55 — the TM_ORACLE live arm GREEN (run at 06:11, over the tree before the clock model became one function;
+  re-run over the committed code at 07:21, §9; 469 logs; P85 asked on 162 starts in 2 inputs, both moved; P21's
+  49 last-ulp loads and nothing else); the clock model made ONE function (`p81::clock_read`) with a test that pins it
+  to the kernel after its plant survived T5; the Replay and Seal mutations done (`restartAt`, `resumeBlock`, `cut`,
+  `machineInstants`, `Ckpt.empty` PINNED; `State.init`, `cMachine` unfoldable and pinned by nothing); the drifted rows
+  re-verified; 6 of the 10 `PlannerWit` fixtures done.  Workspace run 1: 2,139 passed / 0 failed / 32 ignored over 134
+  result lines (06:42-06:52, load 8.8-10.7); run 2 running.  Left: the last fixtures, the roster merge, `check.sh` in a
+  synced clone, run 3, the commit.
+* 07:35 — **done; committed on `w43-k`.** The last `PlannerWit` fixtures done (07:13); the rows the three clones wrote
+  merged into this tree's `mutations.txt` by `mutate.write_rows` (`scratchpad/w43-k/merge_rows.py`: 15 appended, 7
+  replaced — the five drifted rows and the two re-stamped lines); the gate in the synced clone 691 rostered, 0 owed.
+  Workspace runs 2 and 3 green (§9). `check.sh` in the synced clone 17 ok (§9), and again after this README's last edit,
+  07:29:44-07:30:14 (30 s, everything cached), 17 ok again, the citations 56,754 (54,391 resolved, 2,363 allowed, 0
+  allow entries unused). T5's live arm re-run at 07:21 over the committed code, because the 06:55 bullet's run predates
+  the clock model's last change. **A defect of this track's own, caught before anything read it:** a script editing this
+  block at 07:18 looked a heading up with no start offset, found an earlier block's identically named section, and
+  duplicated 16,068 lines of this file (85,162 -> 101,230); seen at once by its line count, the file was restored from
+  the clone's copy taken at 07:16 and the two edits made since were re-applied, so the committed diff of this file is a
+  pure append. Every later edit of this block is anchored at the block's own banner.

@@ -1289,3 +1289,12 @@ with_minute
 # And the W-41 repair's P78 test, restated when the hole it pinned closed (`ci:+5` read 5 by the kernel, gap 4330):
 # the W-41 repair's block cites it by the name it carried then.
 2 a_ci_the_kernel_reads_otherwise_is_named_at_its_line
+
+# W-43 TRACK K (README gaps 4241 and 4362).  The owner's D92 nets a break that runs into a block's start, so the day
+# PlannerWit section 14's refutation of plan_places_no_block_over_a_break stood on keeps its Block off the Break, the
+# refutation FELL, and it was DELETED with its goal back in Goals.lean (gap 4362).  Every citation counted here names it
+# as it stood: two append-only README blocks (W-18's and the W-18 merge's), PlanCheck.lean's break-law note and
+# Planner.lean's P9 note, the last two not this track's files and stale until their owner says the refutation is gone
+# (README gap 4366).  The track's own prose names it without backticks.
+1 plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted
+3 PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted

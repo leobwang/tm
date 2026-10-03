@@ -2475,11 +2475,15 @@ structure Cut where
 deriving DecidableEq, Repr
 
 /-- Fork `Machine`'s block state: the open block, the last cut, and the open interruption (its start,
-that start's day, and its id). -/
+that start's day, and its id) — and, since the owner's **D92** (README gap 4241, parity P85), the span
+`[start, end]` of the last `break` the machine stepped (`brkEnd`), so a block's clock that (re)starts inside it
+restarts at its end (`restartAt`).  Fork `Machine` had no such field: a break stepped before a block began
+reached no block at all. -/
 structure Machine where
   block : Option Block
   lastCut : Option Cut
   interrupt : Option (At × Nat × Option Id)
+  brk : Option (At × At)
 deriving DecidableEq, Repr
 
 /-- **C5: `t + Duration::minutes(m)`** (a break's end): chrono's `NaiveTime::overflowing_add_signed`
@@ -2622,7 +2626,7 @@ deriving DecidableEq, Repr
 
 /-- The empty state, its bucketed maps sized for `n` entries. -/
 def State.init (n : Nat) : State :=
-  ⟨HMap.empty n, HMap.empty n, HMap.empty n, [], [], [], [], ⟨none, none, none⟩, ⟨none, 0⟩,
+  ⟨HMap.empty n, HMap.empty n, HMap.empty n, [], [], [], [], ⟨none, none, none, none⟩, ⟨none, 0⟩,
     HMap.empty n, HMap.empty n, HMap.empty n, HMap.empty n, [], [], [], HMap.empty n, none, 0, HMap.empty n⟩
 
 /-! ### Effects and keys (§8.2) -/
@@ -2950,7 +2954,7 @@ def cut (dy : Cal.Instant → Nat) (m : Machine) (t : At) : Machine × List Effe
   let r2 := closePause dy r1.1 t
   match r2.1.block with
   | some b =>
-    ({ block := none, lastCut := some ⟨b.id, t, dy t.1, b.workedMin⟩, interrupt := r2.1.interrupt },
+    ({ block := none, lastCut := some ⟨b.id, t, dy t.1, b.workedMin⟩, interrupt := r2.1.interrupt, brk := r2.1.brk },
       r1.2 ++ r2.2 ++ creditFx dy b.id t b.workedMin none ++ obsFx b.obs)
   | none => (r2.1, r1.2 ++ r2.2)
 
@@ -2994,12 +2998,25 @@ def doneFx (dy : Cal.Instant → Nat) (m : Machine) (line : Nat) (t : At) (d : N
      else []) ++
     (if isPartial then [.itemAdd id (.partialDoneAt t)] else [.itemAdd id (.doneAt t), .dayAdd d (.done id)])
 
+/-- **Where a block's clock (re)starts at `t`** — the owner's **D92** (README gap 4241, parity P85): at `t`, unless
+the last `break` the machine stepped (`Machine.brk`) began at or before `t` and ends after it; then at that break's
+end, so the stretch of the break the block's clock would otherwise have run across is not block time.  One rule
+for every place a clock starts — a `start`, an `unpause` and a `resume` — which is the host's
+(`Replay::idle_min_since` clips every break's span to the block's).  Fork 4748911's clock started at `t` whatever
+break the log had stepped before it, so a `break` logged ahead of a block's `start` and lasting into it was credited
+and drawn across. -/
+def restartAt (m : Machine) (t : At) : At :=
+  match m.brk with
+  | some (s, e) => if s.1 ≤ t.1 ∧ t.1 < e.1 then e else t
+  | none => t
+
 /-- A block resumed after an interruption: still paused, its pause restarts where the interruption left
-off (`paused_at.get_or_insert(t)`); otherwise a stopped clock restarts at `t`. -/
-def resumeBlock (b : Block) (t : At) : Block :=
+off (`paused_at.get_or_insert(t)`); otherwise a stopped clock restarts at `r` — the resume's stamp, or
+since the owner's D92 the end of a break it falls inside (`restartAt`). -/
+def resumeBlock (b : Block) (t r : At) : Block :=
   if b.paused then { b with pausedAt := b.pausedAt.or (some t) }
   else match b.since with
-    | none => { b with since := some t }
+    | none => { b with since := some r }
     | some _ => b
 
 /-- **Where a break begun at `t` ends** — fork `step`'s `Break` arm, `t + actual_min.unwrap_or(planned_min)`:
@@ -3018,20 +3035,28 @@ is stopped — paused or interrupted — and a break with no block open change n
 Fork `step`'s `Break` arm touched no block, so a block cut across a break (`stop`, or the next `start`) was
 credited its whole span — `tm review day`'s load and minutes read 60 where `tm stop` said "after 40m" — and its
 `Block` segment overlapped the `Break` one, so the heat grid counted the break's minutes twice.  A `done`'s
-`actual_min` was already the host's worked minutes and is still what it credits. -/
+`actual_min` was already the host's worked minutes and is still what it credits.
+
+**Since the owner's D92 (README gap 4241, parity P85) every break's span is also remembered** (`Machine.brk`),
+whether a clock ran when it was stepped or not, so a block whose clock (re)starts inside it restarts at its end
+(`restartAt`): a break logged ahead of a block's `start` and lasting into it is not that block's time either. -/
 def brkFx (dy : Cal.Instant → Nat) (m : Machine) (t e : At) : List Effect :=
   match m.block with
   | some b =>
     match b.since with
     | some x =>
       let r := closeSub dy m t
-      r.2 ++ [.machine { r.1 with block := r.1.block.map (fun b => { b with since := some (pick instLt x e) }) }]
-    | none => []
-  | none => []
+      r.2 ++ [.machine { r.1 with block := r.1.block.map (fun b => { b with since := some (pick instLt x e) }),
+                                  brk := some (t, e) }]
+    | none => [.machine { m with brk := some (t, e) }]
+  | none => [.machine { m with brk := some (t, e) }]
 
 /-- **`brkFx` is nothing, or `closeSub` and one machine** that moves only the open block's clock (D87): the
 machine is `closeSub`'s with the block's `since` set, so it keeps `closeSub`'s last cut, interruption and
-pending observation — every law a `pause`'s arm satisfies through `closeSub`, a break's satisfies too. -/
+pending observation — every law a `pause`'s arm satisfies through `closeSub`, a break's satisfies too.
+*D92 re-proves it with its statement unchanged*: with no clock running `closeSub` is the identity and writes
+nothing, so the one machine a break now always writes (the old one with the span) is the second case; the first
+case no longer arises.  What D92 adds is `brkFx_brk` and `brkFx_of_stopped`. -/
 theorem brkFx_cases (dy : Cal.Instant → Nat) (m : Machine) (t e : At) :
     brkFx dy m t e = [] ∨
       ∃ m' : Machine, brkFx dy m t e = (closeSub dy m t).2 ++ [.machine m'] ∧
@@ -3039,11 +3064,28 @@ theorem brkFx_cases (dy : Cal.Instant → Nat) (m : Machine) (t e : At) :
         m'.block.bind (·.obs) = (closeSub dy m t).1.block.bind (·.obs) := by
   unfold brkFx
   split
-  · split
+  · rename_i b hb
+    split
     · refine Or.inr ⟨_, rfl, rfl, rfl, ?_⟩
       cases (closeSub dy m t).1.block <;> rfl
-    · exact Or.inl rfl
-  · exact Or.inl rfl
+    · rename_i hs
+      have hc : closeSub dy m t = (m, []) := by unfold closeSub; simp [hb, hs]
+      refine Or.inr ⟨{ m with brk := some (t, e) }, by rw [hc]; rfl, ?_, ?_, ?_⟩ <;> rw [hc]
+  · rename_i hb
+    have hc : closeSub dy m t = (m, []) := by unfold closeSub; simp [hb]
+    refine Or.inr ⟨{ m with brk := some (t, e) }, by rw [hc]; rfl, ?_, ?_, ?_⟩ <;> rw [hc]
+
+/-- **With no clock running a break writes only its span** (the owner's D92): the old machine with `brk` set, and
+nothing else of the block family's. -/
+theorem brkFx_of_stopped (dy : Cal.Instant → Nat) (m : Machine) (t e : At)
+    (h : (m.block.bind (·.since)) = none) : brkFx dy m t e = [.machine { m with brk := some (t, e) }] := by
+  unfold brkFx
+  cases hb : m.block with
+  | none => rfl
+  | some b =>
+    rw [hb] at h
+    simp only [Option.bind_some] at h
+    simp [h]
 
 /-- **C5: the day header and records family's arms of fork `Machine::step`**, one per event (`wake`,
 `arrive`, `loc`, `break`, `energy`, `idle`, `routine`'s day half, `plan`, `demote`, `drop`, `close` and
@@ -3099,12 +3141,12 @@ def arm (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Machine) (e : 
     r.2 ++ [.dayAdd d (.start ⟨t, id, pred, rep⟩),
       .machine { block := some { id := id, started := t,
                                  since := match r.1.interrupt with
-                                   | none => some t
+                                   | none => some (restartAt r.1 t)
                                    | some _ => none,
                                  paused := false, pausedAt := none, workedMin := 0,
                                  obs := rep.map (fun rp => ⟨e.line, t, d, pred, rp, hsw, loc, some sleptMin.val,
                                    none, some id, true⟩) },
-                 lastCut := none, interrupt := r.1.interrupt }]
+                 lastCut := none, interrupt := r.1.interrupt, brk := r.1.brk }]
   | .pause id =>
     match m.block with
     | some b =>
@@ -3121,7 +3163,7 @@ def arm (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Machine) (e : 
         r.2 ++ [.machine { r.1 with block := r.1.block.map (fun b =>
           { b with paused := false,
                    since := match r.1.interrupt with
-                     | none => some t
+                     | none => some (restartAt r.1 t)
                      | some _ => b.since }) }]
       else []
     | none => []
@@ -3136,10 +3178,10 @@ def arm (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Machine) (e : 
     | some (s, sd, iid) =>
       [.dayAdd sd (.segment ⟨s, t, .interrupt iid⟩), .interruption ⟨e.line, some s, some t, sd, iid, lost.val, dropped⟩,
        .dayAdd sd (.lost lost.val dropped),
-       .machine { m with block := m.block.map (resumeBlock · t), interrupt := none }]
+       .machine { m with block := m.block.map (resumeBlock · t (restartAt m t)), interrupt := none }]
     | none =>
       [.interruption ⟨e.line, none, some t, d, none, lost.val, dropped⟩, .dayAdd d (.lost lost.val dropped),
-       .machine { m with block := m.block.map (resumeBlock · t) }]
+       .machine { m with block := m.block.map (resumeBlock · t (restartAt m t)) }]
   | .stop id _ =>
     match m.block with
     | some b =>
@@ -4505,6 +4547,39 @@ theorem closePause_lastCut (dy : Cal.Instant → Nat) (m : Machine) (t : At) :
   · split <;> exact ⟨rfl, rfl⟩
   · exact ⟨rfl, rfl⟩
 
+/-- **Closing a stretch or a pause keeps the last break's span** (the owner's D92). -/
+theorem closeSub_brk (dy : Cal.Instant → Nat) (m : Machine) (t : At) : (closeSub dy m t).1.brk = m.brk := by
+  unfold closeSub; split
+  · split <;> rfl
+  · rfl
+
+theorem closePause_brk (dy : Cal.Instant → Nat) (m : Machine) (t : At) : (closePause dy m t).1.brk = m.brk := by
+  unfold closePause; split
+  · split <;> rfl
+  · rfl
+
+/-- **A cut keeps the last break's span** (the owner's D92): the next block's clock reads it. -/
+theorem cut_brk (dy : Cal.Instant → Nat) (m : Machine) (t : At) : (cut dy m t).1.brk = m.brk := by
+  unfold cut
+  simp only
+  split
+  · show (closePause dy (closeSub dy m t).1 t).1.brk = m.brk
+    rw [closePause_brk, closeSub_brk]
+  · rw [closePause_brk, closeSub_brk]
+
+/-- **Where a clock restarts is its stamp or the last break's end** (the owner's D92). -/
+theorem restartAt_cases (m : Machine) (t : At) :
+    restartAt m t = t ∨ ∃ s, m.brk = some (s, restartAt m t) := by
+  unfold restartAt
+  cases hb : m.brk with
+  | none => exact Or.inl rfl
+  | some p =>
+    obtain ⟨s, e⟩ := p
+    simp only
+    split
+    · exact Or.inr ⟨s, rfl⟩
+    · exact Or.inl rfl
+
 theorem all_safe_of_plain (fx : List Effect) (h : ∀ x ∈ fx, x.plain = true) : ∀ x ∈ fx, x.safe = true :=
   fun x hx => safe_of_plain x (h x hx)
 
@@ -5700,7 +5775,7 @@ theorem completionArm_sleptOk (sl : Nat → Option Nat) (z : Cal.Tz) (e : Entry)
   unfold completionArm
   split <;> (repeat' split) <;> simp [Effect.sleptOk]
 
-theorem resumeBlock_obs (b : Block) (t : At) : (resumeBlock b t).obs = b.obs := by
+theorem resumeBlock_obs (b : Block) (t r : At) : (resumeBlock b t r).obs = b.obs := by
   unfold resumeBlock; split
   · rfl
   · split <;> rfl
@@ -5743,11 +5818,11 @@ theorem arm_sleptOk (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Ma
     split
     · simp only [List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true]
       refine ⟨rfl, rfl, rfl, machine_sleptOk sl _ m ?_ hm⟩
-      show (m.block.map (resumeBlock · t)).bind (·.obs) = _
+      show (m.block.map (resumeBlock · t (restartAt m t))).bind (·.obs) = _
       cases m.block <;> simp [resumeBlock_obs]
     · simp only [List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true]
       refine ⟨rfl, rfl, machine_sleptOk sl _ m ?_ hm⟩
-      show (m.block.map (resumeBlock · t)).bind (·.obs) = _
+      show (m.block.map (resumeBlock · t (restartAt m t))).bind (·.obs) = _
       cases m.block <;> simp [resumeBlock_obs]
   case stop id rem =>
     split
@@ -6439,6 +6514,22 @@ theorem brkFx_obs (dy : Cal.Instant → Nat) (m : Machine) (t e : At) :
     obtain ⟨a1, a2, -⟩ := closeSub_obs dy m t
     simp [List.filterMap_append, a1, a2, Effect.energyOf?, Effect.durationOf?]
 
+/-- **A break's machine remembers its span** (the owner's D92, README gap 4241): every machine `brkFx` writes holds
+`[t, e]` as the last break the machine stepped, whether a clock ran or not. -/
+theorem brkFx_brk (dy : Cal.Instant → Nat) (m : Machine) (t e : At) :
+    ∀ m' ∈ (brkFx dy m t e).filterMap Effect.machineOf?, m'.brk = some (t, e) := by
+  intro m' hm
+  unfold brkFx at hm
+  split at hm
+  · split at hm
+    · simp only [List.filterMap_append, (closeSub_obs dy m t).2.2, List.nil_append, List.filterMap_cons,
+        Effect.machineOf?, List.filterMap_nil, List.mem_singleton] at hm
+      subst hm; rfl
+    · simp only [List.filterMap_cons, Effect.machineOf?, List.filterMap_nil, List.mem_singleton] at hm
+      subst hm; rfl
+  · simp only [List.filterMap_cons, Effect.machineOf?, List.filterMap_nil, List.mem_singleton] at hm
+    subst hm; rfl
+
 theorem creditFx_obs (dy : Cal.Instant → Nat) (id : Id) (t : At) (min : Nat) (ci : Option U8) :
     (creditFx dy id t min ci).filterMap Effect.energyOf? = [] ∧ (creditFx dy id t min ci).filterMap Effect.durationOf? = [] ∧
     (creditFx dy id t min ci).filterMap Effect.machineOf? = [] := by
@@ -6603,7 +6694,7 @@ theorem arm_obs (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Machin
     · simp [List.filterMap_append, (closeSub_obs dy m t).2.1, (closePause_obs dy _ t).2.1, Effect.durationOf?]
   case resume lost dropped =>
     refine ⟨[], List.nil_sublist _, ?_, ?_⟩
-    · have hr : ((m.block.map (resumeBlock · t)).bind (·.obs)) = m.block.bind (·.obs) := by
+    · have hr : ((m.block.map (resumeBlock · t (restartAt m t))).bind (·.obs)) = m.block.bind (·.obs) := by
         cases m.block <;> simp [resumeBlock_obs]
       split
       · simp only [List.filterMap_cons, List.filterMap_nil, Effect.energyOf?, Effect.machineOf?, List.map_nil,
@@ -8206,12 +8297,12 @@ theorem a_break_while_the_block_is_paused_changes_nothing :
         bE 5 63924372000 (.stop ['a'] 0)]).items.get ['a']).map (·.minutes) = some 30 := by
   decide
 
-/-- **D87's edge, named (README gap 4241)**: a `break` logged BEFORE a block's `start` whose span runs into it is
-not netted — no block ran when it was stepped.  A ten-minute `break` at 08:55, `start a` 09:00, `stop a` 10:00: 60
-minutes credited, and the two segments overlap by five.  `tm start` ends a running break before it logs its `start`,
-so the binary never writes this log; the host's `Replay::idle_min_since` would net the five minutes. -/
-theorem a_break_logged_before_its_blocks_start_is_not_netted :
-    ((replay utcZone [bE 1 63924368100 (.brk 10 (some 10) none), bE 2 63924368400 (bStart ['a']),
+/-- **D87's edge (README gap 4241), as D87 left it, is refuted** — the owner's D92 closed it (parity P85).  The
+statement W-42 track R proved: a ten-minute `break` at 08:55, `start a` 09:00, `stop a` 10:00 credited 60 minutes,
+the two segments overlapping by five, while the host's `Replay::idle_min_since` netted the five.  It now credits 55
+(`a_break_logged_before_its_blocks_start_is_netted`, in the section of the D92 witnesses below). -/
+theorem a_break_logged_before_its_blocks_start_is_not_netted_is_refuted :
+    ¬ ((replay utcZone [bE 1 63924368100 (.brk 10 (some 10) none), bE 2 63924368400 (bStart ['a']),
         bE 3 63924372000 (.stop ['a'] 0)]).items.get ['a']).map (·.minutes) = some 60 := by
   decide
 
@@ -8225,13 +8316,99 @@ theorem arm_split_as_c5_stated_it_is_refuted :
         ((∀ x ∈ arm dy sl m e t d, x.blockOnly = true) ∧ dayArm dy sl e t d = []) := by
   intro h
   let m : Machine := ⟨some ⟨['a'], (⟨63924368400, 0⟩, ⟨false, 0⟩), some (⟨63924368400, 0⟩, ⟨false, 0⟩), false, none,
-    0, none⟩, none, none⟩
+    0, none⟩, none, none, none⟩
   let e := bE 2 63924370200 (.brk 20 (some 20) none)
   rcases h (fun _ => 739865) (fun _ => none) m e (⟨63924370200, 0⟩, ⟨false, 0⟩) 739865 with h1 | ⟨-, h2⟩
   · revert h1; decide
   · revert h2; decide
 
 end BreakWitnesses87
+
+/-! ## The owner's D92 (README gap 4241, parity P85): a break that runs into a block's start is not block time
+
+A `break` line is written when the break ends, so a block begun after it can only begin inside it if the log was
+written by something other than the binary — `tm start` ends a running break before it logs its `start` — and
+generated logs do (`loggen`'s breaks outlast its 22-minute gap: 22 in the generated month).  The host's
+`Replay::idle_min_since` clipped every break's span to the block's and the replay credited and drew the overlap; the
+machine now remembers the last break's span (`Machine.brk`) and every place a clock starts — a `start`, an `unpause`,
+a `resume` — starts it at the break's end when it falls inside (`restartAt`).  Each witness was probed in a scratch
+copy under `MemoryMax=8G timeout 120` (§5.10a): at most five entries, `utcZone`, instants as `Nat` literals.
+2026-09-07T09:00:00Z is second 63924368400; the day is 739865. -/
+
+section BreakWitnesses92
+
+open Log (Id U8 U32 Num)
+
+/-- **A break logged before a block's `start` and lasting into it is netted** (gap 4241's edge, closed): a ten-minute
+`break` at 08:55, `start a` 09:00, `stop a` 10:00.  The block is credited its 55 minutes after the break — the item,
+its day, the day's block minutes and ci-unknown minutes — and drawn as `[09:05, 10:00]` beside the break's
+`[08:55, 09:05]`.  Fork `step` credited 60 and drew `[09:00, 10:00]` across the break (parity P85). -/
+theorem a_break_logged_before_its_blocks_start_is_netted :
+    let f := replay utcZone [bE 1 63924368100 (.brk 10 (some 10) none), bE 2 63924368400 (bStart ['a']),
+      bE 3 63924372000 (.stop ['a'] 0)]
+    (f.items.get ['a']).map (·.minutes) = some 55 ∧ f.itemDays.get (739865, ['a']) = some 55 ∧
+    (f.days.get 739865).map (fun a => (a.blockMin, a.ciUnknown)) = some (55, [(['a'], 55)]) ∧
+    (f.days.get 739865).map (fun a => a.segments.map (fun g => (g.start.1.sec, g.stop.1.sec, g.kind)))
+      = some [(63924368100, 63924368700, .brk none), (63924368700, 63924372000, .block ['a'])] := by
+  decide
+
+/-- **The open block begins at the break's end**: a ten-minute `break` at 08:55 and `start a` 09:00, nothing after.
+The open block has banked nothing and runs from 09:05 — the reading `tm now` and `tm stop` already print. -/
+theorem an_open_block_begun_inside_a_break_runs_from_its_end :
+    (replay utcZone [bE 1 63924368100 (.brk 10 (some 10) none), bE 2 63924368400 (bStart ['a'])]).openBlock.map
+        (fun b => (b.workedMin, b.since.map (·.1.sec), b.paused))
+      = some (0, some 63924368700, false) := by
+  decide
+
+/-- **A `done` still credits what it logs, and its block is drawn after the break**: a ten-minute `break` at 08:55,
+`start a` 09:00, `done a` with 55 minutes at 10:00.  The 55 the `done` carries is credited at its ci; what moved is
+the drawing — no `Block` segment lies across the break. -/
+theorem a_done_begun_inside_a_break_credits_its_minutes_and_is_drawn_after_it :
+    let f := replay utcZone [bE 1 63924368100 (.brk 10 (some 10) none), bE 2 63924368400 (bStart ['a']),
+      bE 3 63924372000 (bDone ['a'] 55 false)]
+    (f.items.get ['a']).map (·.minutes) = some 55 ∧
+    (f.days.get 739865).map (fun a => (a.blockMin, a.byCi.c3)) = some (55, 55) ∧
+    (f.days.get 739865).map (fun a => a.segments.map (fun g => (g.start.1.sec, g.stop.1.sec)))
+      = some [(63924368100, 63924368700), (63924368700, 63924372000)] := by
+  decide
+
+/-- **An `unpause` inside a break restarts the clock at the break's end** — the one rule at every place a clock
+starts: `start a` 09:00, `pause a` 09:10, a twenty-minute `break` at 09:15 (stepped while paused: no clock to stop),
+`unpause a` 09:30, `stop a` 10:00.  Credited 10 + 25 = 35, the host's reading (its union of `[09:10, 09:30]` and
+`[09:15, 09:35]`); before D92 the clock restarted at 09:30 and credited 40. -/
+theorem an_unpause_inside_a_break_restarts_the_clock_at_its_end :
+    ((replay utcZone [bE 1 63924368400 (bStart ['a']), bE 2 63924369000 (.pause ['a']),
+        bE 3 63924369300 (.brk 20 (some 20) none), bE 4 63924370200 (.unpause ['a']),
+        bE 5 63924372000 (.stop ['a'] 0)]).items.get ['a']).map (·.minutes) = some 35 := by
+  decide
+
+/-- **A `resume` inside a break restarts the clock at the break's end**: `start a` 09:00, `interrupt` 09:10, a
+twenty-minute `break` at 09:15, `resume` 09:30, `stop a` 10:00.  Credited 10 + 25 = 35; before D92, 40. -/
+theorem a_resume_inside_a_break_restarts_the_clock_at_its_end :
+    ((replay utcZone [bE 1 63924368400 (bStart ['a']), bE 2 63924369000 (.interrupt none),
+        bE 3 63924369300 (.brk 20 (some 20) none), bE 4 63924370200 (.resume 15 []),
+        bE 5 63924372000 (.stop ['a'] 0)]).items.get ['a']).map (·.minutes) = some 35 := by
+  decide
+
+/-- **A break the `start` itself ended nets nothing** — the binary's own log (`tm start` ends a running break at its
+own instant, so the break ends where the block begins): a twenty-minute `break` at 08:40, `start a` 09:00, `stop a`
+10:00.  Credited 60. -/
+theorem a_break_the_start_ended_nets_nothing :
+    ((replay utcZone [bE 1 63924367200 (.brk 20 (some 20) none), bE 2 63924368400 (bStart ['a']),
+        bE 3 63924372000 (.stop ['a'] 0)]).items.get ['a']).map (·.minutes) = some 60 := by
+  decide
+
+/-- **D92's edge, named (README gap 4361)**: a `break` stepped before a block's `start` but begun AFTER it does not
+run into the start, and is not netted — `restartAt` asks for a break begun at or before the clock's start.  A
+ten-minute `break` at 09:05 logged ahead of `start a` 09:00, `stop a` 10:00: 60 minutes credited, while the host's
+`Replay::idle_min_since` nets the ten.  A break line written ahead of a start stamped before it needs a clock behind
+the log — a `--now` in the past, or two machines syncing one plan directory (D78's world) — by more than the break. -/
+theorem a_break_logged_before_a_start_but_begun_after_it_is_not_netted :
+    ((replay utcZone [bE 1 63924368700 (.brk 10 (some 10) none), bE 2 63924368400 (bStart ['a']),
+        bE 3 63924372000 (.stop ['a'] 0)]).items.get ['a']).map (·.minutes) = some 60 := by
+  decide
+
+end BreakWitnesses92
 
 end Replay
 end Tm
