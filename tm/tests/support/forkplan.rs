@@ -88,6 +88,12 @@
 #[path = "p81.rs"]
 mod p81;
 
+/// P85's asked log (`support/p85.rs`, the one definition, W-43 track K), nested here beside P81's
+/// for the planner's P85 comparand ([`p85_after`], the W-43 repair, README gap 4367).
+#[allow(dead_code)]
+#[path = "p85.rs"]
+mod p85;
+
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
@@ -805,6 +811,58 @@ pub fn p81_after(b: &Built, prios: &[Prio], fp: &dyn ForkPlan, runs: bool) -> Re
         }
     }
     Ok(Some(json!({"p81": true, "hash": day_hash(&day), "day": day})))
+}
+
+/// **P85's comparand** (the owner's D92, parity P85; the W-43 repair, README gap 4367): on a world
+/// whose log holds a clock start inside a break the replay stepped before it — read off the log by the
+/// kernel's own machine model (`p85::restarts`), never off the kernel's answer — the comparand asked the
+/// D92 day: the world with each moved start followed by a `pause` of its block stamped where the clock
+/// started and an `unpause` stamped at the break's end (`p85::as_asked_log`, P81's netted breaks given
+/// their own pair as [`p81_after`] gives them), which fork 4748911's machine nets as the kernel's
+/// `restartAt` does; this comparand's own departures and D74's split as asked (`runs`); and the
+/// `paused` row over each inserted pair taken off — a stretch no block's clock ran in, which the
+/// break's own row already draws — and the day re-digested.  `{"p85": true, "hash", "day"}`; `None`
+/// where P85 moves no start.  Refused by name, never guessed: a moved start the asked day draws no
+/// `paused` row after, inside the day and before `now`.
+pub fn p85_after(b: &Built, prios: &[Prio], fp: &dyn ForkPlan, runs: bool) -> Result<Option<Value>, String> {
+    let restarts = p85::restarts(&b.world.log, &[])?;
+    if restarts.is_empty() {
+        return Ok(None);
+    }
+    let netted = p81::netted_breaks(&b.world.log, &[])?;
+    let (log, _) = p85::as_asked_log(&b.world.log, &netted, &restarts)?;
+    // The asked log still STARTS each clock inside its break (the line is kept, so its stamp is the
+    // fork's), and the pause stamped at that instant stops it there: both machines then read
+    // nothing until the `unpause` at the break's end. So, unlike P81's, the asked log is not
+    // re-read for starts P85 moves — each one is still there, and moves nothing.
+    let asked = Built::of(forkclass::ClassWorld { log, ..b.world.clone() });
+    let answer = comparand_with(&asked, prios, fp, runs)?;
+    let mut day = answer["day"]["day"].clone();
+    let (lo, _) = b.day_bounds();
+    let (lo, now) = (lo.fixed_offset(), b.world.now.fixed_offset());
+    let walls: Vec<(DateTime<Tz>, DateTime<Tz>)> = b.walls().iter().map(|(_, lo, hi, _)| (*lo, *hi)).collect();
+    let rows = segments_mut(&mut day).ok_or("P85: the day asked the D92 day has no rows")?;
+    let spans: Vec<(String, DateTime<FixedOffset>, DateTime<FixedOffset>)> = netted
+        .iter()
+        .map(|n| (n.id.clone(), n.at, n.restart))
+        .chain(restarts.iter().map(|r| (r.id.clone(), r.at, r.restart)))
+        .collect();
+    for (id, from, to) in &spans {
+        let covered = |r: &Value| {
+            r["kind"] == "lost"
+                && r["flags"]["note"] == "paused"
+                && r["item"] == id.as_str()
+                && at(&r["start"]).is_some_and(|a| a >= *from)
+                && at(&r["end"]).is_some_and(|z| z <= *to)
+        };
+        let before = rows.len();
+        rows.retain(|r| !covered(r));
+        let owed = cut_out(&walls, (*from).max(lo), (*to).min(now)).iter().any(|(x, y)| x < y);
+        if owed && rows.len() == before {
+            return Err(format!("P85: the day asked the D92 day draws no `paused` row of `{id}` over {from}..{to}"));
+        }
+    }
+    Ok(Some(json!({"p85": true, "hash": day_hash(&day), "day": day})))
 }
 
 /// **Where two values first differ**, as a path and the two leaves — so a comparison of two

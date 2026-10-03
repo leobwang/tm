@@ -1305,14 +1305,16 @@ pub struct RankOut {
 /// `rank{id,rank}` wire ops (kernel ranks are line indices; the kernel
 /// refuses a taken one, `badHorizon`). `None` when a line in the rotation
 /// carries no `^id` the kernel can address (gap 5 — the old path takes the
-/// whole reorder); `Some(vec![])` when the item already sits at the clamped
-/// position (the old path's `moved: false`).
+/// whole reorder); `Some((vec![], false))` when the item already sits at the
+/// clamped position (the old path's `moved: false`), and `Some((vec![], true))`
+/// when only `[-]` records stand between it and that position, which keep their
+/// lines (P91), so no line moves.
 fn rank_cmds(
     ctx: &Ctx,
     id: &Id,
     path: &str,
     n: usize,
-) -> Result<Option<Vec<KCmd>>, CliError> {
+) -> Result<Option<(Vec<KCmd>, bool)>, CliError> {
     let parsed = ctx.store.read_file(path)?;
     let idx = text_edit::find_line(&parsed, id)
         .ok_or_else(|| CliError::NotFound(id.clone()))?;
@@ -1329,7 +1331,7 @@ fn rank_cmds(
         .ok_or_else(|| CliError::NotFound(id.clone()))?;
     let target = n.max(1).min(slots.len()) - 1;
     if target == pos {
-        return Ok(Some(Vec::new()));
+        return Ok(Some((Vec::new(), false)));
     }
     let id_at = |i: usize| -> Option<String> {
         parsed.lines[i]
@@ -1337,15 +1339,46 @@ fn rank_cmds(
             .filter(|it| it.has_id())
             .map(|it| it.id.to_string())
     };
-    let chain: Vec<usize> = if target < pos {
-        (target..pos).collect()
-    } else {
-        (pos + 1..=target).collect()
+    // **A tombstone keeps its line** (README gap 4502, the W-43 repair, parity
+    // **P91**). A `[-]` line whose item lives in ANOTHER file is the archive
+    // half of a demotion pair (§6.3): the kernel's `rank{id}` moves an item's
+    // LIVE line, so a rotation that sent this line's id a rank in this file
+    // moved the other file's live line instead, and the kernel refused the
+    // whole reorder `badHorizon` — driven: `tm demote ^t4` then `tm rank ^t5 1`
+    // on a fresh example tree, exit 1, nothing written. The position `n` still
+    // counts every item line of the section, as fork 4748911's `horizon::rank`
+    // counts them; the live lines take the live slots in the fork's resulting
+    // order, and a tombstone stays where it stood, as interleaved prose does.
+    let tombstone = |i: usize| -> bool {
+        parsed.lines[i]
+            .item()
+            .filter(|it| it.has_id())
+            .and_then(|it| ctx.tree.get(&it.id))
+            .is_some_and(|live| live.src.file != path)
     };
-    let mut ids = Vec::with_capacity(chain.len());
-    for &j in &chain {
-        match id_at(slots[j]) {
-            Some(i) => ids.push(i),
+    // The fork's order: the moved line taken out and put back at `target`.
+    let mut order: Vec<usize> = slots.clone();
+    let moved = order.remove(pos);
+    order.insert(target, moved);
+    let live_slots: Vec<usize> = slots.iter().copied().filter(|&i| !tombstone(i)).collect();
+    let live_order: Vec<usize> = order.into_iter().filter(|&i| !tombstone(i)).collect();
+    // Where each live line goes: the k-th live line of the new order takes the
+    // k-th live slot. A line that stays needs no command.
+    let to: std::collections::BTreeMap<usize, usize> = live_order
+        .iter()
+        .zip(&live_slots)
+        .filter(|(from, dest)| from != dest)
+        .map(|(&from, &dest)| (from, dest))
+        .collect();
+    if to.is_empty() {
+        return Ok(Some((Vec::new(), true)));
+    }
+    let mut ids = std::collections::BTreeMap::new();
+    for &from in to.keys() {
+        match id_at(from) {
+            Some(i) => {
+                ids.insert(from, i);
+            }
             None => return Ok(None),
         }
     }
@@ -1353,33 +1386,41 @@ fn rank_cmds(
     // most L+1 kernel lines (the trailing newline's empty segment), so
     // ranks 0..=L can be taken and L+2 never is.
     let temp = (parsed.lines.len() + 2) as u64;
-    let mut cmds = vec![KCmd::Rank {
-        id: id.to_string(),
-        rank: temp,
-    }];
-    if target < pos {
-        // Moving up: each item between steps down into the rank its lower
-        // neighbour just vacated, highest first.
-        for (k, j) in chain.iter().enumerate().rev() {
-            cmds.push(KCmd::Rank {
-                id: ids[k].clone(),
-                rank: slots[j + 1] as u64,
-            });
+    // Each cycle of the permutation in turn: its first line steps out to the
+    // free rank, each line whose destination is the slot just vacated steps in,
+    // and the first line takes the last slot freed — every step onto a free
+    // rank, which is all the kernel asks.
+    let from_of: std::collections::BTreeMap<usize, usize> = to.iter().map(|(&f, &d)| (d, f)).collect();
+    let mut done = std::collections::BTreeSet::new();
+    let mut cmds = Vec::new();
+    for &first in to.keys() {
+        if done.contains(&first) {
+            continue;
         }
-    } else {
-        // Moving down: each item between steps up, lowest first.
-        for (k, j) in chain.iter().enumerate() {
+        cmds.push(KCmd::Rank {
+            id: ids[&first].clone(),
+            rank: temp,
+        });
+        done.insert(first);
+        let mut cur = first;
+        loop {
+            let next = from_of[&cur];
+            if next == first {
+                cmds.push(KCmd::Rank {
+                    id: ids[&first].clone(),
+                    rank: cur as u64,
+                });
+                break;
+            }
             cmds.push(KCmd::Rank {
-                id: ids[k].clone(),
-                rank: slots[j - 1] as u64,
+                id: ids[&next].clone(),
+                rank: cur as u64,
             });
+            done.insert(next);
+            cur = next;
         }
     }
-    cmds.push(KCmd::Rank {
-        id: id.to_string(),
-        rank: slots[target] as u64,
-    });
-    Ok(Some(cmds))
+    Ok(Some((cmds, false)))
 }
 
 /// `tm rank ^id <n>` — rank is line order (§7.4).
@@ -1404,7 +1445,7 @@ pub fn rank(g: &Globals, args: &super::RankArgs) -> Result<i32, CliError> {
     let id = Ctx::key(&args.id);
     let item = ctx.item(&id)?.clone();
     if item.has_id() {
-        if let Some(cmds) = rank_cmds(&ctx, &id, &item.src.file, args.n)? {
+        if let Some((cmds, records_only)) = rank_cmds(&ctx, &id, &item.src.file, args.n)? {
             if cmds.is_empty() {
                 // Already at the requested position — the old path's
                 // `moved: false`: no kernel call, nothing written, but the
@@ -1422,7 +1463,17 @@ pub fn rank(g: &Globals, args: &super::RankArgs) -> Result<i32, CliError> {
                 };
                 emit(
                     ctx.json,
-                    || format!("{} already at position {}", out.id.token(), out.n),
+                    || {
+                        if records_only {
+                            format!(
+                                "{} stays: only `[-]` records stand between it and position {}, and a record keeps its line",
+                                out.id.token(),
+                                out.n
+                            )
+                        } else {
+                            format!("{} already at position {}", out.id.token(), out.n)
+                        }
+                    },
                     &out,
                 )?;
                 return Ok(0);

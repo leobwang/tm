@@ -31,7 +31,7 @@ mod cli_common;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use cli_common::Tm;
+use cli_common::{fnv1a64_hex, Tm};
 use serde_json::Value;
 
 /// Three days after `energy-14d.jsonl`'s last line, so the log's August days are sealed (below
@@ -116,18 +116,6 @@ fn sealed_blocks_done(path: &Path) -> u64 {
     record[ACC_AT][BLOCKS_DONE_AT]
         .as_u64()
         .unwrap_or_else(|| panic!("{}: no blocksDone at [{ACC_AT}][{BLOCKS_DONE_AT}]", path.display()))
-}
-
-/// FNV-1a-64, the digest the manifest records for each month file (`kernel_log::month_digest`, the
-/// owner's D93) — computed here, not borrowed, so this file's poison is checked against an
-/// independent reading of the rule.
-fn fnv1a64_hex(bytes: &[u8]) -> String {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for &b in bytes {
-        h ^= u64::from(b);
-        h = h.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    format!("{h:016x}")
 }
 
 /// Write `blocks_done` into the sealed record, keeping every other byte of meaning — and the

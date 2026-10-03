@@ -27,7 +27,7 @@ mod cli_common;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use cli_common::Tm;
+use cli_common::{fnv1a64_hex, Tm};
 use serde_json::Value;
 
 const WAKE: &str = "2026-09-07T07:00:00-05:00";
@@ -188,17 +188,6 @@ fn sealed_leaves(path: &Path) -> (u64, u64, u64) {
         .and_then(|ss| ss.iter().find(|s| s[2].to_string().contains("e02")))
         .unwrap_or_else(|| panic!("no Block segment of e02: {}", acc[SEGMENTS_AT]));
     (acc[BLOCK_MIN_AT].as_u64().expect("blockMin"), unknown, seg[0][0].as_u64().expect("a start second"))
-}
-
-/// FNV-1a-64, the digest the manifest records for each month file (`kernel_log::month_digest`, the
-/// owner's D93) — computed here, not borrowed, as `cli_replay_cache_kernel.rs` computes it.
-fn fnv1a64_hex(bytes: &[u8]) -> String {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for &b in bytes {
-        h ^= u64::from(b);
-        h = h.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    format!("{h:016x}")
 }
 
 /// Write the reading before D92 into the sealed record — the three leaves `0984304`'s kernel sealed

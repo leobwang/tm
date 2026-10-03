@@ -445,6 +445,7 @@ fn every_bless_holds_its_lines_against_the_committed_history() {
         "the_frozen_class_worlds_are_redrawn",
         "the_frozen_conference_days_are_blessed",
         "the_frozen_fork_days_are_reblessed",
+        "the_frozen_p85_days_are_blessed",
     ] {
         assert!(found.iter().any(|f| f.ends_with(&format!("::{want}"))), "{want} is not among the blesses found — the walk is not reading what it claims");
     }

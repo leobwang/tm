@@ -530,11 +530,9 @@ pub fn close_in_memory(ctx: &mut Ctx) -> Result<InMemory, CliError> {
     let left = leaves(Which::All, &[], &applied, &ctx.state.closed, ctx.today);
     let mut lines = Vec::with_capacity(left.events.len());
     for event in left.events {
-        // The bytes `Ctx::append_event` appends: the kernel's rendering of the entry stamped `now`.
-        let entry = tm_core::log::LogEntry::new(ctx.now, event);
-        lines.push(super::kernel_log::render_one(&entry).map_err(|why| {
-            CliError::msg(format!("the kernel could not write this log line: {why}"))
-        })?);
+        // The bytes `Ctx::append_event` appends — `Ctx::render_entry`, its one definition — of the
+        // entry stamped `now`.
+        lines.push(Ctx::render_entry(&tm_core::log::LogEntry::new(ctx.now, event))?);
     }
     let changed = applied
         .docs

@@ -1864,10 +1864,27 @@ pub struct InterruptOut {
     /// Items dropped from today's plan as a consequence (§9).
     pub dropped: Vec<String>,
     /// **The break `tm interrupt` ended first** (the owner's D90, README gap 4340, parity
-    /// P86) — `tm break`'s own report of its ending, `action` `ended`; absent when no break
-    /// was running, and on `tm resume`.
+    /// P86), or `tm resume` (README gap 4501, parity P90) — `tm break`'s own report of its
+    /// ending, `action` `ended`; absent when no break was running.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub break_ended: Option<BreakOut>,
+}
+
+/// **A running break, ended FIRST, as `tm break`'s ending arm reports it** — the one body
+/// `tm interrupt` (the owner's D90, P86) and `tm resume` (README gap 4501, P90) call before the
+/// mark they log, so neither logs it inside a running break: [`end_break`]'s line and state, and
+/// `tm break`'s own report of its ending (`action` `ended`); `None` when no break was running.
+fn end_break_first(ctx: &mut Ctx) -> Result<Option<BreakOut>, CliError> {
+    let running = ctx.state.break_.clone();
+    Ok(match (running, end_break(ctx)?) {
+        (Some(br), Some(actual)) => Some(BreakOut {
+            action: "ended".to_string(),
+            planned_min: br.planned_min,
+            actual_min: Some(actual),
+            place: br.place,
+        }),
+        _ => None,
+    })
 }
 
 /// `tm interrupt`.
@@ -1889,16 +1906,7 @@ pub fn interrupt(g: &Globals) -> Result<i32, CliError> {
     }
     super::kernel_bridge::gate(&ctx, "interrupt")?;
     let rec = Recorder::start(&ctx, "interrupt")?;
-    let running = ctx.state.break_.clone();
-    let ended = match (running, end_break(&mut ctx)?) {
-        (Some(br), Some(actual)) => Some(BreakOut {
-            action: "ended".to_string(),
-            planned_min: br.planned_min,
-            actual_min: Some(actual),
-            place: br.place,
-        }),
-        _ => None,
-    };
+    let ended = end_break_first(&mut ctx)?;
     let id = ctx.state.active.as_ref().map(|a| a.id.to_string());
     ctx.state.interrupt = Some(InterruptState {
         started: Some(ctx.now_tz.time()),
@@ -1978,11 +1986,28 @@ pub fn resume(g: &Globals) -> Result<i32, CliError> {
                 .collect()
         })
         .unwrap_or_default();
+    // **A running break ends FIRST** — `tm start`'s rule and the owner's D90's
+    // (`tm interrupt`), reached by the one verb besides them that restarts the
+    // block's clock (the W-43 repair's campaign call, README gap 4501, parity
+    // **P90**). A break begun inside the interruption is still running here;
+    // the fork's resume un-paused the block under it, so `tm now` drew `▶ ^m1 …
+    // running` on a break and its header (the host's worked minutes, the break
+    // netted) read 10m beside the row's 348m left (the kernel's replay, which
+    // has no line for a running break). Ended here — its `break` line logged by
+    // the one function `tm break`'s ending arm calls, before the `resume` line,
+    // with `tm break`'s journal line — the block runs after the resume as the
+    // verb says, and the `resume` is not stamped inside a running break.
+    let ended = end_break_first(&mut ctx)?;
     ctx.state.interrupt = None;
     if let Some(a) = ctx.state.active.as_mut() {
         a.paused = false;
     }
     ctx.save_state()?;
+    if ended.is_some() {
+        // The plan below is the one this verb writes: it reads the break's line
+        // it just logged, as the next verb's load will.
+        ctx.reload()?;
+    }
     let (plan, prios) = planning::build(&ctx, false)?;
     let after: Vec<String> = plan
         .segments
@@ -2000,6 +2025,9 @@ pub fn resume(g: &Globals) -> Result<i32, CliError> {
     })?;
     planning::write_plan(&mut ctx, &plan, &prios)?;
     ctx.reload()?;
+    if let Some(b) = &ended {
+        day_note(&ctx, break_ended_note(b.actual_min.unwrap_or(0), b.planned_min))?;
+    }
     day_note(
         &ctx,
         format!(
@@ -2018,11 +2046,17 @@ pub fn resume(g: &Globals) -> Result<i32, CliError> {
         id: int.id.map(|i| i.to_string()),
         lost_min: Some(lost),
         dropped,
-        break_ended: None,
+        break_ended: ended,
     };
     emit(
         ctx.json,
-        || format!("resumed · lost {lost}m"),
+        || match &out.break_ended {
+            Some(b) => format!(
+                "{} · resumed · lost {lost}m",
+                break_ended_line(b.actual_min.unwrap_or(0), b.planned_min)
+            ),
+            None => format!("resumed · lost {lost}m"),
+        },
         &out,
     )?;
     Ok(0)
@@ -2068,6 +2102,21 @@ pub fn pause(g: &Globals) -> Result<i32, CliError> {
     // and the rebuild read (`ctx::open_interruption`), never a second copy.
     if let Some(open) = super::ctx::open_interruption(&ctx.replay) {
         return Err(CliError::msg(pause_inside_an_interruption(&ctx, open)));
+    }
+    // **And inside a running BREAK it is refused by name too** — D71's rule one
+    // state over (the W-43 repair's campaign call, README gap 4501, parity
+    // **P89**): the break has already stopped the timer, and `tm break` is what
+    // ends it. The toggle the fork made here was the one verb that still logged
+    // a clock-STOPPING mark inside a running break once D90 made `tm interrupt`
+    // end the break first: the break holds `active.paused`, so a first press
+    // logged `unpause` ("resumed") and a second `pause` — stamped inside the
+    // break, whose own line is written at its END. The kernel's replay closes
+    // the stretch at that `pause` before it meets the break and credits the
+    // break's head, which the host's union of idle spans does not: driven,
+    // `tm stop` said 10m beside `tm review day`'s 20. Refused, nothing is
+    // logged inside the break, and both readers read the block one way.
+    if ctx.state.break_.is_some() {
+        return Err(CliError::msg(pause_inside_a_break(ctx.running_break())));
     }
     super::kernel_bridge::gate(&ctx, "pause")?;
     // **D66 (the campaign's call on README gap 3048): `tm pause` inside a meeting keeps
@@ -2129,6 +2178,15 @@ fn pause_inside_an_interruption(ctx: &Ctx, open: &tm_core::log::Interruption) ->
     format!(
         "an interruption is open{since} — the timer is already stopped; `tm resume` first"
     )
+}
+
+/// **The break's refusal, in words** (README gap 4501, parity P89): the
+/// running break, when it began (the ONE reading of its start,
+/// `Ctx::running_break`), and the verb that ends it — D71's sentence with the
+/// break in the interruption's place.
+fn pause_inside_a_break(since: Option<DateTime<chrono_tz::Tz>>) -> String {
+    let since = since.map(|t| format!(" since {}", hhmm(t))).unwrap_or_default();
+    format!("a break is running{since} — the timer is already stopped; `tm break` ends it")
 }
 
 /// `tm energy --json`.

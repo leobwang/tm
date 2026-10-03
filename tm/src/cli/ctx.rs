@@ -1593,10 +1593,18 @@ impl Ctx {
     /// A refusal is an error and never a written line: an event whose values the reader would
     /// refuse is named rather than appended.
     pub fn append_entry(&self, entry: &LogEntry) -> Result<(), CliError> {
-        let line = kernel_log::render_one(entry).map_err(|why| {
-            CliError::msg(format!("the kernel could not write this log line: {why}"))
-        })?;
+        let line = Ctx::render_entry(entry)?;
         self.append_line(&line)
+    }
+
+    /// **The bytes a verb appends for `entry`** — the kernel's rendering (D16), or
+    /// the refusal named. The one definition [`Ctx::append_entry`] appends and
+    /// D91's in-memory close holds (`closing::close_in_memory`), so the lines the
+    /// TUI holds past midnight and the lines a verb writes cannot be two
+    /// renderings of one event (README gap 4504, the W-43 repair).
+    pub fn render_entry(entry: &LogEntry) -> Result<String, CliError> {
+        kernel_log::render_one(entry)
+            .map_err(|why| CliError::msg(format!("the kernel could not write this log line: {why}")))
     }
 
     /// **Append one line the kernel wrote** (D16) — the bytes as the kernel

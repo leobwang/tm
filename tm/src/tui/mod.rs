@@ -641,6 +641,10 @@ fn perform(
             app.message = Some(format!("location {loc}"));
         }
         Effect::Mutate(m) => {
+            if let Some(refused) = held_mutation(read, &m) {
+                app.message = Some(refused);
+                return Ok(());
+            }
             let message = mutate(g, &m)?;
             reload(app, read, g, clock)?;
             app.message = Some(message);
@@ -774,6 +778,39 @@ fn on_disk(read: &Ctx, file: &str, line: usize) -> (String, usize) {
         },
         _ => (file.to_string(), line),
     }
+}
+
+/// **A screen mutation that addresses a file the TUI holds closed in memory is
+/// refused by name** (README gap 4505, the W-43 repair; the owner's D91). Past
+/// midnight the App's rows are the held close's tree — `^p1` in the week file —
+/// while the file on disk still has it in Monday's day file, and the two screen
+/// mutations that are not §13 verbs (`J`/`K`, the inbox line) load the disk
+/// WITHOUT housekeeping, so neither writes the close first: `J` on `^p1` read
+/// NotFound, and `J`/`K` on a week neighbour moved it among lines the disk does
+/// not hold. Gap 4396 mapped the editor (`on_disk`) and only the editor; this is
+/// the rest of the class — every mutation whose file a held close changed. A §13
+/// verb is not refused: its own housekeeping writes the very close the TUI
+/// holds, so the file it addresses is the file the App shows. Returns the
+/// message, or `None` for a mutation that may run.
+fn held_mutation(read: &Ctx, m: &queue::Mutation) -> Option<String> {
+    let held = read.held.as_ref()?;
+    let (who, files): (String, Vec<String>) = match m {
+        queue::Mutation::Reorder { id, file, .. } => {
+            let mut files: Vec<String> = file.iter().cloned().collect();
+            files.extend(read.tree.get(id).map(|i| i.src.file.clone()));
+            files.extend(read.tree_as_read().and_then(|t| t.get(id)).map(|i| i.src.file.clone()));
+            (format!("^{id}"), files)
+        }
+        queue::Mutation::Capture { from_inbox: Some(line), .. } | queue::Mutation::DropInboxLine { line } => {
+            (format!("inbox line {line}"), vec!["inbox.md".to_string()])
+        }
+        _ => return None,
+    };
+    let file = files.into_iter().find(|f| held.docs.contains_key(f))?;
+    Some(format!(
+        "{who}: {file} is held closed in memory past midnight and is not yet on disk (D91) — \
+         a verb (`tm plan`) writes the close, and then this reorders it"
+    ))
 }
 
 /// Open a file at a line in `cfg.tui.editor` (§16's `code -g {file}:{line}`).
@@ -1335,6 +1372,75 @@ mod tests {
         assert_eq!(on_disk(&read, &shown.0, shown.1), monday, "the editor opens the line ^p1 has on disk");
         let other = app.tree.get(&tm_core::model::Id::new("t3")).map(|i| (i.src.file.clone(), i.src.line)).expect("^t3");
         assert_eq!(on_disk(&read, &other.0, other.1), other, "an untouched file's location is kept");
+    }
+
+    /// **The held close's stamp moves no day the kernel plans** (README gap 4400, the W-43 repair —
+    /// its second clearing condition, measured). The TUI holds the close stamped at the date change
+    /// (00:30); a request built at a later tick of the same day (R3's per-tick replan) would carry
+    /// those lines where `tm plan` at that tick (02:30) stamps its own close at 02:30. This takes `tm
+    /// plan`'s own request at 02:30, restamps its `demote` and `close` lines at 00:30 — exactly the
+    /// request the held close gives at that tick — and asks the kernel both: ONE day, hash and all.
+    /// The bite: the two requests differ (the restamp reached the tail), so the equality is the
+    /// kernel's, not the harness's.
+    #[test]
+    fn d91_the_held_closes_stamp_moves_no_day_the_kernel_plans() {
+        let _env = kernel_env();
+        let (tmp, g, _read, _app) = unfinished_world();
+        let plan = g.dir.clone().expect("the plan directory");
+        let tz: Tz = "America/Chicago".parse().expect("a zone");
+        let later = DateTime::parse_from_rfc3339("2026-09-08T02:30:00-05:00").expect("now").with_timezone(&tz);
+        let (plan_text, _) = tm_plans_request(&tmp, &plan, later, "tm-plan-later");
+        // Restamped in the request's TEXT (a re-serialised request reorders the checkpoint's keys,
+        // which the kernel refuses by name): each line rides the request as an escaped JSON string.
+        let mut held_text = plan_text.clone();
+        let mut restamped = 0;
+        for ev in ["demote", "close"] {
+            let at = |t: &str| format!("\\\"t\\\":\\\"2026-09-08T{t}:00-05:00\\\",\\\"ev\\\":\\\"{ev}\\\"");
+            restamped += held_text.matches(&at("02:30")).count();
+            held_text = held_text.replace(&at("02:30"), &at("00:30"));
+        }
+        assert_eq!(restamped, 2, "the close's demote and close lines, stamped at the tick");
+        assert_ne!(held_text, plan_text, "the restamp reached the request");
+        let (at_tick, _) = crate::cli::kernel_bridge::call_text(&plan_text).expect("tm plan's day at 02:30");
+        let (at_change, _) = crate::cli::kernel_bridge::call_text(&held_text).expect("the held close's day at 02:30");
+        assert!(at_tick["ok"]["plan"].is_object(), "a day: {}", at_tick["ok"]);
+        assert_eq!(at_change["ok"]["plan"], at_tick["ok"]["plan"], "the close's stamp moves no day, hash and all");
+        // The control: the same kernel reads a stamp in this tail that DOES carry the day — `^t3`'s
+        // `start` moved from Monday 23:30 (three hours worked by 02:30, past its 2b estimate) to
+        // Tuesday 02:00 (half an hour) moves the running block's rows — so the equality above is a
+        // fact about the close's lines, not a tail the kernel does not read.
+        let start = |t: &str| format!("\\\"t\\\":\\\"{t}:00-05:00\\\",\\\"ev\\\":\\\"start\\\"");
+        assert_eq!(plan_text.matches(&start("2026-09-07T23:30")).count(), 1, "^t3's start rides the request");
+        let moved = plan_text.replace(&start("2026-09-07T23:30"), &start("2026-09-08T02:00"));
+        let (at_moved, _) = crate::cli::kernel_bridge::call_text(&moved).expect("the day with a later start");
+        assert_ne!(at_moved["ok"]["plan"], at_tick["ok"]["plan"], "a start's stamp moves the day");
+    }
+
+    /// **A screen mutation on a file the TUI holds closed in memory is refused by name** (README gap
+    /// 4505): past midnight `^p1` is in the week file the App shows and in Monday's day file on disk,
+    /// and `J`/`K` — which load the disk with no housekeeping, so they write no close first — would
+    /// address the wrong lines. A reorder in a file no close changed runs as before, and so does
+    /// everything before midnight, when nothing is held.
+    #[test]
+    fn d91_a_reorder_on_a_held_file_is_refused_and_one_elsewhere_runs() {
+        let _env = kernel_env();
+        let (_tmp, _g, mut read, mut app) = unfinished_world();
+        let reorder = |id: &str, file: &str| queue::Mutation::Reorder {
+            id: tm_core::model::Id::new(id),
+            file: Some(file.to_string()),
+            delta: 1,
+        };
+        assert_eq!(held_mutation(&read, &reorder("p1", "day/2026-09-07.md")), None, "nothing held before midnight");
+        let tuesday = DateTime::parse_from_rfc3339("2026-09-08T00:30:00-05:00").expect("now").with_timezone(&app.cfg.tz);
+        advance_clock(&mut app, &mut read, tuesday).expect("the date change");
+        let said = held_mutation(&read, &reorder("p1", "week/2026-W37.md")).expect("refused");
+        assert!(said.starts_with("^p1: week/2026-W37.md is held closed in memory past midnight"), "{said}");
+        assert!(held_mutation(&read, &queue::Mutation::Reorder { id: tm_core::model::Id::new("p1"), file: None, delta: -1 }).is_some());
+        let held = read.held.as_ref().expect("a held close");
+        let x2 = read.tree.get(&tm_core::model::Id::new("d2")).map(|i| i.src.file.clone()).expect("^d2");
+        assert!(!held.docs.contains_key(&x2), "{x2} is a file the close does not change");
+        assert_eq!(held_mutation(&read, &reorder("d2", &x2)), None, "a reorder in {x2} runs");
+        assert_eq!(held_mutation(&read, &queue::Mutation::Demote(tm_core::model::Id::new("p1"))), None, "a §13 verb writes the close itself");
     }
 
     /// A date.

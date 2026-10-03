@@ -176,21 +176,22 @@ fn a_hand_refiled_line_is_refused_and_a_licensed_one_passes_over_history() {
 }
 
 /// **Every frozen fork comparand file is found by its property** (README gap 4461): a
-/// `fork-4748911-*.jsonl` whose every line carries a fork day — the eleven planner and grid
-/// comparands, W-43's separator days among them — and none of the D21 family, whose lines carry a
+/// `fork-4748911-*.jsonl` whose every line carries a fork day — the twelve planner and grid
+/// comparands, W-43's separator days and the W-43 repair's P85 days among them — and none of the D21 family, whose lines carry a
 /// replay or a verdict; each held by `name`, but the classes file by its class key.
 #[test]
 fn every_frozen_comparand_file_is_found_by_its_property() {
     let files = frozenhist::frozen_files().unwrap_or_else(|e| panic!("{e}"));
     let names: Vec<&str> = files.iter().map(|(n, _)| n.as_str()).collect();
     println!("frozen comparand files by their property: {names:?}");
-    for want in ["fork-4748911-planner-classes.jsonl", "fork-4748911-planner-separators.jsonl", "fork-4748911-week-grid.jsonl", "fork-4748911-planner-tui.jsonl"] {
+    for want in ["fork-4748911-planner-classes.jsonl", "fork-4748911-planner-separators.jsonl", "fork-4748911-week-grid.jsonl", "fork-4748911-planner-tui.jsonl", "fork-4748911-planner-p85.jsonl"] {
         assert!(names.contains(&want), "{want} is not found by the property");
     }
     for d21 in ["fork-4748911-classes-replay.jsonl", "fork-4748911-corpus-replay.jsonl", "fork-4748911-log-lines.jsonl"] {
         assert!(!names.contains(&d21), "{d21}, a D21 fixture, was taken for a planner comparand");
     }
-    assert_eq!(names.len(), 11, "the property finds {} files: {names:?}", names.len());
+    // Twelve since the W-43 repair: P85's planner days (README gap 4367) joined the eleven.
+    assert_eq!(names.len(), 12, "the property finds {} files: {names:?}", names.len());
     let classes = &files.iter().find(|(n, _)| n == "fork-4748911-planner-classes.jsonl").expect("the classes file").1;
     assert!(classes(&before()).is_some_and(|k| k.starts_with("overtime/home | ")), "the classes file is not held by its class key");
     assert!(!frozenhist::carries_a_fork_day(&json!({"name": "x", "replay": {}})), "a replay line carries a fork day");

@@ -254,5 +254,21 @@ fn a_deadline_outside_the_calendar_is_named_by_tm_check() {
             "{spelled}: {}",
             out.stdout
         );
+        // **At the line** (README gap 4503, the W-43 repair): the kernel names the candidate by its
+        // position in the request, and `tm check` reads the record's id back and prints the item's
+        // file and line — `badCandidate 13 due` alone named no line a user could find.
+        let line = text.lines().position(|l| l == plain).expect("the line") + 1;
+        assert!(
+            out.stdout.starts_with(&format!("backlog.md:{line}: error[planner-refusal]")),
+            "{spelled}: {}",
+            out.stdout
+        );
+        let doc = tm.run_at(cli_common::NOW, &["--json", "check"]);
+        let doc: serde_json::Value = serde_json::from_str(&doc.stdout).expect("JSON");
+        let p = doc["problems"]
+            .as_array()
+            .and_then(|ps| ps.iter().find(|p| p["code"] == "planner-refusal"))
+            .unwrap_or_else(|| panic!("{spelled}: {doc}"));
+        assert_eq!((p["file"].as_str(), p["line"].as_u64(), p["id"].as_str()), (Some("backlog.md"), Some(line as u64), Some("d2")), "{p}");
     }
 }

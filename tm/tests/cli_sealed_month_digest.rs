@@ -17,7 +17,7 @@ mod cli_common;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use cli_common::Tm;
+use cli_common::{fnv1a64_hex, Tm};
 use serde_json::Value;
 
 /// Three days after `energy-14d.jsonl`'s last line, so the log's August days are sealed.
@@ -70,16 +70,6 @@ fn cacheless(tm: &Tm) -> Tm {
 
 fn cache_dir(tm: &Tm) -> PathBuf {
     tm.plan.join(".tm/cache/replay")
-}
-
-/// FNV-1a-64, as hex — computed here, independently of `kernel_log::month_digest`.
-fn fnv1a64_hex(bytes: &[u8]) -> String {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for &b in bytes {
-        h ^= u64::from(b);
-        h = h.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    format!("{h:016x}")
 }
 
 /// `ckpt.json`'s head — every key but the verbatim checkpoint.

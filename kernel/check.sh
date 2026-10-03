@@ -949,6 +949,15 @@ fi
 #     records for an older machine.  That is README gap 871's class -- a
 #     checker's prose misquoting the measurement beside it -- and §5.11 says
 #     re-measure, do not quote.)
+#     **AND A HOISTED CONSTANT IS READ BY WHAT IT HOLDS** (W-43 repair, README
+#     gap 4500): the code generator names a closed term shared within a module
+#     after the FIRST definition that hoisted it, so a character-identical copy
+#     of `Log.chronoYear` in another module read `..._SELF___closed__0` where the
+#     original read `..._serializeItem___closed__0`, and E2 answered "COMPILED"
+#     about two names for one definition (the W-43 auditor's plant, accepted).
+#     Every closed-constant reference is replaced by a digest of its definition
+#     before the bodies are compared (`twins.closed_resolved`); the same plant
+#     now fails, one UNANSWERED.
 out=$( python3 twins.py 2>&1 )
 if [ $? -eq 0 ]; then
   say "no two names for one definition" "ok  ($( printf '%s\n' "$out" | tail -1 ))"

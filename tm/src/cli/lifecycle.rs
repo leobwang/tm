@@ -1233,6 +1233,7 @@ fn planner_problems(ctx: &Ctx) -> Result<Vec<validate::CheckProblem>, CliError> 
                 .get("id")
                 .and_then(serde_json::Value::as_str)
                 .map(Id::new)
+                .or_else(|| refused_candidate(&request, &issue))
                 .and_then(|id| ctx.tree.get(&id).map(|i| (id, i.src.file.clone(), i.src.line)));
             let message = format!("{} — the day `tm plan` asks the kernel for is refused", issue.message);
             Ok(vec![match item {
@@ -1244,6 +1245,22 @@ fn planner_problems(ctx: &Ctx) -> Result<Vec<validate::CheckProblem>, CliError> 
         }
         Err(e) => Err(e),
     }
+}
+
+/// **The item a `badCandidate <i> <key>` refusal names** (README gap 4503, the
+/// W-43 repair): the kernel names a candidate by its POSITION in the request's
+/// `capacity.candidates.items`, which is all a refusal of a record can say, and
+/// `tm check` printed that position — `badCandidate 13 due` — where a user needs
+/// the line (P88's date outside the calendar was found by hand-reading every
+/// `due:`). The request is the one this check just sent, so the position is read
+/// back from it, never recomputed: the item's id is the record's own `id`.
+fn refused_candidate(request: &str, issue: &super::out::KernelIssue) -> Option<Id> {
+    if issue.name != "badCandidate" {
+        return None;
+    }
+    let at: usize = issue.detail.get("key")?.as_str()?.split(' ').next()?.parse().ok()?;
+    let req: serde_json::Value = serde_json::from_str(request).ok()?;
+    req["capacity"]["candidates"]["items"].get(at)?["id"].as_str().map(Id::new)
 }
 
 /// One kernel load refusal, as `tm check` problems.

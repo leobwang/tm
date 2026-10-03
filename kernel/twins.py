@@ -335,6 +335,7 @@ after §5.3.
   * `abbrev`, `instance`, `theorem`: the population is `def`, as above.
 """
 import collections
+import hashlib
 import pathlib
 import re
 import subprocess
@@ -370,6 +371,12 @@ ARROW = re.compile(r"->|→")
 # exact key could never meet that case, because two identical bodies name
 # their parameters identically.
 CVAR = re.compile(r"\bv_[A-Za-z0-9_]*?_\d+_")
+# A HOISTED CLOSED TERM, as any of the spellings the code generator gives it:
+# the constant itself, its `_value`/`_value_aux_<k>` static data, its `_once`
+# cell, its `_init_` function, and a `___boxed__const__<k>` scalar.  Group 1 is
+# the constant the family belongs to (W-43 repair, README gap 4500).
+CLOSED = re.compile(r"\b(?:_init_)?((?:l|lp_TmKernel)_\w*?___closed__\d+(?:___boxed__const__\d+)?)"
+                    r"(?:_value_aux_\d+|_value|_once)?\b")
 # Brackets, for the depth-zero split and for the second key's collapse.
 OPENERS, CLOSERS = "([{⟨⦃", ")]}⟩⦄"
 # The second key's sentences (W-33): every generalisation group no property
@@ -626,10 +633,85 @@ def emitted(path, name):
                         # difference that is the function's own name.  The
                         # function's mangled name is normalised to SELF, which
                         # is the only name in a body that cannot be evidence.
+                        body = closed_resolved(ir, body)
                         body = body.replace(mangled, "SELF")
                         return "".join(CVAR.sub("v_", body).split())
                 i += 1
     return None
+
+
+# **A HOISTED CLOSED TERM IS COMPARED BY WHAT IT IS, NOT BY WHOSE NAME IT
+# CARRIES** (W-43 repair, README gap 4500).  The code generator shares one
+# closed term among every definition of a MODULE that needs it, and names the
+# shared constant after the FIRST definition that hoisted it -- so `Log.chronoYear`
+# in `Line.c` reads lp_TmKernel_Tm_serializeItem___closed__0 (an empty
+# array), while a character-identical copy of it in another module hoists its
+# own and reads `..._SELF___closed__0`.  SELF above normalised only the
+# definition's OWN name; a constant named after ANOTHER parent still read as
+# "the emitted C differs", so E2 answered "COMPILED" about two names for one
+# definition (the W-43 auditor's plant: plantChronoYear in MidnightCut.lean,
+# accepted).  Every reference to a closed constant is replaced by a digest of
+# its DEFINITION -- its static data or its `_init_` body, normalised the same
+# way, its own references resolved first -- so two bodies differ here only
+# where the terms they compute differ.  A constant whose definition the IR
+# does not hold is kept by name: the loud direction, as everywhere in this file.
+_CLOSED_DEFS = {}
+
+
+def closed_defs(ir):
+    """Every closed constant's DEFINITION text in the IR tree `ir`, by the
+    constant it belongs to: its `_init_` body and its static data (`_value`,
+    `_value_aux_<k>`), in file order."""
+    key = str(ir)
+    if key in _CLOSED_DEFS:
+        return _CLOSED_DEFS[key]
+    out = collections.defaultdict(list)
+    init = re.compile(r"(?m)^static lean_object\* _init_(\w+)\(void\)\{")
+    data = re.compile(r"(?m)^static const \w+ (\w+?)(?:_value_aux_\d+|_value) = ")
+    for c in sorted(ir.rglob("*.c")):
+        text = c.read_text(errors="replace")
+        for m in init.finditer(text):
+            i, depth = m.end() - 1, 0
+            while i < len(text):
+                if text[i] == "{":
+                    depth += 1
+                elif text[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                i += 1
+            out[m.group(1)].append(text[m.end():i])
+        for m in data.finditer(text):
+            end = text.find(";\n", m.end())
+            out[m.group(1)].append(text[m.end():end if end >= 0 else len(text)])
+    _CLOSED_DEFS[key] = (out, {})
+    return _CLOSED_DEFS[key]
+
+
+def closed_digest(ir, name, stack=()):
+    """A digest of the closed constant `name`'s definition, its own closed
+    references resolved first and its own name normalised; `None` when the IR
+    holds no definition of it."""
+    defs, memo = closed_defs(ir)
+    if name in memo:
+        return memo[name]
+    if name not in defs or name in stack:
+        return None
+    own = re.compile(r"(?<!\w)(?:_init_)?" + re.escape(name) + r"(?:_value_aux_\d+|_value|_once)?\b")
+    text = own.sub("SELFC", "\n".join(defs[name]))
+    text = closed_resolved(ir, text, stack + (name,))
+    digest = hashlib.sha1("".join(CVAR.sub("v_", text).split()).encode()).hexdigest()[:16]
+    memo[name] = digest
+    return digest
+
+
+def closed_resolved(ir, text, stack=()):
+    """`text` with every reference to a closed constant replaced by the digest
+    of its definition (a constant with none is kept by name)."""
+    def sub(m):
+        d = closed_digest(ir, m.group(1), stack)
+        return m.group(0) if d is None else "CLOSED_" + d
+    return CLOSED.sub(sub, text)
 
 
 def qualify_all(path, code, found):

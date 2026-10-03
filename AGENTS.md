@@ -3265,10 +3265,10 @@ stage 5's close, kept as it was.*
 | module | lines | theorem declarations |
 |---|---:|---:|
 | `Boundary.lean` | 13,189 | 528 |
-| `PlannerWit.lean` | 12,754 | 590 |
+| `PlannerWit.lean` | 12,859 | 593 |
 | `Planner.lean` | 9,649 | 558 |
 | `Line.lean` | 8,667 | 588 |
-| `Replay.lean` | 8,237 | 409 |
+| `Replay.lean` | 8,414 | 422 |
 | `PlanCheck.lean` | 6,421 | 281 |
 | `Lookahead.lean` | 6,309 | 386 |
 | `Close.lean` | 5,833 | 258 |
@@ -3300,14 +3300,16 @@ stage 5's close, kept as it was.*
 | `Grain.lean` | 321 | 31 |
 | `PastCut.lean` | 201 | 13 |
 | `Width.lean` | 198 | 12 |
-| `Seal.lean` + 57 `Seal*` modules | 15,659 | 767 |
-| **94 modules** | **120,937** | **6,271** |
+| `Seal.lean` + 57 `Seal*` modules | 15,756 | 770 |
+| **94 modules** | **121,316** | **6,290** |
 | `TmKernel.lean` | 94 | — |
-| `Check.lean` | 8,211 | — |
-| `Negative.lean` | 2,904 | — |
-| `Goals.lean` | 1,437 | — |
+| `Check.lean` | 8,239 | — |
+| `Negative.lean` | 2,944 | — |
+| `Goals.lean` | 1,466 | — |
 
-*The 94 modules' theorem declarations are **6,271**, and the axiom audit prints **6,279** lines: every one of the 6,271 and the eight definitions §6.3 names (`comm -13`).  Archive `libTmKernel_TmKernel.a`: **24,720,800 bytes** (24,691,320 at `0984304`).  `check.sh` prints seventeen lines (fourteen checks; check 13 prints four), FFI **95** tests, corpus **29/37 files and 4/5 whole plans**, stage goals **0**, check 12 **1,506** reachable and **1,099** exempt — the W-43 track G block of `kernel/README.md` carries the run, and the workspace's totals.*
+*The 94 modules' theorem declarations are **6,290**, and the axiom audit prints **6,298** lines: every one of the 6,290 and the eight definitions §6.3 names (`comm -13`).  Archive `libTmKernel_TmKernel.a`: **24,795,034 bytes** (24,720,800 on track G's tree, 24,691,320 at `0984304`).  `check.sh` prints seventeen lines (fourteen checks; check 13 prints four), FFI **95** tests, corpus **29/37 files and 4/5 whole plans**, stage goals **1** (`Goals.plan_places_no_block_over_a_break`, §3.2), check 12 **1,507** reachable and **1,099** exempt.*
+
+*Re-measured at the W-43 repair, 2026-10-03, on `72234b4` and that step's tree (no Lean change), by the same roster (README gap 4510): the table said track G's figures — 120,937 lines and 6,271 theorems, stage goals 0 — while the branch held the land's merge of track K's nineteen theorems and its returned goal, so §3.2 said burn-down 1 beside a table that said 0 in one file.  The rows that moved are `PlannerWit.lean`, `Replay.lean`, the `Seal*` group, the totals and the three package-root files; the W-43 repair block of `kernel/README.md` carries the run.*
 
 *Stage 5's close, as it was measured then:*
 

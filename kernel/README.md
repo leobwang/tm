@@ -86665,3 +86665,350 @@ tm · Tue 2026-09-08 · 00:00 · lounge · wake 06:05 · pred 4 ·  ● 0/6 · l
 * 08:42-09:20 — gaps 4390 (drawn, planted) and 4366 closed; the latency runs; the drives.
 * 09:24-09:43 — the fresh oracle and every arm; the R3 simulation (both configurations).
 * 09:58-10:35 — runs 4-6 and five `planner_invariants` runs on the final code; this block; the final `check.sh`.
+
+<!-- =====================================================================
+     APPENDED 2026-10-03: stage 6 (the planner), run **W-43**, **REPAIR**
+     — the defects W-43's two independent auditors found, most severe
+     first: the clock-mark class D90 left open (`tm pause` and `tm resume`
+     inside a running break), check 11's hoisted constant, and the minors.
+     Gaps 4500-4529.  Parity P89, P90, P91 taken.
+     ===================================================================== -->
+
+## Stage 6 — W-43 repair: no clock mark inside a running break, a hoisted constant read by what it holds, a record that keeps its line — and what R3 still is
+
+Worked on `rebuild-on-lean` in the main checkout (one commit); every plant in `scratchpad/repair-w43/clone`, a clone
+of `72234b4` carrying this step's patch, never the shared tree.  Scratch: `scratchpad/repair-w43/`.  **Status: see
+§9 at the end of this block, kept current as the step ran.**
+
+### 0. The brief and the audit, measured before acting
+
+* **HEAD is `72234b4`** (the W-43 land's octopus), tree clean; the brief's figures were `f5a9585`'s/`0984304`'s.  The
+  land's measured figures (6,298 audit lines, burn-down 1, check 12 1,507 / 1,099) are the base this step starts from.
+* **Every defect was reproduced first, on a binary built from `72234b4`** (the critic's clone,
+  `scratchpad/critic-w43/clone`, `git status --porcelain` empty), before any change:
+  `tm pause` inside a running break — `tm stop` "after 10m" beside `tm review day`'s `block_min 20`
+  (`repro-pause.out`); the variant with `tm resume` inside a break begun during an interruption — at 09:32 `tm now`'s
+  header "10m of 360m" beside its row's "348m left", `▶ … running` drawn on a break (`repro-resume-now.out`); the
+  two-breaks world — `tm stop` "after 25m" beside `block_min 50` (`repro-two.out`); check 11's plant — HEAD's
+  `twins.py` over the plant plantChronoYear in `MidnightCut.lean`: "15 group(s) … (4 compiled, 11 value), 0 UNANSWERED";
+  `tm rank ^t5 1` after `tm demote ^t4` — `badHorizon`, exit 1; P88's `tm check` — `badCandidate 13 due` with no line.
+* **One claim did not reproduce as stated.**  A hand-edited break begun the evening before and run into a block's start
+  after midnight (`repro-mid.out`) is netted by the host too (`tm stop` "after 20m"): the host's seams are LEDGER days,
+  so a reading of gap 4363 I drew from `idle_min_since`'s code alone ("the host never nets a break filed on the day
+  before") was wrong, and it is not claimed here.
+* **The land's commit subject says "R3 is the swap"**; its own §3 listed five items besides the swap class.  A commit
+  subject is history and is not rewritten; §7 is the list as it stands after this step.
+
+### 1. No clock-STOPPING mark is logged inside a running break — the class D90 reached one member of (gap 4501; P89, P90)
+
+**The defect, as both auditors drove it.**  D90 made `tm interrupt` end a running break first, on the premise — gap
+4340's sentence "It is the one verb that logs a clock-stopping mark inside a running break: a typed `tm pause` there
+logs `unpause`" — that no other verb did.  **The premise was false.**  A running break holds `active.paused`, so the
+FIRST press of `tm pause` inside it logged `unpause` ("resumed ^m1", the block un-paused under the break) and the
+SECOND logged `pause` — stamped inside the break, whose own line is written at its END.  The kernel's replay closes the
+stretch at that `pause` before it meets the break and credits the break's head; the host's union of idle spans nets
+it.  And `tm resume` inside a break begun during an interruption un-paused the block under the break: the state said
+`▶ running` on a break, and `tm now`'s header (the host, the running break netted) read beside a row the replay
+credited on.
+
+**The class, stated as a property.**  The verbs that log a mark the block's clock reads: `start`, `stop`, `done`,
+`interrupt`, `resume`, `pause`/`unpause`, and D61's wall marks.  A **clock-STOPPING** mark inside a running break is
+two readings (the kernel cannot un-credit a stretch it has closed — D90's declined option); a **clock-STARTING** mark
+inside one is one reading (the kernel's clock runs from it until the break's line moves it to the break's end,
+`Replay.brkFx`, and the host's union nets the same span).  So the property is *no clock-stopping mark is ever logged
+inside a running break*, and every writer now keeps it:
+
+| writer | the mark | inside a running break |
+|---|---|---|
+| `tm start` | clock starts | ends the break first (fork's own rule) |
+| `tm stop`, `tm done` | clock stops | end the break first (`end_break_at`, §11's break integrity) |
+| `tm interrupt` | clock stops | ends the break first (D90, P86) |
+| **`tm pause`** | **stops or starts** | **REFUSED BY NAME (P89)** — new |
+| **`tm resume`** | **clock starts** | **ends the break first (P90)** — new |
+| D61's wall pause | clock stops | not written while a break covers its start (`WallTimer.step`'s `stoppedAt`) |
+| D61's wall unpause | clock starts | written at the wall's end, inside the break: one reading (drawn, §1's census) |
+
+**Parity P89 taken**: `tm pause` while a break is running is REFUSED BY NAME — "a break is running since HH:MM — the timer is already stopped; `tm break` ends it", exit 1, nothing written (log, `.tm/state.json`, day file, undo stack), on the CLI and through the TUI's Space key, whose status line says so — D71's rule with the break in the interruption's place; fork 4748911's `pause` toggled `active.paused` under the running break, logging `unpause` and then `pause` inside it, which the kernel's replay credited and the host's union netted (W-43 repair, README gap 4501; the campaign's call, revisable by the owner)
+
+**Parity P90 taken**: `tm resume` while a break is running (one begun inside the interruption) ends the break first — its `break` line logged as `tm break` logs its end (`day::end_break`), at the resume's instant and before the `resume` line, with `tm break`'s journal line, said as "break ended · 10m of 30m · resumed · lost 20m" and carried in `--json`'s `break_ended` — as `tm start` and (D90) `tm interrupt` do; fork 4748911's `resume` un-paused the block under the running break, so `tm now` drew it running on a break and its header and its row read two counts (W-43 repair, README gap 4501; the campaign's call, revisable by the owner)
+
+**Why these two shapes, and not the other way round.**  `tm pause` inside a break is the exact analogue of D71 (a
+pause pressed while another running state has already stopped the timer): refusing invents nothing and writes nothing;
+ending the break first would turn a keystroke meant to pause into ending a rest, and with a pause held before the break
+(P84) it would RESUME the block.  `tm resume` restarts the block's clock, which is `tm start`'s act, and `tm start`
+ends a running break first; refusing it would leave the user unable to end an interruption while on a break.  Both
+are the campaign's calls under D71's and D90's rules and say so in the parity lines.
+
+**Driven, on this step's binary** (`scratchpad/repair-w43/fixed-pause.out`, `fixed-resume-now.out`; unabridged there):
+
+```text
+$ tm --now 2026-09-07T09:10:00-05:00 break 20m
+break 20m
+$ tm --now 2026-09-07T09:15:00-05:00 pause
+tm: a break is running since 09:10 — the timer is already stopped; `tm break` ends it
+[exit 1]
+$ tm --now 2026-09-07T09:20:00-05:00 pause
+tm: a break is running since 09:10 — the timer is already stopped; `tm break` ends it
+[exit 1]
+$ tm --now 2026-09-07T09:30:00-05:00 break
+break ended · 20m of 20m
+$ tm --now 2026-09-07T10:00:00-05:00 stop
+stopped ^m1 after 40m · 320m left
+review day: block_min 40 (72234b4: tm stop 10m, review day 20)
+
+$ tm --now 2026-09-07T09:10:00-05:00 interrupt ; tm --now …09:20 break 30m
+$ tm --now 2026-09-07T09:30:00-05:00 resume
+break ended · 10m of 30m · resumed · lost 20m
+$ tm --now 2026-09-07T09:32:00-05:00 now
+▶ ^m1 Finish ch.5 exercises · started 09:00 · 12m of 360m
+09:32  5 p3 ▶ Finish ch.5 exercises        @O1  6b     running · 348m left
+(72234b4: header 10m of 360m beside the row's 348m left)
+```
+
+**Through a pty** (`drive/pause-tui.sh` → `drive/pause-tui.out`): `^m1` running, a break from 09:10, the TUI opened at
+09:15 and Space pressed: the status line reads `pause: a break is running since 09:10 — the timer is already stopped;
+`tm break` ends it`, and every file of the tree (the replay cache aside) is byte-identical before and after.
+
+**The instrument, made to see the class (D46: widened, never narrowed).**  `planner_invariants`' one-reading arm left
+out "a timer mark strictly inside the break" of every kind, with a comment saying a typed `tm pause` there "logs
+`unpause`" — the false premise again.  It now leaves out only a clock-STOPPING mark inside the break (which no writer
+logs, the table above), and it DRAWS the clock-starting member the binary does write: D61's wall, its pause `b`
+minutes before the break and its unpause `i` minutes into it, on a stretch nothing else is stamped in (`walled`,
+weight one half).  Before the drawing the widened exclusion admitted **0** such days in three runs of the arm — vacuous,
+and said so here rather than claimed; with it, three runs held **2, 0 and 3** such days to one reading
+(`pi-d87-7..9.log`).  No floor is asked of that count (a third of runs draw none); the census prints it.
+
+**Tests** (`tm/tests/cli_pause_in_break.rs`, six): the refusal by name writing nothing in two worlds (a running
+block, and one a typed pause held before the break, P84), twice in a row; the `--json` failure document; the
+auditor's day one count (40 = 40, with and without the replay cache); the auditor's second day one count (30 = 30);
+`tm resume` ending the break first — its words, the log's order, the journal, the state, `tm now`'s header and row
+(12m, 348m left) and `tm review day`; and no over-bite.
+
+### 2. Check 11 passed a character-identical twin as "E2 COMPILED" (gap 4500, CLOSED)
+
+**The defect.**  `twins.emitted` normalised a definition's OWN mangled name to `SELF`, and nothing else, but the code
+generator shares a closed term among the definitions of a MODULE and names it after the FIRST definition that hoisted
+it: `Log.chronoYear` (in `Line.c`) reads lp_TmKernel_Tm_serializeItem___closed__0, an empty array, while a
+byte-for-byte copy in `MidnightCut.lean` hoists its own and reads SELF___closed__0.  "The emitted C differs" was
+true of a name and false of the code, so E2 answered COMPILED about two names for one definition (§5.3).
+
+**The fix, a property and not a list.**  Every reference to a closed constant — the constant, its `_value` and
+`_value_aux_<k>` static data, its `_once` cell, its `_init_` function, a `___boxed__const__<k>` scalar — is replaced by a
+digest of its DEFINITION (its `_init_` body and its static data, its own name normalised, its own closed references
+resolved first, cycles guarded) before two bodies are compared (`twins.closed_resolved`, `twins.closed_digest`; the
+index `twins.closed_defs` is built once per IR tree).  A constant the IR holds no definition of is kept by name — the
+loud direction.
+
+**Plant** (`scratchpad/repair-w43/clone`; porcelain before ` M kernel/twins.py`, after ` M kernel/TmKernel/TmKernel/MidnightCut.lean` and
+` M kernel/twins.py`; the plant reverted after): Tm.Log.plantChronoYear, a character-identical copy of `chronoYear`,
+appended to `MidnightCut.lean` and built.  HEAD's `twins.py`: "15 group(s) of two or more names (4 compiled, 11 value), 0
+UNANSWERED".  This step's: "TWIN: one signature, one body, and no property says why … Line.lean:chronoYear …
+MidnightCut.lean:plantChronoYear", "15 group(s) … (3 compiled, 11 value), 1 UNANSWERED".  At HEAD with no plant the
+three groups it answered still answer — `planWf`/`planWfFast`, `daysFrom`/`daysFromT`, `daysIn`/`daysInT`, the
+`@[csimp]` shells whose compiled callees differ — 14 groups, 3 compiled, 0 UNANSWERED.
+
+### 3. Gap 4364's premise was wrong, and D92 nets only the last stepped break (gap 4506, OPEN — the owner's, with gap 4361)
+
+**The two findings are one gap.**  The critic's "D92 nets only the LAST stepped break" is gap 4364's own shape
+(`Machine.brk` is one span); the auditor's "gap 4364's premise is wrong" is the same gap's record.  Gap 4364 said "the
+binary writes no overlapping breaks — a second `tm break` ends the first" and "Cost: none observed".  **Both
+sentences are false**: the shape needs no overlap, only an earlier break that runs past a block's start with a later
+one stepped between, and the binary writes it with a `--now` that moves backwards — gap 4361's mechanism, a clock
+behind the log.  Driven at `72234b4` (`repro-two.out`): `break 20m` 09:00, ended 09:30; `break 5m` 09:40, ended
+09:45; `start ^m1` at `--now 09:10`; `stop` 10:00 — `tm stop` "after 25m", `tm review day` `block_min 50`, and `tm
+plan` drawing `09:10 Finish ch.5` across both breaks.  The auditor's case C, the same at 35 against 50.
+
+**Not fixed here, and why — a decision, not time.**  Netting it as the host nets it (the union of every break of the
+block's ledger days) needs the machine to carry every break span of those days, not one — a `Machine` field that is a
+list, a checkpoint codec (`cMachine`) that carries it, a pruning rule that keeps it bounded, and every law over
+`Machine.brk` (`brkFx_brk`, `restartAt_cases`, `SealStep`'s `machineInstants`) re-proved (D5).  The pruning rule is the
+open question: with a clock that may run behind the log no stepped span can be dropped, so the rule IS gap 4361's
+ruling — net a clock behind the log, or rule it out of scope.  Without the binary going backwards in time, the shape
+needs hand-edited OVERLAPPING breaks (two breaks whose spans overlap, the earlier the longer) — which D92's text
+covers ("hand-edited and generated logs hold it"), and which no generated log in T5's 474 inputs holds (track K's
+census).  **Gap 4364 is superseded by this gap**; its premise and cost are restated here.
+
+### 4. `tm rank` after a demotion (gap 4502, CLOSED; P91)
+
+`tm demote ^t4` leaves `^t4`'s record — the archive half of a demotion pair — in the week's `# Tasks`; the host's
+rotation (`items::rank_cmds`) counted it a slot and sent its id a rank, and the kernel's `rank{id}` moves an item's
+LIVE line (in the month file's `# Demoted`), so the whole reorder was refused `badHorizon`, nothing written (the same at
+`0984304`).  Now the position `n` still counts every item line, as fork 4748911's `horizon::rank` counts them; the
+live lines take the fork's resulting order in the live slots; a `[-]` line whose item lives in another file keeps its
+line, as interleaved prose does; and the rotation is decomposed into cycles, each step onto a free rank.  When only
+records stand between the item and position `n`, no line moves and the verb says so ("^t3 stays: only `[-]` records
+stand between it and position 3, and a record keeps its line") rather than claiming the item already stands there.
+
+**Parity P91 taken**: `tm rank` leaves a `[-]` demotion record — the archive half of a pair whose live line is in another file — on its own line while it reorders the section's live lines around it, the position `n` still counting every item line as the fork counts them, and says "stays: only `[-]` records stand between it and position n" when only records lie between; fork 4748911's `horizon::rank` moved the record's line with the others, and this binary until the W-43 repair refused the whole reorder `badHorizon` (README gap 4502)
+
+Test: `cli_items.rs`' `rank_reorders_the_live_lines_around_a_demotion_record` (`^t5` to 1 → `t5 t1 t4 t3`, the record
+on its line, a permutation of the file's lines, `tm check` clean; `^t1` to 4; the records-only case).
+
+### 5. The minors
+
+* **P88's refusal named by its line (gap 4503, CLOSED).**  The kernel names a refused candidate by its position in the
+  request (`badCandidate 13 due`), which is all a refusal of a record can say; `tm check` now reads the record's `id`
+  back from the request it just sent (`lifecycle::refused_candidate`) and prints the item's file and line —
+  `backlog.md:7: error[planner-refusal]: … badCandidate 13 due …`, and `--json`'s problem carries `file`, `line` and
+  `id`.  Asserted in `kernel_date_worlds.rs`' `a_deadline_outside_the_calendar_is_named_by_tm_check`.
+* **One rendering of a verb's log line (gap 4504, CLOSED).**  `closing::close_in_memory` re-typed
+  `Ctx::append_entry`'s rendering and its error sentence; both now call `Ctx::render_entry`, so the lines the TUI holds
+  past midnight and the lines a verb writes are one definition.  The test harness's FNV-1a-64, copied into three files
+  (`cli_sealed_month_digest.rs`, `cli_break_into_block.rs`, `cli_replay_cache_kernel.rs`), is one function in
+  `cli_common` (still computed in the harness, never borrowed from the binary).
+* **Screen mutations on a held close (gap 4505, CLOSED).**  Gap 4396 mapped the editor through `on_disk` and nothing
+  else.  `J`/`K` and the inbox line load the disk WITHOUT housekeeping, so past midnight they addressed lines the disk
+  does not hold (the held tree has `^p1` in the week file, the disk in Monday's day file).  Every such mutation whose
+  file a held close changed is now refused by name on the status line (`tui::held_mutation`); a §13 verb is not — its
+  own housekeeping writes the close the TUI holds.  Test: `tui::tests::d91_a_reorder_on_a_held_file_is_refused_and_one_elsewhere_runs`
+  (`^p1` refused in the week file and with no file, `^d2` in `backlog.md` runs, `D` is a verb).  Read, not driven
+  through a pty: the refusal is in front of the mutation, which the test calls directly.
+* **The oracle's `worked` op (gap 4507, OPEN).**  `tm-oracle`'s `worked_one` re-types the selection of fork
+  `active_run`'s worked reading (the open block when it is the state's, else the clock since `started`), because
+  `active_run` is private to the fork's `Planner`; the substance it calls is the fork's own (`Log::parse`, the fork's
+  replay, `OpenBlock::worked_min_at`, `local_dt`).  Not changed: calling the private function needs the fork's source
+  changed, which an oracle extracted from `4748911` must not do.  Cost: six lines of selection logic on the comparand
+  side are tree-owned.  Clears it: a cross-check that the fork's own plan answer agrees with `worked` wherever the plan
+  exposes the running block's minutes.
+* **`cli_latency` under load (gap 4508, measured).**  The auditor's first workspace run at load 3.52 failed four
+  `cli_latency` tests (`tm drop ^a1` still running after 5 s) and passed alone at 0.64 — gap 1333's class, not a
+  regression.  This step's runs record `uptime` beside every workspace run (§8).
+
+### 6. Gaps 4491, 4400 and 4367 — three of R3's five, CLOSED here
+
+**Gap 4491 — the one-reading assertion now outlives R3.**  It sat in `planner_invariants`' fork region inside the D87
+arm.  The world builder is lifted out (`log_a_break_into_the_running_block`, returning a `BreakDraw`), with the host's
+reading (`w36_host_worked`) and the replay's (`replay_worked`, the open block's `worked_min_at`, no clock fallback), and
+a new property test outside every region, `the_host_and_the_replay_read_a_logged_break_one_way`, holds them to one
+number with the census and both floors (`r[5]` a logged break drawn, `r[1]` a day held, `r[3]` a D90 day held).  The
+D87 arm keeps its planner comparisons and calls the same builder.  The region gates pass
+(`every_test_that_reaches_the_fork_keeps_it_in_one_region`, `the_region_guard_sees_code_outside_that_needs_the_region`).
+Three runs (`pi-lift-1..3.log`): 287 cases; 20, 21, 20 logged-break days drawn; 10, 9, 13 held to one reading (5, 5, 9
+with a timer mark; 3, 2, 4 D90; 2, 2, 3 with a clock-starting mark inside the break).
+
+**Gap 4400 — measured: the held close's stamp moves no day.**  Its second clearing condition.
+`tui::tests::d91_the_held_closes_stamp_moves_no_day_the_kernel_plans` takes `tm plan`'s request at Tuesday 02:30 on
+the D91 world, restamps its `demote` and `close` lines at 00:30 (the date change — exactly the request R3's per-tick
+replan would build from the held close), and asks the kernel both: one `ok.plan`, hash and all.  The control: `^t3`'s
+`start` moved from Monday 23:30 to Tuesday 02:00 in the same request text moves the day, so the kernel reads this
+tail's stamps and the equality is a fact about the close's lines.  Read beside it, not proved: no planner module reads
+the replay's demotion or close records (`Planner`, `PlanOnce`, `PlanWire`, `Lookahead` name neither).
+
+**Gap 4367 — P85's planner half has a fork comparand.**  `tests/fixtures/fork-4748911-planner-p85.jsonl`, two worlds the
+shipped binary writes (`planner_p85_days.rs`' `WORLDS`): a twenty-five-minute break 09:00-09:25 logged at its end and
+`tm start ^t4` at `--now 09:10`, fifteen minutes back inside it; and `^t4` paused at 08:50, a break 09:00-09:25, and
+`tm pause` (which resumes it) at `--now 09:10` — a `start` and an `unpause` inside the last stepped break, the two kinds
+of clock start P85 moves, each followed by `tm plan` at 10:00.  Each line carries **two fork days by value**, asked of
+`tm-oracle plan` (the land's oracle, built from this tree's oracle sources, which no commit since has touched) over the
+shipped binary's grants: `shipped`, fork 4748911 on the world as given (`^t4` drawn from 09:10, "50m so far" / "70m so
+far"), and `p85`, the fork **asked the D92 day** by `forkplan::p85_after` — each moved start followed by a `pause` where
+the clock started and an `unpause` at the break's end (`p85::as_asked_log`, track K's own), which fork 4748911's machine
+nets as `Replay.restartAt` does, the `paused` row over that stretch taken off and the day re-digested (`^t4` from 09:25,
+"35m so far" / "55m so far").  A new file of new worlds, each flagged `{"p85": true}` in its own home: D70's shape, a
+comparand gained for a registered number; no committed line moved.  Held, outside every region:
+`the_kernel_plans_every_frozen_p85_day_as_the_fork_asked_the_d92_day` — **2 of 2 days, every row, hash and all**;
+`the_departure_is_real_on_every_frozen_p85_world`; `every_frozen_p85_world_is_the_binarys` (the verbs re-run now give the
+world by value, every exit 0, `forkclass::binary_holds`); `the_p85_comparison_bites_a_bent_day` (the shipped drawing
+offered as the D92 day is refused, and a row a minute longer).  The bless holds its lines against the committed
+history (`frozenhist::held`) and is found by `every_bless_holds_its_lines_against_the_committed_history`; the oracle arm
+(`TM_ORACLE`) re-asked both days of both worlds and found them by value (20 oracle requests); the in-tree arm sits in
+the file's one region.  `fork_frozen_refile.rs`' census of frozen comparand files moves 11 → 12 with the file named.
+One finding in the building, recorded beside `p85_after`: unlike P81's asked log, P85's still STARTS each clock inside
+its break (the line is kept, so the fork's stamp stays), and the pause at that instant stops it there — so the asked log
+is not re-read for starts P85 moves; a first draft that refused "still moves" refused every world.
+
+### 7. What R3 is now
+
+**Read off the code, unchanged by this step:** the swap's call sites are `cli/planning.rs`' `planner::plan`
+(`planning::build_ranked`) and `tui/app.rs`' `planner::plan` in `App::replan` and `App::extend_drops`' three calls.
+
+**The answer, by name.**  R3 is the body swap and the deletion, with:
+1. the body swap's class — gaps **3476, 4327, 4347, 4397** (the twenty-three tests through `App`);
+2. gaps **3583** and **4046** (a log run holding today's day record whole) and **4321** (the `tui Midnight` line
+   re-drawn under D64(b));
+and the deletion commit's own rewrite of the two region gates (`every_bless_holds_its_lines_against_the_committed_history`,
+`every_test_that_reaches_the_fork_keeps_it_in_one_region`), as W-42's land and track C said — and, a consequence and not
+a precondition, the region of `planner_p85_days.rs` (§6) with them.  Gaps **4367**, **4400** and **4491** are closed
+(§6); gaps 4501-4505 were not R3's.
+
+### 8. Acceptance, capped (`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`; 16 GB for the drives, the plants, the oracle and the latency run)
+
+* **`check.sh`, seventeen lines, all ok, exit 0**, in `scratchpad/repair-w43/clone` re-synced to this commit's tree
+  (`git diff` hash equal to the main checkout's; check 9's gate never runs in the tree committed from), `check3.log`:
+  the build; totality; **the axiom audit 6,298** (no Lean change); `Negative.lean` rejected; FFI **95**; the corpus
+  **29/37 files and 4/5 plans**; **stage goals 1, all stage 6** (`plan_places_no_block_over_a_break`, unchanged since
+  the land); prose citations **58,112** (55,692 resolved, 2,420 allowed, 0 allow entries unused); check 9 **709**
+  rostered, **0 owed**; parity **P1-P91, next free P92**; check 11 **3,385 bodies, 14 groups (3 compiled, 11 value), 0
+  UNANSWERED** under §2's closed-constant reading; check 12 **1,507** reachable, **1,099** exempt, 0 UNANSWERED; check
+  13 fields 17/17, inputs 33 of 37, sent 169, written 220, 0 UNANSWERED; check 14 94 modules.  The first run on the
+  clone (16:52-16:58, `check1.log`) failed check 8 alone, on four README citations of C symbols, unbackticked since.
+* **`cargo test --workspace --no-fail-fast`, THREE runs on the final code** (`ws1..3.log`; porcelain and diff hashed
+  equal at each start and end): **141 result lines, 2,564 passed, 0 failed, 36 ignored, 0 warnings**, each run 528-530 s
+  (17:12-17:38, load 2.3-4.0).  The count, by arithmetic: the land's 2,537 + `cli_pause_in_break` 6 + `planner_p85_days`
+  17 (its 12 and the five `kernel_log` unit tests `support/replay.rs` brings) + `cli_items` 1 + the binary's `tui::tests`
+  2 + `planner_invariants` 1 = 2,564; 139 + 2 new binaries = 141; 34 + the P85 bless and oracle arm = 36.  **A run
+  before them FAILED one test** (`ws0-prefix.log`, 2,563 / 1 / 36): `cli_break_clock`'s
+  `every_reader_of_a_running_breaks_start_reads_one_function` read `tm resume`'s body — which then named the running
+  break, the interruption's `started` and a clock — as a second reader of a break's start.  It was not one (the break's
+  start is read in `end_break_at`, through `Ctx::running_break`), but the body was a copy of `tm interrupt`'s: both now
+  call one function, `day::end_break_first`, and the guard reads neither.  A second run, aborted when that edit rebuilt
+  the binary under it, is not counted (`ws0-aborted.log`).  No `.proptest-regressions` file moved.
+* **The named suites, in run 3**: T5 `kernel_replay_parity` 44 (4 ignored), the door `kernel_log_door` 36,
+  `cli_switch_acceptance` 16, `cli_latency` 6 (1 ignored), `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 32,
+  `kernel_row_cells` 33, `kernel_item_grammar` 6, `kernel_planner_wire` 27, `planner_classes` 66 (6 ignored),
+  `planner_invariants` 45 (2 ignored), `cli_conformance` 6, `cli_json_matrix` 8; this step's `cli_pause_in_break` 6,
+  `planner_p85_days` 17 (2 ignored), `cli_items` 67, `kernel_date_worlds` 16.
+* **`cli_latency --include-ignored`**, one run at load 1.5 (`lat1.log`): 7 passed in 25.0 s — T18's planner call 8.3 ms
+  on the example tree, 62.6 ms on T11's, 87.0 / 185.4 ms on T14's 3- and 10-year trees; a later verb 65.9 ms, at one
+  year 106.4, at three years 187.1; the first verb at three years 2,222.3 ms.  No band touched.
+* **The one-reading arm alone**, three runs with `--nocapture` (`pi-lift-1..3.log`, §6) and the walled-world census
+  (`pi-d87-7..9.log`, §1).
+* **The P85 oracle arm** (`TM_ORACLE` = the land's oracle): 2 of 2 worlds, both days by value, 20 requests (§6).
+* **Plants**, every one in `scratchpad/repair-w43/clone`, porcelain empty before and after (`plants.out`): the pause
+  refusal removed — `cli_pause_in_break` 3 FAILED; `tm resume` not ending the break — 2 FAILED; the tombstone rule off
+  — `rank_reorders_the_live_lines_around_a_demotion_record` FAILED (`badHorizon`); `refused_candidate` answering
+  nothing — `a_deadline_outside_the_calendar_is_named_by_tm_check` FAILED; `held_mutation` holding nothing —
+  `d91_a_reorder_on_a_held_file_is_refused_and_one_elsewhere_runs` FAILED; the walled world's unpause written as a
+  `pause` with the exclusion off — the one-reading arm FAILED "D87: … apart (P81)" (`right: Some(7)`); and §2's twin.
+
+### 9. Status note
+
+* 16:13 — HEAD `72234b4`, clean, load 7.75 (other sessions); every defect reproduced on the critic's `72234b4` binary.
+* 16:20-16:50 — §1-§6 written in code; tests green alone; the pty drive; the plant clone building.
+* 16:52-16:58 — `check.sh` on the clone: every check ok but check 8 (four README citations of C symbols, unbackticked since).
+* 16:58-17:05 — gap 4367's frozen P85 days built, blessed from the land's oracle, held; the clone re-synced; the final `check.sh`.
+* 17:01-17:41 — `check.sh` 17/17 on the clone; workspace run 0 (one guard failure, fixed by sharing `end_break_first`); runs 1-3 green; the latency run; this section; the last `check.sh` on the final tree.
+
+### 10. Gaps 4500-4529
+
+**Gaps 4500 (§2), 4501 (§1), 4502 (§4), 4503, 4504 and 4505 (§5) — CLOSED.**  **Gaps 4491, 4400 and 4367 — CLOSED**
+(§6).
+**Gap 4364 — superseded by gap 4506** (§3).
+
+**Gap 4506 — a clock started inside a break that is not the last one stepped is credited.**  1. *What.*
+`Replay.Machine.brk` remembers the LAST break the machine stepped, and `Replay.restartAt` reads only it; the host's
+`Replay::idle_min_since` unions every break of the block's ledger days.  A clock started inside an earlier break, with a
+later one stepped between, is credited and drawn across by the replay and netted by `tm stop`.  The binary writes it
+with a `--now` that moves backwards (gap 4361's mechanism): driven, `tm stop` 25m beside `tm review day` 50; a hand
+edit writes it with two OVERLAPPING breaks.  2. *Why not changed.*  A decision, not time: netting it needs the machine
+to carry every break span of the block's ledger days — a list in `Machine`, in `cMachine` (the checkpoint), and every
+law over `Machine.brk` re-proved (D5) — and a rule that keeps the list bounded, which with a clock that runs behind the
+log is gap 4361's ruling (net a clock behind the log, or rule it out of scope).  3. *Cost.*  On such a log `tm stop`
+and `tm review`, the heat grid and the planner's past rows read the block two ways; 0 of T5's 474 inputs hold it.
+4. *Clears it.*  The owner, with gap 4361: then the list and its bound, or the scope ruled out (and gap 4364's shape
+with it).
+
+**Gap 4507 — the oracle's `worked` op re-types a private fork selection** (§5).  1-4 as §5 says.
+
+**Gap 4508 — `cli_latency` under load** (§5): recorded with every run's `uptime` (§8); nothing to change.
+
+**Gap 4509 — the clock-starting census has no floor.**  1. *What.*  The one-reading arm's count of days with a
+clock-starting mark inside the break (D61's wall, drawn since §1) read 2, 0, 3 and 2, 2, 3 over six runs; no floor is
+asked of it.  2. *Why.*  The world needs the block's timer untouched since its start and a quiet stretch of the log
+around the break; a floor would fail a third of runs (D46: a red floor is a finding about the draw, not a revert).
+3. *Cost.*  A run that draws none holds the claim of §1's table's last row on no day; the P84 and D90 counts and
+their floors stand.  4. *Clears it.*  A world builder that places the wall deterministically, if a run is ever seen
+holding none for long.
+
+**Gap 4510 — AGENTS §10.1's figures were track G's tree** (the critic's): re-measured at this step (§8) and the table
+and its paragraph corrected; CLOSED.

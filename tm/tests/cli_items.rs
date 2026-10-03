@@ -532,6 +532,55 @@ fn rank_down_rotates_the_section_and_keeps_every_byte() {
     assert_eq!(tm.read("week/2026-W37.md"), after);
 }
 
+/// **A `[-]` record keeps its line, and the live lines are reordered around it**
+/// (README gap 4502, the W-43 repair, parity P91). After `tm demote ^t4` the
+/// week's `# Tasks` holds `^t4`'s record — the archive half of a demotion pair,
+/// its live line in the month file's `# Demoted` — and the kernel's `rank{id}`
+/// moves an item's LIVE line, so a rotation through the record's id was refused
+/// `badHorizon` with nothing written. The position still counts every item line,
+/// as fork 4748911's `horizon::rank` does; the live lines take the fork's
+/// resulting order, and the record stays where it stood.
+#[test]
+fn rank_reorders_the_live_lines_around_a_demotion_record() {
+    fn tasks(tm: &Tm) -> Vec<String> {
+        tm.read("week/2026-W37.md")
+            .lines()
+            .skip_while(|l| !l.starts_with("# Tasks"))
+            .filter(|l| l.starts_with("- "))
+            .map(|l| l.rsplit('^').next().unwrap_or_default().to_string())
+            .collect()
+    }
+    let tm = Tm::new();
+    tm.ok(&["demote", "^t4"]);
+    assert_eq!(tasks(&tm), ["t1", "t3", "t4", "t5"]);
+    let before = tm.read("week/2026-W37.md");
+    let record = before.lines().position(|l| l.starts_with("- [-]") && l.ends_with("^t4")).expect("the record");
+
+    let json = tm.json(&["rank", "^t5", "1"]);
+    assert_eq!(json["moved"], true, "{json}");
+    assert_eq!(tasks(&tm), ["t5", "t1", "t4", "t3"], "the fork's live order t5 t1 t3, the record on its line");
+    let after = tm.read("week/2026-W37.md");
+    assert_eq!(after.lines().nth(record), before.lines().nth(record), "the record keeps its line");
+    let (mut a, mut b): (Vec<&str>, Vec<&str>) = (before.lines().collect(), after.lines().collect());
+    a.sort_unstable();
+    b.sort_unstable();
+    assert_eq!(a, b, "a reorder is a permutation, never a rewrite");
+    assert_eq!(tm.run(&["check"]).code, 0);
+
+    let json = tm.json(&["rank", "^t1", "4"]);
+    assert_eq!(json["moved"], true, "{json}");
+    assert_eq!(tasks(&tm), ["t5", "t3", "t4", "t1"]);
+
+    // Only the record stands between ^t3 and position 3: no line moves, and the
+    // verb says why rather than claiming ^t3 already stands there.
+    let still = tm.read("week/2026-W37.md");
+    let out = tm.ok(&["rank", "^t3", "3"]);
+    assert!(out.stdout.contains("only `[-]` records stand between it and position 3"), "{}", out.stdout);
+    assert_eq!(tm.read("week/2026-W37.md"), still);
+    let json = tm.json(&["rank", "^t3", "3"]);
+    assert_eq!(json["moved"], false, "{json}");
+}
+
 /// Kernel-backed `tm add`: the id is the kernel's own (`freshId` renders the
 /// host's seed as digits and bumps past every taken id — freshness is L21,
 /// a theorem, not a retry loop), the line lands at the end of the file, and
