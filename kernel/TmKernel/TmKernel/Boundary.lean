@@ -1367,20 +1367,20 @@ def parseCmd (j : JVal) : Except String ReqCmd := do
     -- The title arrives as the `List Char` `jparse` decoded: no `String` hop.
     let cs ← getStr j "title"
     -- Gap 32's discipline at the parser: the title becomes item tokens, so a
-    -- newline would split the line, a tab is not a separator this kernel can
-    -- read, and a `^` in the title would read back as a second id (`manyIds`).
+    -- newline would split the line, a tab is refused by name (the host trims
+    -- with `str::trim`), and a `^` would read back as a second id (`manyIds`).
     -- The loader must never pick between two readings (§5.6), so these are
     -- refused by name rather than laundered into tokens.  The checks run on
     -- the `List Char` reading the command actually carries.
     if '\n' ∈ cs then throw "titleNewline"
     if '\t' ∈ cs then throw "titleTab"
     if '^' ∈ cs then throw "titleId"
-    if cs.all (fun c => c == ' ') then throw "titleBlank"
-    -- A leading or trailing space would ride into the token vector as a token
-    -- whose word is empty (or keeps the space), and the rendered line would
-    -- re-tokenize differently than it was built — the loader must read back
-    -- exactly what the command wrote, so the title must be trimmed by the host.
-    if cs.head? == some ' ' || cs.getLast? == some ' ' then throw "titleEdge"
+    if cs.all isSp then throw "titleBlank"
+    -- A separator at either edge — EVERY separator, `isSp` since the owner's D83,
+    -- not the space alone (README gaps 4164 and 4337) — would ride into the token
+    -- vector and re-tokenize differently than it was built; the loader must read
+    -- back exactly what the command wrote, so the host trims it, as `str::trim`.
+    if (cs.head?.any isSp) || (cs.getLast?.any isSp) then throw "titleEdge"
     return .add (← getNat j "seed") (← getNat j "doc") cs
   | "edit" =>
     -- The keyed edit.  §5.7: three refusals, each named — a spelling that is
@@ -13166,5 +13166,24 @@ theorem runLoad_refuses_a_command_writing_past_the_width :
       | .error e => e == jsonErr "badValue est"
       | .ok _ => false) = true := by
   decide
+
+/-! ## `add`'s title guards over every separator (the W-42 repair, README gaps 4164 and 4337)
+
+Appended at the end of the module so no line a check-9 pin names moves (README gap 2136). -/
+/-- **The title's edge and blank guards read every separator, not the space alone** (owner D83;
+README gaps 4164 and 4337, the W-42 repair): a no-break space at either edge is `titleEdge`, a title of
+no-break spaces is `titleBlank`, and one inside the title is a word separator like any other, so the
+title is accepted.  Until the repair the guards compared with `' '`, so the first two were taken
+into the token vector as separators of their own. -/
+theorem parseCmd_refuses_every_separator_at_a_titles_edge :
+    parseCmd (.obj [("op".toList, .str "add".toList), ("seed".toList, .num 7),
+        ("doc".toList, .num 0), ("title".toList, .str ['\u00A0', 'x'])]) = .error "titleEdge" ∧
+    parseCmd (.obj [("op".toList, .str "add".toList), ("seed".toList, .num 7),
+        ("doc".toList, .num 0), ("title".toList, .str ['x', '\u3000'])]) = .error "titleEdge" ∧
+    parseCmd (.obj [("op".toList, .str "add".toList), ("seed".toList, .num 7),
+        ("doc".toList, .num 0), ("title".toList, .str ['\u00A0', '\u00A0'])]) = .error "titleBlank" ∧
+    parseCmd (.obj [("op".toList, .str "add".toList), ("seed".toList, .num 7),
+        ("doc".toList, .num 0), ("title".toList, .str ['a', '\u00A0', 'b'])]) = .ok (.add 7 0 ['a', '\u00A0', 'b']) :=
+  ⟨rfl, rfl, rfl, rfl⟩
 
 end Tm

@@ -145,9 +145,16 @@ import sections as reqsec
 
 EXEMPT_FILE = pathlib.Path(__file__).resolve().parent / "reach-exempt.txt"
 # The shipped binary's source.  The walk's root is derived from the requests
-# `tm/src` builds, never assumed to be everything the export can answer
+# the binary builds, never assumed to be everything the export can answer
 # (`sections.py`, README gap 2229).
-RUST_SRC = pathlib.Path(__file__).resolve().parent.parent / "tm" / "src"
+# AND EVERY CRATE IT LINKS BY PATH (W-42 repair, README gaps 4322 and 4331).  The
+# scan read `tm/src` alone, and the one literal that sends `planner` -- the day
+# `tm check` has asked for since P78 -- is `tm-core`'s `planwire::with_planner`,
+# so the section was counted UNSENT and 371 definitions it reaches were answered
+# by the `CLASS unsent planner` line while a shipped verb ran them.  The roots
+# are `sentkeys.program_roots`: the binary's manifest names them, not a list here.
+import sentkeys
+RUST_SRCS = sentkeys.program_roots(pathlib.Path(__file__).resolve().parent.parent)
 # THE POPULATION IS A KEYWORD CLASS AND NOT THE ONE WORD `def` (W-31 repair,
 # README gap 2258).  This read `qualified_names(p, "def")` and said nothing
 # about the others, while `mutate.py` had read `(def|abbrev|instance)` since
@@ -279,6 +286,75 @@ CENSUS_TOPIC = re.compile(r"emitted definitions are reached")
 # construction", not "unreachable for a good reason", which is the reason
 # line's job, read by a person.
 CLASS_LINE = re.compile(r"^CLASS[ \t]+(unsent|proof)[ \t]+([A-Za-z0-9_]+)[ \t]+--[ \t]+(.+)$")
+
+# A FOURTH CLASS, CSIMP (the W-42 repair, README gaps 4200 and 4339), and it is the header's
+# own property read exactly rather than a new one.  `@[csimp] theorem f_eq : @f = @g` tells the
+# COMPILER to emit `g` wherever the source says `f` in every module that sees the lemma; the
+# kernel never sees it, and every law and every decided witness still reads `f`.  So once every
+# call site sees the lemma, `f` -- the SPECIFICATION -- is emitted and called by nothing, and it
+# is "used solely within proofs" in exactly the sense THE PROPERTY above means: its right side
+# runs in its place.  Until this class the gate asked that of a name, and the first twin to meet
+# the strict ratchet with no grandfathered entry -- `Planner.dayPlan`, D82's fast day -- could
+# not be taken at the one site that still called the specification (`PlanDiff.overtimeDiff`, the
+# TUI's overtime what-if R3 adds): S measured it at 2.0 s on the example tree and 19-22 s on
+# T14's ten-year tree, and declined a branch that calls the specification "for no reason but to
+# keep it reached" as a check no input can fail by another name (gap 4200).
+#
+# The class, measured: for every `@[csimp]` lemma of the library whose RIGHT side the export
+# reaches and whose LEFT side it does not, the left side and every definition the walk from the
+# left side reaches that the walk from the export does not.  The second half is the
+# specification's own body -- `dayPlan`'s 65 views below it are reached by nothing else, and they
+# are proof-only for the same reason it is.  A lemma whose right side is NOT reached answers
+# nothing (the twin is dead too, and that is NOT EXEMPT by name); a `@[csimp]` line this scan
+# cannot read (`CSIMP_LEMMA`), or a side it cannot resolve to one library definition, FAILS by
+# name rather than answering silently.  WHAT IT CANNOT SEE, declared: whether a definition
+# reached only through a specification SHOULD have another caller -- the same blind spot the
+# proof class declares.
+CSIMP_LEMMA = re.compile(
+    r"^@\[csimp\][ \t]+theorem[ \t]+([^\s:]+)[ \t]*:[ \t]*@([\w.']+)[ \t]*=[ \t]*@([\w.']+)[ \t]*:=",
+    re.M)
+CSIMP_LINE = re.compile(r"^@\[csimp\]", re.M)
+
+
+def csimp_pairs(files, defs):
+    """`(pairs, complaints)`: every `@[csimp]` lemma as `(lemma, left, right)` qualified names.
+
+    A side is resolved as Lean resolves a name written inside the lemma's namespace: the
+    innermost enclosing namespace first, outward to the root, against the library's own
+    `def`/`abbrev`s."""
+    known = {d[2] for d in defs}
+    pairs, bad = [], []
+    for p in files:
+        code = leanfiles.strip_comments(pathlib.Path(p).read_text())
+        lemmas = {m.start(): m for m in CSIMP_LEMMA.finditer(code)}
+        for at in (m.start() for m in CSIMP_LINE.finditer(code)):
+            if at not in lemmas:
+                bad.append("CSIMP: %s:%d  a `@[csimp]` line this scan cannot read as `@[csimp] "
+                           "theorem <name> : @<f> = @<g> :=` -- the class answers nothing it did "
+                           "not read" % (pathlib.Path(p).name, code.count("\n", 0, at) + 1))
+        if not lemmas:
+            continue
+        quals = dict(leanfiles.qualified_names(p, "theorem", code)[0])
+        for m in lemmas.values():
+            name, lhs, rhs = m.group(1), m.group(2), m.group(3)
+            qual = quals.get(name, name)
+            ns = qual[:-len(name) - 1] if qual.endswith("." + name) else ""
+            parts = ns.split(".") if ns else []
+
+            def resolve(w):
+                for k in range(len(parts), -1, -1):
+                    cand = ".".join(parts[:k] + [w])
+                    if cand in known:
+                        return cand
+                return None
+            left, right = resolve(lhs), resolve(rhs)
+            if left is None or right is None:
+                bad.append("CSIMP: %s  `%s`'s side `%s` is no `def`/`abbrev` of the library "
+                           "this scan can resolve" % (pathlib.Path(p).name, qual,
+                                                      lhs if left is None else rhs))
+                continue
+            pairs.append((qual, left, right))
+    return pairs, bad
 
 
 def proof_violations(stem):
@@ -460,7 +536,7 @@ def main(argv):
     # `defs` is handed in rather than rebuilt: it is already every `(module,
     # written, qualified)` of the library, and asking `leanfiles.qualified_names`
     # for it a second time cost 1.16 s on a check whose wall was 1.6 s.
-    cuts, wire, wirebad, keyed = reqsec.cuts(pkg, RUST_SRC, defs)
+    cuts, wire, wirebad, keyed = reqsec.cuts(pkg, RUST_SRCS, defs)
     # A ROOT THAT COULD NOT BE MEASURED IS NOT A ROOT, AND NO VERDICT IS TAKEN
     # FROM IT (W-32 repair, README gap 2413).  `wirebad` used to be appended to
     # the adjudication's own complaints and everything below ran anyway -- so an
@@ -485,7 +561,7 @@ def main(argv):
               "again.")
         print("ROOT NOT MEASURED: %d complaint(s) about the requests %s builds; "
               "%d def/abbrev(s) in the library were not adjudicated"
-              % (len(wirebad), RUST_SRC, len(defs)))
+              % (len(wirebad), ", ".join(map(str, RUST_SRCS)), len(defs)))
         return 1
     reached, emitted = callgraph.reachable(
         ir, {callgraph.symbol(k): {callgraph.symbol(v) for v in vs}
@@ -515,7 +591,7 @@ def main(argv):
                        "that is %s -- delete the line; every definition it "
                        "answered is now REACHED or NOT EXEMPT by name"
                        % (EXEMPT_FILE.name, unsents[k][1], k,
-                          "SENT by %s" % RUST_SRC if any(
+                          "SENT by %s" % ", ".join(map(str, RUST_SRCS)) if any(
                               line.split()[:2] == ["SENT", k] for line in wire)
                           else "not a section the walk cut"))
     via, _ = callgraph.reachable(
@@ -539,7 +615,20 @@ def main(argv):
         if not pviol:
             pmods.add(stem + ".lean")
     proof = {k for k in dead if k[0] in pmods} - witness
-    answered = unsent | witness | proof
+    # CSIMP: a specification its reached `@[csimp]` twin runs in place of (gap 4339).
+    pairs, cbad = csimp_pairs(files, defs)
+    bad.extend(cbad)
+    spec = set()
+    walk_cuts = {callgraph.symbol(k): {callgraph.symbol(v) for v in vs} for k, vs in cuts.items()}
+    for _lemma, lhs, rhs in pairs:
+        if callgraph.symbol(rhs) not in reached or callgraph.symbol(lhs) in reached:
+            continue
+        if callgraph.symbol(lhs) not in callgraph.functions(ir):
+            continue
+        under, _ = callgraph.reachable(ir, walk_cuts, root=callgraph.symbol(lhs))
+        spec |= under
+    csimp = {k for k, d in dead.items() if d[3] in spec} - witness - proof - unsent
+    answered = unsent | witness | proof | csimp
     for stem in sorted(set(library) - compiled):
         bad.append("UNCOMPILED: %s is a library module and `lake` emitted no C "
                    "for it -- nothing imports it (AGENTS 2.3), so this check and "
@@ -558,6 +647,8 @@ def main(argv):
                           if key in witness else
                           "a definition of a declared proof-only module"
                           if key in proof else
+                          "a specification a reached `@[csimp]` twin runs in place of"
+                          if key in csimp else
                           "reached only through a declared unsent section"))
         if key not in entries and key not in answered:
             d = dead[key]
@@ -703,7 +794,8 @@ def main(argv):
           "%d exempt in %d section(s) (%d of them run at load), "
           "%d answered by property (%d reached only through %d declared unsent "
           "section(s), %d witness fixture(s), %d of %d declared proof-only "
-          "module(s)), %d UNANSWERED"
+          "module(s), %d specification definition(s) under %d `@[csimp]` lemma(s)), "
+          "%d UNANSWERED"
           % (len(defs), len(library), len(population),
              sum(1 for d in population if d[3] in callgraph.emitted_globals(ir)),
              len(live), callgraph.EXPORT_ROOT,
@@ -711,7 +803,7 @@ def main(argv):
              len(entries), len(sections),
              sum(1 for k, d in dead.items() if d[3] in closed and k in entries),
              len(answered), len(unsent), len(unsents), len(witness), len(proof),
-             len(proofs), len(bad)))
+             len(proofs), len(csimp), len(pairs), len(bad)))
     return 1 if bad else 0
 
 

@@ -200,7 +200,8 @@ fn features(ctx: &Ctx, at: DateTime<chrono_tz::Tz>) -> Features {
 
 /// End the running break NOW, appending its §10.1 `break` event with the
 /// actual length and un-pausing the block the break paused (§10.2's
-/// `active.paused`). Returns the minutes it lasted.
+/// `active.paused`) — and only that block: one a `tm pause` held before the
+/// break stays paused (P84). Returns the minutes it lasted.
 fn end_break(ctx: &mut Ctx) -> Result<Option<u32>, CliError> {
     let now = ctx.now_tz;
     end_break_at(ctx, now)
@@ -219,11 +220,25 @@ fn end_break_at(ctx: &mut Ctx, end: DateTime<chrono_tz::Tz>) -> Result<Option<u3
         return Ok(None);
     };
     let actual = (end - start_dt).num_minutes().max(0) as u32;
-    // The break paused the block (§9); ending it un-pauses, unless an
-    // interruption is also running and owns the pause.
+    // The break paused the block (§9); ending it un-pauses — unless an
+    // interruption is also running and owns the pause, or a typed `tm pause`
+    // held the block before the break began. The log holds no line for the
+    // running break, so its reading of the timer IS the one before the break
+    // (`ctx::logged_pause`, the derivation D42 rebuilds the cache by), and a
+    // break leaves it as it found it: the owner's D87, parity P84, README gaps
+    // 4243 and 4332. Fork 4748911 un-paused unconditionally, so the next `tm
+    // pause` logged a second `pause` the replay read as nothing — the block
+    // running to the cache and to `tm stop`, held to the replay's credit.
+    let held = ctx.state.active.as_ref().and_then(|a| {
+        ctx.replay
+            .open_block
+            .as_ref()
+            .filter(|b| b.id == a.id.as_str())
+            .and_then(|b| super::ctx::logged_pause(&ctx.replay, b))
+    });
     if ctx.state.interrupt.is_none() {
         if let Some(a) = ctx.state.active.as_mut() {
-            a.paused = false;
+            a.paused = held.unwrap_or(false);
         }
     }
     let entry = log::LogEntry::new(

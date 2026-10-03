@@ -109,20 +109,11 @@ inductive StampErr
   | pastYear9999
 deriving DecidableEq, Repr
 
-/-- Rust's `char::is_whitespace`: the Unicode `White_Space` property, which `str::trim_start`
-and chrono's `colon_or_space` use. -/
-def isRustSpace (c : Char) : Bool :=
-  c.toNat == 32 || (9 ≤ c.toNat && c.toNat ≤ 13) || c.toNat == 0x85 || c.toNat == 0xA0 ||
-    c.toNat == 0x1680 || (0x2000 ≤ c.toNat && c.toNat ≤ 0x200A) || c.toNat == 0x2028 ||
-    c.toNat == 0x2029 || c.toNat == 0x202F || c.toNat == 0x205F || c.toNat == 0x3000
-
-/-- **The log's Rust whitespace is the item line's separator** (owner D83, W-42 track G):
-`Text.isSp`, which since W-42 is `char::is_whitespace` too, is this predicate character for
-character.  Two definitions of one concept, held together by this theorem until the step that
-holds `Log.lean` points its eleven readers at `isSp` and deletes this one (README gap 4161);
-the theorem is why they cannot drift meanwhile. -/
-theorem isRustSpace_eq_isSp (c : Char) : isRustSpace c = isSp c := by
-  rw [isSp_eq_whiteSpace]; rfl
+/- **Rust's `char::is_whitespace` is `Text.isSp`** (owner D83): `str::trim_start` and chrono's
+`colon_or_space` read the Unicode `White_Space` property, which since W-42 is the item line's
+separator too.  It was a second definition here, isRustSpace, held to `isSp` by a theorem
+until the W-42 repair deleted it and pointed its readers at `isSp` (README gaps 4161, 4324 and
+4336). -/
 
 /-- An offset's sign, `true` west of UTC: chrono's `timezone_offset` accepts `+`, `-` and
 U+2212 MINUS SIGN. -/
@@ -218,7 +209,7 @@ def rfc3339 (s : List Char) : Except StampErr (VInstant × VOffset) :=
               ((if sec = 60 then 1000000000 else 0) + ns) o
 
 /-- `str::trim_start`. -/
-def trimWs (s : List Char) : List Char := s.dropWhile isRustSpace
+def trimWs (s : List Char) : List Char := s.dropWhile isSp
 
 /-- `Item::Literal`: exactly `c`. -/
 def lit (c : Char) (e : StampErr) : List Char → Except StampErr (List Char)
@@ -263,7 +254,7 @@ def fallbackOffset (s : List Char) : Except StampErr VOffset :=
         match twoDigits [h1, h2] with
         | none => .error .badOffset
         | some hh =>
-          match t2.dropWhile (fun x => x == ':' || isRustSpace x) with
+          match t2.dropWhile (fun x => x == ':' || isSp x) with
           | m1 :: m2 :: rest =>
             match twoDigits [m1, m2] with
             | some mm =>

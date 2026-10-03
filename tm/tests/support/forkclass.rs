@@ -1794,6 +1794,25 @@ fn d64_allows_a(
     if old["day"].is_null() {
         return Ok(Vec::new());
     }
+    // **Nothing but the answers moves under (a) or an introduction** (W-42 repair, README gaps
+    // 4320 and 4338).  This read the ANSWERS alone, so a committed line whose `class` or `tests`
+    // — any key of its world or provenance — changed with no reason passed with "0 changed" and
+    // the line was rewritten, named nowhere: driven by W-42's verifier on the TUI file (`tests`,
+    // then `class` set to `planted/class`, rc=0 both), and with a valid D64(c) reason given, whose
+    // own refusal of the moved key this fallback then discarded.  The world and the provenance are
+    // the committed line's, byte for byte, unless D64(b) re-draws them (the cleared answers
+    // above); the answers and the objects a line carries a flag in are what (a) governs.
+    let homes: BTreeSet<String> = flag_homes(old).into_iter().chain(flag_homes(new)).map(|(_, _, h)| h).collect();
+    let keys: BTreeSet<&String> = old.as_object().into_iter().flatten().chain(new.as_object().into_iter().flatten()).map(|(k, _)| k).collect();
+    for k in keys {
+        if ANSWERS.contains(&k.as_str()) || homes.contains(k) || bytes(&old[k.as_str()]) == bytes(&new[k.as_str()]) {
+            continue;
+        }
+        return Err(format!(
+            "{who}: `{k}` moved, and it is no answer — (a) and an introduction move the comparand's answers and the \
+             objects a line carries a flag in, never its world or provenance (a moved world is D64(b)'s re-draw)"
+        ));
+    }
     let changed: Vec<String> = ANSWERS.iter().filter(|k| old[**k] != new[**k]).map(|k| (*k).to_string()).collect();
     if changed.is_empty() {
         return Ok(changed);

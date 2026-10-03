@@ -1050,9 +1050,11 @@ mod tests {
     ///   replay checkpoint's reseal day, which `tm plan`'s read wrote and the
     ///   TUI's, writing nothing, did not; and the kernel plans ONE day from the
     ///   two (the whole `ok.plan`, its hash included);
-    /// * the request the TUI built before D84 — the stale state, read without
-    ///   the roll — carries Monday's routine instances where these carry
-    ///   Tuesday's breakfast, and plans another day.
+    /// * a context read WITHOUT the roll — what the TUI built from before D84,
+    ///   and what `tm check` holds past midnight — is asked `tm plan`'s day
+    ///   too, since the W-42 repair rolls the state inside the builder for every
+    ///   caller (README gap 4334); it carried Monday's routine instances and
+    ///   planned another day until then.
     #[test]
     fn d84_a_tui_left_open_past_midnight_recollects_in_memory_and_sends_tm_plans_request() {
         let _env = kernel_env();
@@ -1091,18 +1093,71 @@ mod tests {
         assert!(tui_resp["ok"]["plan"].is_object(), "a day: {}", tui_resp["ok"]);
         assert_eq!(tui_resp["ok"]["plan"], plan_resp["ok"]["plan"], "one day from the two requests, hash and all");
 
-        // What the TUI sent before D84: the stale state, read without the roll (in a copy —
-        // a fresh read of the directory reseals its cache).
+        // A context read WITHOUT the roll — what the TUI held before D84, and what `tm check`,
+        // which writes nothing, holds past midnight (README gaps 4263, 4323 and 4334) — is asked
+        // as `tm plan`'s day too: since the W-42 repair the request builder reads the state as
+        // the roll leaves it, for every caller.  Until then this read sent Monday's routine
+        // instances and the kernel planned another day (in a copy — a fresh read of the
+        // directory reseals its cache).
         let stale_dir = tmp.path().join("stale");
         copy_dir(&plan, &stale_dir);
         let stale_g = Globals { dir: Some(stale_dir), now: Some(tuesday.fixed_offset()), json: false };
         let stale_ctx = Ctx::load_scoped(&stale_g, false, |state, today| tui_scope(Screen::Today, state, today)).expect("a read");
         assert_eq!(stale_ctx.state.date, Some(tui_date(2026, 9, 7)), "the file still says Monday");
-        let stale_text = crate::cli::kernel_capacity::planner_request(&stale_ctx, false).expect("the stale request");
+        let stale_text = crate::cli::kernel_capacity::planner_request(&stale_ctx, false).expect("the stale read's request");
         let stale: serde_json::Value = serde_json::from_str(&stale_text).expect("JSON");
-        assert!(!routines_of(&stale).iter().any(|r| r.ends_with("@2026-09-08")), "Monday's instances: {:?}", routines_of(&stale));
+        assert!(routines_of(&stale).iter().any(|r| r == "breakfast@2026-09-08"), "Tuesday's instances: {:?}", routines_of(&stale));
+        let mut differ = Vec::new();
+        json_diff(&stale, &tm_plan, "", &mut differ);
+        // Every key, the checkpoint's reseal day included: this read is a fresh one, and it
+        // reseals the replay cache as `tm plan`'s did.
+        assert!(differ.is_empty(), "the stale read's request is `tm plan`'s, key for key: {differ:?}");
         let (stale_resp, _) = crate::cli::kernel_bridge::call_text(&stale_text).expect("the kernel plans it");
-        assert_ne!(stale_resp["ok"]["plan"]["hash"], plan_resp["ok"]["plan"]["hash"], "the stale request plans another day");
+        assert_eq!(stale_resp["ok"]["plan"], plan_resp["ok"]["plan"], "the stale read is asked `tm plan`'s day");
+    }
+
+    /// **README gap 4342, PINNED: on a tree whose Monday still holds unfinished
+    /// day-file work, the TUI past midnight and `tm plan` ask the kernel about
+    /// different DOCUMENTS** (W-42's reuse critic; track H's gap 4261). The
+    /// world above with `^p1` left open: `tm plan`'s load at 00:30 runs the
+    /// automatic close (§6.3) and writes it — `^p1` demoted into the week file
+    /// with `demoted:D07` — while the TUI, writing nothing (D81, D84), re-collects
+    /// the files as they stand. So the equality the test above asserts holds
+    /// only on a world with nothing to close, and that world was its
+    /// precondition (§5.2). This test pins the divergence BY VALUE so a change
+    /// that closes it — an in-memory close at the date change, which the
+    /// request builder cannot take today because it reads the documents off
+    /// the disk (`kernel_capacity::request_on`) — fails here and is seen.
+    #[test]
+    fn d84_on_a_day_with_unfinished_work_the_tui_and_tm_plan_ask_about_different_documents() {
+        let _env = kernel_env();
+        let (tmp, g) = fixture();
+        for (when, args) in [
+            ("2026-09-07T06:05:00-05:00", &["wake", "06:05", "--slept", "8h10m"][..]),
+            ("2026-09-07T07:00:00-05:00", &["arrive", "lounge"][..]),
+            ("2026-09-07T23:30:00-05:00", &["start", "^t3", "--energy", "3"][..]),
+        ] {
+            let argv: Vec<String> = args.iter().map(|a| (*a).to_string()).collect();
+            let said = verb(&at_str(&g, when), &argv).expect("a verb of the world");
+            assert!(said.ends_with(": ok"), "`tm {}`: {said}", args.join(" "));
+        }
+        let (mut read, mut app) = load(&at_str(&g, "2026-09-07T23:50:00-05:00")).expect("the TUI opens at 23:50");
+        let plan = g.dir.clone().expect("the plan directory");
+        let tuesday = DateTime::parse_from_rfc3339("2026-09-08T00:30:00-05:00").expect("now").with_timezone(&app.cfg.tz);
+        assert!(advance_clock(&mut app, &mut read, tuesday).expect("the date change"));
+        let tui: serde_json::Value =
+            serde_json::from_str(&crate::cli::kernel_capacity::planner_request(&read, false).expect("the TUI's request")).expect("JSON");
+        let copy = tmp.path().join("tm-plan");
+        copy_dir(&plan, &copy);
+        let plan_g = Globals { dir: Some(copy.clone()), now: Some(tuesday.fixed_offset()), json: false };
+        let plan_ctx = Ctx::load(&plan_g, true).expect("tm plan's load, its housekeeping run");
+        let tm_plan: serde_json::Value =
+            serde_json::from_str(&crate::cli::kernel_capacity::planner_request(&plan_ctx, false).expect("tm plan's request")).expect("JSON");
+        let week = std::fs::read_to_string(copy.join("week/2026-W37.md")).expect("the week file tm plan's close wrote");
+        assert!(week.lines().any(|l| l.ends_with("^p1") && l.contains("demoted:D07")), "the close did not demote ^p1:\n{week}");
+        let mut differ = Vec::new();
+        json_diff(&tui, &tm_plan, "", &mut differ);
+        assert!(differ.iter().any(|p| p.starts_with("docs")), "gap 4342 closed? the documents agree: {differ:?}");
     }
 
     /// A date.

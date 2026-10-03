@@ -346,6 +346,61 @@ def spine(lib):
 
 KEY = re.compile(r'"([A-Za-z0-9_]+)"[ \t]*:')
 RAW_STR = re.compile(r'r(#*)"')
+# A string literal is not always JSON the binary BUILDS.  Two properties of the
+# literal's own position decide what it is (W-42 repair, README gaps 4322 and
+# 4331), each read off the source text just before it:
+#
+#   * a FORMAT STRING -- the first argument of a formatting macro, after its
+#     writer for `write!`/`writeln!` -- interpolates its `{name}`/`{}`
+#     placeholders and writes `{{`/`}}` for a literal brace.  Read as JSON
+#     unchanged, `planwire::with_planner`'s `"{head},\"planner\":{planner}}}"`
+#     opened and closed an object at `{head}` before the key, so the scan found
+#     no key in the one literal that sends `planner` and check 12 called the
+#     section UNSENT while `tm check` sent it on every run since P78.  A
+#     placeholder is a VALUE here (`0`) and a doubled brace one brace, which is
+#     what the macro writes;
+#   * a PATTERN -- the argument of a string SEARCH (`.contains(`,
+#     `.starts_with(`, ..) -- is text the program looks FOR, never text it
+#     sends.  `tm-kernel-ffi`'s `trace_kinds` matches `"planner":{` in a request
+#     to name the call it traces; read as a fragment it would count `planner`
+#     sent for that reason, which is the wrong reason (the land's gap 4322).
+FORMAT_MACRO = re.compile(
+    r"(?:format|write|writeln|print|println|eprint|eprintln|format_args|panic)!\(\s*"
+    r"(?:[A-Za-z_][\w.&*]*\s*,\s*)?$")
+SEARCH_CALL = re.compile(
+    r"\.(?:contains|starts_with|ends_with|find|rfind|matches|strip_prefix|strip_suffix)\(\s*$")
+
+
+def interpolate(body):
+    """A format string as the macro writes it: `{{` and `}}` one brace each, and
+    every placeholder `{..}` a value (`0`)."""
+    out, i, n = [], 0, len(body)
+    while i < n:
+        if body.startswith("{{", i) or body.startswith("}}", i):
+            out.append(body[i])
+            i += 2
+            continue
+        if body[i] == "{":
+            k = body.find("}", i + 1)
+            if k < 0:
+                out.append(body[i:])
+                break
+            out.append("0")
+            i = k + 1
+            continue
+        out.append(body[i])
+        i += 1
+    return "".join(out)
+
+
+def literal_role(text, at):
+    """`"pattern"`, `"format"` or `None` for the string literal at offset `at`."""
+    before = text[max(0, at - 200):at]
+    if SEARCH_CALL.search(before):
+        return "pattern"
+    if FORMAT_MACRO.search(before):
+        return "format"
+    return None
 
 
 def regions(text):
@@ -375,7 +430,10 @@ def regions(text):
             k = text.find(close, m.end())
             if k < 0:
                 return
-            yield text[m.end():k], i
+            role = literal_role(text, i)
+            if role != "pattern":
+                body = text[m.end():k]
+                yield (interpolate(body) if role == "format" else body), i
             i = k + len(close)
             continue
         if text[i] == '"':
@@ -389,7 +447,10 @@ def regions(text):
                     break
                 buf.append(text[k])
                 k += 1
-            yield "".join(buf), i
+            role = literal_role(text, i)
+            if role != "pattern":
+                body = "".join(buf)
+                yield (interpolate(body) if role == "format" else body), i
             i = k + 1
             continue
         i += 1
@@ -476,7 +537,14 @@ def sent_sections(src, known):
     that only ever arrives by `push_str` beside an unknown one is therefore
     still invisible."""
     out, bad = collections.defaultdict(list), []
-    for p in sorted(leanfiles.rust_files(pathlib.Path(src))):
+    # `src` is one source directory or several: check 12 reads the binary's and
+    # every crate it links by path (`sentkeys.program_roots`), because the one
+    # literal that sends `planner` is `tm-core`'s (`planwire::with_planner`) and a
+    # scan of `tm/src` alone could never have found it (README gap 4331).
+    roots = [pathlib.Path(src)] if isinstance(src, (str, pathlib.Path)) else \
+        [pathlib.Path(r) for r in src]
+    files = sorted({f for r in roots for f in leanfiles.rust_files(r)})
+    for p in files:
         text = p.read_text(errors="replace")
         spans = cfg_test_spans(text)
         for body, off in regions(text):
@@ -484,10 +552,19 @@ def sent_sections(src, known):
             if not keys:
                 continue
             line = text.count("\n", 0, off) + 1
+            test = any(a <= off <= b for a, b in spans)
             if opens:
                 if "docs" not in keys:
                     continue
                 unknown = [k for k in dict.fromkeys(keys) if k not in known]
+                if unknown and test:
+                    # A `#[cfg(test)]` request carrying a key no section has is a test
+                    # of the kernel's PARSER (`kernel_bridge.rs`'
+                    # `the_kernel_reads_numerals_and_surrogates_as_serde_reads_them`
+                    # sends `{"docs":[],"x":<numeral>}`), never a request the binary
+                    # builds — and until format strings were read as their macro writes
+                    # them (W-42 repair, README gap 4331) it was not read at all.
+                    continue
                 if unknown:
                     bad.append("UNREADABLE: %s:%d  carries `docs`, so it is a request "
                                "the binary builds, and its top-level key(s) %s are no "
@@ -502,7 +579,6 @@ def sent_sections(src, known):
                     continue
             elif not set(keys) <= set(known):
                 continue
-            test = any(a <= off <= b for a, b in spans)
             for k in keys:
                 out[k].append((p.name, line, test))
     return out, bad

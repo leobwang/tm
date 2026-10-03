@@ -782,7 +782,12 @@ fn traced_at(tm: &Tm, now: &str, args: &[&str], limit: Duration) -> Traced {
 fn t18_row(tm: &Tm, now: &str, label: &str) -> (Duration, Duration, Duration) {
     let (code, out, plan) = timed_at(tm, now, &["plan"], FIRST_VERB);
     assert_eq!(code, 0, "{label}: `tm plan`: {out}");
-    let check = traced_at(tm, now, &["check"], Duration::from_secs(600));
+    // `tm check` is held to the band every first verb here is held to, REUSED
+    // (W-42 repair, README gap 4335): this read `Duration::from_secs(600)`, a
+    // kill limit minted for one row, while every other row reuses `FIRST_VERB`
+    // or `LATER_VERB` — and a limit nothing else answers to is a bound no
+    // measurement can move.
+    let check = traced_at(tm, now, &["check"], FIRST_VERB);
     assert_eq!(check.code, 0, "{label}: `tm check`: {}", check.out);
     assert_eq!(check.out.trim(), "no problems", "{label}: {}", check.out);
     // It IS the day R3 asks for: exactly one call carried a `planner` section,
@@ -808,7 +813,89 @@ fn t18_row(tm: &Tm, now: &str, label: &str) -> (Duration, Duration, Duration) {
         plan + planner < LATER_VERB,
         "{label}: `tm plan` {plan:?} plus the planner call {planner:?} is past {LATER_VERB:?} — R3's `tm plan` would be"
     );
+    // **And the WHAT-IF R3 puts on the TUI** (the W-42 repair, README gaps 4200
+    // and 4335): `App::extend_drops` asks the same request with §9.1's
+    // `overtime` key (`planwire::overtime_json`), which no shipped verb sends
+    // before the swap, so no row here timed it — and it ran the SPECIFICATION
+    // twice, because `PlanDiff.lean` did not import the `@[csimp]` twin:
+    // 2.0-2.8 s on the example tree and 19-22 s on T14's ten-year tree, against
+    // the day's 8-190 ms.  Taken as `tm check` built it (the request is traced
+    // once more, untimed: printing it is not the call), asked again in this
+    // process with the what-if spliced in as text — the section order is the
+    // log section's build order, so it is never re-serialised — and held to the
+    // band `tm plan` plus the day is held to, `LATER_VERB`, UNCHANGED.
+    let (day, whatif) = t18_whatif(tm, now, label);
+    eprintln!("T18 {label}: the day asked in-process {day:?}; the what-if (overtime +1 block) {whatif:?}");
+    assert!(
+        whatif < LATER_VERB,
+        "{label}: the overtime what-if took {whatif:?}, past {LATER_VERB:?} — R3's TUI overtime box would pay it"
+    );
     (planner, check.wall, plan)
+}
+
+/// `tm check`'s planner request, read off the FFI's request trace
+/// (`tm_kernel_ffi::TRACE_REQUESTS_ENV`).
+fn t18_planner_request(tm: &Tm, now: &str, label: &str) -> String {
+    let out = Command::new(env!("CARGO_BIN_EXE_tm"))
+        .arg("--dir")
+        .arg(&tm.plan)
+        .arg("--now")
+        .arg(now)
+        .arg("check")
+        .env(tm_kernel_ffi::TRACE_CALLS_ENV, "1")
+        .env(tm_kernel_ffi::TRACE_REQUESTS_ENV, "1")
+        .output()
+        .expect("spawn tm");
+    let err = String::from_utf8_lossy(&out.stderr);
+    let mut planners = err
+        .lines()
+        .filter_map(|l| l.strip_prefix("kernel request: "))
+        .filter(|r| r.contains("\"planner\":{"));
+    let request = planners.next().unwrap_or_else(|| panic!("{label}: `tm check` traced no planner request"));
+    assert!(planners.next().is_none(), "{label}: `tm check` traced two planner requests");
+    request.to_string()
+}
+
+/// The day and the what-if, each one in-process call of the request `tm check`
+/// built (the what-if extends the running block, else the first candidate, by
+/// one block), on a thread with the binary's own main-thread stack.
+fn t18_whatif(tm: &Tm, now: &str, label: &str) -> (Duration, Duration) {
+    let request = t18_planner_request(tm, now, label);
+    let parsed: serde_json::Value = serde_json::from_str(&request).expect("the traced request parses");
+    let id = parsed["planner"]["state"]["active"]["id"]
+        .as_str()
+        .or_else(|| parsed["capacity"]["candidates"]["items"][0]["id"].as_str())
+        .unwrap_or_else(|| panic!("{label}: no running block and no candidate to extend"))
+        .to_string();
+    let whatif = request.replacen(
+        "\"planner\":{",
+        &format!("\"planner\":{{\"overtime\":{{\"id\":\"{id}\",\"blocks\":1}},"),
+        1,
+    );
+    let label = label.to_string();
+    std::thread::Builder::new()
+        .stack_size(8 << 20)
+        .spawn(move || {
+            let ask = |req: &str| {
+                let t = Instant::now();
+                let resp = tm_kernel_ffi::call(req).expect("the kernel answers");
+                (t.elapsed(), resp)
+            };
+            let (day, resp) = ask(&request);
+            let v: serde_json::Value = serde_json::from_str(&resp).expect("the day's response parses");
+            assert!(v["ok"]["plan"]["day"].is_string(), "{label}: the day: {resp:.300}");
+            let (took, resp) = ask(&whatif);
+            let w: serde_json::Value = serde_json::from_str(&resp).expect("the what-if's response parses");
+            assert!(w["ok"]["plan"]["overtime"].is_object(), "{label}: the what-if: {resp:.300}");
+            assert_eq!(
+                w["ok"]["plan"]["segments"], v["ok"]["plan"]["segments"],
+                "{label}: the what-if moved the day it was asked beside"
+            );
+            (day, took)
+        })
+        .expect("a thread")
+        .join()
+        .expect("the in-process kernel call")
 }
 
 /// **T18: the planner call R3 adds, on the example tree and on T11's and T14's

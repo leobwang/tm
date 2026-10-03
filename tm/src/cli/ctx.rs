@@ -398,13 +398,19 @@ pub(crate) fn open_interruption(replay: &Replay) -> Option<&tm_core::log::Interr
 /// interruption is open (P60); `pause` and `unpause` of this block (a typed
 /// `tm pause`, and D61's wall marks) set and clear it; `interrupt` sets it and
 /// `resume` clears it (`day.rs`' `interrupt` and `resume`); and a `break`,
-/// logged when it ends, clears it unless an interruption is still open
-/// (`end_break`). A break still RUNNING logs nothing and is the caller's
-/// `running_break`.
+/// logged when it ends, leaves it as it found it (`end_break`): the break
+/// paused a running block and ending it runs the block again, and a block a
+/// `tm pause` or an interruption held stays held — the kernel's replay reads
+/// a `break` the same way (`Replay.brkFx` moves no clock that is not running).
+/// Until the W-42 repair a logged break CLEARED it unless an interruption was
+/// open, so a typed `tm pause`, then a break, then `tm pause` again logged a
+/// second `pause` the replay read as nothing while the cache read the block
+/// running (the owner's D87, README gaps 4243 and 4332, parity P84). A break
+/// still RUNNING logs nothing and is the caller's `running_break`.
 ///
 /// `None` when the scope's rows do not reach the block's `start` — the rebuild
 /// then keeps the replay's own reading.
-fn logged_pause(replay: &Replay, open: &tm_core::log::OpenBlock) -> Option<bool> {
+pub(crate) fn logged_pause(replay: &Replay, open: &tm_core::log::OpenBlock) -> Option<bool> {
     // Each tag is asked of `Event` rather than spelled a second time (§5.3).
     let tag = |e: Event| e.name().to_string();
     let pause = tag(Event::Pause { id: String::new() });
@@ -416,7 +422,7 @@ fn logged_pause(replay: &Replay, open: &tm_core::log::OpenBlock) -> Option<bool>
     let mine = |r: &tm_core::log::ViewRow| r.id.as_deref() == Some(open.id.as_str());
     // The block's own `start` row: the replay's one finder of it (README gap 3950).
     let at = replay.start_row(Some(open.id.as_str()), open.started)?;
-    let mut interrupted = rows[..at]
+    let interrupted = rows[..at]
         .iter()
         .rev()
         .filter(|r| !r.cancelled)
@@ -437,13 +443,11 @@ fn logged_pause(replay: &Replay, open: &tm_core::log::OpenBlock) -> Option<bool>
         } else if r.tag == unpause && mine(r) {
             paused = false;
         } else if r.tag == interrupt {
-            interrupted = true;
             paused = true;
         } else if r.tag == resume {
-            interrupted = false;
             paused = false;
         } else if r.tag == brk {
-            paused = interrupted;
+            // A break leaves the timer as it found it (P84): nothing to fold.
         }
     }
     Some(paused)

@@ -30,7 +30,7 @@ between a kind's decoded fields (`Args`) and the typed `Event`; `Event.tag`, `Ev
 
 1. `none` (the host found the line not UTF-8) is `invalidUtf8`.
 2. **Every** trailing `\r` goes (`trim_end_matches('\r')`; the design says one).
-3. A line of Rust whitespace only (`str::trim`, `LogStamp.isRustSpace`) is `blank`.
+3. A line of Rust whitespace only (`str::trim`, `isSp`) is `blank`.
 4. More than `maxLineChars` characters is `lineTooLong`; brackets nested deeper than
    `maxLineDepth` outside strings (`depthOf`, a scan before `jparse`) is `lineTooDeep` (P14).
 5. `jparse` failing is `notJson`.
@@ -850,12 +850,12 @@ def readValue (n : Nat) (v : JVal) : Verdict :=
 
 /-- **One log line** (a port of `Log::parse_bytes`' loop body and `LogEntry::parse`).  `n` is the
 physical line number; `none` is a line the host found not to be UTF-8.  In order: invalid UTF-8,
-trailing carriage returns, blank (Rust's `str::trim`, `LogStamp.isRustSpace`), the length and
+trailing carriage returns, blank (Rust's `str::trim`, `isSp`), the length and
 nesting bounds, `jparse`, every numeral, the object, `t`, `ev`, and the fields. -/
 def readLine (n : Nat) : Option (List Char) → Verdict
   | none => .warn n .invalidUtf8
   | some raw =>
-    if (trimCR raw).all LogStamp.isRustSpace then .blank
+    if (trimCR raw).all isSp then .blank
     else if maxLineChars < (trimCR raw).length then .warn n .lineTooLong
     else if maxLineDepth < depthOf (trimCR raw) then .warn n .lineTooDeep
     else
@@ -1297,10 +1297,10 @@ theorem trimCR_jemit_obj (kvs : List (List Char × JVal)) : trimCR (jemit (.obj 
   rw [hp, ← List.cons_append, trimCR_of_last _ _ (by decide)]
 
 theorem not_blank_jemit_obj (kvs : List (List Char × JVal)) :
-    (jemit (.obj kvs)).all LogStamp.isRustSpace = false := by
+    (jemit (.obj kvs)).all isSp = false := by
   obtain ⟨p, hp⟩ := jemit_obj_ends kvs
   rw [hp]
-  have h : LogStamp.isRustSpace '{' = false := by decide
+  have h : isSp '{' = false := by decide
   simp [List.all_cons, h]
 
 /-! ## Laws: an unknown event's `rest` -/
@@ -1486,7 +1486,7 @@ theorem lastVal_ev_line (a : JVal) (tag : List Char) (fields : List (List Char �
 /-! ## Laws: the grammar's goals -/
 
 theorem readLine_of_parse (n : Nat) (raw : List Char) (v : JVal)
-    (hb : (trimCR raw).all LogStamp.isRustSpace = false)
+    (hb : (trimCR raw).all isSp = false)
     (hl : (trimCR raw).length ≤ maxLineChars) (hd : depthOf (trimCR raw) ≤ maxLineDepth)
     (hp : jparse (trimCR raw) = .ok v) : readLine n (some raw) = readValue n v := by
   simp only [readLine, hb, Bool.false_eq_true, if_false, Nat.not_lt.mpr hl, Nat.not_lt.mpr hd, hp]
@@ -1620,16 +1620,13 @@ theorem skipWs_suffix : ∀ l : List Char, ∃ p, l = p ++ skipWs l
     · obtain ⟨p, hp⟩ := skipWs_suffix cs; exact ⟨c :: p, by rw [List.cons_append, ← hp]⟩
     · exact ⟨[], rfl⟩
 
-theorem isRustSpace_digit (c : Char) (h : (charDigit c).isSome = true) : LogStamp.isRustSpace c = false := by
-  rcases charDigit_cases c h with rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl <;> decide
-
 theorem jparse_not_blank (m : List Char) (v : JVal) (h : jparse m = .ok v) :
-    m.all LogStamp.isRustSpace = false := by
-  cases hall : m.all LogStamp.isRustSpace with
+    m.all isSp = false := by
+  cases hall : m.all isSp with
   | false => rfl
   | true =>
     exfalso
-    have hsp : ∀ c ∈ m, LogStamp.isRustSpace c = true := by simpa using hall
+    have hsp : ∀ c ∈ m, isSp c = true := by simpa using hall
     unfold jparse jparseWith at h
     rw [show 2 * m.length + 2 = (2 * m.length + 1) + 1 by omega, jval.eq_2] at h
     obtain ⟨p, hp⟩ := skipWs_suffix m
@@ -1637,13 +1634,13 @@ theorem jparse_not_blank (m : List Char) (v : JVal) (h : jparse m = .ok v) :
     | nil => rw [hs] at h; cases h
     | cons c r =>
       rw [hs] at h hp
-      have hc : LogStamp.isRustSpace c = true := hsp c (by rw [hp]; simp)
+      have hc : isSp c = true := hsp c (by rw [hp]; simp)
       simp only at h
       have hd : (charDigit c).isSome = false := by
         cases hx : (charDigit c).isSome
         · rfl
-        · rw [isRustSpace_digit c hx] at hc; cases hc
-      have hne : ∀ x : Char, LogStamp.isRustSpace x = false → c ≠ x := by
+        · rw [isSp_of_digit c hx] at hc; cases hc
+      have hne : ∀ x : Char, isSp x = false → c ≠ x := by
         intro x hx hcx; subst hcx; rw [hc] at hx; cases hx
       rw [if_neg (by simp [hd]), if_neg (hne '-' (by decide)), if_neg (hne '"' (by decide)),
         if_neg (hne '[' (by decide)), if_neg (hne '{' (by decide))] at h
@@ -2277,7 +2274,7 @@ theorem readLine_entry_inv (n : Nat) (l : List Char) (e : Entry) (h : readLine n
     ∃ kvs, (trimCR l).length ≤ maxLineChars ∧ jparse (trimCR l) = .ok (.obj kvs) ∧
       readObject n kvs = .entry e := by
   simp only [readLine] at h
-  by_cases hb : (trimCR l).all LogStamp.isRustSpace = true
+  by_cases hb : (trimCR l).all isSp = true
   · rw [if_pos hb] at h; cases h
   rw [if_neg hb] at h
   by_cases hl : maxLineChars < (trimCR l).length
@@ -2417,12 +2414,12 @@ theorem readF_reads_hsw_as_written (k : List Char) (d : { d : JDec // d.plain = 
   simp [readF]
 
 theorem readLine_refuses_a_line_past_the_bound (n : Nat) (l : List Char)
-    (hb : (trimCR l).all LogStamp.isRustSpace = false) (hl : maxLineChars < (trimCR l).length) :
+    (hb : (trimCR l).all isSp = false) (hl : maxLineChars < (trimCR l).length) :
     readLine n (some l) = .warn n .lineTooLong := by
   simp [readLine, hb, hl]
 
 theorem readLine_refuses_a_line_nested_past_the_bound (n : Nat) (l : List Char)
-    (hb : (trimCR l).all LogStamp.isRustSpace = false) (hl : (trimCR l).length ≤ maxLineChars)
+    (hb : (trimCR l).all isSp = false) (hl : (trimCR l).length ≤ maxLineChars)
     (hd : maxLineDepth < depthOf (trimCR l)) :
     readLine n (some l) = .warn n .lineTooDeep := by
   simp [readLine, hb, Nat.not_lt.mpr hl, hd]
@@ -2627,7 +2624,7 @@ theorem every_line_warning_is_reachable :
     ⟨5, _, _, malformed_line_5_is_a_done_with_est_min_sixty⟩⟩
   apply readLine_refuses_a_line_past_the_bound
   · rw [trimCR_of_last _ _ (by decide), List.all_append]
-    have hx : ['x'].all LogStamp.isRustSpace = false := by decide
+    have hx : ['x'].all isSp = false := by decide
     rw [hx, Bool.and_false]
   · rw [trimCR_of_last _ _ (by decide), List.length_append, List.length_replicate]; decide
 

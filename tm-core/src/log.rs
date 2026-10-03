@@ -1814,13 +1814,38 @@ impl Replay {
             .range(from..=day)
             .flat_map(|(_, s)| s.idle_marks.iter().copied())
             .collect();
+        // **The UNION of the spans, not their sum** (the owner's D87, README
+        // gaps 4243 and 4332, the W-42 repair): a block's clock is stopped once
+        // however many reasons it has, so a break taken while a `tm pause`
+        // already held the block took nothing more from it — the kernel's
+        // replay reads exactly that (`Replay.brkFx` moves no clock that is not
+        // running, `a_break_while_the_block_is_paused_changes_nothing`). The sum
+        // subtracted the break's minutes twice: driven, `start` 09:00, `pause`
+        // 09:20, a twenty-minute break at 09:30, `stop` 10:10 printed "after
+        // 0m" while `tm review day` credited the twenty minutes worked.
+        let mut spans: Vec<(DateTime<FixedOffset>, DateTime<FixedOffset>)> =
+            idle_spans(&marks, started, running_break)
+                .into_iter()
+                .map(|(a, b)| (a.max(started), b.unwrap_or(now).min(now)))
+                .filter(|(a, b)| b > a)
+                .collect();
+        spans.sort();
         let mut total = 0i64;
-        for (a, b) in idle_spans(&marks, started, running_break) {
-            let a = a.max(started);
-            let b = b.unwrap_or(now).min(now);
-            if b > a {
-                total += (b - a).num_minutes();
-            }
+        let mut open: Option<(DateTime<FixedOffset>, DateTime<FixedOffset>)> = None;
+        for (a, b) in spans {
+            open = match open {
+                // Only an OVERLAP merges: spans that merely touch keep their own
+                // whole minutes, as the sum gave them.
+                Some((oa, ob)) if a < ob => Some((oa, ob.max(b))),
+                Some((oa, ob)) => {
+                    total += (ob - oa).num_minutes();
+                    Some((a, b))
+                }
+                None => Some((a, b)),
+            };
+        }
+        if let Some((oa, ob)) = open {
+            total += (ob - oa).num_minutes();
         }
         total.clamp(0, i64::from(u32::MAX)) as u32
     }

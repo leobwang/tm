@@ -189,6 +189,76 @@ pub fn held_since(path: &Path, base: &str, key: impl Fn(&Value) -> Option<String
     Ok(out)
 }
 
+/// **Every committed version of the file since the base, oldest first, then the working copy**
+/// (the W-42 repair, README gap 4341): `(sha, {key: line})` per first-parent commit — the walk
+/// [`held_since`] reads — and `("WORKTREE", …)` last, read off the disk. What a PLAIN run holds the
+/// history to, with no fork planner: R3 deletes eight of the eleven blesses that ask the gate, so
+/// after it a frozen line can change only by hand, and this is what still sees the change.
+pub fn versions(path: &Path, key: impl Fn(&Value) -> Option<String>) -> Result<Vec<(String, BTreeMap<String, Value>)>, String> {
+    versions_since(path, &base()?, key)
+}
+
+/// [`versions`] over an explicit base (a test's own repository).
+pub fn versions_since(path: &Path, base: &str, key: impl Fn(&Value) -> Option<String>) -> Result<Vec<(String, BTreeMap<String, Value>)>, String> {
+    let dir = path.parent().ok_or_else(|| format!("UNCHECKED: {} has no directory", path.display()))?;
+    let unchecked = |why: &str| format!("UNCHECKED: {}: {why}", path.display());
+    git(dir, &["merge-base", "--is-ancestor", base, "HEAD"])
+        .ok_or_else(|| unchecked(&format!("the base {base} is not an ancestor of HEAD, or git cannot say")))?;
+    let revs = git(dir, &["rev-list", "--first-parent", "--reverse", &format!("{base}..HEAD")]).ok_or_else(|| unchecked("git rev-list failed"))?;
+    let parse = |rev: &str, text: &str| -> Result<BTreeMap<String, Value>, String> {
+        let mut out = BTreeMap::new();
+        for raw in text.lines().filter(|l| !l.trim().is_empty()) {
+            let line: Value = serde_json::from_str(raw).map_err(|e| unchecked(&format!("its line at {rev} is not JSON ({e}): {raw:.80}")))?;
+            let k = key(&line).ok_or_else(|| unchecked(&format!("a line at {rev} has no key: {raw:.80}")))?;
+            if out.insert(k.clone(), line).is_some() {
+                return Err(unchecked(&format!("two lines at {rev} carry the key {k}")));
+            }
+        }
+        Ok(out)
+    };
+    let mut out = Vec::new();
+    for rev in std::iter::once(base.to_string()).chain(revs.split_whitespace().map(str::to_string)) {
+        let text = show(path, &rev).ok_or_else(|| unchecked(&format!("git cannot show it at {rev}")))?;
+        out.push((rev.clone(), parse(&rev, &text)?));
+    }
+    let text = std::fs::read_to_string(path).unwrap_or_default();
+    out.push(("WORKTREE".to_string(), parse("WORKTREE", &text)?));
+    Ok(out)
+}
+
+/// **The answer a frozen line holds for the SHIPPED fork**, whatever its file: a comparand line's
+/// `shipped` day where the comparand departs, its `day`'s day otherwise (`forkclass::shipped_of`,
+/// the gate's own reading); a grid line's `fork`; a fixture day's `day` and `hash`, which ARE the
+/// shipped fork's answer (those files carry no comparand).
+pub fn shipped_answer(line: &Value) -> Value {
+    if line.get("shipped").is_some() {
+        if line["shipped"].is_null() { line["day"]["day"].clone() } else { line["shipped"]["day"].clone() }
+    } else if line.get("fork").is_some() {
+        line["fork"].clone()
+    } else {
+        serde_json::json!([line["day"], line["hash"]])
+    }
+}
+
+/// **A line's answers**, by a property of the key and never a list of files: the comparand's and
+/// the fork's days (`day`, `shipped`, `whatif`, `hash`, `fork`), every key named by a parity
+/// number (`p45` .. `p69`, `p63`: a departure's own answer), and every object the line carries a
+/// parity flag in (`d57`, `d60`: `forkclass::flag_homes`' rule). Everything else is the line's
+/// WORLD and PROVENANCE.
+pub fn is_answer(line: &Value, k: &str) -> bool {
+    let numbered = |s: &str| s.strip_prefix('p').is_some_and(|d| !d.is_empty() && d.bytes().all(|c| c.is_ascii_digit()));
+    matches!(k, "day" | "shipped" | "whatif" | "hash" | "fork")
+        || numbered(k)
+        || line[k].as_object().is_some_and(|o| o.iter().any(|(f, v)| numbered(f) && v.is_boolean()))
+}
+
+/// **A D64(b) re-draw between two versions of one line**: the newer carries a `d64b` the older
+/// does not, its reason dated and naming D64(b) (`forkclass::is_d64b_reason`'s rule).
+pub fn redrawn(old: &Value, new: &Value) -> bool {
+    let why = new["d64b"]["why"].as_str().or_else(|| new["d64b"].as_str()).unwrap_or_default();
+    new["d64b"] != old["d64b"] && why.starts_with("20") && why.contains("D64(b)")
+}
+
 /// **The commits a merge in progress is merging** — `MERGE_HEAD`'s lines (an octopus names
 /// several), empty when no merge is in progress.
 pub fn merge_heads(dir: &Path) -> Vec<String> {

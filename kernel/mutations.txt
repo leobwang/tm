@@ -505,7 +505,7 @@ db258ba65a19 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theOvertimeRequest 
 2d9b9bb21135 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theWallOnNowRequest unfoldable no Inhabited PlanReq
 c72d1649fe27 TmKernel/TmKernel/Boundary.lean Tm.applyCmd unfoldable no Inhabited (Except KErr WfPlan)
 a552ee3b4539 TmKernel/TmKernel/Boundary.lean Tm.estAsWritten default Boundary.lean:5317 parseCmd_rejects_edit_variants also Boundary.lean:5343 parseCmd_reads_the_est_value_as_written
-947f3a5bd559 TmKernel/TmKernel/Boundary.lean Tm.parseCmd default Boundary.lean:1678 parseCmd_rejects_add_title_variants also Boundary.lean:5317 parseCmd_rejects_edit_variants
+f3182c50bd1a TmKernel/TmKernel/Boundary.lean Tm.parseCmd default Boundary.lean:1678 parseCmd_rejects_add_title_variants also Boundary.lean:5317 parseCmd_rejects_edit_variants
 b168a1cf4a3c TmKernel/TmKernel/Boundary.lean Tm.readOpBlockMin default Boundary.lean:5343 parseCmd_reads_the_est_value_as_written also Boundary.lean:5362 parseCmd_refuses_est_value_variants
 fe051daf13d0 TmKernel/TmKernel/Cmd.lean Tm.EditVal.estAt unfoldable no Inhabited EditVal
 ac1a8a4ad6a6 TmKernel/TmKernel/Cmd.lean Tm.EditVal.key default Cmd.lean:1202 setVal_writes_the_token_the_loader_reads_unless_it_rewrites_the_leading_estimate also Cmd.lean:1307 editValOf_key
@@ -814,3 +814,9 @@ a57053bf98b0 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.insideOpenBreakLine
 0e8380a70c2a TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.insideOpenBreakLines default,[] PlannerWit.lean:12734 the_open_row_starts_at_the_breaks_end (its statement, decided false); PlannerWit.lean:12734 the_open_row_starts_at_the_breaks_end (its statement, decided false)
 c58ff1aa877a TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.insideOpenBreakRun unfoldable no Inhabited Seal.Run
 c275145a1912 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theInsideOpenBreakRequest unfoldable no Inhabited PlanReq
+1e6110e1f313 TmKernel/TmKernel/Line.lean Tm.Field.parseMonthDay default,none Line.lean:2124 rule_month_15 (its statement, decided false); Line.lean:2124 rule_month_15 (its statement, decided false)
+f23258c2f00a TmKernel/TmKernel/Line.lean Tm.Field.parseCi default,none Line.lean:2658 parse_render_ci also Line.lean:2936 ciSlot_head; Line.lean:2658 parse_render_ci also Line.lean:2936 ciSlot_head
+efae61b8beb5 TmKernel/TmKernel/Log.lean Tm.Log.readLine unfoldable no Inhabited (Option (List Char) → Verdict)
+b4239e998c34 TmKernel/TmKernel/Stamp.lean Tm.LogStamp.trimWs default,s,[] Stamp.lean:657 parseStamp_reads_the_fallback (its statement, decided false); Stamp.lean:657 parseStamp_reads_the_fallback (its statement, decided false); Stamp.lean:657 parseStamp_reads_the_fallback (its statement, decided false)
+913c58af7da3 TmKernel/TmKernel/Stamp.lean Tm.LogStamp.fallbackOffset unfoldable no Inhabited (Except StampErr VOffset)
+492d4997346c TmKernel/TmKernel/Text.lean Tm.readRustNat default,fun_=>none Text.lean:987 readRustNat_of_head also Text.lean:1008 readRustNat_reads_one_plus; Text.lean:987 readRustNat_of_head also Text.lean:1008 readRustNat_reads_one_plus

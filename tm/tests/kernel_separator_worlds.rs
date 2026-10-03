@@ -263,3 +263,57 @@ fn the_kernel_plans_the_nbsp_box_day_as_the_fork_does() {
     assert_eq!(tally.days, 2, "both days compared");
 }
 // END THE FORK PLANNER
+
+/// **`ci:+5`: a signed `ci:` value is read ONE way** (the W-42 repair, README gaps 4162 and 4330).
+/// The host reads a `ci:` value with Rust's `u8::from_str` (`grammar.rs`), which takes one leading
+/// `+`; the kernel read it with `readNat`, refused the sign, read NO `ci` on the line and inherited
+/// `@m2`'s 4 — so `tm check` named `ciDisagrees t4 wire 5 plan 4`, a refusal of the day R3's `tm
+/// plan` asks for, on a tree fork 4748911 plans (driven by W-42's verifier). Since the repair the
+/// kernel reads the value as `u8::from_str` does (`Text.readRustNat`, `Line.parseCi`), so the two
+/// readers agree: `tm check` says nothing, and the kernel plans the line as it plans the same line
+/// spelled `ci:5`, by value.
+#[test]
+fn a_signed_ci_value_is_read_as_the_host_reads_it() {
+    let signed = "- [ ] 1b Claude Code drafts tests @m2 ci:+5 ^t4";
+    let plain = "- [ ] 1b Claude Code drafts tests @m2 ci:5 ^t4";
+    let (h, p) = (host_item(signed), host_item(plain));
+    assert_eq!((h.ci, h.ci_explicit), (5, true), "the host reads `ci:+5` as 5");
+    assert_eq!((p.ci, p.ci_explicit), (5, true));
+    let out = tree(signed).run_at(cli_common::NOW, &["check"]);
+    assert_eq!((out.code, out.stdout.trim()), (0, "no problems"), "`tm check` on `ci:+5`: {}", out.stderr);
+    let k = kernel_of(&world(signed)).unwrap_or_else(|e| panic!("the kernel refused the `ci:+5` day: {e}"));
+    let q = kernel_of(&world(plain)).expect("the `ci:5` day");
+    assert_eq!(
+        serde_json::to_value(&k.day).expect("a day serialises"),
+        serde_json::to_value(&q.day).expect("a day serialises"),
+        "the kernel plans `ci:+5` as it plans `ci:5`"
+    );
+}
+
+/// **No host writer leaves a box glued to the separator after it** — P80, which the kernel's unset
+/// took at W-42 track G, held for every edit the host makes (the W-42 repair, README gap 4333).
+/// Driven by W-42's reuse critic: `^a4` hand-edited to `- [?] est:15m<NBSP>Ask …` loads clean;
+/// `tm event reply` resolves it through `recur::on_event_arrived`'s `ItemLine::remove_token`, which
+/// carried the removed token's space away and wrote `- [ ]<NBSP>Ask …` at exit 0 — and the next
+/// `tm check` refused `missing state`, the state lost to both readers. Since the repair every
+/// removal that leaves the token after the box led by a separator that ends no box puts a space in
+/// front of it, as `Field.endBox` does.
+#[test]
+fn an_event_that_rewrites_a_line_keeps_its_box_ended() {
+    let tm = Tm::empty();
+    assert_eq!(tm.run(&["init", "--example"]).code, 0);
+    let path = tm.plan.join("backlog.md");
+    let text = std::fs::read_to_string(&path).expect("backlog.md");
+    let a4 = text.lines().find(|l| l.ends_with("^a4")).expect("the example's ^a4").to_string();
+    let edited = "- [?] est:15m\u{a0}Ask Prof. Lee about the reading group  on-event:reply/7d waiting:2026-09-05 ^a4";
+    std::fs::write(&path, text.replacen(&a4, edited, 1)).expect("the hand edit");
+    let out = tm.run_at(cli_common::NOW, &["check"]);
+    assert_eq!((out.code, out.stdout.trim()), (0, "no problems"), "the hand-edited tree: {}", out.stderr);
+    let out = tm.run_at(cli_common::NOW, &["event", "reply"]);
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    let after = std::fs::read_to_string(&path).expect("backlog.md");
+    let line = after.lines().find(|l| l.ends_with("^a4")).expect("^a4 after the event");
+    assert!(line.starts_with("- [ ] \u{a0}Ask"), "the box is not ended: {line:?}");
+    let out = tm.run_at(cli_common::NOW, &["check"]);
+    assert_eq!((out.code, out.stdout.trim()), (0, "no problems"), "the tree the event wrote: {}", out.stderr);
+}

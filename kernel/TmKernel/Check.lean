@@ -2898,7 +2898,6 @@ open Tm
 #print axioms Tm.Log.scan_peak_mono
 #print axioms Tm.Log.depthOf_prefix
 #print axioms Tm.Log.skipWs_suffix
-#print axioms Tm.Log.isRustSpace_digit
 #print axioms Tm.Log.jparse_not_blank
 #print axioms Tm.Log.an_unknown_tag_is_never_a_warning
 #print axioms Tm.Log.map_cons_ok
@@ -8083,7 +8082,6 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.a_line_spaced_from_its_box_is_boxed
 #print axioms Tm.a_bracket_in_a_bare_line_is_title_text
 #print axioms Tm.a_tab_separates_the_id
-#print axioms Tm.LogStamp.isRustSpace_eq_isSp
 #print axioms Tm.editE_ok
 #print axioms Tm.Field.setLeadToks_head_sep
 #print axioms Tm.a_tabbed_line_is_edited_as_the_host_edits_it
@@ -8140,3 +8138,18 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_inside_break_day_splits_the_block_at_the_break
 #print axioms Tm.PlannerWit.insideOpenBreakRun_resumes_ok
 #print axioms Tm.PlannerWit.the_open_row_starts_at_the_breaks_end
+
+/-
+   APPENDED 2026-10-03: stage 6, run W-42, the REPAIR step — a signed `ci:` and
+   `every:month:` value read as the host's `u8::from_str` reads it (README gaps
+   4162 and 4330), `add`'s title guards over every separator (gaps 4164 and 4337),
+   and the separator's second definition deleted (gaps 4161, 4324 and 4336:
+   Tm.LogStamp.isRustSpace_eq_isSp and Tm.Log.isRustSpace_digit are retired,
+   their lines removed above; `isSp_of_digit` is the latter's statement over `isSp`).
+-/
+#print axioms Tm.readRustNat_of_head
+#print axioms Tm.readRustNat_digitsOf
+#print axioms Tm.readRustNat_reads_one_plus
+#print axioms Tm.Field.ci_reads_a_signed_value
+#print axioms Tm.Field.rule_month_signed
+#print axioms Tm.parseCmd_refuses_every_separator_at_a_titles_edge

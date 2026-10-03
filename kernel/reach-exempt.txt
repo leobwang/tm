@@ -96,14 +96,20 @@
 #   * `PlannerWit.lean`'s definitions are answered by `mutate.WITNESS_MODULES` -- check
 #     9's own enumeration, reused and not copied here -- while `mutate.witness_violations()`
 #     is empty, which is the leaf property check 9 already fails on.
+#   * A specification its reached `@[csimp]` twin runs in place of -- the left side of a
+#     `@[csimp]` lemma whose right side the export reaches, and what only it reaches -- is
+#     answered by `reach.py`'s CSIMP class, which reads the lemmas and needs no line here
+#     (the W-42 repair, 2026-10-03, README gaps 4200 and 4339; 98 names left this file).
+#   * `planner` is SENT since P78 (`tm-core`'s `planwire::with_planner`, a format string
+#     check 12's scan now reads as the macro writes it), so its `CLASS unsent` line is gone
+#     (the W-42 repair, README gaps 4322 and 4331).
 # A name this file still lists for a definition a class answers FAILS as ANSWERED BY
 # PROPERTY, so the two cannot both answer.
 
-CLASS unsent planner -- W-33 repair, 2026-09-25 (README gaps 2229 and 2560): everything `Tm.PlanWire.runPlanner`'s arm reaches and nothing else does -- the planner section's READER (its decoders, among them those of the five request fields no definition of the day reads, which check 13's input half names, README gap 2734), §8.2's day planner `Planner.dayPlan` with everything only it reaches, and the day's EMITTER. (Until the W-34 repair this reason named `Planner.dayPlan` as the root while the walk is rooted at `runPlanner`; W-34's reuse critic measured 114 of the 324 definitions the two unsent classes answer not reached from `dayPlan`; this repair re-measured the `planner` class alone at 61 of its 271 -- 41 in PlanWire, 13 in Planner, 6 in PlanDiff, 1 in Priority.) `tm_kernel_call` reaches these definitions through `Tm.PlanWire.runPlanner`'s `planner` arm, and no request the shipped binary builds carries that key: `grep -rn '"planner"' tm/src` is empty, the shipped binary builds its day with the fork's `planner::plan` over kernel-ranked priorities (D53), and the only senders in this repository are the harnesses `tm/tests/planner_invariants.rs` and `tm/tests/kernel_planner_wire.rs`. EXIT: R3. When the binary sends `planner`, `sections.py` reports the key SENT, this line FAILS as STALE and is deleted, and every definition it answered is REACHED or NOT EXEMPT by name.
 CLASS unsent plan -- W-33 repair, 2026-09-25 (README gaps 2229 and 2560): W-24's row renderer (`Emit.lean`, `EmitWire.lean`), reached from the export through `Tm.EmitWire.runRowsP`'s `plan` arm, which no request the shipped binary builds carries; the definitions the day planner and the renderer share are reached through `planner` and `plan` together and are answered by the two lines at once. EXIT: R3, as above -- when the binary sends `plan`, this line FAILS as STALE and is deleted.
 CLASS proof PlanCheck -- W-35 repair, 2026-09-26 (README gaps 2923 and 2803): L26's checker battery (D28) -- `PlanCheck.lean`'s definitions are the predicates and axes the proved laws quantify over (`planOk`, `impossibleKept`, `owedByItsGrant` and the rest), and D28 made L26 a THEOREM rather than a runtime check, so nothing calls them: no library module imports `PlanCheck` but the witness module `PlannerWit` and the manifest `TmKernel.lean`, which `reach.proof_violations` checks on every run. Until this line the file listed them by name -- 61 entries in three sections, one more per step (W-35 track K's `owedByItsGrant`, gap 2803). EXIT: a library module other than a witness module imports `PlanCheck` (a runtime check of the battery, which D28 declined) -- `proof_violations` then FAILS this line, and every unreached definition of the module is NOT EXEMPT by name until it is reached (W-41, 2026-10-01: no longer "or listed in a new dated section" -- this file is strictly shrink-only, D51, the campaign's D81 call and README gaps 3953 and 4043).
 
-EXEMPT 1198
+EXEMPT 1100
 
 ## Arith.lean -- The exact-arithmetic layer. 18 of its 46 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.Arith.Bin.ix
@@ -173,16 +179,13 @@ Tm.CapWire.withoutPlanJ
 Tm.LErr.key
 Tm.LErr.spots
 Tm.LogAnswer.of
-Tm.LogReq.resumed
 Tm.LogReq.wf
-Tm.Store.insert
 Tm.addEntity
 Tm.answered
 Tm.applyAll
 Tm.autoCloseRefusal
 Tm.beforeAfterFoldClose
 Tm.beforeAfterWeekClose
-Tm.buildEntities
 Tm.call
 Tm.callCap
 Tm.callExport
@@ -195,7 +198,6 @@ Tm.closedLiveIdsOfGrain
 Tm.closedReport
 Tm.cmdsFileLines
 Tm.cmdsRefusal
-Tm.dedupIds
 Tm.depWitnessOutcome
 Tm.estSlotsAt
 Tm.fileLinesOf
@@ -206,13 +208,11 @@ Tm.itemLedger
 Tm.itemLine
 Tm.itemsWfButRanks
 Tm.ledgerMinutes
-Tm.loadStore
 Tm.loadedPlan?
 Tm.loadsOk
 Tm.logAnswered
 Tm.logOp
 Tm.logOpCore
-Tm.logOpZ
 Tm.mergeHypsAt
 Tm.nullOrAbsent
 Tm.optJson
@@ -221,12 +221,10 @@ Tm.parentFactsOf
 Tm.placementIn
 Tm.placementLine
 Tm.prepHypsAt
-Tm.renderDocAt
 Tm.respond
 Tm.respondCap
 Tm.runCap
 Tm.runCapZ
-Tm.runPlan
 Tm.segOf
 Tm.settledB
 Tm.shapeFaultOf
@@ -257,19 +255,13 @@ Tm.Grant.hot
 Tm.Grant.impossible
 Tm.Grant.reservedQ
 Tm.Grant.shortfallQ
-Tm.availUntil
 Tm.daysAscending
 Tm.denOf?
 Tm.edf
-Tm.edfCaps
 Tm.edfGrants
-Tm.edfGrantsGo
-Tm.grantOf
 Tm.insertDue
 Tm.lookaheadOf?
-Tm.reserveOut
 Tm.reserveOutFast
-Tm.reserveRest
 Tm.reserveRestFast
 Tm.reservedTotal
 Tm.sortDue
@@ -289,7 +281,6 @@ Tm.carriedLine
 Tm.dropE
 Tm.fhaStep
 Tm.foldFxOf
-Tm.foldParent
 Tm.foldTabHas
 Tm.foldedMinutes
 Tm.lhbStep
@@ -349,41 +340,24 @@ Tm.targetContaining
 
 ## Json.lean -- The kernel's own JSON fragment: the value, the escaping, the numerals. 53 of its 97 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.finChar
-Tm.jarr
 Tm.jbeq
 Tm.jbeqL
 Tm.jbeqO
-Tm.jdigits
-Tm.jemit
-Tm.jemitArr
 Tm.jemitArrAcc
-Tm.jemitOTail
 Tm.jemitOTailAcc
-Tm.jemitObj
 Tm.jemitObjAcc
-Tm.jemitPair
 Tm.jemitPairAcc
-Tm.jemitTail
 Tm.jemitTailAcc
-Tm.jescape
-Tm.jfins
 Tm.jfuel
 Tm.jfuelL
 Tm.jfuelO
 Tm.jfuelPair
-Tm.jobj
-Tm.jotail
 Tm.jotailAcc
-Tm.jpair
-Tm.jscan
-Tm.jtail
 Tm.jtailAcc
-Tm.junescape
-Tm.jval
 Tm.notDigitStart
 Tm.numEnd
 
-## Line.lean -- The item line. 167 of its 252 emitted definitions are reached (re-derived on 2026-10-02 at W-42 track G, when the owner's D83 made the item grammar the host's: `isBoxEnd`, `parseBare`, `afterSlots` and `Field.endBox` added, all reached through `parseLine` and the edit path, and `tokBare` deleted; 165 of 249 before); the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
+## Line.lean -- The item line. 172 of its 252 emitted definitions are reached (re-derived on 2026-10-02 at W-42 track G, when the owner's D83 made the item grammar the host's: `isBoxEnd`, `parseBare`, `afterSlots` and `Field.endBox` added, all reached through `parseLine` and the edit path, and `tokBare` deleted; 165 of 249 before); the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.CanonicalItem
 Tm.CanonicalKeyed
 Tm.Field.DT.wf
@@ -420,7 +394,6 @@ Tm.Field.mapOpt
 Tm.Field.midKinds
 Tm.Field.midToks
 Tm.Field.optWf
-Tm.Field.parentRef
 Tm.Field.parentToks
 Tm.Field.parseStamp
 Tm.Field.prioOf
@@ -480,7 +453,7 @@ Tm.Log.stampCanonical
 Tm.Log.strsOfF
 Tm.Log.tagIn
 
-## Lookahead.lean -- D10's exact mixture over step 3's EDF (stage 5, track L). 126 of its 222 emitted definitions are reached (re-derived on 2026-09-30 at the W-39 repair, when `clipWall` -- fork `collect_walls`' clip, moved here from `Planner.lean` so §8.1's window can read it (README gap 3556) -- joined the module reached through the `emit` section as before, and `wallsClippedOn`, the window's clipped walls, joined it reached only through the declared unsent `planner` section and answered by that property; 125 of 220 before; re-derived on 2026-09-30 at W-39 track A, when `Today.storedBudget` -- whose one caller had been the planner's `Today.planBudget`, which now reads the planner's own day rule (README gap 3535) -- came to be read by `Today.storedWindow`, day 0's capacity, as fork `Ctx::window` counts a stored window only beside its budget; 124 before; re-derived on 2026-09-29 at W-38 track R, when the planner's readings of `state.json` joined it -- `Today.forToday`, `Today.planWindow`, `Today.planBudget` and `Today.planArrivalSec` (README gap 320), each reached only through the declared unsent `planner` section and answered by that property, not by an entry here; 216 before; re-derived on 2026-09-28 at W-37 track T, when `WallTimer.spansOf` came to call `Look.wallIxOn` through the `emit` section's walls form, which had been answered by the declared unsent `planner` section; 123 before); the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410); re-derived on 2026-09-26 at W-34 track H, when `PlanFacts.ineligibleReason` joined the module -- reached only through the declared unsent `planner` section, so not named below.
+## Lookahead.lean -- D10's exact mixture over step 3's EDF (stage 5, track L). 139 of its 222 emitted definitions are reached (re-derived on 2026-09-30 at the W-39 repair, when `clipWall` -- fork `collect_walls`' clip, moved here from `Planner.lean` so §8.1's window can read it (README gap 3556) -- joined the module reached through the `emit` section as before, and `wallsClippedOn`, the window's clipped walls, joined it reached only through the declared unsent `planner` section and answered by that property; 125 of 220 before; re-derived on 2026-09-30 at W-39 track A, when `Today.storedBudget` -- whose one caller had been the planner's `Today.planBudget`, which now reads the planner's own day rule (README gap 3535) -- came to be read by `Today.storedWindow`, day 0's capacity, as fork `Ctx::window` counts a stored window only beside its budget; 124 before; re-derived on 2026-09-29 at W-38 track R, when the planner's readings of `state.json` joined it -- `Today.forToday`, `Today.planWindow`, `Today.planBudget` and `Today.planArrivalSec` (README gap 320), each reached only through the declared unsent `planner` section and answered by that property, not by an entry here; 216 before; re-derived on 2026-09-28 at W-37 track T, when `WallTimer.spansOf` came to call `Look.wallIxOn` through the `emit` section's walls form, which had been answered by the declared unsent `planner` section; 123 before); the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410); re-derived on 2026-09-26 at W-34 track H, when `PlanFacts.ineligibleReason` joined the module -- reached only through the declared unsent `planner` section, so not named below.
 Tm.Look.Cand.enters
 Tm.Look.Cand.erasePlan
 Tm.Look.CandOut.erasePlan
@@ -504,17 +477,11 @@ Tm.Look.covered
 Tm.Look.curveLeast
 Tm.Look.curveLeastStep
 Tm.Look.curveLookup
-Tm.Look.day0Hist
 Tm.Look.dayHist
-Tm.Look.dayOf
 Tm.Look.histOf
-Tm.Look.insertByStart
 Tm.Look.limitSlots
 Tm.Look.limitSlotsFast
-Tm.Look.mixDay
-Tm.Look.ofHist  # (load-time)
 Tm.Look.onTheSpecDay
-Tm.Look.pureDay
 Tm.Look.restfulEnd
 Tm.Look.scaleDay
 Tm.Look.scaleGrant
@@ -522,48 +489,27 @@ Tm.Look.shippedArrival
 Tm.Look.shippedWeight
 Tm.Look.slotLe
 Tm.Look.slotMinutesOf
-Tm.Look.sortByStart
 Tm.Look.takeStep
 Tm.Look.twin
 Tm.Look.wallOverlap
 Tm.Look.wallsInside
-Tm.Look.windowEnd
 
-## Plan.lean -- The plan is one object. 45 of its 78 emitted definitions are reached (78 since W-38 track K's `DocKind.ciDefault`, gap 3323, reached through the unsent `planner` section only); the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
+## Plan.lean -- The plan is one object. 50 of its 78 emitted definitions are reached (78 since W-38 track K's `DocKind.ciDefault`, gap 3323, reached through the unsent `planner` section only); the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.Store.insertFresh
 Tm.Store.set
-Tm.anc
 Tm.chainOf
-Tm.commentAt
-Tm.docRanks
-Tm.entityInRange
-Tm.firstItemFault
-Tm.headingsWf
-Tm.itemsWf
-Tm.normalized
-Tm.parentsAcyclic
-Tm.parentsTotal
 Tm.pathAt
-Tm.pathsDistinct
-Tm.placementSectionWf
-Tm.planWf
 Tm.ranksIn
 Tm.renderSplit
 Tm.rootPrio
 Tm.rootPrioAux
-Tm.sectionsWf
 Tm.seriesOf
-Tm.shapesWf
-Tm.siteInRange
-Tm.sitesInRange
-Tm.splitDoc
-Tm.splitDocC
 
-## PlanWire.lean -- the PLANNER's inputs cross the wire (stage 6, W-27, D48, README gaps 1431/801). 3 of its 51 emitted definitions are reached (51 since W-41 track K's `planReqRefusal`, re-derived on 2026-10-01: D80's two refusals, reached only through the declared unsent `planner` section and answered by that property, not by an entry here; 50 since W-38 track K's `noPlaceName`, D67); the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410); re-derived again on 2026-09-26 at W-34 track D, when the `overtime` key's three definitions joined the module (`readOvertime`, `diffJson`, `overtimeJson`, reached only through the unsent `planner` section and answered by that property, not by an entry here); and on 2026-09-27 at W-36 track K, when owner D58's `readGrown` joined it (gap 2873), reached the same way and answered by the same property; and on 2026-09-27 at W-36 track T, when `readOptWorked` (the host's worked minutes, README gap 2920) joined it, reached the same way -- the two tracks' censuses (48 each) summed at W-36's land step.
+## PlanWire.lean -- the PLANNER's inputs cross the wire (stage 6, W-27, D48, README gaps 1431/801). 48 of its 51 emitted definitions are reached (51 since W-41 track K's `planReqRefusal`, re-derived on 2026-10-01: D80's two refusals, reached only through the declared unsent `planner` section and answered by that property, not by an entry here; 50 since W-38 track K's `noPlaceName`, D67); the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410); re-derived again on 2026-09-26 at W-34 track D, when the `overtime` key's three definitions joined the module (`readOvertime`, `diffJson`, `overtimeJson`, reached only through the unsent `planner` section and answered by that property, not by an entry here); and on 2026-09-27 at W-36 track K, when owner D58's `readGrown` joined it (gap 2873), reached the same way and answered by the same property; and on 2026-09-27 at W-36 track T, when `readOptWorked` (the host's worked minutes, README gap 2920) joined it, reached the same way -- the two tracks' censuses (48 each) summed at W-36's land step.
 Tm.PlanWire.instantWithin
 Tm.PlanWire.kindJson
 
-## Planner.lean -- §8's `Segment`, `DayPlan` and `PlanInput`, settled (stage 6, step P0). 2 of its 288 emitted definitions are reached (re-derived on 2026-10-01 at W-41 track K, when D80's four clauses -- `PlanReq.eveningEnd`, `PlanReq.eveningInsideTheCalendar`, `PlanReq.planCi`, `PlanReq.ciDisagreement` -- joined the module, each reached only through the declared unsent `planner` section, by `PlanWire.planReqRefusal`, and answered by that property, not by an entry here, and D78 deleted InterruptState.wf and mkInterrupt? with the bound they checked; 286 before; re-derived on 2026-09-30 at the W-39 repair, when `clipWall` left the module for `Lookahead.lean` (README gap 3556) -- `wallsOfDay` and `sortWallsFast` stay reached; 3 of 287 before; re-derived on 2026-09-30 at W-39's land step, when tracks A and T merged: track A's `PlanReq.loggedArrival` joined the module and track T's three came to be reached; re-derived on 2026-09-30 at W-39 track A, when `PlanReq.loggedArrival` -- the day's first logged `arrive`, fork `Planner::new`'s fall-back (README gap 3390) -- joined it, reached only through the declared unsent `planner` section and answered by that property, not by an entry here -- 0 of 287 there, 0 of 286 before it; re-derived on 2026-09-30 at W-39 track T (3 of 286 there), when `GridCut.segSpans` -- the week grid's cut of a pause, README gaps 3432 and 3528 -- began calling `wallsOfDay`, which reaches `clipWall` and `sortWallsFast`: the three are reached through the `emit` section the host sends, none of them was an entry below, and the file did not grow; it read 0 when re-derived on 2026-09-29 at W-38's land step, when tracks K and R merged: track K's two -- `fitsBefore`, moved from `PlanCheck`, and `PlanReq.dayUnplaced` (D67, P58) -- and track R's two, 284 each; re-derived on 2026-09-29 at W-38 track R, when `stepOneOrder` (step 1 in `emit_segments`' order, README gap 3281) and `PlanReq.dayServed` (step 5's served order, gap 3343) joined it, each reached only through the declared unsent `planner` section and answered by that property, not by an entry here, and `wallLe` left the list below because `stepOneOrder` now reaches it the same way; 282 at W-37's land step; re-derived on 2026-09-29 at W-37's land step, when tracks T and R merged: track T's three and track R's three, 279 each; re-derived on 2026-09-28 at W-37 track T, when owner D65's three definitions joined it -- `wallSpans`, `pastSpans`, `pastRowOf` (the replayed past drawn with the day's walls cut out of a paused row, parity P56) -- each reached only through the declared unsent `planner` section and answered by that property, not by an entry here, as `PastCut.lean`'s `cutOne`, `cutAll` and `clipCut` are; re-derived on 2026-09-28 at W-37 track R, when `PlanReq.candMult`, `PlanReq.routineHot` and `PlanReq.keptBreakRows` joined it (README gaps 550, 2870 and 551), each reached only through the declared unsent `planner` section and answered by that property, not by an entry here, and `PlanReq.answerFor` left the list below because `PlanReq.routineHot` now reaches it the same way; 276 at W-36's land step; re-derived at W-36's land step, when tracks K and T merged: track K's 274 and track T's `workedOf?` and `PlanReq.workedOf` (the host's worked minutes, README gap 2920), each reached only through the declared unsent `planner` section; re-derived on 2026-09-27 at W-36 track K, when owner D60's three definitions joined it -- `answerUntil`, `Ranked.imp`, `impNums` -- and owner D58's four (gap 2873) -- `GrownFacts.wf`, `mkGrown?`, `growCand`, `PlanReq.growing` -- each reached only through the declared unsent `planner` section and answered by that property, not by an entry here, and `Look.Cand.withPlan` left the `## Lookahead.lean` section because `growCand` now reaches it the same way; 270 after D60's three; 267 at W-35's land step, when tracks K and E merged: 260 at `fe49a8b`, track K's three and track E's four); the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410); re-derived again on 2026-09-25 at W-33 track P, when seven definitions of §8.2 step 8 joined the module (their own dated section is at the end of this file); and again on 2026-09-26 at W-34 track H, when the plan hash's nine and step 8's last three writers (`PlanReq.rawSlots`, `dayDeferred`, `dayRestDebtMin`) joined it -- all twelve reached only through the declared unsent `planner` section, so none is named below; and on 2026-09-26 at W-34's land step, when track D's merge added the five definitions of fork `open_block_segment` (`openBlockRows`, `replayedRows`, `PlanReq.openStop`, `openWorkedMin`, `PlanReq.interrupted` -- `stepOneSegs` moved and was already counted), each reached only through the unsent `planner` section and answered by that property, not by an entry here; and on 2026-09-26 at W-35 track K, when owner D57's three definitions joined it (`BreakPlace.word`, `breakRows`, `PlanReq.pauseRows` -- P45 and P47), reached the same way and answered by the same property; and on 2026-09-26 at W-35 track E, when step 8's three whole tuples added `PlanReq.dayImpossibleUntil`, `PlanReq.candCi`, `PlanReq.dayUnderusedLevels` and `PlanReq.dayBlockedDeps`, each reached only through the declared unsent `planner` section and answered by that property, not by an entry here.
+## Planner.lean -- §8's `Segment`, `DayPlan` and `PlanInput`, settled (stage 6, step P0). 166 of its 288 emitted definitions are reached (re-derived on 2026-10-01 at W-41 track K, when D80's four clauses -- `PlanReq.eveningEnd`, `PlanReq.eveningInsideTheCalendar`, `PlanReq.planCi`, `PlanReq.ciDisagreement` -- joined the module, each reached only through the declared unsent `planner` section, by `PlanWire.planReqRefusal`, and answered by that property, not by an entry here, and D78 deleted InterruptState.wf and mkInterrupt? with the bound they checked; 286 before; re-derived on 2026-09-30 at the W-39 repair, when `clipWall` left the module for `Lookahead.lean` (README gap 3556) -- `wallsOfDay` and `sortWallsFast` stay reached; 3 of 287 before; re-derived on 2026-09-30 at W-39's land step, when tracks A and T merged: track A's `PlanReq.loggedArrival` joined the module and track T's three came to be reached; re-derived on 2026-09-30 at W-39 track A, when `PlanReq.loggedArrival` -- the day's first logged `arrive`, fork `Planner::new`'s fall-back (README gap 3390) -- joined it, reached only through the declared unsent `planner` section and answered by that property, not by an entry here -- 0 of 287 there, 0 of 286 before it; re-derived on 2026-09-30 at W-39 track T (3 of 286 there), when `GridCut.segSpans` -- the week grid's cut of a pause, README gaps 3432 and 3528 -- began calling `wallsOfDay`, which reaches `clipWall` and `sortWallsFast`: the three are reached through the `emit` section the host sends, none of them was an entry below, and the file did not grow; it read 0 when re-derived on 2026-09-29 at W-38's land step, when tracks K and R merged: track K's two -- `fitsBefore`, moved from `PlanCheck`, and `PlanReq.dayUnplaced` (D67, P58) -- and track R's two, 284 each; re-derived on 2026-09-29 at W-38 track R, when `stepOneOrder` (step 1 in `emit_segments`' order, README gap 3281) and `PlanReq.dayServed` (step 5's served order, gap 3343) joined it, each reached only through the declared unsent `planner` section and answered by that property, not by an entry here, and `wallLe` left the list below because `stepOneOrder` now reaches it the same way; 282 at W-37's land step; re-derived on 2026-09-29 at W-37's land step, when tracks T and R merged: track T's three and track R's three, 279 each; re-derived on 2026-09-28 at W-37 track T, when owner D65's three definitions joined it -- `wallSpans`, `pastSpans`, `pastRowOf` (the replayed past drawn with the day's walls cut out of a paused row, parity P56) -- each reached only through the declared unsent `planner` section and answered by that property, not by an entry here, as `PastCut.lean`'s `cutOne`, `cutAll` and `clipCut` are; re-derived on 2026-09-28 at W-37 track R, when `PlanReq.candMult`, `PlanReq.routineHot` and `PlanReq.keptBreakRows` joined it (README gaps 550, 2870 and 551), each reached only through the declared unsent `planner` section and answered by that property, not by an entry here, and `PlanReq.answerFor` left the list below because `PlanReq.routineHot` now reaches it the same way; 276 at W-36's land step; re-derived at W-36's land step, when tracks K and T merged: track K's 274 and track T's `workedOf?` and `PlanReq.workedOf` (the host's worked minutes, README gap 2920), each reached only through the declared unsent `planner` section; re-derived on 2026-09-27 at W-36 track K, when owner D60's three definitions joined it -- `answerUntil`, `Ranked.imp`, `impNums` -- and owner D58's four (gap 2873) -- `GrownFacts.wf`, `mkGrown?`, `growCand`, `PlanReq.growing` -- each reached only through the declared unsent `planner` section and answered by that property, not by an entry here, and `Look.Cand.withPlan` left the `## Lookahead.lean` section because `growCand` now reaches it the same way; 270 after D60's three; 267 at W-35's land step, when tracks K and E merged: 260 at `fe49a8b`, track K's three and track E's four); the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410); re-derived again on 2026-09-25 at W-33 track P, when seven definitions of §8.2 step 8 joined the module (their own dated section is at the end of this file); and again on 2026-09-26 at W-34 track H, when the plan hash's nine and step 8's last three writers (`PlanReq.rawSlots`, `dayDeferred`, `dayRestDebtMin`) joined it -- all twelve reached only through the declared unsent `planner` section, so none is named below; and on 2026-09-26 at W-34's land step, when track D's merge added the five definitions of fork `open_block_segment` (`openBlockRows`, `replayedRows`, `PlanReq.openStop`, `openWorkedMin`, `PlanReq.interrupted` -- `stepOneSegs` moved and was already counted), each reached only through the unsent `planner` section and answered by that property, not by an entry here; and on 2026-09-26 at W-35 track K, when owner D57's three definitions joined it (`BreakPlace.word`, `breakRows`, `PlanReq.pauseRows` -- P45 and P47), reached the same way and answered by the same property; and on 2026-09-26 at W-35 track E, when step 8's three whole tuples added `PlanReq.dayImpossibleUntil`, `PlanReq.candCi`, `PlanReq.dayUnderusedLevels` and `PlanReq.dayBlockedDeps`, each reached only through the declared unsent `planner` section and answered by that property, not by an entry here.
 Tm.Planner.CandKey.nums
 Tm.Planner.Capped.cons?
 Tm.Planner.Capped.nil
@@ -599,14 +545,9 @@ Tm.Planner.reservationSegs
 Tm.Planner.routineLe
 Tm.Planner.rowLe
 Tm.Planner.segItems
-Tm.Planner.sortGroups
-Tm.Planner.sortRanked
-Tm.Planner.sortRoutines
-Tm.Planner.sortRows
-Tm.Planner.sortWalls
 Tm.Planner.stepTwoSegs
 
-## Priority.lean -- §7.1's `p`, §7.2's rule table and §7.4's hysteresis. 15 of its 23 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
+## Priority.lean -- §7.1's `p`, §7.2's rule table and §7.4's hysteresis. 16 of its 23 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.binOfQ
 Tm.hysteresisDays
 Tm.rootK
@@ -751,7 +692,6 @@ Tm.Replay.firstLoggedSleep
 Tm.Replay.firstLoggedWakeOn
 Tm.Replay.insBy
 Tm.Replay.insSort
-Tm.Replay.insertWake
 Tm.Replay.instLt
 Tm.Replay.instOthers
 Tm.Replay.instRecordOf
@@ -764,10 +704,8 @@ Tm.Replay.lastTOn
 Tm.Replay.latestRel
 Tm.Replay.leakLt
 Tm.Replay.leakOf
-Tm.Replay.maskStep
 Tm.Replay.maskStepI
 Tm.Replay.maxByInstant?
-Tm.Replay.minDay?
 Tm.Replay.namedOccurrences
 Tm.Replay.obsLe
 Tm.Replay.obsLines
@@ -783,15 +721,11 @@ Tm.Replay.segLe
 Tm.Replay.slOf
 Tm.Replay.sleptMap
 Tm.Replay.sleptStep
-Tm.Replay.sortObs
-Tm.Replay.sortSegs
-Tm.Replay.sortWakes
 Tm.Replay.stackI
 Tm.Replay.stampOf
 Tm.Replay.step
 Tm.Replay.sumByCi
 Tm.Replay.sumCiUnknown
-Tm.Replay.survivors
 Tm.Replay.undosFor
 Tm.Replay.unk
 Tm.Replay.untouchedBy
@@ -810,11 +744,7 @@ Tm.CloseDid.ofName?
 Tm.Report.append
 
 ## Seal.lean -- stage 5's D9/W2 seal laws: the spec side of the checkpoint and its resume, quantified over by the theorems in the same module rather than called. 69 of its 238 emitted definitions are reached. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
-Tm.Log.Line.entry?
-Tm.Log.Line.warning?
 Tm.Log.contiguousFrom
-Tm.Log.lineEntries
-Tm.Log.lineWarnings
 Tm.Replay.Doc.obs
 Tm.Replay.Obs.line
 Tm.Replay.obsLineLe
@@ -842,13 +772,10 @@ Tm.Seal.canon
 Tm.Seal.ckptOf
 Tm.Seal.ckptOfEntries
 Tm.Seal.ckptPairs
-Tm.Seal.dayKeys
 Tm.Seal.dayRead
 Tm.Seal.dayRecordsBelow
 Tm.Seal.dayRecordsBetween
 Tm.Seal.dayRecordsOfEntries
-Tm.Seal.daysFrom
-Tm.Seal.daysIn
 Tm.Seal.emitCkpt
 Tm.Seal.findDay
 Tm.Seal.findItem
@@ -860,16 +787,13 @@ Tm.Seal.foldedSurvivors
 Tm.Seal.idLt
 Tm.Seal.insUniq
 Tm.Seal.instKeyLt
-Tm.Seal.instOtherOf
 Tm.Seal.itemAggOf
-Tm.Seal.itemIds
 Tm.Seal.keptTags
 Tm.Seal.key
 Tm.Seal.lexLt
 Tm.Seal.listStep
 Tm.Seal.mkPolicy?
 Tm.Seal.namedKeyLt
-Tm.Seal.namedOf
 Tm.Seal.natLt
 Tm.Seal.optDec
 Tm.Seal.optLt
@@ -880,17 +804,12 @@ Tm.Seal.sealableEntries
 Tm.Seal.sealedReads
 Tm.Seal.settledOf
 Tm.Seal.settledStep
-Tm.Seal.storedSlept
 Tm.Seal.tCons
 Tm.Seal.unfoldedEffects
-Tm.Seal.winKeys
 Tm.Seal.winRead
-Tm.Seal.windowOf
 Tm.Seal.windowRecordsBelow
 Tm.Seal.windowRecordsBetween
 Tm.Seal.windowRecordsOfEntries
-Tm.Seal.windowsFrom
-Tm.Seal.windowsIn
 
 ## SealAgg2.lean -- stage 5's D9/W2 seal laws: the spec side of the checkpoint and its resume, quantified over by the theorems in the same module rather than called. all 1 of its emitted definitions are unreachable.
 Tm.Seal.datesOf
@@ -943,17 +862,14 @@ Tm.Seal.tailStepsOk
 Tm.Seal.Effect.rebind
 
 ## SealResume.lean -- stage 5's D9/W2 seal laws: the spec side of the checkpoint and its resume, quantified over by the theorems in the same module rather than called. 29 of its 46 emitted definitions are reached. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
-Tm.Seal.aggMerged
 Tm.Seal.cutOk
 Tm.Seal.foldPoint
 Tm.Seal.foldPointOf
 Tm.Seal.greatestValid
 Tm.Seal.headerCheck
-Tm.Seal.mergeTagLines
 Tm.Seal.resealOf
 Tm.Seal.resume
 Tm.Seal.resumeRun
-Tm.Seal.resumedAnswer
 Tm.Seal.sealDay
 Tm.Seal.sealDayOf
 Tm.Seal.tailSlept
@@ -986,8 +902,6 @@ Tm.Seal.bisect
 Tm.Seal.canonDesc
 Tm.Seal.dayFn
 Tm.Seal.groupStep
-Tm.Seal.itemIdsFast
-Tm.Seal.mergedItems
 Tm.Seal.windowOfFast
 
 ## SealWire.lean -- stage 5's D9/W2 seal laws: the spec side of the checkpoint and its resume, quantified over by the theorems in the same module rather than called. 19 of its 35 emitted definitions are reached. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
@@ -996,19 +910,16 @@ Tm.Seal.cutFloorOk
 Tm.Seal.cutOkFast
 Tm.Seal.emitMeta
 Tm.Seal.emitResealed
-Tm.Seal.resealOfFast
 Tm.Seal.resealOfWith
-Tm.Seal.resumeRunFast  # (load-time)
-Tm.Seal.resumeRunV
 Tm.Seal.resumeRunWith
 Tm.Seal.trimRun
 
-## Stamp.lean -- the log's timestamps (stage 5, D9 track, step B2). 23 of its 28 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
+## Stamp.lean -- the log's timestamps (stage 5, D9 track, step B2). 22 of its 27 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.LogStamp.accepted
 Tm.LogStamp.stampBefore
 Tm.LogStamp.trimWs
 
-## State.lean -- Entity versus observation. 18 of its 38 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
+## State.lean -- Entity versus observation. 20 of its 38 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.Core.budget
 Tm.Core.extra
 Tm.Core.fields
@@ -1026,10 +937,8 @@ Tm.effectiveOnMiss
 Tm.readLine
 Tm.render
 
-## Text.lean -- The item line: tokens with verbatim spelling. 23 of its 28 emitted definitions are reached (re-derived on 2026-10-02 at W-42 track G, when the owner's D83 added `isIndent`, reached through `parseItem`, and `bareOk` began reading `Tok.raw`, whose entry below is deleted; 21 of 27 before); the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time.
+## Text.lean -- The item line: tokens with verbatim spelling. 24 of its 29 emitted definitions are reached (re-derived on 2026-10-02 at W-42 track G, when the owner's D83 added `isIndent`, reached through `parseItem`, and `bareOk` began reading `Tok.raw`, whose entry below is deleted; 21 of 27 before); the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time.
 Tm.Tok.wf
-Tm.digitsAux
-Tm.digitsOf
 Tm.natStep
 Tm.toksWf
 
@@ -1126,7 +1035,6 @@ Tm.datedRecordWitness
 Tm.demoteNoSectionWitness
 Tm.demoteSectionWitness
 Tm.depWitnessRequest
-Tm.emptyStore
 Tm.exampleNow
 Tm.exampleW38
 Tm.exampleWeekWitness

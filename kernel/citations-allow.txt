@@ -1274,3 +1274,18 @@ with_minute
 # `kernel` names, which is not the land's file (README gap 4325).  The land's own block names both without backticks.
 13 tabbedLine
 2 estimate_unless_tabbed
+
+# W-42 REPAIR STEP (README gaps 4330-4359).  The separator's second definition, the log grammar's
+# isRustSpace with its pinning theorem isRustSpace_eq_isSp, was DELETED and its readers in Stamp.lean and
+# Log.lean read Text.isSp (README gaps 4161, 4324 and 4336); and reach.py's RUST_SRC, the one root of check
+# 12's scan, became RUST_SRCS, every crate the binary links by path (gap 4331).  Every citation counted here is
+# a sentence naming the thing as it stood, in append-only README blocks (stage 5 D9 B2's grammar table, W-42
+# track G's block and gap 4161, the land's gap 4324 and gap 4207's statement).  The repair's own block names
+# them without backticks.
+3 isRustSpace
+4 LogStamp.isRustSpace
+4 isRustSpace_eq_isSp
+1 RUST_SRC
+# And the W-41 repair's P78 test, restated when the hole it pinned closed (`ci:+5` read 5 by the kernel, gap 4330):
+# the W-41 repair's block cites it by the name it carried then.
+2 a_ci_the_kernel_reads_otherwise_is_named_at_its_line

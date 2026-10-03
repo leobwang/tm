@@ -10,9 +10,12 @@
 //! does, and that world now names nothing (`kernel_separator_worlds.rs` holds
 //! it and its three siblings). What P78 names since is a disagreement in what
 //! the two readers DERIVE from a line they tokenise alike — `ci:+5`, which the
-//! host reads `5` (`u8::from_str` takes a leading `+`) and the kernel's
-//! `Field.parseCi` does not, so the kernel falls back to the positional `3`
-//! (README gap 4162). P72 still refuses it, and `tm check` still names it.
+//! host read `5` (`u8::from_str` takes a leading `+`) and the kernel's
+//! `Field.parseCi` did not, so the kernel fell back to the positional `3`
+//! (README gap 4162). The W-42 repair closed that too: the kernel reads a
+//! `ci:` value as `u8::from_str` does (`Text.readRustNat`, README gap 4330), so
+//! the world names only the host's own warning now, and the refusal `tm check`
+//! names is shown on a day the kernel refuses for its own reason.
 
 mod cli_common;
 
@@ -31,32 +34,37 @@ fn edited() -> Tm {
     tm
 }
 
-/// **Named at the line, an error, exit 2** — beside the host's own warning that
-/// the line gives `ci` twice; the unedited tree has no problems.
+/// **`ci:+5` beside a positional `3` is read alike** (the W-42 repair, README
+/// gaps 4162 and 4330): both readers take the key's `5` (`ci:` wins), so `tm
+/// check` names the host's own warning that the line gives `ci` twice and NO
+/// planner refusal — until the repair it named `ciDisagrees t4 wire 5 plan 3`, a
+/// refusal of a day fork 4748911 plans. The unedited tree has no problems.
 #[test]
-fn a_ci_the_kernel_reads_otherwise_is_named_at_its_line() {
+fn a_signed_ci_beside_a_positional_one_is_read_alike_and_named_by_the_host_alone() {
     let tm = edited();
     let out = tm.run_at(cli_common::NOW, &["check"]);
-    assert_eq!(out.code, 2, "{}{}", out.stdout, out.stderr);
-    assert!(
-        out.stdout.starts_with(
-            "week/2026-W37.md:19: warning[bad-value]: ci given twice (ci: wins)\n\
-             week/2026-W37.md:19: error[planner-refusal]: kernel refusal: ciDisagrees t4 wire 5 plan 3"
-        ),
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    assert_eq!(
+        out.stdout.trim_end(),
+        "week/2026-W37.md:19: warning[bad-value]: ci given twice (ci: wins)\n0 errors, 1 warning",
         "{}",
         out.stdout
     );
-    assert!(out.stdout.trim_end().ends_with("1 error, 1 warning"), "{}", out.stdout);
     let tm = Tm::new();
     let out = tm.run_at(cli_common::NOW, &["check"]);
     assert_eq!((out.code, out.stdout.trim()), (0, "no problems"), "{}", out.stderr);
 }
 
-/// **`--json` carries it** as a problem with its code, file, line and id.
+/// **`--json` carries a planner refusal** as a problem with its code — on the
+/// last day the calendar holds, where the kernel refuses the day R3's `tm plan`
+/// asks for (`badCandidate`, a candidate's `due` past its bound there: README
+/// gap 4330 records it beside P71's `eveningPastTheCalendar`, a day fork 4748911
+/// never reaches either).
 #[test]
 fn the_json_carries_the_planner_refusal() {
-    let tm = edited();
-    let out = tm.run_at(cli_common::NOW, &["--json", "check"]);
+    let tm = Tm::empty();
+    assert_eq!(tm.run(&["init", "--example"]).code, 0);
+    let out = tm.run_at("9999-12-31T09:00:00+00:00", &["--json", "check"]);
     assert_eq!(out.code, 2, "{}{}", out.stdout, out.stderr);
     let doc: serde_json::Value = serde_json::from_str(&out.stdout).expect("JSON");
     let p = doc["problems"]
@@ -65,5 +73,5 @@ fn the_json_carries_the_planner_refusal() {
         .iter()
         .find(|p| p["code"] == "planner-refusal")
         .unwrap_or_else(|| panic!("no planner refusal: {doc}"));
-    assert_eq!((p["file"].as_str(), p["line"].as_u64()), (Some("week/2026-W37.md"), Some(19)), "{doc}");
+    assert!(p["message"].as_str().is_some_and(|m| m.starts_with("kernel refusal: ")), "{doc}");
 }

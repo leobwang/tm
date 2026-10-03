@@ -1,7 +1,7 @@
 import TmKernel.Planner
+import TmKernel.PlanOnce
 /-!
 # `diff` and §9.1's overtime what-if — fork `planner::diff` and `planner::overtime_drops`
-
 Stage 6, run W-34, track D.  README gaps **2680** onward are this module's.
 
 ## What this is, and why a module of its own
@@ -407,3 +407,17 @@ theorem PlanReq.the_whatif_request_pays_d80 (r : PlanReq) (i : Id) (m : Nat) (g 
 
 end Planner
 end Tm
+
+/-! ## The what-if compiles over the twin (the W-42 repair)
+
+**It compiles over the twin** (the owner's D82; README gaps 4200 and 4339, the W-42 repair).  It
+imports `PlanOnce`, so `dayPlan_eq_dayPlanOnce` — `@[csimp]` — rewrites both days `overtimeDiff`
+plans to `dayPlanOnce` in the code it emits, as it already did in `PlanWire`; every law here is
+still stated over `dayPlan`, which the kernel reads.  Until the repair this module imported
+`Planner` alone and its C called the specification twice: S measured the example tree's what-if
+at 2.0 s and T14's ten-year one at 19-22 s, against 13 ms and 0.36 s over the twin.  Check 12
+answers the specification by the property its own header states — the left side of a `@[csimp]`
+lemma whose right side the export reaches is used solely within proofs (`reach.py`, the `csimp`
+class) — which is what had kept this import out (gap 4200).
+
+Written here, at the end of the module, so no line a check-9 pin names moves (README gap 2136). -/

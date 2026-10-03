@@ -182,6 +182,128 @@ fn every_frozen_comparand_reads_its_committed_history() {
     }
 }
 
+/// **Every committed frozen line kept its world and the shipped fork's answer, in a PLAIN run**
+/// (the W-42 repair, README gap 4341; W-42's reuse critic). Every bless holds its lines against
+/// the committed history (`frozenhist::held`) — but only INSIDE a bless, and R3 deletes eight of
+/// the eleven blesses with the fork regions they live in (planner-classes, -batch, -driven,
+/// -basic-days, the classes' re-draw, -days, -conference, -p56). After it a frozen line can change
+/// only by hand, and nothing in `cargo test` compared a committed line with its history: this test
+/// asserted the history READ and printed its census.
+///
+/// It holds, with no fork planner, the two halves of the owner's D64 that need none, over every
+/// first-parent commit since `ratchet.py`'s base and the working copy: for every key two
+/// consecutive versions both hold, (1) **the shipped fork's answer** (`frozenhist::shipped_answer`)
+/// and (2) **every key of the world and the provenance** (all but `frozenhist::is_answer`'s) are
+/// byte-identical — unless the newer version is a D64(b) re-draw (`frozenhist::redrawn`), whose
+/// world moved and whose fork was asked again. So a hand-moved world, class, test list or shipped
+/// day fails a plain run on the commit that moved it. WHAT IT CANNOT SEE, declared: a key that
+/// LEAVES the file (two keys, one leaving and one arriving, are not one line moving — README gap
+/// 4320, R's re-filed classes, which pass), and a comparand answer moved with the shipped day held
+/// (that is D64(a)/(c)'s to license, and only a bless knows its reason).
+#[test]
+fn every_committed_frozen_line_kept_its_world_and_the_shipped_answer() {
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let files: [(&str, Box<dyn Fn(&serde_json::Value) -> Option<String>>); 10] = [
+        ("fork-4748911-planner-classes.jsonl", Box::new(frozenhist::class_key)),
+        ("fork-4748911-planner-batch.jsonl", Box::new(frozenhist::key_of("draw"))),
+        ("fork-4748911-planner-driven.jsonl", Box::new(frozenhist::key_of("name"))),
+        ("fork-4748911-planner-p56.jsonl", Box::new(frozenhist::key_of("draw"))),
+        ("fork-4748911-planner-starts.jsonl", Box::new(frozenhist::key_of("name"))),
+        ("fork-4748911-planner-tui.jsonl", Box::new(frozenhist::key_of("name"))),
+        ("fork-4748911-planner-basic-days.jsonl", Box::new(frozenhist::key_of("name"))),
+        ("fork-4748911-planner-conference.jsonl", Box::new(frozenhist::key_of("name"))),
+        ("fork-4748911-planner-days.jsonl", Box::new(frozenhist::key_of("name"))),
+        ("fork-4748911-week-grid.jsonl", Box::new(frozenhist::key_of("name"))),
+    ];
+    // **From the commit that brought this check in, never before it** — a property of the
+    // history, not a sha written here: the first first-parent commit since the base whose
+    // `tm/tests/fork_rebless_history.rs` holds this function (`HEAD` until that commit exists, so
+    // the working copy is held against HEAD).  A check cannot judge the commits before it: the
+    // W-41 land re-derived the week grid's worlds and steps under no reason a plain run can read
+    // (`17a13c2..69de2de`, 42 changes), and they are counted, never judged.
+    let me = "fn every_committed_frozen_line_kept_its_world_and_the_shipped_answer";
+    let this = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fork_rebless_history.rs");
+    let holds_me = |rev: &str| frozenhist::show(&this, rev).is_some_and(|t| t.contains(me));
+    let mut pairs = 0usize;
+    let mut before = 0usize;
+    let mut moved = Vec::new();
+    for (name, key) in files {
+        let versions = frozenhist::versions(&fixtures.join(name), key).unwrap_or_else(|e| panic!("{e}"));
+        let commits = versions.len() - 1;
+        let from = (0..commits).find(|i| holds_me(&versions[*i].0)).unwrap_or(commits - 1);
+        for (i, w) in versions.windows(2).enumerate() {
+            let ((was, old), (now, new)) = (&w[0], &w[1]);
+            let judged = i >= from;
+            for (k, a) in old {
+                let Some(b) = new.get(k) else { continue };
+                pairs += 1;
+                if frozenhist::redrawn(a, b) {
+                    continue;
+                }
+                let tag = |what: &str| format!("{name}: `{k}` {what} between {} and {}", &was[..was.len().min(9)], &now[..now.len().min(9)]);
+                let mut found = Vec::new();
+                if frozenhist::shipped_answer(a) != frozenhist::shipped_answer(b) {
+                    found.push(tag("moved the SHIPPED fork's answer"));
+                }
+                let keys: std::collections::BTreeSet<&String> =
+                    a.as_object().into_iter().flatten().chain(b.as_object().into_iter().flatten()).map(|(k, _)| k).collect();
+                for f in keys {
+                    if !frozenhist::is_answer(a, f) && !frozenhist::is_answer(b, f) && a[f.as_str()] != b[f.as_str()] {
+                        found.push(tag(&format!("moved `{f}`, which is its world or provenance")));
+                    }
+                }
+                if judged {
+                    moved.extend(found);
+                } else {
+                    before += found.len();
+                }
+            }
+        }
+    }
+    assert!(pairs > 0, "no line was held by two versions — the history compared nothing");
+    assert!(moved.is_empty(), "{} change(s) no clause of D64 that needs no fork licenses:\n{}", moved.len(), moved.join("\n"));
+    println!(
+        "held {pairs} line-version pair(s) across the ten frozen files' history and the working copy; \
+         {before} change(s) before this check landed, counted and not judged"
+    );
+}
+
+/// **The plain history check bites** (AGENTS §5.8): over a synthetic repository, a line whose
+/// `class` moved, whose shipped day moved, or whose world moved without a re-draw's reason is
+/// caught by the same three readers; a comparand answer moving, an introduced `p<n>` answer and a
+/// D64(b) re-draw are not.
+#[test]
+fn the_plain_history_check_bites_and_does_not_over_bite() {
+    let line = json!({"name": "a", "class": "c", "tests": ["t"], "world": {"now": 1}, "day": {"day": "d", "hash": "h"},
+                      "shipped": null, "d57": {"p46": false}, "whatif": null});
+    assert_eq!(frozenhist::shipped_answer(&line), json!("d"));
+    for k in ["day", "shipped", "whatif", "d57", "p69"] {
+        assert!(frozenhist::is_answer(&line, k) || k == "p69", "{k}");
+    }
+    assert!(frozenhist::is_answer(&json!({}), "p69"), "a key named by a parity number is an answer");
+    for k in ["name", "class", "tests", "world"] {
+        assert!(!frozenhist::is_answer(&line, k), "{k} is provenance");
+    }
+    let mut class = line.clone();
+    class["class"] = json!("planted/class");
+    assert!(!frozenhist::is_answer(&class, "class") && class["class"] != line["class"], "a moved class is caught");
+    let mut ship = line.clone();
+    ship["day"]["day"] = json!("bent");
+    assert_ne!(frozenhist::shipped_answer(&ship), frozenhist::shipped_answer(&line), "a bent shipped day is caught");
+    let mut departs = ship.clone();
+    departs["shipped"] = json!({"day": "d"});
+    assert_eq!(frozenhist::shipped_answer(&departs), frozenhist::shipped_answer(&line), "a comparand departing with the shipped day kept passes");
+    let mut redraw = line.clone();
+    redraw["world"] = json!({"now": 2});
+    assert!(!frozenhist::redrawn(&line, &redraw), "a moved world with no reason is no re-draw");
+    redraw["d64b"] = json!("2026-10-03 D64(b): a world the binary cannot hold");
+    assert!(frozenhist::redrawn(&line, &redraw), "a dated D64(b) reason is a re-draw");
+    let grid = json!({"name": "g", "fork": {"heat": [1]}, "p63": [], "world": 1});
+    assert_eq!(frozenhist::shipped_answer(&grid), json!({"heat": [1]}));
+    let days = json!({"name": "d", "day": {"date": "x"}, "hash": "h", "now": 1});
+    assert_eq!(frozenhist::shipped_answer(&days), json!([{"date": "x"}, "h"]));
+}
+
 /// One `#[test]` function of a test file: its name and its code, comments stripped. Its braces
 /// are counted on the code with every string literal blanked ([`blank_literals`], over the whole
 /// file, so a literal continued across lines is still one literal).

@@ -2087,7 +2087,7 @@ def renderRule : Rule → List Char
   | .monthly d        => ['m','o','n','t','h',':'] ++ digitsOf d
 
 def parseMonthDay (v : List Char) : Option Rule :=
-  (readNat v).bind (fun d => if 1 ≤ d ∧ d ≤ 31 then some (Rule.monthly d) else none)
+  (readRustNat v).bind (fun d => if 1 ≤ d ∧ d ≤ 31 then some (Rule.monthly d) else none)
 
 def parseNumRule (w : List Char) : Option Rule :=
   (readNat (w.takeWhile isDigitC)).bind (fun n =>
@@ -2281,7 +2281,7 @@ theorem parse_render_rule (r : Rule) (h : r.wf = true) : parseRule (renderRule r
       rw [stripPre_append ['m','o','n','t','h',':'] (digitsOf d)]
       show parseMonthDay (digitsOf d) = _
       unfold parseMonthDay
-      rw [readNat_digitsOf]
+      rw [readRustNat_digitsOf]
       simp only [Option.bind_some]
       rw [if_pos hd]
 
@@ -2647,7 +2647,7 @@ something the kernel can hold — `--energy 9` (G5) has nowhere to land. -/
 def renderCi (c : Fin 6) : List Char := [digitChar c.val]
 
 def parseCi (w : List Char) : Option (Fin 6) :=
-  (readNat w).bind (fun n => if h : n < 6 then some ⟨n, h⟩ else none)
+  (readRustNat w).bind (fun n => if h : n < 6 then some ⟨n, h⟩ else none)
 
 theorem readNat_single (k : Nat) (h : k < 10) : readNat [digitChar k] = some k := by
   have : digitsOf k = [digitChar k] := by rw [digitsOf_eq, if_pos h]
@@ -2655,7 +2655,7 @@ theorem readNat_single (k : Nat) (h : k < 10) : readNat [digitChar k] = some k :
 
 theorem parse_render_ci (c : Fin 6) : parseCi (renderCi c) = some c := by
   unfold renderCi parseCi
-  rw [readNat_single c.val (by omega)]
+  rw [readRustNat_of_head _ (by have hp : ∀ k : Fin 6, digitChar k.val ≠ '+' := (by decide); simpa using hp c), readNat_single c.val (by omega)]
   simp only [Option.bind_some]
   rw [dif_pos c.isLt]
 
@@ -2932,8 +2932,8 @@ theorem ciSlot_head {w : List Char} {c : Fin 6} (h : ciSlot w = some c) :
       | cons b t' => simp [ciSlot] at h
       | nil =>
           show isDigitC a = true
-          have : parseCi [a] = some c := h
-          unfold parseCi at this
+          have : parseCi [a] = some c := h; have hplus : a ≠ '+' := fun ha => by subst ha; rw [show ciSlot ['+'] = none from (by decide)] at h; cases h
+          unfold parseCi at this; rw [readRustNat_of_head [a] (by simpa using hplus)] at this
           cases hr : readNat [a] with
           | none => rw [hr] at this; simp at this
           | some n =>
@@ -7739,5 +7739,27 @@ theorem an_unset_keeps_the_box_ended :
     serializeItem ['a', '1'] Glyph.done
         (Field.unsetKey .due ⟨[], true, tokenize " Title due:2026-09-10 ^a1".toList, []⟩)
       = "- [x] Title ^a1".toList := by decide
+
+namespace Field
+/-! ## A signed `ci:` and `every:month:` value (the W-42 repair, README gaps 4162 and 4330)
+
+`parseCi` and `parseMonthDay` read a value as `tm-core`'s `grammar.rs` (`v.parse::<u8>()`) and
+`model.rs`'s `Rule::parse` read it — Rust's `u8::from_str`, `Text.readRustNat`, one leading `+`
+admitted — then their own range.  The positional `ci` slot is one character (`ciSlot`), so a sign
+never reaches it.  Written here, at the end of the namespace, so no line a check-9 pin names moves
+(README gap 2136). -/
+/-- **`ci:+5` is `ci` 5, as it is to the host** (`"+5".parse::<u8>()`, README gaps 4162 and 4330): the
+kernel read no `ci` here and inherited the parent's, so `tm check` named a `ciDisagrees` refusal of the
+day R3's `tm plan` asks for on a line fork 4748911 plans.  A sign is all the host admits beyond
+`readNat`: `ci:-5` and `ci:++5` are refused by both. -/
+theorem ci_reads_a_signed_value :
+    parseCi ['+','5'] = some ⟨5, by decide⟩ ∧ parseCi ['+','0','3'] = some ⟨3, by decide⟩ ∧
+      parseCi ['-','5'] = none ∧ parseCi ['+','+','5'] = none ∧ parseCi ['+','6'] = none := by decide
+
+/-- `every:month:+5` is the 5th, as `Rule::parse`'s `u8::from_str` reads it (README gap 4330). -/
+theorem rule_month_signed : parseRule ['m','o','n','t','h',':','+','5'] = some (.monthly 5) ∧
+    parseRule ['m','o','n','t','h',':','-','5'] = none := by decide
+
+end Field
 
 end Tm

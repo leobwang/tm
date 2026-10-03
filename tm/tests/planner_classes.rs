@@ -1917,6 +1917,23 @@ fn the_d64_rule_bites_and_does_not_over_bite() {
         forkclass::d64_allows(&old, &intro, &departed, &[45], None, &registered).is_err(),
         "an introduction passed while the shipped fork's day moved"
     );
+    // **Refused: a key of the world or the provenance moved with no answer moving** (W-42
+    // repair, README gaps 4320 and 4338) — the verifier's P4b and P8, `tests` and `class`
+    // rewritten in place with no reason, passed with "0 changed".  And with the answers moving
+    // under a number the line carries a flag of, a moved provenance key is still refused; and
+    // with a D64(c) reason, (c)'s own refusal of it is no longer discarded by the fallback.
+    for key in ["class", "tests"] {
+        let mut moved = old.clone();
+        moved[key] = Value::String("planted".to_string());
+        let quiet = forkclass::d64_allows(&old, &moved, &shipped, &[], None, &registered);
+        assert!(quiet.as_ref().is_err_and(|e| e.contains(key)), "`{key}` moved in place with no reason: {quiet:?}");
+        let mut both = bent.clone();
+        both[key] = Value::String("planted".to_string());
+        assert!(forkclass::d64_allows(&old, &both, &shipped, &[46], None, &registered).is_err(), "`{key}` moved under P46");
+        let why = "2026-10-03 D64(c): a harness reading corrected (README gap 4338)";
+        let c = forkclass::d64_allows(&old, &moved, &shipped, &[], Some(why), &registered);
+        assert!(c.as_ref().is_err_and(|e| e.contains("D64(c)")), "(c)'s refusal was discarded: {c:?}");
+    }
 }
 
 /// **The owner's D85, D64(c), bites and does not over-bite** (W-42 track C, README gaps 4123,

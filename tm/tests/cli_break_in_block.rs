@@ -79,3 +79,85 @@ fn a_done_block_with_a_break_inside_credits_what_it_logs_and_draws_no_block_acro
     let cell = heat_09(&week);
     assert_eq!((cell[0], cell[1]), (40, 20), "a done block is drawn around its break too: {cell:?}");
 }
+
+/// **A break taken while a `tm pause` holds the block** — the owner's D87 read ONE way by the host
+/// and the kernel (parity **P84**, README gaps 4243 and 4332, the W-42 repair). `^m1` from 09:00,
+/// paused at 09:20, a twenty-minute break from 09:30 to 09:50, then `tm pause` at 10:00 and `tm
+/// stop` at 10:10. The pause held the block through the break, so ending the break leaves it held
+/// and the second `tm pause` RESUMES it (`unpause` in the log); the block worked 09:00-09:20 and
+/// 10:00-10:10, thirty minutes, and `tm stop`, `tm now`'s header and `tm review day` all say so.
+///
+/// Fork 4748911 (and this binary until the repair) said three things at once: the break's end
+/// un-paused the block in `.tm/state.json`, so the second `tm pause` PAUSED it and logged a second
+/// `pause` the replay read as nothing; `tm stop` subtracted the break's minutes inside the pause a
+/// second time and said "after 0m"; and `tm review day` credited 20.
+#[test]
+fn a_break_inside_a_typed_pause_leaves_the_block_held_and_every_surface_reads_one_count() {
+    let tm = Tm::empty();
+    assert_eq!(tm.run(&["init", "--example"]).code, 0);
+    tm.ok_at(WAKE, &["wake", "07:00"]);
+    tm.ok_at(START, &["start", "^m1", "--energy", "3"]);
+    tm.ok_at("2026-09-07T09:20:00-05:00", &["pause"]);
+    tm.ok_at(BREAK_ON, &["break", "20m"]);
+    tm.ok_at(BREAK_OFF, &["break"]);
+    let held = tm.json_at("2026-09-07T09:55:00-05:00", &["now"]);
+    assert_eq!(held["active"]["paused"], true, "the break's end un-paused a block a `tm pause` held: {held}");
+    assert_eq!(held["active"]["elapsed_min"], 20, "the header while held: {held}");
+    let second = tm.ok_at("2026-09-07T10:00:00-05:00", &["pause"]).stdout;
+    assert!(second.contains("resumed"), "the second `tm pause` did not resume the held block: {second}");
+    assert_eq!(tm.last_ev("unpause")["id"], "m1", "the resume is logged as `unpause`");
+    let mid = tm.json_at("2026-09-07T10:05:00-05:00", &["now"]);
+    assert_eq!(mid["active"]["elapsed_min"], 25, "`tm now`'s header at 10:05: {mid}");
+    let said = tm.ok_at("2026-09-07T10:10:00-05:00", &["stop"]).stdout;
+    assert!(said.contains("after 30m"), "`tm stop` subtracted the break inside the pause twice: {said}");
+    let events = tm.events();
+    assert_eq!(
+        events[events.len() - 5..],
+        ["start", "pause", "break", "unpause", "stop"],
+        "{events:?}"
+    );
+    let day = tm.json_at("2026-09-07T10:11:00-05:00", &["review", "day"]);
+    assert_eq!(day["review"]["block_min"], 30, "`tm review day` and `tm stop` read the block two ways: {day}");
+}
+
+/// **The host's idle minutes are a UNION** (P84): an interruption and a break that overlap stop the
+/// block's clock once. `^m1` from 09:00, `tm interrupt` at 09:10, a break logged 09:20-09:40 while
+/// the interruption runs, `tm resume` at 09:50, `tm stop` at 10:00: twenty minutes worked
+/// (09:00-09:10, 09:50-10:00), which the kernel credits — the sum took the break a second time.
+#[test]
+fn an_interruption_and_a_break_that_overlap_stop_the_clock_once() {
+    let tm = Tm::empty();
+    assert_eq!(tm.run(&["init", "--example"]).code, 0);
+    tm.ok_at(WAKE, &["wake", "07:00"]);
+    tm.ok_at(START, &["start", "^m1", "--energy", "3"]);
+    tm.ok_at("2026-09-07T09:10:00-05:00", &["interrupt"]);
+    tm.ok_at("2026-09-07T09:20:00-05:00", &["break", "20m"]);
+    tm.ok_at("2026-09-07T09:40:00-05:00", &["break"]);
+    tm.ok_at("2026-09-07T09:50:00-05:00", &["resume"]);
+    let said = tm.ok_at(STOP, &["stop"]).stdout;
+    assert!(said.contains("after 20m"), "`tm stop`: {said}");
+    let day = tm.json_at(AFTER, &["review", "day"]);
+    assert_eq!(day["review"]["block_min"], 20, "`tm review day`: {day}");
+}
+
+/// **The rebuild from the log reads the break as the verb does** (P84; the owner's D42: the cache
+/// follows the log): with the typed pause and the ended break of the test above, `.tm/state.json`
+/// deleted, the block is rebuilt HELD — `ctx::logged_pause`'s `break` arm folds nothing — where
+/// until the W-42 repair the rebuild read the break as un-pausing it, the reading the cache no
+/// longer holds.
+#[test]
+fn deleting_the_runtime_state_after_a_break_inside_a_pause_rebuilds_the_block_held() {
+    let tm = Tm::empty();
+    assert_eq!(tm.run(&["init", "--example"]).code, 0);
+    tm.ok_at(WAKE, &["wake", "07:00"]);
+    tm.ok_at(START, &["start", "^m1", "--energy", "3"]);
+    tm.ok_at("2026-09-07T09:20:00-05:00", &["pause"]);
+    tm.ok_at(BREAK_ON, &["break", "20m"]);
+    tm.ok_at(BREAK_OFF, &["break"]);
+    let cached = tm.json_at("2026-09-07T09:55:00-05:00", &["now"]);
+    std::fs::remove_file(tm.plan.join(".tm/state.json")).expect("the runtime state");
+    let rebuilt = tm.json_at("2026-09-07T09:55:00-05:00", &["now"]);
+    assert_eq!(rebuilt["active"]["paused"], true, "the rebuild un-paused the held block: {rebuilt}");
+    assert_eq!(rebuilt["active"]["paused"], cached["active"]["paused"], "the cache and the log disagree");
+    assert_eq!(rebuilt["active"]["elapsed_min"], 20, "{rebuilt}");
+}

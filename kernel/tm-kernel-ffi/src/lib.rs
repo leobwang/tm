@@ -63,6 +63,17 @@ pub fn init() -> Result<(), KernelFault> {
 /// rather than being noticed later.
 pub const TRACE_CALLS_ENV: &str = "TM_TRACE_KERNEL_CALLS";
 
+/// **The request itself, traced** (W-42 repair, README gaps 4200 and 4335):
+/// when this is set beside [`TRACE_CALLS_ENV`], every call also writes the
+/// request it carries as one more stderr line, `kernel request: <json>` — the
+/// whole text, which is one line because the binary's JSON writer escapes
+/// every newline. It exists for one instrument: T18 in `tm/tests/cli_latency.rs`
+/// takes the planner request `tm check` builds (the request R3's `tm plan`
+/// sends) and asks it again with §9.1's `overtime` what-if added, the call R3's
+/// TUI overtime box makes, which no shipped verb sends before the swap. A
+/// diagnostic, like the call trace: no answer depends on it.
+pub const TRACE_REQUESTS_ENV: &str = "TM_TRACE_KERNEL_REQUESTS";
+
 /// **Every section this request carries**, by the one literal each builder
 /// emits and no other does: `"capacity":` (`kernel_capacity::request`),
 /// `"log":{` (`kernel_log::request`, and `kernel_log::capacity_log_section`
@@ -132,6 +143,9 @@ pub fn call(request: &str) -> Result<String, KernelFault> {
     init()?;
     if std::env::var_os(TRACE_CALLS_ENV).is_some() {
         eprintln!("kernel call: {}", trace_kinds(request).join("+"));
+        if std::env::var_os(TRACE_REQUESTS_ENV).is_some() {
+            eprintln!("kernel request: {request}");
+        }
     }
     let c = CString::new(request).map_err(|_| KernelFault::NulInRequest)?;
     let raw = unsafe { tm_kernel_call_c(c.as_ptr()) };

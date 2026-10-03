@@ -197,6 +197,18 @@ fn say_clamped(today: NaiveDate, want: u32, days: u32) {
 /// sent in ([`planwire::send_order`], the order `planwire::capacity_json` wrote
 /// them in).
 pub fn request(ctx: &Ctx, allow_home: bool, days: u32, ranked: Option<&Ranked<'_>>) -> Result<(String, Vec<usize>), CliError> {
+    request_on(ctx, &ctx.state, allow_home, days, ranked)
+}
+
+/// [`request`] over `state` in place of `ctx.state` — [`planner_request`]'s, which
+/// reads the state as `tm plan`'s roll leaves it.
+fn request_on(
+    ctx: &Ctx,
+    state: &tm_core::store::RuntimeState,
+    allow_home: bool,
+    days: u32,
+    ranked: Option<&Ranked<'_>>,
+) -> Result<(String, Vec<usize>), CliError> {
     // Every configured decimal as its file writes it (D10, D17): read here, checked and sent
     // by the codec, which is the one spelling of the section (README gap 2875).
     let written = written_of(ctx)?;
@@ -205,7 +217,7 @@ pub fn request(ctx: &Ctx, allow_home: bool, days: u32, ranked: Option<&Ranked<'_
         model: &ctx.model,
         written: &written,
         tree: &ctx.tree,
-        state: &ctx.state,
+        state,
         now: ctx.now_tz,
         // The day record `planwire::planned_loc` falls back to: the location is the
         // planner's reading, not `Ctx::loc`'s lounge (D81, parity P76).
@@ -333,15 +345,27 @@ pub fn rank(ctx: &Ctx, cands: &[Candidate], yesterday: &BTreeMap<Id, u8>, allow_
 /// and the TUI once R3 swaps the body, and D80 made two of them refusals BY
 /// NAME so they would be findable (D32's shape). R3's swap sends exactly this
 /// request from `planning::build_ranked`.
+///
+/// **It reads `.tm/state.json` as `tm plan`'s roll leaves it, in memory**
+/// (`RuntimeState::roll_to`; the owner's D84, parity P83's rule for the TUI,
+/// applied once here for every caller — README gaps 4263, 4323 and 4334, the
+/// W-42 repair). `tm check` writes nothing and so never rolled: past midnight
+/// it asked the kernel for MONDAY's day on Tuesday — `planner.routines`
+/// carrying Monday's instances and `capacity.state.date` Monday's — while `tm
+/// plan` and the TUI plan Tuesday's, so the refusal it names was a refusal of a
+/// day no planning surface asks for. `tm plan`'s housekeeping and the TUI's
+/// re-collection have rolled the state already, so for them this is a no-op.
 pub fn planner_request(ctx: &Ctx, allow_home: bool) -> Result<String, CliError> {
+    let mut state = ctx.state.clone();
+    state.roll_to(ctx.today);
     let cands = priority::collect_candidates(&ctx.tree, &ctx.replay, &ctx.cfg, &ctx.model, ctx.today, ctx.now_tz);
     let yesterday = ctx.hysteresis_input();
     let (days, _) = planwire::horizon(ctx.today, priority::lookahead_days(&cands, ctx.today));
-    let (request, _) = request(ctx, allow_home, days, Some(&Ranked { cands: &cands, yesterday: &yesterday }))?;
+    let (request, _) = request_on(ctx, &state, allow_home, days, Some(&Ranked { cands: &cands, yesterday: &yesterday }))?;
     let tz = ctx.cfg.tz;
-    let date = planwire::plan_date(&ctx.state, ctx.now_tz);
+    let date = planwire::plan_date(&state, ctx.now_tz);
     let routines = planwire::routine_instances(&cands, &ctx.tree, ctx.now_tz, date, tz);
-    let mut planner = planwire::planner_json(&ctx.state, &ctx.replay, ctx.now_tz, tz, &routines, None);
+    let mut planner = planwire::planner_json(&state, &ctx.replay, ctx.now_tz, tz, &routines, None);
     if let Some(worked) = super::day::worked_min(ctx) {
         planwire::add_worked_min(&mut planner, worked);
     }

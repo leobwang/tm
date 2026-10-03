@@ -537,6 +537,31 @@ impl ItemLine {
 
     fn remove_at(&mut self, idx: usize) {
         self.tokens.remove(idx);
+        self.fix_box_end();
+    }
+
+    /// **A state box stays ended after an edit** — the owner's D83 and parity
+    /// **P80**, one rule for every writer (README gaps 4333 and 4161's class;
+    /// the W-42 repair). A box is a box only when an ASCII whitespace or the
+    /// end of the line follows it (the parser's own ASCII-whitespace
+    /// test); every removal carries the removed token's lead away with it, so
+    /// removing the token right after the box left the box glued to the NEXT
+    /// token's lead — a no-break space, say — and the line came back
+    /// box-less: `- [?] est:15m<NBSP>Ask … ^a4` after `tm event reply`
+    /// resolved it was `- [ ]<NBSP>Ask … ^a4`, written at exit 0 and refused
+    /// `missing state` by the next `tm check`. P80 put a space in front of that
+    /// lead in the kernel's unset (`Field.endBox`); this is the same space for
+    /// every host edit, so no writer of the binary leaves a box unended. A
+    /// no-op on every line whose box already ends.
+    fn fix_box_end(&mut self) {
+        let Some(s) = self.index_of(&TokenKind::State) else {
+            return;
+        };
+        if let Some(next) = self.tokens.get_mut(s + 1) {
+            if !next.lead.chars().next().is_some_and(|c| c.is_ascii_whitespace()) {
+                next.lead.insert(0, ' ');
+            }
+        }
     }
 
     /// True when a token before `idx` ends the title (starts with `@ # ! ^`
@@ -634,6 +659,7 @@ impl ItemLine {
         let out = edit(&mut edited);
         edited.fix_flag_boundaries()?;
         edited.fix_absorbed_leads();
+        edited.fix_box_end();
         *self = edited;
         Ok(out)
     }
@@ -2202,6 +2228,28 @@ mod tests {
         let it = week("- [ ] 3 Call re: bank ^t1");
         assert_eq!(it.title, "Call bank");
         assert_eq!(it.extra, vec![("re".to_string(), String::new())]);
+    }
+
+    /// **A box stays ended after every edit** (P80 for every host writer; the W-42 repair, README
+    /// gap 4333): removing the token right after the box carries its lead away, and the NEXT
+    /// token's lead — a no-break space here — must not end up glued to the `]`, or the line comes
+    /// back box-less (`missing state`). A space goes in front of that lead; a lead that already
+    /// begins with an ASCII whitespace is left alone, so no line whose box ends moves.
+    #[test]
+    fn a_removal_after_the_box_keeps_the_box_ended() {
+        let s = "- [?] est:15m\u{a0}Ask Prof. Lee  on-event:reply/7d waiting:2026-09-05 ^a4";
+        let mut l = ItemLine::parse(s).unwrap();
+        assert_eq!(l.remove_token("est"), Ok(true));
+        assert_eq!(l.to_string(), "- [?] \u{a0}Ask Prof. Lee  on-event:reply/7d waiting:2026-09-05 ^a4");
+        assert!(ItemLine::parse(&l.to_string()).unwrap().has(&TokenKind::State), "the box survives the re-read");
+        // The positional removals go through the same rule.
+        let mut c = ItemLine::parse("- [x] 4\u{a0}2b Title ^c1").unwrap();
+        c.remove_ci().unwrap();
+        assert_eq!(c.to_string(), "- [x] \u{a0}2b Title ^c1");
+        // A space-led next token is untouched.
+        let mut t = ItemLine::parse("- [ ] est:15m Title ^t1").unwrap();
+        assert_eq!(t.remove_token("est"), Ok(true));
+        assert_eq!(t.to_string(), "- [ ] Title ^t1");
     }
 
     #[test]

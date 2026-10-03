@@ -342,8 +342,8 @@ The host reads an item line's words exactly so: fork 4748911's `grammar.rs` spli
 functions unchanged.  So a tab, a no-break space or any other `White_Space` character between
 two words separates them here as it does there; until W-42 this was `c == ' '`, a tab was a
 word character to the kernel and whitespace to the host, and one line read two ways (gap 32,
-gap 4130).  `LogStamp.isRustSpace`, where this disjunction was first written for the log's
-grammar (stage 5 D9 step B2), is this predicate under the name the log's grammar cites.
+gap 4130).  The log's grammar (stage 5 D9 step B2) wrote it first, as a second definition the
+W-42 repair deleted; `Stamp.lean` and `Log.lean` read this one (README gaps 4324 and 4336).
 
 Written as a ladder rather than one disjunction so that a printable ASCII character — nearly
 every character a decided witness reads — costs two comparisons; `isSp_eq_whiteSpace` is the
@@ -359,7 +359,7 @@ def isSp (c : Char) : Bool :=
     c.toNat == 0x2029 || c.toNat == 0x202F || c.toNat == 0x205F || c.toNat == 0x3000
 
 /-- **The ladder is the `White_Space` disjunction** — the comparison chain stage 5 D9 step B2
-wrote as `LogStamp.isRustSpace`, character for character. -/
+wrote for the log's grammar, character for character. -/
 theorem isSp_eq_whiteSpace (c : Char) : isSp c =
     (c.toNat == 32 || (9 ≤ c.toNat && c.toNat ≤ 13) || c.toNat == 0x85 || c.toNat == 0xA0 ||
       c.toNat == 0x1680 || (0x2000 ≤ c.toNat && c.toNat ≤ 0x200A) || c.toNat == 0x2028 ||
@@ -961,5 +961,50 @@ theorem stripPre_head_ne (a : Char) (as l : List Char)
   | cons c cs =>
       have hne : ¬ (a = c) := fun hc => (h c rfl) hc.symm
       simp [stripPre, hne]
+
+/-! ## Rust's unsigned `FromStr` (the W-42 repair)
+
+Appended at the end of the module so no line a check-9 pin names moves (README gap 2136). -/
+/-- **Rust's `str::parse` for an unsigned integer** (`u8::from_str`): one optional leading `+`, then
+a non-empty decimal numeral and nothing else.  It is the reader `tm-core`'s `grammar.rs` reads a
+`ci:` value with (`v.parse::<u8>()`) and `model.rs`'s `Rule::parse` the day of an `every:month:`,
+and the kernel's own `readNat` refuses the sign: so `ci:+5` was `ci` 5 to the host and no `ci` at
+all to the kernel, which then read the parent's, and R3's `tm plan` would have refused
+(`ciDisagrees`, parity P72) a day fork 4748911 plans (README gaps 4162 and 4330).  A magnitude past
+the Rust type's width is the caller's range check: every caller's range is inside `u8`'s. -/
+def readRustNat : List Char → Option Nat
+  | '+' :: t => readNat t
+  | t => readNat t
+
+/-- **`readRustNat` is `readNat` on a word that does not begin with `+`** — so every numeral the
+kernel writes (`digitsOf`) reads back as itself through it. -/
+theorem readRustNat_of_head (l : List Char) (h : l.head? ≠ some '+') : readRustNat l = readNat l := by
+  cases l with
+  | nil => rfl
+  | cons a t =>
+      by_cases ha : a = '+'
+      · subst ha; exact absurd rfl h
+      · unfold readRustNat; split
+        · rename_i heq; simp only [List.cons.injEq] at heq; exact absurd heq.1 ha
+        · rfl
+
+theorem readRustNat_digitsOf (n : Nat) : readRustNat (digitsOf n) = some n := by
+  rw [readRustNat_of_head]
+  · exact readNat_digitsOf n
+  · intro h
+    cases hd : digitsOf n with
+    | nil => exact digitsOf_ne_nil n hd
+    | cons a t =>
+        rw [hd] at h
+        have ha : a = '+' := by simpa using h
+        have := digitsOf_all_digits n a (by rw [hd]; exact List.mem_cons_self ..)
+        rw [ha] at this; exact absurd this (by decide)
+
+/-- **The sign is read, once** (`"+5".parse::<u8>() == Ok(5)`), and nothing else is: a bare `+`,
+two signs, a minus and a sign after a digit are each refused, as Rust refuses them. -/
+theorem readRustNat_reads_one_plus :
+    readRustNat ['+','5'] = some 5 ∧ readRustNat ['5'] = some 5 ∧ readRustNat ['+','0','5'] = some 5 ∧
+      readRustNat ['+'] = none ∧ readRustNat ['+','+','5'] = none ∧ readRustNat ['-','5'] = none ∧
+      readRustNat ['5','+'] = none ∧ readRustNat [] = none := by decide
 
 end Tm
