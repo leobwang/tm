@@ -2483,9 +2483,9 @@ theorem wallTodayIsReadOfEveryCandidate :
    started at 193 -- the second time in two runs (W-17's gap 671).  Every
    citation of track G's 193/194, in Lean and in prose, moved with them. -/
 /- CHEAT 201 — `noBlockOverABreak` asserted to hold on a day whose log records a
-   `break` while a block is running.  Every Break row of the day is a replayed
+   `break` running into a block.  Every Break row of the day is a replayed
    one (`Planner.a_break_row_is_a_replayed_row`) and so is every Block row the
-   planner did not reserve, so a log with a break at 07:30 inside `m1`'s
+   planner did not reserve, so a log with a break at 07:00 lasting into `m1`'s
    07:05-08:05 block gives the day a Break row INSIDE a Block row — which is why
    `Goals.plan_places_no_block_over_a_break` was false as stage 6 wrote it
    (W-18, README gap 385's third instance).  This block claims the checker says
@@ -2765,6 +2765,44 @@ theorem theOldE1HoldsAtAStartAfterNow :
    instant at or before `now`; D78 does not reach it).  This block claims `Planner.mkBreak?` builds a
    break that begins a second after `now`; `decide` refuses. -/
 theorem aBreakAfterNowIsBuilt : (Planner.mkBreak? ⟨1000, 0⟩ ⟨some ⟨1001, 0⟩, 10, none⟩).isSome = true := by
+  decide
+
+
+/- ====================================================================
+   W-42 track R — the owner's D87 (README gap 4137, parity P81): a break
+   taken inside a block is not block time.  Cheats 246-248, numbered from
+   the highest in the checkout (245); the merge renumbers if another track
+   took the same numbers (AGENTS 6.2).
+   ==================================================================== -/
+
+/- CHEAT 246 — the fork's credit: `start a` 09:00, a twenty-minute `break` at
+   09:30, `stop a` 10:00, credited the block's whole sixty-minute span.  D87's
+   `Replay.brkFx` stops the clock across the break, so `decide` computes 40 and
+   refuses 60. -/
+theorem aStoppedBlockIsCreditedItsSpan :
+    ((Replay.replay Replay.utcZone [Replay.bE 1 63924368400 (Replay.bStart ['a']),
+        Replay.bE 2 63924370200 (.brk 20 (some 20) none), Replay.bE 3 63924372000 (.stop ['a'] 0)]).items.get
+        ['a']).map (·.minutes) = some 60 := by
+  decide
+
+/- CHEAT 247 — the fork's drawing: the same day's segments claimed to be two,
+   one Block `[09:00, 10:00]` across the Break.  `decide` computes the three
+   segments `[09:00, 09:30]`, `[09:30, 09:50]`, `[09:50, 10:00]` and refuses. -/
+theorem aStoppedBlockIsDrawnAcrossItsBreak :
+    ((Replay.replay Replay.utcZone [Replay.bE 1 63924368400 (Replay.bStart ['a']),
+        Replay.bE 2 63924370200 (.brk 20 (some 20) none), Replay.bE 3 63924372000 (.stop ['a'] 0)]).days.get
+        739865).map (fun a => a.segments.length) = some 2 := by
+  decide
+
+/- CHEAT 248 — C5's `arm_split` over every event, which D87 makes false: a
+   `break`'s arm with a block running is its day family arm alone.  `decide`
+   computes the arm, which also stops the block's clock, and refuses. -/
+theorem aBreaksArmIsItsDayArm :
+    Replay.arm (fun _ => 739865) (fun _ => none)
+        ⟨some ⟨['a'], (⟨63924368400, 0⟩, ⟨false, 0⟩), some (⟨63924368400, 0⟩, ⟨false, 0⟩), false, none, 0, none⟩, none, none⟩
+        (Replay.bE 2 63924370200 (.brk 20 (some 20) none)) (⟨63924370200, 0⟩, ⟨false, 0⟩) 739865
+      = Replay.dayArm (fun _ => 739865) (fun _ => none) (Replay.bE 2 63924370200 (.brk 20 (some 20) none))
+          (⟨63924370200, 0⟩, ⟨false, 0⟩) 739865 := by
   decide
 
 end Tm

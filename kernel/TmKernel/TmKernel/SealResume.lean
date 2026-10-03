@@ -33,7 +33,8 @@ def blockSince (m : Machine) : List Cal.Instant := ((m.block.bind (·.since)).ma
 def blockPaused (m : Machine) : List Cal.Instant := ((m.block.bind (·.pausedAt)).map (·.1)).toList
 
 /-- **Every instant a step reads the day index at**: the entry's own (`entryInstants`), and the open block's sub-segment
-and pause starts when the step closes them (`closeSub`, `closePause`). -/
+and pause starts when the step closes them (`closeSub`, `closePause`; a `break`'s `Replay.brkFx` closes the running
+sub-segment, D87). -/
 def stepQueries (m : Machine) (e : Entry) : List Cal.Instant :=
   entryInstants e ++
     match e.ev with
@@ -55,6 +56,7 @@ def stepQueries (m : Machine) (e : Entry) : List Cal.Instant :=
       match m.block with
       | some b => if b.id = id then blockSince m ++ blockPaused m else []
       | none => []
+    | .brk .. => blockSince m
     | _ => []
 
 /-- **The tail without its settled undos** (§7.4): a settled undo cancels nothing after the cut. -/

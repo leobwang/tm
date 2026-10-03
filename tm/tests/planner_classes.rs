@@ -89,12 +89,38 @@ fn tz() -> Tz {
 /// with the declared classes and nothing else (see `support/forkclass.rs`).
 #[test]
 fn the_kernel_plans_every_generated_class_the_fork_planned() {
+    // **Parity P81** (the owner's D87, W-42 track R, README gaps 4137 and 4240): a line whose world's
+    // log holds a break P81 nets — the eight `worked` lines, whose break the log holds INSIDE the
+    // running block — is held to its frozen fork day with P81 applied by its property
+    // (`support/p81.rs`' `planned_day`: the open row cut where the clock stopped, re-digested), as
+    // compare_line applies P45's and P56's rules to a frozen fork row; the frozen `day` itself is the
+    // comparand of a replay that counted the break as worked, which the kernel's no longer is, and
+    // `the_frozen_classes_are_the_forks_answer_today` holds the rule to fork 4748911 asked the D87 day.
+    #[allow(dead_code)]
+    #[path = "support/p81.rs"]
+    mod p81;
     let mut t = ClassTally::default();
     let mut findings = Vec::new();
+    let (mut p81_held, mut p81_moved) = (0usize, 0usize);
     for line in frozen_lines() {
-        findings.extend(compare_line(line, &mut t));
+        let log = line["world"]["log"].as_str().unwrap_or_default();
+        match p81::netted_breaks(log, &[]) {
+            Err(why) => findings.push(format!("{}: {why}", line["class"])),
+            Ok(n) if n.is_empty() => findings.extend(compare_line(line, &mut t)),
+            Ok(n) => match p81::planned_day(&line["day"]["day"], &n) {
+                Err(why) => findings.push(format!("{}: {why}", line["class"])),
+                Ok(day) => {
+                    let mut held = line.clone();
+                    held["day"] = forkplan::frozen_day_json(&day);
+                    p81_held += 1;
+                    p81_moved += usize::from(held["day"] != line["day"]);
+                    findings.extend(compare_line(&held, &mut t));
+                }
+            },
+        }
     }
     let line = t.line(findings.len());
+    println!("parity P81: {p81_held} line(s) held to their fork day with P81 applied by its property ({p81_moved} of them moved by it)");
     println!("{line}");
     assert!(line.starts_with(&format!("frozen fork classes — {} class(es)", class_space().len())), "{line}");
     assert!(
@@ -128,7 +154,14 @@ fn the_kernel_plans_every_generated_class_the_fork_planned() {
     // README gap 3200: a scheduled window task's Routine row marked `⚠` (gap 435), by value.
     assert!(t.day.hot_marks_435 > 0, "no routine `⚠` mark was compared on a frozen generated day: {t:?}");
     // README gap 3282: the host's worked minutes moving the day (P55), by value.
+    // Since the owner's D87 (README gap 4242) the `worked` lines' P55 departure is from fork
+    // 4748911's reading alone: the kernel's own replay nets their logged break (P81), so P55's
+    // request field is what the break-day open rows above test (`p45_host`), and these lines
+    // are held to their fork day with P81's rule applied.
     assert!(t.p55 > 0, "no P55 line: the host's worked minutes move no frozen day: {t:?}");
+    // W-42 track R (README gap 4240): P81 was held on a frozen day, and on every line it is held on
+    // its rule moves the day — the property is never the identity.
+    assert!(p81_held > 0 && p81_moved == p81_held, "P81's rule moves {p81_moved} of the {p81_held} line(s) held to it");
     assert!(t.day.break_rows_551 > 0, "gap 551's class counted no row: {t:?}");
     assert!(t.day.mult_rows_550 > 0, "gap 550's class counted no row: {t:?}");
     assert!(
@@ -1211,35 +1244,85 @@ fn the_frozen_window_worlds_are_every_one_the_task_derives() {
 /// README gap 3282; parity P55): for every PRIMARY line `forkclass::worked_worlds`
 /// answers for, a `worked` line carrying that world under its parent's class, and no
 /// `worked` line is anything else — and on every one the host's worked minutes are NOT
-/// the log's (so the P55 comparand departs, which the line records as `p55`).
+/// fork 4748911's reading (so the P55 comparand departs, which the line records as `p55`).
+///
+/// **Since the owner's D87 (W-42 track R, parity P81, README gaps 4137 and 4240) the kernel's
+/// replay nets the logged break as the host does**, so on every one of these worlds the host's
+/// minutes ARE the log's — one reading, the parent's less the inner break exactly — and fork
+/// 4748911's reading is the parent's, which counts the break as worked. Two consequences, each
+/// asserted rather than assumed: a world whose parent was in overtime by fewer minutes than the
+/// break is RUNNING to the kernel, so its line files under that class with `derived.from` still
+/// naming the parent's (README gap 4240's re-filing of `overtime/home` and `overtime/travel`);
+/// and on every `worked` world P81 nets exactly the inner break (`support/p81.rs`' `netted_breaks`,
+/// fork 4748911's own machine read off the log), the rule the comparison holds the kernel by.
 #[test]
 fn the_frozen_worked_worlds_are_every_one_the_inner_break_derives() {
+    #[allow(dead_code)]
+    #[path = "support/p81.rs"]
+    mod p81;
     let tz = tz();
     let mut want = BTreeSet::new();
+    let mut refiled = 0usize;
     for line in frozen_lines().iter().filter(|l| l["secondary"].is_null()) {
         let w = ClassWorld::of_json(&line["world"], tz).expect("a stored world");
+        let parent = Built::of(w.clone());
+        let pc = class_of(&parent);
+        assert_eq!(pc.key(), line["class"].as_str().unwrap_or_default(), "a primary line's world classifies as another class");
         for d in forkclass::worked_worlds(&w) {
             let b = Built::of(d.clone());
-            assert_eq!(class_of(&b).key(), line["class"].as_str().unwrap_or_default(), "the inner break moved a world's class");
+            let dc = class_of(&b);
             assert_eq!(d.state, w.state, "the inner break moved `.tm/state.json`");
-            assert_ne!(forkclass::host_worked(&b), b.worked(), "the inner break left the two readings equal");
-            want.insert((line["class"].as_str().unwrap_or_default().to_string(), d.to_json().to_string()));
+            // D87: ONE reading — the host's and the kernel's log reading agree, and both are the
+            // parent's (fork 4748911's reading of this world: it nets no break) less the break.
+            let net = parent.worked().map(|m| m.saturating_sub(forkclass::INNER_BREAK.1));
+            assert_eq!(b.worked(), net, "the kernel's replay does not net the inner break (P81)");
+            assert_eq!(forkclass::host_worked(&b), b.worked(), "the inner break left the host's reading and the log's apart");
+            assert_ne!(forkclass::host_worked(&b), parent.worked(), "the inner break left fork 4748911's reading and the host's equal");
+            // The class is the parent's, or — P81's re-filing — the parent was in overtime by its
+            // block's span and the break's minutes take the kernel's reading below the estimate.
+            if dc != pc {
+                let est = d.state.active.as_ref().map(|a| a.est_min);
+                assert!(
+                    pc.run == Run::Overtime
+                        && dc.run == Run::Running
+                        && dc.shape == pc.shape
+                        && est.is_some_and(|e| parent.worked().is_some_and(|p| p >= e) && net.is_some_and(|n| n < e)),
+                    "the inner break moved {} to {} for another reason than P81's netting",
+                    pc.key(),
+                    dc.key()
+                );
+                refiled += 1;
+            }
+            want.insert((pc.key(), dc.key(), d.to_json().to_string()));
         }
     }
-    let have: BTreeSet<(String, String)> = frozen_lines()
+    let have: BTreeSet<(String, String, String)> = frozen_lines()
         .iter()
         .filter(|l| l["secondary"] == "worked")
         .map(|l| {
-            assert_eq!(l["derived"]["from"], l["class"], "a worked line files under its parent's class");
             assert_eq!(l["p55"]["p55"], true, "a worked line whose comparand does not read the host's minutes");
-            (l["class"].as_str().unwrap_or_default().to_string(), l["world"].to_string())
+            // P81's rule holds on it: the log nets exactly its inner break, in its running block.
+            let w = ClassWorld::of_json(&l["world"], tz).expect("a stored world");
+            let netted = p81::netted_breaks(&w.log, &[]).expect("the log reads");
+            let running = w.state.active.as_ref().map(|a| a.id.as_str().to_string());
+            assert!(
+                netted.len() == 1 && Some(&netted[0].id) == running.as_ref(),
+                "{}: P81 nets {netted:?} in a worked world, not its one inner break (README gap 4240)",
+                l["class"]
+            );
+            (
+                l["derived"]["from"].as_str().unwrap_or_default().to_string(),
+                l["class"].as_str().unwrap_or_default().to_string(),
+                l["world"].to_string(),
+            )
         })
         .collect();
-    let missing: Vec<&String> = want.difference(&have).map(|w| &w.0).collect();
-    let extra: Vec<&String> = have.difference(&want).map(|w| &w.0).collect();
-    println!("frozen inner-break worlds: {} derived, {} held", want.len(), have.len());
+    let missing: Vec<(&String, &String)> = want.difference(&have).map(|w| (&w.0, &w.1)).collect();
+    let extra: Vec<(&String, &String)> = have.difference(&want).map(|w| (&w.0, &w.1)).collect();
+    println!("frozen inner-break worlds: {} derived, {} held, {refiled} re-filed by P81's netting", want.len(), have.len());
     assert!(missing.is_empty() && extra.is_empty(), "worked worlds missing {missing:?}, held and not derived {extra:?}");
     assert!(!want.is_empty(), "no primary line's running block can take an inner break");
+    assert!(refiled > 0, "no worked world's class is moved by P81's netting: the re-filing clause is asserted on nothing");
 }
 
 /// **The frozen overrun worlds are exactly the worlds the break derives** (W-38, README gaps
@@ -1478,13 +1561,29 @@ fn every_d61_world_is_the_pause_the_binary_logs() {
 /// naming what it compared.
 #[test]
 fn every_w38_comparison_bites_a_bent_answer() {
+    #[allow(dead_code)]
+    #[path = "support/p81.rs"]
+    mod p81;
+    /// The line as the comparison holds it: a line whose world's log holds a break P81 nets (the
+    /// owner's D87, README gap 4240) is held to its fork day with P81's rule applied, as
+    /// `the_kernel_plans_every_generated_class_the_fork_planned` holds it — so a bend of `day` reaches
+    /// the comparand through the rule.
+    fn held(line: &Value) -> Value {
+        let mut v = line.clone();
+        let netted = p81::netted_breaks(line["world"]["log"].as_str().unwrap_or_default(), &[]).expect("the log reads");
+        if !netted.is_empty() {
+            let day = p81::planned_day(&line["day"]["day"], &netted).expect("P81's rule applies");
+            v["day"] = forkplan::frozen_day_json(&day);
+        }
+        v
+    }
     fn check(line: &Value, what: &str, bend: impl Fn(&mut Value) -> bool, name: &str) {
         let mut t = ClassTally::default();
-        assert!(forkclass::compare_line(line, &mut t).is_empty(), "{}: the unbent line differs", line["class"]);
+        assert!(forkclass::compare_line(&held(line), &mut t).is_empty(), "{}: the unbent line differs", line["class"]);
         let mut bent = line.clone();
         assert!(bend(&mut bent), "{what}: {} holds nothing to bend", line["class"]);
         let mut t = ClassTally::default();
-        let found = forkclass::compare_line(&bent, &mut t);
+        let found = forkclass::compare_line(&held(&bent), &mut t);
         assert!(found.iter().any(|f| f.contains(name)), "{what} on {}: bent and not refused by name `{name}`: {found:?}", line["class"]);
     }
     let first = |f: &dyn Fn(&Value) -> bool| frozen_lines().iter().find(|l| f(l)).expect("a frozen line of the kind").clone();
@@ -1523,12 +1622,35 @@ fn every_w38_comparison_bites_a_bent_answer() {
         x["shipped"] = x["day"].clone();
         true
     }, "a P56 line whose shipped day");
-    // P55: the reservation the host's minutes place.
+    // P55: the reservation the host's minutes place (on a `worked` line since D87, through P81's
+    // rule, which leaves the reservation as it finds it).
     let l = first(&|l| l["p55"]["p55"] == true && l["day"]["day"]["segments"].as_array().is_some_and(|r| r.iter().any(|s| s["flags"]["current"] == true)));
     check(&l, "the P55 reservation", |x| {
         let rows = x["day"]["day"]["segments"].as_array_mut().expect("rows");
         rows.iter_mut().find(|r| r["flags"]["current"] == true).map(|r| r["flags"]["planned_min"] = serde_json::json!(9999)).is_some()
     }, "the rows differ");
+    // **P81** (the owner's D87, W-42 track R, README gap 4240): the running block's open row P81
+    // cuts at the break, its start bent by a minute, is refused by name through the cut.
+    let worked = |l: &Value| !p81::netted_breaks(l["world"]["log"].as_str().unwrap_or_default(), &[]).expect("the log reads").is_empty();
+    let l = first(&|l| worked(l));
+    check(&l, "the open row P81 cuts at the break", |x| {
+        let rows = x["day"]["day"]["segments"].as_array_mut().expect("rows");
+        rows.iter_mut()
+            .find(|r| r["kind"] == "block" && r["flags"]["open"] == true)
+            .map(|r| r["start"] = Value::String("2026-09-07T07:55:00-05:00".into()))
+            .is_some()
+    }, "the rows differ");
+    // **P81 is not the identity**: on every line P81's rule holds, the kernel's day is NOT the
+    // line's own `day` — the comparand of a replay that counted the break as worked — so the rule
+    // is what makes it pass, never what lets anything through.
+    let mut refused = 0usize;
+    for l in frozen_lines().iter().filter(|l| worked(l)) {
+        let mut t = ClassTally::default();
+        let found = forkclass::compare_line(l, &mut t);
+        assert!(found.iter().any(|f| f.contains("the rows differ")), "{}: the line's own day still matches the kernel: {found:?}", l["class"]);
+        refused += 1;
+    }
+    assert!(refused > 0, "no line P81's rule holds");
     // A finding names the LINE: a secondary line's carries its kind after its class.
     let l = first(&|l| l["secondary"] == "window" && l["p45"].is_null());
     let who = format!("{} (window): ", l["class"].as_str().expect("a class"));
@@ -1839,18 +1961,123 @@ fn kernel_prios(b: &Built) -> Vec<Prio> {
 /// handed); a failure of the surviving arm says the kernel's day moved.
 #[test]
 fn the_frozen_classes_are_the_forks_answer_today() {
+    #[allow(dead_code)]
+    #[path = "support/p81.rs"]
+    mod p81;
+    /// **A `worked` world's inner break**: the log's last line, written by `tm break` when the
+    /// break ended and stamped at its start `t`, its minutes `m` (planned = actual, as
+    /// `plangen::inner_break_line` writes them), and the block the log holds open.
+    fn inner_break(w: &ClassWorld) -> (DateTime<chrono::FixedOffset>, i64, String) {
+        let last: Value = serde_json::from_str(w.log.lines().last().expect("a log")).expect("a log line");
+        assert_eq!(last["ev"], "break", "a P81 world whose last line is not its break");
+        let t = DateTime::parse_from_rfc3339(last["t"].as_str().expect("t")).expect("an instant");
+        let m = last["actual_min"].as_i64().expect("tm break writes actual_min");
+        assert_eq!(last["planned_min"].as_i64(), Some(m), "the inner break's planned and actual minutes differ");
+        (t, m, w.state.active.as_ref().expect("a running block").id.as_str().to_string())
+    }
+    /// **The world as fork 4748911 READS it** — its break line moved ahead of the running block's
+    /// `start`: the kernel's replay steps it with no block running (D87 nets only a break stepped
+    /// while the block's clock runs, README gap 4241) and credits and draws as fork 4748911's
+    /// replay of the stored log does, the break counted as worked. Asserted, not assumed: the open
+    /// block's clock runs from its start with nothing banked.
+    fn as_the_fork_reads_it(w: &ClassWorld) -> ClassWorld {
+        let (_, _, id) = inner_break(w);
+        let lines: Vec<&str> = w.log.lines().collect();
+        let (brk, rest) = lines.split_last().expect("a log");
+        let at = rest
+            .iter()
+            .rposition(|l| serde_json::from_str::<Value>(l).is_ok_and(|e| e["ev"] == "start" && e["id"] == id.as_str()))
+            .expect("the running block's start");
+        let mut out: Vec<&str> = rest.to_vec();
+        out.insert(at, brk);
+        ClassWorld { log: out.join("\n") + "\n", ..w.clone() }
+    }
+    /// **The world fork 4748911 can be ASKED the D87 day in** (parity P81): the inner break as a
+    /// `pause` at its start and an `unpause` at its end, which fork 4748911's machine nets — and
+    /// the `break` line kept, its minutes planned and no `actual_min`, so the break is drawn and
+    /// recorded as before (its `Break` segment, the cut's break counter, no rest debt) while the
+    /// host's sum of idle spans, which is no union, does not count its span twice beside the
+    /// pause's (README gap 4243).
+    fn as_d87_asks_it(w: &ClassWorld) -> ClassWorld {
+        let (t, m, id) = inner_break(w);
+        let mut lines: Vec<String> = w.log.lines().map(str::to_string).collect();
+        lines.pop();
+        let e = t + Duration::minutes(m);
+        lines.push(format!("{{\"t\":\"{}\",\"ev\":\"pause\",\"id\":\"{id}\"}}", t.to_rfc3339()));
+        lines.push(format!("{{\"t\":\"{}\",\"ev\":\"unpause\",\"id\":\"{id}\"}}", e.to_rfc3339()));
+        lines.push(format!("{{\"t\":\"{}\",\"ev\":\"break\",\"planned_min\":{m}}}", t.to_rfc3339()));
+        ClassWorld { log: lines.join("\n") + "\n", ..w.clone() }
+    }
+    /// **P81's drawing of the fork's answer there**: the `paused` row of the running block the
+    /// break covers is the Break alone (one span, one row — as D65 draws a meeting's pause as the
+    /// wall), and the day is re-digested (`forkplan::frozen_day_json`).
+    fn break_alone(answer: &Value, w: &ClassWorld) -> Value {
+        let (t, m, id) = inner_break(w);
+        let e = t + Duration::minutes(m);
+        let mut day = answer["day"]["day"].clone();
+        let at = |v: &Value| DateTime::parse_from_rfc3339(v.as_str().unwrap_or_default()).ok();
+        day["segments"].as_array_mut().expect("rows").retain(|r| {
+            !(r["kind"] == "lost"
+                && r["flags"]["note"] == "paused"
+                && r["item"] == id.as_str()
+                && at(&r["start"]).is_some_and(|a| a >= t)
+                && at(&r["end"]).is_some_and(|z| z <= e))
+        });
+        forkplan::frozen_day_json(&day)
+    }
+
     let mut stale = Vec::new();
+    let mut p81_lines = 0usize;
     for line in frozen_lines() {
-        let b = Built::of(ClassWorld::of_json(&line["world"], tz()).expect("a stored world"));
-        let now = fork_answers(&b, &kernel_prios(&b));
+        let world = ClassWorld::of_json(&line["world"], tz()).expect("a stored world");
+        let b = Built::of(world.clone());
+        let prios = kernel_prios(&b);
+        let now = fork_answers(&b, &prios);
         // The LINE, as `compare_line` names it: a secondary line carries its kind (W-38).
         let who = format!("{}{}", line["class"].as_str().unwrap_or("?"), line["secondary"].as_str().map(|s| format!(" ({s})")).unwrap_or_default());
+        let netted = p81::netted_breaks(&world.log, &[]).expect("a stored log reads");
+        if netted.is_empty() {
+            for key in forkclass::ANSWERS {
+                if now[key] != line[key] {
+                    stale.push(format!("{who}: `{key}`"));
+                }
+            }
+            continue;
+        }
+        // **A line P81's rule holds on** (the owner's D87, W-42 track R, README gap 4240): its
+        // fork day with the open row cut where the clock stopped (`p81::planned_day`). The in-tree
+        // fork reads the KERNEL's replay, which since D87 nets this world's break, so three questions:
+        p81_lines += 1;
+        let rule = forkplan::frozen_day_json(&p81::planned_day(&line["day"]["day"], &netted).expect("P81's rule applies"));
+        // 1. The line's answers are still fork 4748911's on this world — asked in the log as fork
+        //    4748911 reads it, over the kernel's grants for the world the binary holds.
+        let b0 = Built::of(as_the_fork_reads_it(&world));
+        let ob = b0.replay.open_block.as_ref().expect("the open block");
+        assert!(ob.since == Some(ob.started) && ob.worked_min == 0, "{who}: the reordered log is not fork 4748911's reading: {ob:?}");
+        let then = fork_answers(&b0, &prios);
         for key in forkclass::ANSWERS {
-            if now[key] != line[key] {
-                stale.push(format!("{who}: `{key}`"));
+            if then[key] != line[key] {
+                stale.push(format!("{who}: `{key}` (fork 4748911's reading)"));
+            }
+        }
+        // 2. P81's rule is the fork's own answer, asked the D87 day, the break drawn alone.
+        let asked = fork_answers(&Built::of(as_d87_asks_it(&world)), &prios);
+        if break_alone(&asked, &world) != rule {
+            stale.push(format!("{who}: P81's rule is not fork 4748911's answer asked the D87 day"));
+        }
+        // 3. Over the kernel's replay of this world the fork draws that day, and every other answer
+        //    but the three the netting moves (`day`, `shipped`, `p55`) is the line's.
+        if now["day"] != rule {
+            stale.push(format!("{who}: `day` over the kernel's replay is not P81's rule's"));
+        }
+        for key in forkclass::ANSWERS.iter().filter(|k| !["day", "shipped", "p55"].contains(k)) {
+            if now[*key] != line[*key] {
+                stale.push(format!("{who}: `{key}` over the kernel's replay"));
             }
         }
     }
+    println!("frozen fork classes re-asked: {} line(s), {p81_lines} of them under P81's rule, asked three ways", frozen_lines().len());
+    assert!(p81_lines > 0, "no frozen line is one P81's rule holds on");
     assert!(stale.is_empty(), "the frozen answers are not the fork's today (re-bless is a decision, AGENTS §7.2):\n  {}", stale.join("\n  "));
 }
 

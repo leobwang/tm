@@ -2198,26 +2198,26 @@ theorem the_lift_applies_at_the_census_request :
     the_census_request_agrees.2
     the_census_request_is_inside_the_calendar (by decide) the_census_request_is_plain
 
-/-! ### The refutation: a break the log holds **inside** a block the log holds
+/-! ### The refutation: a break the log holds running **into** a block the log holds
 
 `Goals.plan_places_no_block_over_a_break` quantifies over **every** Block row and **every**
 Break row of the day.  Both come from the replay (`Planner.a_break_row_is_a_replayed_row`, and
-`PlanCheck.dayPlan_block_rows_are_replayed_reserved_or_assigned`), so a log that records a `break` while
-a block is running gives the day a Break row **inside** a Block row, and neither of them is the
+`PlanCheck.dayPlan_block_rows_are_replayed_reserved_or_assigned`), so a log that records a `break` running
+into a block gives the day a Break row **inside** a Block row, and neither of them is the
 planner's doing.  That is finding 1 (README gap 385) for the third time: step P3 took it for
-E1, W-17 for the wall law, and this is the third.
-
-The witness is the census log with its one break **moved** from 08:05 to 07:30 — nothing else
-changes, and the six original lines are still `witLines`, renumbered by one rather than
-respelled. -/
+E1, W-17 for the wall law, and this is the third.  (Until the owner's D87 the break was logged at
+07:30 INSIDE `m1`'s running block; the replay now stops the clock across that one, section 31.)
+The witness is the census log with its one break **moved** to 07:00, before `m1`'s 07:05 `start`,
+and lasting into it — a log `tm start` never writes (README gap 4241); the six original lines are
+still `witLines`, renumbered by one rather than respelled. -/
 
 def midBreakLine : Log.Line :=
-  ⟨4, some ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','9','T','0','7',':','3','0',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','b','r','e','a','k','"',',','"','p','l','a','n','n','e','d','_','m','i','n','"',':','1','5','}']⟩
+  ⟨3, some ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','9','T','0','7',':','0','0',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','b','r','e','a','k','"',',','"','p','l','a','n','n','e','d','_','m','i','n','"',':','1','5','}']⟩
 
-/-- `witLines` with the break spliced in after the `start` of `m1` and the rest renumbered —
+/-- `witLines` with the break spliced in before the `start` of `m1` and the rest renumbered —
 `Log.contiguousFrom`'s numbering, kept. -/
 def midBreakLines : List Log.Line :=
-  witLines.take 3 ++ [midBreakLine] ++ (witLines.drop 3).map (fun l => ⟨l.n + 1, l.text⟩)
+  witLines.take 2 ++ [midBreakLine] ++ (witLines.drop 2).map (fun l => ⟨l.n + 1, l.text⟩)
 
 set_option maxRecDepth 400000 in
 theorem midBreakRun_resumes_ok : runOk Cal.chicago 739867 midBreakLines = true := by decide
@@ -2232,23 +2232,23 @@ def theMidBreakRequest : PlanReq := { theCensusRequest with run := midBreakRun }
 
 set_option maxRecDepth 400000 in
 /-- **The day lays a Block across a Break**, computed: `m1`'s replayed block runs 07:05-08:05
-and the break the log records runs 07:30-07:45, inside it.  Both halves are here — the
-overlapping pair, **and** `PlanCheck.noBlockOverABreak`'s own verdict on the day, which is the
-battery's opinion and not a restatement of a `Planner` theorem. -/
+and the break the log records runs 07:00-07:15, into it (D87 nets only a break stepped while the
+clock runs).  Both halves are here — the overlapping pair, **and** `PlanCheck.noBlockOverABreak`'s
+own verdict on the day, which is the battery's opinion and not a restatement of a `Planner` theorem. -/
 theorem the_mid_break_day_lays_a_block_across_a_break :
     (dayPlan theMidBreakRequest).segments.map
         (fun s => (s.val.start, s.val.stop, s.val.kind))
-      = [((Cal.instantOf Cal.chicago 739867 425).sec, (Cal.instantOf Cal.chicago 739867 485).sec,
-          SegKind.block),
-         ((Cal.instantOf Cal.chicago 739867 450).sec, (Cal.instantOf Cal.chicago 739867 465).sec,
+      = [((Cal.instantOf Cal.chicago 739867 420).sec, (Cal.instantOf Cal.chicago 739867 435).sec,
           SegKind.brk),
+         ((Cal.instantOf Cal.chicago 739867 425).sec, (Cal.instantOf Cal.chicago 739867 485).sec,
+          SegKind.block),
          ((Cal.instantOf Cal.chicago 739867 545).sec, (Cal.instantOf Cal.chicago 739867 605).sec,
           SegKind.block),
          ((Cal.instantOf Cal.chicago 739867 770).sec, (Cal.instantOf Cal.chicago 739867 830).sec,
           SegKind.wall),
          ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 880).sec,
           SegKind.block),
-         ((Cal.instantOf Cal.chicago 739867 880).sec, (Cal.instantOf Cal.chicago 739867 940).sec,
+         ((Cal.instantOf Cal.chicago 739867 900).sec, (Cal.instantOf Cal.chicago 739867 960).sec,
           SegKind.rest),
          ((Cal.instantOf Cal.chicago 739867 1290).sec,
           (Cal.instantOf Cal.chicago 739867 1320).sec, SegKind.windDown),
@@ -5088,7 +5088,7 @@ set_option maxRecDepth 400000 in
 /-- **The other half of how far §6.1's lift goes, and it is not the eligibility's.**  The seven
 eligibility-free checks are `false` on the WHOLE day at three requests this module already
 builds — the morning wall that moved onto a worked hour, the block longer than a shortened
-`block_min`, and the break the log records inside a running block.  Each is a recorded
+`block_min`, and the break the log records running into a block (inside one until D87).  Each is a recorded
 refutation of a goal that quantified over the replayed past
 (`plan_places_no_block_over_a_wall_as_stage_6_wrote_it_is_refuted`,
 `plan_reserves_one_block_at_a_time_as_stage_6_wrote_it_is_refuted`,
@@ -8135,9 +8135,9 @@ What they buy, in order:
   its log hypothesis ranging over `Planner.pastRows`, the log's CLOSED half — has every
   hypothesis true here and its conclusion false, because the open row is a Block of the log
   that is neither the reservation nor the fold's, starts before `now`, runs two blocks, lies
-  across `^g1`'s meeting, and (with a `break` logged at 12:30) across a Break row.  Every one of
-  those is what the fork's day holds too: `open_block_segment` does not clip at a calendar wall
-  or a logged break, and a `break` line does not touch the replay's machine (`Replay.dayArm`).
+  across `^g1`'s meeting, and (with a `break` logged at 11:55, before it began) across a Break row.
+  Every one is what the fork's day holds too: `open_block_segment` does not clip at a calendar wall
+  or a logged break.  A break logged WHILE it runs is netted since D87 (section 31).
 -/
 
 /-- **`m1` started at 12:00**, in the fork's bytes (`witLines`' own `start` shape, the clock
@@ -8145,14 +8145,14 @@ moved). -/
 def openStartLine : Log.Line :=
   ⟨3, some ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','9','T','1','2',':','0','0',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','s','t','a','r','t','"',',','"','i','d','"',':','"','m','1','"',',','"','p','r','e','d','"',':','5',',','"','r','e','p','"',':','4',',','"','h','s','w','"',':','6','.','0',',','"','s','l','e','p','t','_','m','i','n','"',':','4','9','0',',','"','l','o','c','"',':','"','l','o','u','n','g','e','"',',','"','b','l','o','c','k','s','_','d','o','n','e','"',':','0',',','"','s','i','n','c','e','_','b','r','e','a','k','_','m','i','n','"',':','0','}']⟩
 
-/-- **A fifteen-minute `break` at 12:30**, while `m1` runs — `censusBreakLine`'s shape. -/
+/-- **A fifteen-minute `break` at 11:55**, logged before `m1`'s 12:00 start — `censusBreakLine`'s shape. -/
 def openBreakLine : Log.Line :=
-  ⟨4, some ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','9','T','1','2',':','3','0',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','b','r','e','a','k','"',',','"','p','l','a','n','n','e','d','_','m','i','n','"',':','1','5','}']⟩
+  ⟨3, some ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','9','T','1','1',':','5','5',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','b','r','e','a','k','"',',','"','p','l','a','n','n','e','d','_','m','i','n','"',':','1','5','}']⟩
 
 /-- The morning's wake and arrival, **reused**, and the open start. -/
 def openLines : List Log.Line := witLines.take 2 ++ [openStartLine]
 
-def openBreakLines : List Log.Line := openLines ++ [openBreakLine]
+def openBreakLines : List Log.Line := witLines.take 2 ++ [openBreakLine, ⟨4, openStartLine.text⟩]
 
 set_option maxRecDepth 400000 in
 theorem openRun_resumes_ok : runOk Cal.chicago 739867 openLines = true := by decide
@@ -8183,7 +8183,7 @@ def theOpenRequest : PlanReq :=
 row's (fork `mark_current = active.is_none() && !interrupted`). -/
 def theUnreservedOpenRequest : PlanReq := { theOpenRequest with state := RuntimeIn.empty }
 
-/-- The same, with the 12:30 `break` in the log. -/
+/-- The same, with the 11:55 `break` in the log. -/
 def theOpenBreakRequest : PlanReq := { theOpenRequest with run := openBreakRun }
 
 /-- The same, with an interruption running since 13:30. -/
@@ -8264,7 +8264,7 @@ theorem the_open_requests_agree :
 
 set_option maxRecDepth 400000 in
 /-- **The battery bites on the open row**, and on nothing else: `oneBlockAtATime` (two hours,
-one block), `noBlockOverAWall` (across `^g1`) and, with the 12:30 `break`, `noBlockOverABreak` —
+one block), `noBlockOverAWall` (across `^g1`) and, with the 11:55 `break`, `noBlockOverABreak` —
 the three checks a Block the LOG holds can fail (README gap 385's finding 1) — while the
 `withoutPast` day, which is §8.3's subject, passes all seven with the reservation in it. -/
 theorem the_battery_bites_on_the_open_row :
@@ -8360,8 +8360,8 @@ theorem the_paying_past_lift_over_the_closed_rows_is_refuted :
 
 set_option maxRecDepth 400000 in
 /-- **`PlanCheck.noBlockOverABreak_of_a_logless_day` over the CLOSED half is REFUTED** — a
-`break` logged while the block runs is a Break row inside the worked stretch, and neither row is
-the planner's (the fork draws both). -/
+`break` logged running into the open block is a Break row inside the worked stretch, and neither row
+is the planner's (the fork draws both; one logged while it runs is netted since D87). -/
 theorem noBlockOverABreak_of_a_logless_day_over_the_closed_rows_is_refuted :
     ¬ ∀ (r : PlanReq), r.now.sec + 1 < LogStamp.yearEnd →
       (∀ t ∈ pastRows r, t.kind ≠ SegKind.block) →
@@ -12621,6 +12621,117 @@ theorem the_start_after_now_log_holds_the_open_block :
     startAfterNowRun.answer.openBlock.map (fun b =>
         (b.id, b.since.map (fun s => s.1.sec), openWorkedMin (Cal.instantOf Cal.chicago 739867 840).sec b))
       = some (['m','1'], some ((Cal.instantOf Cal.chicago 739867 840).sec + 10), 0) := by decide
+
+
+/-! ############################################################################
+## 31. W-42 track R — the owner's D87: a break taken inside a block is not block time
+
+README gap 4137, parity P81.  Until D87 the replay's machine never touched a block for a `break`, so a
+block whose clock ran across a logged break was drawn across it, and when a `stop` or the next `start`
+cut it, credited the break's minutes; `Replay.brkFx` now stops the clock at the break's start and
+restarts it at the break's end.  The days below are the two this module used to lay a Block across a
+Break with — sections 14 and 26 moved to a break logged BEFORE the block began, which D87 does not net
+(README gap 4241) — and each now keeps its Block rows off its Break. -/
+
+/-- **A fifteen-minute `break` at 07:30, logged while `m1` runs** — the census log's break as section 14
+held it until D87. -/
+def insideBreakLine : Log.Line :=
+  ⟨4, some ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','9','T','0','7',':','3','0',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','b','r','e','a','k','"',',','"','p','l','a','n','n','e','d','_','m','i','n','"',':','1','5','}']⟩
+
+/-- `witLines` with that break after `m1`'s `start`, the rest renumbered. -/
+def insideBreakLines : List Log.Line :=
+  witLines.take 3 ++ [insideBreakLine] ++ (witLines.drop 3).map (fun l => ⟨l.n + 1, l.text⟩)
+
+set_option maxRecDepth 400000 in
+theorem insideBreakRun_resumes_ok : runOk Cal.chicago 739867 insideBreakLines = true := by decide
+
+def insideBreakRun : Seal.Run :=
+  match h : Seal.resumeRun Cal.chicago 739867 (Seal.Ckpt.empty Cal.chicago) insideBreakLines with
+  | .ok run => run
+  | .error _ => absurd insideBreakRun_resumes_ok (by simp [runOk, h])
+
+/-- The census request with a break logged inside `m1`'s running block. -/
+def theInsideBreakRequest : PlanReq := { theCensusRequest with run := insideBreakRun }
+
+set_option maxRecDepth 400000 in
+/-- **The day splits `m1`'s block at its break** (D87): the Block `[07:05, 07:30]`, the Break `[07:30, 07:45]`
+and the Block `[07:45, 08:05]`, and `PlanCheck.noBlockOverABreak` and `planOkCore` hold.  Until D87 this log's day
+was `the_mid_break_day_lays_a_block_across_a_break`'s, with the one Block `[07:05, 08:05]` across the Break and
+both checkers `false` — so this is that statement, at this log, refuted.  `m1`'s `done` still credits its logged
+60 minutes (the logged minutes are authoritative); the drawing is what moved. -/
+theorem the_inside_break_day_splits_the_block_at_the_break :
+    (dayPlan theInsideBreakRequest).segments.map
+        (fun s => (s.val.start, s.val.stop, s.val.kind))
+      = [((Cal.instantOf Cal.chicago 739867 425).sec, (Cal.instantOf Cal.chicago 739867 450).sec,
+          SegKind.block),
+         ((Cal.instantOf Cal.chicago 739867 450).sec, (Cal.instantOf Cal.chicago 739867 465).sec,
+          SegKind.brk),
+         ((Cal.instantOf Cal.chicago 739867 465).sec, (Cal.instantOf Cal.chicago 739867 485).sec,
+          SegKind.block),
+         ((Cal.instantOf Cal.chicago 739867 545).sec, (Cal.instantOf Cal.chicago 739867 605).sec,
+          SegKind.block),
+         ((Cal.instantOf Cal.chicago 739867 770).sec, (Cal.instantOf Cal.chicago 739867 830).sec,
+          SegKind.wall),
+         ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 880).sec,
+          SegKind.block),
+         ((Cal.instantOf Cal.chicago 739867 880).sec, (Cal.instantOf Cal.chicago 739867 940).sec,
+          SegKind.rest),
+         ((Cal.instantOf Cal.chicago 739867 1290).sec, (Cal.instantOf Cal.chicago 739867 1320).sec,
+          SegKind.windDown),
+         ((Cal.instantOf Cal.chicago 739867 1320).sec, (Cal.instantOf Cal.chicago 739868 0).sec,
+          SegKind.sleep)] ∧
+      PlanCheck.noBlockOverABreak theInsideBreakRequest (dayPlan theInsideBreakRequest) = true ∧
+      PlanCheck.planOkCore theInsideBreakRequest (dayPlan theInsideBreakRequest) = true := by
+  decide
+
+/-- **A fifteen-minute `break` at 12:30, logged while the open `m1` runs** — section 26's open break until D87. -/
+def insideOpenBreakLine : Log.Line :=
+  ⟨4, some ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','9','T','1','2',':','3','0',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','b','r','e','a','k','"',',','"','p','l','a','n','n','e','d','_','m','i','n','"',':','1','5','}']⟩
+
+def insideOpenBreakLines : List Log.Line := openLines ++ [insideOpenBreakLine]
+
+set_option maxRecDepth 400000 in
+theorem insideOpenBreakRun_resumes_ok : runOk Cal.chicago 739867 insideOpenBreakLines = true := by decide
+
+def insideOpenBreakRun : Seal.Run :=
+  match h : Seal.resumeRun Cal.chicago 739867 (Seal.Ckpt.empty Cal.chicago) insideOpenBreakLines with
+  | .ok run => run
+  | .error _ => absurd insideOpenBreakRun_resumes_ok (by simp [runOk, h])
+
+/-- The open day with the 12:30 break logged inside the running block. -/
+def theInsideOpenBreakRequest : PlanReq := { theOpenRequest with run := insideOpenBreakRun }
+
+set_option maxRecDepth 400000 in
+/-- **The open row starts at the break's end** (D87): `m1` open since 12:00 with a fifteen-minute break logged at
+12:30.  The machine closed `[12:00, 12:30]` at the break (a past Block row), the clock runs again from 12:45, so the
+open row is `[12:45, 14:00)`, its `so far` 105 minutes (30 banked, 75 running), and the reservation's `left` 75 of
+the three-hour estimate.  No row lies across the Break; `oneBlockAtATime` and `noBlockOverAWall` still bite on the
+open row (`^g1` at 12:50).  Fork `active_run` and `open_block_segment` read 120 minutes and a row from 12:00: P81's
+planner half — with the host's reading carried (`PlanReq.workedOf`, P55) the notes are the host's, as before. -/
+theorem the_open_row_starts_at_the_breaks_end :
+    (dayPlan theInsideOpenBreakRequest).segments.map (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.note))
+      = [((Cal.instantOf Cal.chicago 739867 720).sec, (Cal.instantOf Cal.chicago 739867 750).sec,
+          SegKind.block, none),
+         ((Cal.instantOf Cal.chicago 739867 750).sec, (Cal.instantOf Cal.chicago 739867 765).sec,
+          SegKind.brk, none),
+         ((Cal.instantOf Cal.chicago 739867 765).sec, (Cal.instantOf Cal.chicago 739867 840).sec,
+          SegKind.block, some (Note.soFar 105)),
+         ((Cal.instantOf Cal.chicago 739867 770).sec, (Cal.instantOf Cal.chicago 739867 830).sec,
+          SegKind.wall, none),
+         ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 900).sec,
+          SegKind.block, some (Note.runningLeft 75)),
+         ((Cal.instantOf Cal.chicago 739867 900).sec, (Cal.instantOf Cal.chicago 739867 960).sec,
+          SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 1290).sec, (Cal.instantOf Cal.chicago 739867 1320).sec,
+          SegKind.windDown, none),
+         ((Cal.instantOf Cal.chicago 739867 1320).sec, (Cal.instantOf Cal.chicago 739868 0).sec,
+          SegKind.sleep, none)] ∧
+    theInsideOpenBreakRequest.run.answer.openBlock.map (fun b => (b.workedMin, b.since.map (·.1.sec)))
+      = some (30, some (Cal.instantOf Cal.chicago 739867 765).sec) ∧
+    PlanCheck.noBlockOverABreak theInsideOpenBreakRequest (dayPlan theInsideOpenBreakRequest) = true ∧
+    PlanCheck.oneBlockAtATime theInsideOpenBreakRequest (dayPlan theInsideOpenBreakRequest) = false ∧
+    PlanCheck.noBlockOverAWall theInsideOpenBreakRequest (dayPlan theInsideOpenBreakRequest) = false := by
+  decide
 
 end PlannerWit
 end Tm

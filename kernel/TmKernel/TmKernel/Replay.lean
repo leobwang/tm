@@ -3002,6 +3002,49 @@ def resumeBlock (b : Block) (t : At) : Block :=
     | none => { b with since := some t }
     | some _ => b
 
+/-- **Where a break begun at `t` ends** — fork `step`'s `Break` arm, `t + actual_min.unwrap_or(planned_min)`:
+the end of its `Break` segment (`dayArm`), and, since the owner's **D87**, the instant a block's clock it fell
+inside restarts at (`brkFx`).  One definition of a break's span, so the segment drawn and the minutes netted
+cannot disagree (AGENTS §5.3). -/
+def brkEnd (t : At) (planned : Nat) (actual : Option Nat) : At := (addMinutes t.1 (actual.getD planned), t.2)
+
+/-- **The owner's D87 (README gap 4137, parity P81): a break taken inside a block is not block time.**  A
+`break` stepped while the open block's clock runs — since `x` — closes the running sub-segment at the break's
+start `t`, exactly as a `pause` does (`closeSub`: the minutes of `[x, t]`, and a `Block` segment when `x < t`),
+and restarts the clock at the break's end `e`, or at `x` when that is later (`pick instLt`).  A block whose clock
+is stopped — paused or interrupted — and a break with no block open change nothing here, and the break's own
+`Break` segment and record are the day family's (`dayArm`).
+
+Fork `step`'s `Break` arm touched no block, so a block cut across a break (`stop`, or the next `start`) was
+credited its whole span — `tm review day`'s load and minutes read 60 where `tm stop` said "after 40m" — and its
+`Block` segment overlapped the `Break` one, so the heat grid counted the break's minutes twice.  A `done`'s
+`actual_min` was already the host's worked minutes and is still what it credits. -/
+def brkFx (dy : Cal.Instant → Nat) (m : Machine) (t e : At) : List Effect :=
+  match m.block with
+  | some b =>
+    match b.since with
+    | some x =>
+      let r := closeSub dy m t
+      r.2 ++ [.machine { r.1 with block := r.1.block.map (fun b => { b with since := some (pick instLt x e) }) }]
+    | none => []
+  | none => []
+
+/-- **`brkFx` is nothing, or `closeSub` and one machine** that moves only the open block's clock (D87): the
+machine is `closeSub`'s with the block's `since` set, so it keeps `closeSub`'s last cut, interruption and
+pending observation — every law a `pause`'s arm satisfies through `closeSub`, a break's satisfies too. -/
+theorem brkFx_cases (dy : Cal.Instant → Nat) (m : Machine) (t e : At) :
+    brkFx dy m t e = [] ∨
+      ∃ m' : Machine, brkFx dy m t e = (closeSub dy m t).2 ++ [.machine m'] ∧
+        m'.lastCut = (closeSub dy m t).1.lastCut ∧ m'.interrupt = (closeSub dy m t).1.interrupt ∧
+        m'.block.bind (·.obs) = (closeSub dy m t).1.block.bind (·.obs) := by
+  unfold brkFx
+  split
+  · split
+    · refine Or.inr ⟨_, rfl, rfl, rfl, ?_⟩
+      cases (closeSub dy m t).1.block <;> rfl
+    · exact Or.inl rfl
+  · exact Or.inl rfl
+
 /-- **C5: the day header and records family's arms of fork `Machine::step`**, one per event (`wake`,
 `arrive`, `loc`, `break`, `energy`, `idle`, `routine`'s day half, `plan`, `demote`, `drop`, `close` and
 unknown events; `readopt`, `move`, `edit`, `note` and `undo` write nothing).  `sl` is fork `slept_by_day`,
@@ -3024,7 +3067,7 @@ def dayArm (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (e : Entry) (t :
   | .arrive loc window budget => [.dayAdd d (.arrive t loc window budget.val)]
   | .loc loc => [.dayAdd d (.loc t loc)]
   | .brk planned actual where_ =>
-    [.dayAdd d (.segment ⟨t, (addMinutes t.1 ((actual.map (·.val)).getD planned.val), t.2), .brk where_⟩),
+    [.dayAdd d (.segment ⟨t, brkEnd t planned.val (actual.map (·.val)), .brk where_⟩),
      .dayAdd d (.brk ⟨t, d, planned.val, actual.map (·.val), where_⟩)]
   | .energy pred rep hsw loc => [.obs (.energy ⟨e.line, t, d, pred, rep, hsw, loc, sl d, none, none, false⟩)]
   | .idle attributed min =>
@@ -3108,6 +3151,7 @@ def arm (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Machine) (e : 
   | .extend id by_ => [.itemAdd id (.extend by_.val)]
   | .done id est actual went tags ci isPartial =>
     doneFx dy m e.line t d id est.val actual.val went tags ci isPartial
+  | .brk planned actual _ => brkFx dy m t (brkEnd t planned.val (actual.map (·.val))) ++ dayArm dy sl e t d
   | _ => dayArm dy sl e t d
 
 /-- **C4: the completion family's arms of fork `Machine::step`** (`done`'s `mark_done`, `routine`,
@@ -4078,14 +4122,19 @@ theorem dayArm_ofBlock (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (e :
   unfold dayArm
   split <;> (repeat' split) <;> simp [Effect.ofBlock]
 
-/-- **C5: an entry's machine arm is its day family's, or else only block family effects with no day family
-arm.**  `arm` is one match: the block family's eight events have their own arms (and `dayArm` gives them
-nothing), and every other event's is `dayArm`'s. -/
-theorem arm_split (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Machine) (e : Entry) (t : At) (d : Nat) :
+/-- **C5's split, on every event but a `break`**: an entry's machine arm is its day family's, or else only block
+family effects with no day family arm.  `arm` is one match: the block family's eight events have their own arms (and
+`dayArm` gives them nothing), and every other event's but a `break`'s is `dayArm`'s.  This was `arm_split`'s
+statement over EVERY event until the owner's D87 (README gap 4137, parity P81) gave a `break` a block family half
+(`brkFx`) beside its day family records; over every event it is refuted
+(`arm_split_as_c5_stated_it_is_refuted`), and `arm_split` is the form that holds. -/
+theorem arm_split_of_not_brk (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Machine) (e : Entry) (t : At)
+    (d : Nat) (hb : ∀ p a w, e.ev ≠ .brk p a w) :
     arm dy sl m e t d = dayArm dy sl e t d ∨
       ((∀ x ∈ arm dy sl m e t d, x.blockOnly = true) ∧ dayArm dy sl e t d = []) := by
   unfold arm
   cases hev : e.ev <;> simp only
+  case brk p a w => exact absurd hev (hb p a w)
   case start =>
     refine Or.inr ⟨fun x hx => ?_, by simp [dayArm, hev]⟩
     simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hx
@@ -4146,21 +4195,49 @@ theorem arm_split (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Mach
     exact Or.inr ⟨fun x hx => doneFx_blockOnly dy m _ t d _ _ _ _ _ _ _ x hx, by simp [dayArm, hev]⟩
   all_goals first | exact Or.inl rfl | exact Or.inl trivial
 
+/-- A `break`'s block family half is block family effects (D87): `closeSub`'s and one machine. -/
+theorem brkFx_blockOnly (dy : Cal.Instant → Nat) (m : Machine) (t e : At) :
+    ∀ x ∈ brkFx dy m t e, x.blockOnly = true := by
+  intro x hx
+  rcases brkFx_cases dy m t e with h | ⟨m', h, -⟩
+  · rw [h] at hx; simp at hx
+  · rw [h] at hx
+    rcases List.mem_append.1 hx with hx | hx
+    · exact blockOnly_of_plain x (closeSub_plain dy m t x hx)
+    · simp only [List.mem_singleton] at hx; subst hx; rfl
+
+/-- **C5: an entry's machine arm is block family effects, then its day family's** — the block family's eight
+events have no day family arm, every other event's is its day family's alone, and (the owner's D87, README gap
+4137, parity P81) a `break`'s is both: `brkFx`, which stops the open block's clock across it, then its own
+segment and record.  Restated at D87 from C5's two cases (`arm_split_of_not_brk`), which it implies on every
+event but a `break`. -/
+theorem arm_split (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Machine) (e : Entry) (t : At) (d : Nat) :
+    ∃ fx : List Effect, (∀ x ∈ fx, x.blockOnly = true) ∧ arm dy sl m e t d = fx ++ dayArm dy sl e t d := by
+  by_cases hb : ∃ p a w, e.ev = .brk p a w
+  · obtain ⟨p, a, w, h⟩ := hb
+    refine ⟨brkFx dy m t (brkEnd t p.val (a.map (·.val))), brkFx_blockOnly dy m t _, ?_⟩
+    unfold arm
+    simp only [h]
+  · rcases arm_split_of_not_brk dy sl m e t d (fun p a w h => hb ⟨p, a, w, h⟩) with h | ⟨h, h0⟩
+    · exact ⟨[], by simp, by rw [h, List.nil_append]⟩
+    · exact ⟨_, h, by rw [h0, List.append_nil]⟩
+
 theorem arm_ofBlock (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Machine) (e : Entry) (t : At) (d : Nat) :
     ∀ x ∈ arm dy sl m e t d, x.ofBlock = true := by
   intro x hx
-  rcases arm_split dy sl m e t d with h | ⟨h, -⟩
-  · rw [h] at hx; exact List.all_eq_true.1 (dayArm_ofBlock dy sl e t d) x hx
-  · exact ofBlock_of_blockOnly x (h x hx)
+  obtain ⟨fx, hfx, h⟩ := arm_split dy sl m e t d
+  rw [h] at hx
+  rcases List.mem_append.1 hx with hx | hx
+  · exact ofBlock_of_blockOnly x (hfx x hx)
+  · exact List.all_eq_true.1 (dayArm_ofBlock dy sl e t d) x hx
 
 /-- **C5: an entry's machine arm, projected onto the day family's records, is its day family arm's.** -/
 theorem arm_filterMap_rec {α : Type} (ρ : Effect → Option α) (hρ : ∀ x, x.isRec = false → ρ x = none)
     (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Machine) (e : Entry) (t : At) (d : Nat) :
     (arm dy sl m e t d).filterMap ρ = (dayArm dy sl e t d).filterMap ρ := by
-  rcases arm_split dy sl m e t d with h | ⟨h, h0⟩
-  · rw [h]
-  · rw [h0, List.filterMap_nil]
-    exact List.filterMap_eq_nil_iff.2 (fun x hx => hρ x (isRec_of_blockOnly x (h x hx)))
+  obtain ⟨fx, hfx, h⟩ := arm_split dy sl m e t d
+  rw [h, List.filterMap_append,
+    List.filterMap_eq_nil_iff.2 (fun x hx => hρ x (isRec_of_blockOnly x (hfx x hx))), List.nil_append]
 
 theorem arm_no_header (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Machine) (e : Entry) (t : At) (d : Nat) :
     ∀ x ∈ arm dy sl m e t d, x.isHeader = false :=
@@ -4633,6 +4710,14 @@ theorem conserves_arm (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (st :
         subst hx; rfl
       · simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
         rcases hx with rfl | rfl <;> rfl
+  case brk planned actual where_ =>
+    rw [applyEffects_append]
+    refine conserves_safe _ _ (fun x hx => List.all_eq_true.1 (dayArm_safe dy sl e t d) x hx) ?_
+    rcases brkFx_cases dy st.machine t (brkEnd t planned.val (actual.map (·.val))) with h0 | ⟨m', h0, hl, -, -⟩
+    · rw [h0]; exact h
+    · rw [h0]
+      exact conserves_safe_then_machine st _ _ (all_safe_of_plain _ (closeSub_plain _ _ _))
+        (Or.inl (hl.trans (closeSub_lastCut dy st.machine t).1)) h
   all_goals exact conserves_safe st _ (fun x hx => List.all_eq_true.1 (dayArm_safe dy sl e t d) x hx) h
 
 /-- **C4: the completion family's effects are safe**: they touch no day, no machine and no item. -/
@@ -5675,6 +5760,14 @@ theorem arm_sleptOk (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Ma
     · rfl
   case extend => rfl
   case done => exact doneFx_sleptOk sl dy m _ t d _ _ _ _ _ _ _ hm
+  case brk planned actual where_ =>
+    rw [List.all_append, Bool.and_eq_true]
+    refine ⟨?_, dayArm_sleptOk dy sl e t d⟩
+    rcases brkFx_cases dy m t (brkEnd t planned.val (actual.map (·.val))) with h0 | ⟨m', h0, -, -, hp⟩
+    · rw [h0]; rfl
+    · rw [h0]
+      simp only [List.all_append, List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true]
+      exact ⟨closeSub_sleptOk sl dy m t, machine_sleptOk sl m' m (hp.trans (closeSub_pending dy m t)) hm⟩
   all_goals exact dayArm_sleptOk dy sl e t d
 
 theorem sleptInv_step (z : Cal.Tz) (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (st : State) (e : Entry)
@@ -6144,10 +6237,12 @@ theorem dayArm_noSeam (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (e : 
 theorem arm_noSeam (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Machine) (e : Entry) (t : At) (d : Nat) :
     ∀ x ∈ arm dy sl m e t d, x.seamOf? = none := by
   intro x hx
-  rcases arm_split dy sl m e t d with h | ⟨h, -⟩
-  · rw [h] at hx; exact dayArm_noSeam dy sl e t d x hx
-  · have := h x hx
+  obtain ⟨fx, hfx, h⟩ := arm_split dy sl m e t d
+  rw [h] at hx
+  rcases List.mem_append.1 hx with hx | hx
+  · have := hfx x hx
     cases x <;> simp_all [Effect.blockOnly, Effect.seamOf?]
+  · exact dayArm_noSeam dy sl e t d x hx
 
 theorem completionArm_noSeam (z : Cal.Tz) (e : Entry) (t : At) (d : Nat) :
     ∀ x ∈ completionArm z e t d, x.seamOf? = none := by
@@ -6253,8 +6348,15 @@ theorem every_leak_is_on_a_day_its_idle_record_names (z : Cal.Tz) (kw : List Cal
     unfold effects effectsWith
     simp only [List.mem_cons, List.mem_append, reduceCtorEq, false_or]
     exact Or.inl hm
-  rcases arm_split (dayOf z kw) (KMap.get slept) st.machine e (e.t.val, e.off.val) (dayOf z kw e.t.val) with hs | ⟨hs, -⟩
-  · rw [hs] at ha ⊢
+  obtain ⟨fx, hfx, hs⟩ :=
+    arm_split (dayOf z kw) (KMap.get slept) st.machine e (e.t.val, e.off.val) (dayOf z kw e.t.val)
+  rw [hs] at ha ⊢
+  rcases List.mem_append.1 ha with ha | ha
+  · have := hfx _ ha; simp [Effect.blockOnly] at this
+  · suffices hd : ∃ ir : IdleRec, Effect.dayAdd r.day (.idle ir) ∈ dayArm (dayOf z kw) (KMap.get slept) e
+        (e.t.val, e.off.val) (dayOf z kw e.t.val) ∧ ir.t = r.t ∧ ir.min = r.min by
+      obtain ⟨ir, hm, h1, h2⟩ := hd
+      exact ⟨ir, List.mem_append_right _ hm, h1, h2⟩
     unfold dayArm at ha ⊢
     cases hev : e.ev <;> simp only [hev] at ha ⊢ <;> try simp at ha
     case idle attributed min =>
@@ -6263,7 +6365,6 @@ theorem every_leak_is_on_a_day_its_idle_record_names (z : Cal.Tz) (kw : List Cal
         exact ⟨⟨(e.t.val, e.off.val), dayOf z kw (Cal.subMinutes e.t.val min.val), attributed, min.val⟩, by simp, rfl, rfl⟩
       · simp_all
     all_goals (repeat' split at ha) <;> simp at ha
-  · have := hs _ ha; simp [Effect.blockOnly] at this
 
 /-! ### Observations in file order -/
 
@@ -6313,6 +6414,30 @@ theorem closePause_obs (dy : Cal.Instant → Nat) (m : Machine) (t : At) :
     (closePause dy m t).2.filterMap Effect.energyOf? = [] ∧ (closePause dy m t).2.filterMap Effect.durationOf? = [] ∧
     (closePause dy m t).2.filterMap Effect.machineOf? = [] := by
   unfold closePause; split <;> (repeat' split) <;> simp [Effect.energyOf?, Effect.durationOf?, Effect.machineOf?]
+
+/-- **A break's machine keeps the last cut, the interruption and the pending observation** (D87): it moves only the
+open block's clock. -/
+theorem brkFx_machine (dy : Cal.Instant → Nat) (m : Machine) (t e : At) :
+    ∀ m' ∈ (brkFx dy m t e).filterMap Effect.machineOf?,
+      m'.lastCut = m.lastCut ∧ m'.interrupt = m.interrupt ∧ m'.block.bind (·.obs) = m.block.bind (·.obs) := by
+  intro m' hm
+  rcases brkFx_cases dy m t e with h | ⟨m'', h, h1, h2, h3⟩
+  · rw [h] at hm; simp at hm
+  · rw [h] at hm
+    simp only [List.filterMap_append, (closeSub_obs dy m t).2.2, List.nil_append, List.filterMap_cons,
+      Effect.machineOf?, List.filterMap_nil, List.mem_singleton] at hm
+    subst hm
+    exact ⟨h1.trans (closeSub_lastCut dy m t).1, h2.trans (closeSub_lastCut dy m t).2,
+      h3.trans (closeSub_pending dy m t)⟩
+
+/-- **A break's block family half observes nothing** (D87): no energy and no duration observation. -/
+theorem brkFx_obs (dy : Cal.Instant → Nat) (m : Machine) (t e : At) :
+    (brkFx dy m t e).filterMap Effect.energyOf? = [] ∧ (brkFx dy m t e).filterMap Effect.durationOf? = [] := by
+  rcases brkFx_cases dy m t e with h | ⟨m', h, -⟩
+  · rw [h]; exact ⟨rfl, rfl⟩
+  · rw [h]
+    obtain ⟨a1, a2, -⟩ := closeSub_obs dy m t
+    simp [List.filterMap_append, a1, a2, Effect.energyOf?, Effect.durationOf?]
 
 theorem creditFx_obs (dy : Cal.Instant → Nat) (id : Id) (t : At) (min : Nat) (ci : Option U8) :
     (creditFx dy id t min ci).filterMap Effect.energyOf? = [] ∧ (creditFx dy id t min ci).filterMap Effect.durationOf? = [] ∧
@@ -6513,6 +6638,25 @@ theorem arm_obs (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Machin
   case done id est actual went tags ci isPartial =>
     obtain ⟨h1, h2⟩ := doneFx_obs dy m e.line t d id est.val actual.val went tags ci isPartial
     exact ⟨[], List.nil_sublist _, by rw [h1]; simp, h2⟩
+  case brk planned actual where_ =>
+    obtain ⟨g1, g2, g3⟩ := dayArm_obs dy sl e t d
+    obtain ⟨a1, a2, a3⟩ := closeSub_obs dy m t
+    refine ⟨((dayArm dy sl e t d).filterMap Effect.energyOf?).map (·.line), g3, ?_, ?_⟩
+    · rcases brkFx_cases dy m t (brkEnd t planned.val (actual.map (·.val))) with h0 | ⟨m', h0, -, -, hp⟩
+      · rw [h0, List.nil_append, g1]
+        exact List.perm_append_comm
+      · rw [h0]
+        simp only [List.filterMap_append, List.filterMap_cons, List.filterMap_nil, Effect.energyOf?, Effect.machineOf?,
+          a1, a3, g1, List.nil_append, List.append_nil, List.getLast?_singleton, Option.getD_some]
+        unfold pendLines
+        rw [hp.trans (closeSub_pending dy m t)]
+        exact List.perm_append_comm
+    · rcases brkFx_cases dy m t (brkEnd t planned.val (actual.map (·.val))) with h0 | ⟨m', h0, -, -, hp⟩
+      · rw [h0, List.nil_append, g2]; exact List.nil_sublist _
+      · rw [h0]
+        simp only [List.filterMap_append, List.filterMap_cons, List.filterMap_nil, Effect.durationOf?, a2, g2,
+          List.append_nil, List.map_nil]
+        exact List.nil_sublist _
   all_goals
     obtain ⟨g1, g2, g3⟩ := dayArm_obs dy sl e t d
     exact ⟨_, g3, by rw [g1]; exact List.perm_append_comm, by rw [g2]; exact List.nil_sublist _⟩
@@ -7995,6 +8139,99 @@ theorem a_done_undone_over_an_automatic_close_is_untouched :
   decide
 
 end UndoWitnesses7
+
+/-! ## The owner's D87 (README gap 4137, parity P81): a break taken inside a block is not block time
+
+`tm stop` nets a break that fell inside the block it stops ("after 40m"), and so does the `actual_min` `tm done` logs;
+fork `Machine::step`'s `Break` arm touched no block, so the replay credited a block cut by `stop` (or by the next
+`start`) its whole span and drew its `Block` segment across the `Break` one — `tm review day` read 60 where `tm stop`
+said 40, and the heat grid counted the break as break and as block.  `brkFx` is the one definition now: a `break`
+stepped while the open block's clock runs closes the running sub-segment at the break's start and restarts the clock
+at its end (`brkEnd`), so every reader of the day — the credit, the segments, the open block — reads the block's
+worked minutes.  Each witness was probed in a scratch copy under `MemoryMax=8G timeout 120` (§5.10a): at most four
+entries, `utcZone`, instants as `Nat` literals.  2026-09-07T09:00:00Z is second 63924368400; the day is 739865. -/
+
+section BreakWitnesses87
+
+open Log (Id U8 U32 Num)
+
+/-- **A break inside a stopped block is not block time**: `start a` 09:00, a twenty-minute `break` at 09:30, `stop a`
+10:00.  The block is credited its 40 worked minutes — the item, its day, the day's block minutes and its ci-unknown
+minutes — and drawn as `[09:00, 09:30]` and `[09:50, 10:00]` beside the break's `[09:30, 09:50]`.  Fork `step`
+credited 60 and drew one block `[09:00, 10:00]` across the break (parity P81). -/
+theorem a_break_inside_a_stopped_block_is_not_block_time :
+    let f := replay utcZone [bE 1 63924368400 (bStart ['a']), bE 2 63924370200 (.brk 20 (some 20) none),
+      bE 3 63924372000 (.stop ['a'] 0)]
+    (f.items.get ['a']).map (·.minutes) = some 40 ∧ f.itemDays.get (739865, ['a']) = some 40 ∧
+    (f.days.get 739865).map (fun a => (a.blockMin, a.ciUnknown)) = some (40, [(['a'], 40)]) ∧
+    (f.days.get 739865).map (fun a => a.segments.map (fun g => (g.start.1.sec, g.stop.1.sec, g.kind)))
+      = some [(63924368400, 63924370200, .block ['a']), (63924370200, 63924371400, .brk none),
+              (63924371400, 63924372000, .block ['a'])] := by
+  decide
+
+/-- **A `done` still credits what it logs, and its block is still split**: `start a` 09:00, a twenty-minute `break`
+at 09:30, `done a` with 40 minutes at 10:00.  The 40 the `done` carries is credited (the logged minutes are
+authoritative, as before D87), at its ci; what moved is the drawing — no `Block` segment lies across the break. -/
+theorem a_done_after_a_break_credits_its_minutes_and_splits_its_block :
+    let f := replay utcZone [bE 1 63924368400 (bStart ['a']), bE 2 63924370200 (.brk 20 (some 20) none),
+      bE 3 63924372000 (bDone ['a'] 40 false)]
+    (f.items.get ['a']).map (·.minutes) = some 40 ∧
+    (f.days.get 739865).map (fun a => (a.blockMin, a.byCi.c3)) = some (40, 40) ∧
+    (f.days.get 739865).map (fun a => a.segments.map (fun g => (g.start.1.sec, g.stop.1.sec)))
+      = some [(63924368400, 63924370200), (63924370200, 63924371400), (63924371400, 63924372000)] := by
+  decide
+
+/-- **The open block restarts at the break's end**: `start a` 09:00 and a twenty-minute `break` at 09:30, and nothing
+after.  The open block has banked the 30 minutes before the break and runs again from 09:50, so its worked minutes at
+any instant are net of the break — the reading `tm now` and `tm stop` already print. -/
+theorem the_open_block_restarts_at_the_breaks_end :
+    (replay utcZone [bE 1 63924368400 (bStart ['a']), bE 2 63924370200 (.brk 20 (some 20) none)]).openBlock.map
+        (fun b => (b.workedMin, b.since.map (·.1.sec), b.paused))
+      = some (30, some 63924371400, false) := by
+  decide
+
+/-- **A break with no `actual_min` nets its planned minutes** — the span its `Break` segment is drawn over
+(`brkEnd`): `start a` 09:00, a `break` planned 15 at 09:30 with no actual, `stop a` 10:00.  Credited 45. -/
+theorem a_break_with_no_actual_nets_its_planned_minutes :
+    ((replay utcZone [bE 1 63924368400 (bStart ['a']), bE 2 63924370200 (.brk 15 none none),
+        bE 3 63924372000 (.stop ['a'] 0)]).items.get ['a']).map (·.minutes) = some 45 := by
+  decide
+
+/-- **A break while the block is paused changes nothing**: `start a` 09:00, `pause a` 09:10, a ten-minute `break` at
+09:20, `unpause a` 09:40, `stop a` 10:00.  The clock was stopped by the pause, so the break nets nothing more: 10 +
+20 = 30 minutes, the pause's segment `[09:10, 09:40]` and the break's `[09:20, 09:30]` both drawn. -/
+theorem a_break_while_the_block_is_paused_changes_nothing :
+    ((replay utcZone [bE 1 63924368400 (bStart ['a']), bE 2 63924369000 (.pause ['a']),
+        bE 3 63924369600 (.brk 10 (some 10) none), bE 4 63924370800 (.unpause ['a']),
+        bE 5 63924372000 (.stop ['a'] 0)]).items.get ['a']).map (·.minutes) = some 30 := by
+  decide
+
+/-- **D87's edge, named (README gap 4241)**: a `break` logged BEFORE a block's `start` whose span runs into it is
+not netted — no block ran when it was stepped.  A ten-minute `break` at 08:55, `start a` 09:00, `stop a` 10:00: 60
+minutes credited, and the two segments overlap by five.  `tm start` ends a running break before it logs its `start`,
+so the binary never writes this log; the host's `Replay::idle_min_since` would net the five minutes. -/
+theorem a_break_logged_before_its_blocks_start_is_not_netted :
+    ((replay utcZone [bE 1 63924368100 (.brk 10 (some 10) none), bE 2 63924368400 (bStart ['a']),
+        bE 3 63924372000 (.stop ['a'] 0)]).items.get ['a']).map (·.minutes) = some 60 := by
+  decide
+
+/-- **C5's `arm_split` over every event is refuted** (D87): with a block running, a `break`'s arm is neither its day
+family arm alone (it also stops the block's clock) nor block family effects alone (its own segment and record are a
+day family's).  `arm_split` is the form that holds, and `arm_split_of_not_brk` keeps C5's statement on every other
+event. -/
+theorem arm_split_as_c5_stated_it_is_refuted :
+    ¬ ∀ (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Machine) (e : Entry) (t : At) (d : Nat),
+      arm dy sl m e t d = dayArm dy sl e t d ∨
+        ((∀ x ∈ arm dy sl m e t d, x.blockOnly = true) ∧ dayArm dy sl e t d = []) := by
+  intro h
+  let m : Machine := ⟨some ⟨['a'], (⟨63924368400, 0⟩, ⟨false, 0⟩), some (⟨63924368400, 0⟩, ⟨false, 0⟩), false, none,
+    0, none⟩, none, none⟩
+  let e := bE 2 63924370200 (.brk 20 (some 20) none)
+  rcases h (fun _ => 739865) (fun _ => none) m e (⟨63924370200, 0⟩, ⟨false, 0⟩) 739865 with h1 | ⟨-, h2⟩
+  · revert h1; decide
+  · revert h2; decide
+
+end BreakWitnesses87
 
 end Replay
 end Tm

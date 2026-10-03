@@ -673,7 +673,7 @@ Tm.Recur.weekIdxMod
 Tm.Recur.wholeDays
 Tm.Recur.windowOn
 
-## Replay.lean -- the kernel replays `.tm/log.jsonl` (stage 5, D9 track, phase C). 64 of its 204 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
+## Replay.lean -- the kernel replays `.tm/log.jsonl` (stage 5, D9 track, phase C). 66 of its 206 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.Replay.Ci6.fifths
 Tm.Replay.Ci6.sum
 Tm.Replay.Ci6.toList
@@ -809,7 +809,7 @@ Tm.Replay.winOuts
 Tm.CloseDid.ofName?
 Tm.Report.append
 
-## Seal.lean -- stage 5's D9/W2 seal laws: the spec side of the checkpoint and its resume, quantified over by the theorems in the same module rather than called. 68 of its 237 emitted definitions are reached. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
+## Seal.lean -- stage 5's D9/W2 seal laws: the spec side of the checkpoint and its resume, quantified over by the theorems in the same module rather than called. 69 of its 238 emitted definitions are reached. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.Log.Line.entry?
 Tm.Log.Line.warning?
 Tm.Log.contiguousFrom

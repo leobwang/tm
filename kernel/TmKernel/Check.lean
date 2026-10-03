@@ -8057,3 +8057,31 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Planner.PlanReq.the_whatif_keeps_the_evening
 #print axioms Tm.Planner.PlanReq.growing_keeps_the_ci_agreement
 #print axioms Tm.Planner.PlanReq.the_whatif_request_pays_d80
+
+/- ===================================================================
+   APPENDED 2026-10-02: stage 6, run W-42, TRACK R — the owner's D87, a
+   break taken inside a block is not block time (README gap 4137, parity
+   P81).  `Replay.brkFx` and its laws, C5's `arm_split` and W2's
+   `arm_mi`/`stepWith_mi` restated with their old statements refuted by
+   name, the replay's break witnesses, and PlannerWit's section 31.
+   =================================================================== -/
+#print axioms Tm.Replay.brkFx_cases
+#print axioms Tm.Replay.arm_split_of_not_brk
+#print axioms Tm.Replay.brkFx_blockOnly
+#print axioms Tm.Replay.brkFx_machine
+#print axioms Tm.Replay.brkFx_obs
+#print axioms Tm.Replay.a_break_inside_a_stopped_block_is_not_block_time
+#print axioms Tm.Replay.a_done_after_a_break_credits_its_minutes_and_splits_its_block
+#print axioms Tm.Replay.the_open_block_restarts_at_the_breaks_end
+#print axioms Tm.Replay.a_break_with_no_actual_nets_its_planned_minutes
+#print axioms Tm.Replay.a_break_while_the_block_is_paused_changes_nothing
+#print axioms Tm.Replay.a_break_logged_before_its_blocks_start_is_not_netted
+#print axioms Tm.Replay.arm_split_as_c5_stated_it_is_refuted
+#print axioms Tm.Seal.brkFx_mi
+#print axioms Tm.Seal.arm_mi_of_not_brk
+#print axioms Tm.Seal.arm_mi_as_w2_stated_it_is_refuted
+#print axioms Tm.Seal.stepWith_mi_as_w2_stated_it_is_refuted
+#print axioms Tm.PlannerWit.insideBreakRun_resumes_ok
+#print axioms Tm.PlannerWit.the_inside_break_day_splits_the_block_at_the_break
+#print axioms Tm.PlannerWit.insideOpenBreakRun_resumes_ok
+#print axioms Tm.PlannerWit.the_open_row_starts_at_the_breaks_end

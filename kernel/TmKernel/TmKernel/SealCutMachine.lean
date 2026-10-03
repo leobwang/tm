@@ -108,6 +108,9 @@ theorem arm_lastCut (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Ma
         · exact Or.inr (Or.inl rfl)
         · exact Or.inl rfl
       · exact Or.inl rfl
+  case brk p a w =>
+    rw [List.filterMap_append, (Replay.dayArm_obs dy sl e t d).1, List.append_nil] at hm
+    exact Or.inl (Replay.brkFx_machine dy m t _ m' hm).1
   all_goals rw [(Replay.dayArm_obs dy sl e t d).1] at hm; simp at hm
 
 /-- **An arm's machine keeps the open interruption, closes it, or opens one on the arm's day.** -/
@@ -182,6 +185,9 @@ theorem arm_interrupt (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : 
         · exact Or.inl rfl
         · exact Or.inl rfl
       · exact Or.inl rfl
+  case brk p a w =>
+    rw [List.filterMap_append, (Replay.dayArm_obs dy sl e t d).1, List.append_nil] at hm
+    exact Or.inl (Replay.brkFx_machine dy m t _ m' hm).2.1
   all_goals rw [(Replay.dayArm_obs dy sl e t d).1] at hm; simp at hm
 
 theorem stepWith_machine_eq (z : Cal.Tz) (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (st : State) (e : Entry) :

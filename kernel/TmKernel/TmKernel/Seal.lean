@@ -1403,9 +1403,17 @@ def gapStart? (e : Entry) : Option Cal.Instant :=
     | _, _ => none
   | _ => none
 
-/-- **The instants an entry's arms read the day index at, besides the open block's**: its stamp and its gap's start
-(W2; the open block's instants are stamps of earlier entries). -/
-def entryInstants (e : Entry) : List Cal.Instant := e.t.val :: (gapStart? e).toList
+/-- **Where a `break` entry stamped `t` ends** — `Replay.brkEnd`'s instant: the instant a block's clock it fell inside
+restarts at (the owner's D87, `Replay.brkFx`), which a LATER step reads the day index at when it closes that clock. -/
+def brkEndAt? (e : Entry) (t : Cal.Instant) : Option Cal.Instant :=
+  match e.ev with
+  | .brk p a _ => some (Replay.brkEnd (t, e.off.val) p.val (a.map (·.val))).1
+  | _ => none
+
+/-- **The instants an entry's arms read the day index at, besides the open block's**: its stamp, its gap's start, and
+a break's end (W2; D87).  The open block's instants are instants of earlier entries: a stamp, or — since the owner's D87
+— the end of a break that fell inside the block, where its clock restarted (`Replay.brkFx`). -/
+def entryInstants (e : Entry) : List Cal.Instant := e.t.val :: ((gapStart? e).toList ++ (brkEndAt? e e.t.val).toList)
 
 /-- **The head second of a ledger day** (W2): an instant before `(L − 1)` UTC days has a day before `L` on every index
 (its local date, and every wake's at or before it, is below `L`), so a tail reading it is refused without computing

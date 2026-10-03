@@ -64,6 +64,13 @@ mod replay;
 #[path = "support/fork.rs"]
 mod fork;
 
+// Parity P81 (the owner's D87, README gap 4137): the fork's frozen answer moved by the one rule P81
+// changes, so the comparisons below carry it by value — never by skipping a key. `planned_day`, the
+// rule on a planned day, is the planner suites' (`planner_classes.rs`), not this one's.
+#[allow(dead_code)]
+#[path = "support/p81.rs"]
+mod p81;
+
 #[allow(dead_code)]
 #[path = "../src/cli/kernel_log.rs"]
 mod kernel_log;
@@ -2953,10 +2960,29 @@ fn stage5_parity_the_kernel_replays_and_fits_as_the_fork_point_does() {
     let mut fits = 0usize;
     let mut findings: Vec<String> = Vec::new();
 
+    // **Parity P81, asked of fork 4748911** (the owner's D87, W-42 track R, README gap 4247): every
+    // input whose log holds a break P81 nets is asked again with that break given as a pause and an
+    // unpause (`p81::as_d87_asks`), and the kernel is held to THAT — fork 4748911's own machine netting
+    // it. The frozen arms carry P81 by `p81::carry`, read off the fork's segments; here, where the fork
+    // can be asked, the carry is held to the fork's own answer on every input it moves or might.
+    let asked = asked_of_the_fork(&bin, tz.name(), &texts, &fork_replays);
     for (i, name) in names.iter().enumerate() {
         let answer = kernel_answer(&texts[i], tz);
         let kf = kernel_view(&answer);
-        findings.extend(compare_with_fork(name, &answer, tz, &kf, &fork_replays[i], &mut t));
+        match &asked[i] {
+            Err(why) => findings.push(format!("{name}: {why}")),
+            Ok(a) => {
+                findings.extend(compare_with_fork_asked(name, &answer, tz, &kf, a, &mut t));
+                match p81::carry(&fork_replays[i]) {
+                    Err(why) => findings.push(format!("{name}: the frozen carry refuses what the fork answers: {why}")),
+                    Ok((carried, _)) if &carried != a => findings.push(format!(
+                        "{name}: the frozen carry is not fork 4748911's answer asked P81's day: {}",
+                        forkdiff(&carried, a)
+                    )),
+                    Ok(_) => {}
+                }
+            }
+        }
 
         // T12: the fit over the kernel's observations against the fork's own.
         fits += 1;
@@ -3011,13 +3037,25 @@ fn stage5_parity_the_kernel_replays_and_fits_as_the_fork_point_does() {
         let batch: Vec<String> = idx.iter().map(|i| extra[*i].2.clone()).collect();
         let answers = fork_oracle(&bin, &["replay", zone], &batch);
         assert_eq!(answers.len(), idx.len(), "{zone}: one fork replay per input");
-        for (i, a) in idx.iter().zip(answers) {
+        // P81, asked of the fork (above): the inputs whose log holds a break P81 nets.
+        let asked = asked_of_the_fork(&bin, zone, &batch, &answers);
+        for (k, i) in idx.iter().enumerate() {
             let (name, z, text) = &extra[*i];
             let answer = kernel_answer(text, *z);
             let kf = kernel_view(&answer);
-            findings.extend(compare_with_fork(name, &answer, *z, &kf, &a, &mut t));
+            match &asked[k] {
+                Ok(a) => findings.extend(compare_with_fork_asked(name, &answer, *z, &kf, a, &mut t)),
+                Err(why) => findings.push(format!("{name}: {why}")),
+            }
         }
     }
+    let (inputs, breaks, moved) = *p81_asked_tally().lock().expect("the P81 tally");
+    eprintln!(
+        "  parity P81, asked of fork 4748911: {breaks} break(s) netted in {inputs} input(s), each input asked again with \
+         them given as a pause and an unpause, and the kernel held to that answer; on {moved} of them that answer is \
+         not the fork's answer to the log as given"
+    );
+    assert!(breaks > 0 && moved > 0, "P81 was asked of the fork on no input it moves: the live arm carries nothing");
 
     eprintln!(
         "\nstage-5 parity — the Lean kernel vs fork point 4748911's log::replay and energy::fit\n\
@@ -3230,7 +3268,86 @@ fn compare_with_fork(
     fork_answer: &Value,
     t: &mut fork::ForkTally,
 ) -> Vec<String> {
-    fork::compare_replay_with_fork(name, &kernel_replay(answer, tz), kf.counts.0, &kf.warnings, fork_answer, t)
+    // **Parity P81, carried by value** (D87): the fork's answer is moved by P81's rule, computed from
+    // the fork's own segments (`support/p81.rs`), and the kernel is compared with THAT key for key — so
+    // a kernel that nets the wrong minutes or splits the wrong block still fails here by name.
+    let (fork_answer, t81) = match p81::carry(fork_answer) {
+        Ok(moved) => moved,
+        Err(why) => return vec![format!("{name}: {why}")],
+    };
+    if t81.breaks > 0 {
+        p81_tally().lock().expect("the P81 tally").push((name.to_string(), t81.breaks, t81.minutes));
+    }
+    fork::compare_replay_with_fork(name, &kernel_replay(answer, tz), kf.counts.0, &kf.warnings, &fork_answer, t)
+}
+
+/// **The kernel against an answer already asked P81's day** (W-42 track R): `fork::compare_replay_with_fork`
+/// with nothing moved, since the fork's own machine netted the breaks (`asked_of_the_fork`).
+fn compare_with_fork_asked(name: &str, answer: &Value, tz: Tz, kf: &Facts, asked: &Value, t: &mut fork::ForkTally) -> Vec<String> {
+    fork::compare_replay_with_fork(name, &kernel_replay(answer, tz), kf.counts.0, &kf.warnings, asked, t)
+}
+
+/// **Fork 4748911 asked P81's day of each log** (W-42 track R, README gap 4247): for each text, the
+/// breaks P81 nets by the fork's own machine (`p81::netted_breaks`, over the fork's own refusals in
+/// `answers`), and where there are any, the fork's answer to the log with each given as a pause and an
+/// unpause (`p81::as_d87_asks`, one oracle call for the batch) read back as its answer to the text
+/// (`p81::as_asked`); the answer as given where P81 nets nothing.
+fn asked_of_the_fork(bin: &std::path::Path, zone: &str, texts: &[String], answers: &[Value]) -> Vec<Result<Value, String>> {
+    let mut out: Vec<Result<Value, String>> = Vec::new();
+    let mut pending: Vec<(usize, Vec<p81::Netted>, Vec<u64>)> = Vec::new();
+    let mut asks: Vec<String> = Vec::new();
+    for (i, (text, a)) in texts.iter().zip(answers).enumerate() {
+        let refused: Vec<u64> = a["warningLines"].as_array().map(Vec::as_slice).unwrap_or_default().iter().filter_map(Value::as_u64).collect();
+        match p81::netted_breaks(text, &refused) {
+            Err(why) => out.push(Err(why)),
+            Ok(n) if n.is_empty() => out.push(Ok(a.clone())),
+            Ok(n) => match p81::as_d87_asks(text, &n) {
+                Err(why) => out.push(Err(why)),
+                Ok((asked, inserted)) => {
+                    let mut tally = p81_asked_tally().lock().expect("the P81 tally");
+                    tally.0 += 1;
+                    tally.1 += n.len();
+                    drop(tally);
+                    pending.push((i, n, inserted));
+                    asks.push(asked);
+                    out.push(Err(String::new()));
+                }
+            },
+        }
+    }
+    if !asks.is_empty() {
+        let replies = fork_oracle(bin, &["replay", zone], &asks);
+        assert_eq!(replies.len(), asks.len(), "{zone}: one fork replay per log asked P81's day");
+        for ((i, n, inserted), reply) in pending.into_iter().zip(replies) {
+            out[i] = p81::as_asked(&reply, &n, &inserted);
+            // Not vacuous: the fork's answer asked P81's day is not its answer to the log as given.
+            if out[i].as_ref().is_ok_and(|asked| asked != &answers[i]) {
+                p81_asked_tally().lock().expect("the P81 tally").2 += 1;
+            }
+        }
+    }
+    out
+}
+
+/// `(inputs, breaks, inputs whose asked answer is not the answer to the log as given)` P81 was asked of
+/// the fork for in this binary's live arm.
+fn p81_asked_tally() -> &'static Mutex<(usize, usize, usize)> {
+    static T: OnceLock<Mutex<(usize, usize, usize)>> = OnceLock::new();
+    T.get_or_init(|| Mutex::new((0, 0, 0)))
+}
+
+/// Where two answers first differ, by path — so a cross-check names the leaf, not two whole answers.
+fn forkdiff(a: &Value, b: &Value) -> String {
+    let mut paths = Vec::new();
+    fork::diff_paths("", a, b, &mut paths);
+    paths.into_iter().take(4).map(|(_, m)| m).collect::<Vec<_>>().join("; ")
+}
+
+/// Every input P81 moved the fork's answer for — `(input, breaks inside a block, minutes netted off a cut's credit)`
+/// — so the binary's output says how much P81 was carried rather than claiming it.
+fn p81_tally() -> &'static Mutex<Vec<(String, usize, u64)>> {
+    static T: OnceLock<Mutex<Vec<(String, usize, u64)>>> = OnceLock::new();
+    T.get_or_init(|| Mutex::new(Vec::new()))
 }
 
 /// What every [`assert_parity`] in this binary compared against the fork,
@@ -3362,6 +3479,55 @@ fn t5_the_corpus_logs_replay_as_the_frozen_fork_point_does() {
 fn t5_the_frozen_generated_month_replays_as_the_fork_point_does() {
     let inputs = frozen_class_inputs();
     compare_frozen_class(GENERATED_MONTH_CLASS, &inputs);
+}
+
+/// **Parity P81 is carried by value, and it bites** (the owner's D87, README gap 4137).
+///
+/// The generated month holds one break logged while a block's clock ran: `^66`'s `done` is cancelled
+/// by the evening's `undo`, so the block runs on from 13:33 and the 13:44 break falls inside it until
+/// the next morning's `start` cuts it. Fork point 4748911 credits the block its span; the kernel nets
+/// the break's 32 minutes. Three things are asserted, each by value:
+///
+/// 1. the kernel's answer agrees with the fork's answer moved by P81's rule (`support/p81.rs`), and P81
+///    moved exactly one break and 32 minutes — the carry is not vacuous;
+/// 2. the fork's answer NOT moved disagrees, at the leaves P81 names — the carry is not the identity;
+/// 3. a kernel answer corrupted by one minute on `^66` fails against the moved answer, naming the leaf —
+///    a kernel that netted the wrong minutes is still caught.
+#[test]
+fn p81_is_carried_by_value_and_a_corrupted_kernel_answer_fails_by_name() {
+    let tz = chrono_tz::America::Chicago;
+    let text = loggen::text(&loggen::log(loggen::Rate::Forty, 30));
+    let fork_answer = fork::frozen_fork_answers().get(GENERATED_MONTH).expect("the frozen month");
+    let answer = kernel_answer(&text, tz);
+    let kf = kernel_view(&answer);
+    let kr = kernel_replay(&answer, tz);
+
+    let (moved, t81) = p81::carry(fork_answer).expect("P81 moves the generated month");
+    assert_eq!((t81.breaks, t81.minutes), (1, 32), "P81 moved a different amount than the one break inside ^66");
+    let mut t = fork::ForkTally::default();
+    let carried = fork::compare_replay_with_fork(GENERATED_MONTH, &kr, kf.counts.0, &kf.warnings, &moved, &mut t);
+    assert!(carried.is_empty(), "the kernel disagrees with the fork moved by P81:\n  {}", carried.join("\n  "));
+
+    let mut t = fork::ForkTally::default();
+    let unmoved = fork::compare_replay_with_fork(GENERATED_MONTH, &kr, kf.counts.0, &kf.warnings, fork_answer, &mut t);
+    let joined = unmoved.join("\n");
+    for leaf in ["days.2026-01-04.block_min", "days.2026-01-04.ci_unknown.66", "items.66.minutes", "days.2026-01-03.segments"] {
+        assert!(joined.contains(leaf), "the unmoved fork answer agrees at `{leaf}` — P81 would be vacuous there:\n{joined}");
+    }
+
+    let mut bent = kr.clone();
+    bent.items.get_mut("66").expect("^66").minutes += 1;
+    let mut t = fork::ForkTally::default();
+    let caught = fork::compare_replay_with_fork(GENERATED_MONTH, &bent, kf.counts.0, &kf.warnings, &moved, &mut t);
+    assert!(
+        caught.iter().any(|f| f.contains("items.66.minutes")),
+        "a kernel answer one minute off on ^66 passed the P81 comparison: {caught:?}"
+    );
+    eprintln!(
+        "P81 by value: 1 break inside ^66, 32 minutes netted; the unmoved fork disagrees at {} leaf group(s); a one-minute \
+         corruption is caught by name",
+        unmoved.len()
+    );
 }
 
 /// **GAP 149's half of the retarget on this side**: §6.4's zone cases, the day
