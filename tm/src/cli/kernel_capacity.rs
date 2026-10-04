@@ -209,13 +209,56 @@ fn request_on(
     days: u32,
     ranked: Option<&Ranked<'_>>,
 ) -> Result<(String, Vec<usize>), CliError> {
+    request_with(ctx, state, allow_home, days, ranked, &reads(ctx)?)
+}
+
+/// **Every byte a capacity request reads from the plan directory, read once** (W-45 track Q, README gap 4662):
+/// `config.toml`'s and `.tm/model.json`'s literals ([`written_of`]), the documents as [`Ctx::reading`] gives them,
+/// the zone table under the replay cache (`tz_table::wire_for`, `tz.json`), and the log as [`Ctx::log_now`] gives
+/// it. [`request_with`] reads nothing else from disk: the checkpoint the log section resumes is the process's own
+/// (`kernel_log::capacity_log_section`; its `ckpt.json` is read only by a process that has run no replay, and a
+/// context is loaded by one).
+struct Reads {
+    written: Written,
+    docs: Vec<Value>,
+    tz_wire: Value,
+    log: Vec<u8>,
+}
+
+/// Read them.
+fn reads(ctx: &Ctx) -> Result<Reads, CliError> {
     // Every configured decimal as its file writes it (D10, D17): read here, checked and sent
     // by the codec, which is the one spelling of the section (README gap 2875).
     let written = written_of(ctx)?;
+    // The documents: the whole tree, as `kernel_bridge::apply` sends it — read through
+    // `Ctx::reading`, so a TUI past midnight that holds §6.3's automatic close in memory sends the
+    // documents `tm plan` sends after its own close (the owner's D91, README gap 4342).
+    let reading = ctx.reading()?;
+    let mut docs = Vec::new();
+    for rel in reading.store().list_files()? {
+        let text = reading.store().read_text(&rel)?;
+        docs.push(kernel_bridge::doc_json(&rel, &kernel_bridge::doc_lines(&text)));
+    }
+    let cache = ctx.store.root().join(".tm/cache/replay");
+    let tz_wire = tz_table::wire_for(Some(&cache), ctx.cfg.tz);
+    // The log as the request reads it (`Ctx::log_now`): with the lines that close would log (D91).
+    let log = ctx.log_now()?;
+    Ok(Reads { written, docs, tz_wire, log })
+}
+
+/// [`request_on`] over [`Reads`] already read: nothing here touches the plan directory.
+fn request_with(
+    ctx: &Ctx,
+    state: &tm_core::store::RuntimeState,
+    allow_home: bool,
+    days: u32,
+    ranked: Option<&Ranked<'_>>,
+    r: &Reads,
+) -> Result<(String, Vec<usize>), CliError> {
     let input = CapacityIn {
         cfg: &ctx.cfg,
         model: &ctx.model,
-        written: &written,
+        written: &r.written,
         tree: &ctx.tree,
         state,
         now: ctx.now_tz,
@@ -228,29 +271,16 @@ fn request_on(
     let section = planwire::capacity_json(&input, ranked).map_err(input_error)?;
     let order = ranked.map(|r| planwire::send_order(r.cands)).unwrap_or_default();
 
-    // The documents: the whole tree, as `kernel_bridge::apply` sends it — read through
-    // `Ctx::reading`, so a TUI past midnight that holds §6.3's automatic close in memory sends the
-    // documents `tm plan` sends after its own close (the owner's D91, README gap 4342).
-    let reading = ctx.reading()?;
-    let mut docs = Vec::new();
-    for rel in reading.store().list_files()? {
-        let text = reading.store().read_text(&rel)?;
-        docs.push(kernel_bridge::doc_json(&rel, &kernel_bridge::doc_lines(&text)));
-    }
-    let cache = ctx.store.root().join(".tm/cache/replay");
-    let tz_wire = tz_table::wire_for(Some(&cache), ctx.cfg.tz);
     // Stage 6 step L9: the `log` section day 0 is derived from (D24's seam).  The kernel answers
     // both sections in one call and `runCapZ` hands the log answer's replay to the capacity
     // reader; without it the kernel refuses `day0WithoutLog` rather than invent an empty day.
-    // The log as the request reads it (`Ctx::log_now`): with the lines that close would log (D91).
-    let log = kernel_log::capacity_log_section(
-        ctx.store.root(), &ctx.log_now()?, &tz_wire, kernel_log::day_of(ctx.today))
+    let log = kernel_log::capacity_log_section(ctx.store.root(), &r.log, &r.tz_wire, kernel_log::day_of(ctx.today))
         .map_err(super::ctx::genesis_error)?;
     let rest = json!({
-        "docs": docs,
+        "docs": r.docs,
         "now": ctx.today.to_string(),
         "blockMin": ctx.block_min(),
-        "tz": tz_wire,
+        "tz": r.tz_wire,
         "capacity": section,
     })
     .to_string();
@@ -359,13 +389,73 @@ pub fn rank(ctx: &Ctx, cands: &[Candidate], yesterday: &BTreeMap<Id, u8>, allow_
 /// plan` and the TUI plan Tuesday's, so the refusal it names was a refusal of a
 /// day no planning surface asks for. `tm plan`'s housekeeping and the TUI's
 /// re-collection have rolled the state already, so for them this is a no-op.
+///
+/// **Its reads and its build are two halves** (W-45 track Q, README gap 4662): [`tick_inputs`] reads from the plan
+/// directory, once, everything the request carries that the context does not hold in memory, and
+/// [`planner_request_from`] builds the request from them and the context alone. This is the two in one call, so
+/// `tm plan` and `tm check` read the files as they stand when the verb runs. The TUI's minute tick (the owner's
+/// D103) is the caller the halves exist for: it holds the context its last reload read, and a tick built from
+/// that reload's [`TickInputs`] reads NOTHING from disk — the documents, the log, the configured literals and the
+/// stored plan it was ranked from all the reload's, one consistent read, as fork 4748911's tick replanned from the
+/// App's own data.
 pub fn planner_request(ctx: &Ctx, allow_home: bool) -> Result<String, CliError> {
+    let read = std::time::Instant::now();
+    let inputs = tick_inputs(ctx)?;
+    let read = read.elapsed();
+    // **T19's instrument** (README gap 4662): opt-in, as [`TRACE_REQUEST_ENV`] is, and silent while the TUI owns
+    // the screen. Set to `k`, the request is built `k` times from the one read and each build is timed — what a
+    // tick pays, warm, in this process — and the line says so; every build must be byte-identical, or the
+    // instrument is measuring something other than one tick's request.
+    let builds = std::env::var(TRACE_BUILD_ENV).ok().and_then(|k| k.parse::<usize>().ok()).filter(|k| *k > 0);
+    let Some(k) = builds.filter(|_| !kernel_bridge::capturing_kernel_stderr()) else {
+        return planner_request_from(ctx, &inputs, allow_home);
+    };
+    let mut took = Vec::with_capacity(k);
+    let mut request = String::new();
+    for i in 0..k {
+        let t = std::time::Instant::now();
+        let built = planner_request_from(ctx, &inputs, allow_home)?;
+        took.push(t.elapsed().as_nanos().to_string());
+        if i > 0 && built != request {
+            return Err(defect("two builds of one tick's request differ"));
+        }
+        request = built;
+    }
+    eprintln!("{TRACE_BUILD_PREFIX}read {} ns; built {} ns; {} bytes", read.as_nanos(), took.join(","), request.len());
+    Ok(request)
+}
+
+/// **The opt-in that times [`planner_request`]'s two halves** (T19, README gap 4662): its value is how many times
+/// to build the request from the one read.
+pub const TRACE_BUILD_ENV: &str = "TM_TRACE_PLANNER_BUILD";
+/// The line [`TRACE_BUILD_ENV`] prints.
+pub const TRACE_BUILD_PREFIX: &str = "planner request: ";
+
+/// **What a tick's planner request reads from disk** (W-45 track Q, README gap 4662): the capacity request's
+/// [`Reads`] — `config.toml`'s and `.tm/model.json`'s literals, every document, `tz.json`, the log — and the
+/// hysteresis input, which `.tm/last_plan.json` holds before the day's first plan ([`Ctx::hysteresis_input`]).
+/// Read by [`tick_inputs`]; the TUI keeps the one its reload read.
+pub struct TickInputs {
+    reads: Reads,
+    yesterday: BTreeMap<Id, u8>,
+}
+
+/// **Read a tick's inputs**, once.
+pub fn tick_inputs(ctx: &Ctx) -> Result<TickInputs, CliError> {
+    Ok(TickInputs { reads: reads(ctx)?, yesterday: ctx.hysteresis_input() })
+}
+
+/// **The planner request from `inputs` and the context alone** — [`planner_request`]'s build, which reads
+/// nothing from the plan directory: measured with the plan root renamed away after the read, the build is the
+/// same request byte for byte, and `planner_request` itself fails (README gap 4662).
+pub fn planner_request_from(ctx: &Ctx, inputs: &TickInputs, allow_home: bool) -> Result<String, CliError> {
     let mut state = ctx.state.clone();
     state.roll_to(ctx.today);
     let cands = priority::collect_candidates(&ctx.tree, &ctx.replay, &ctx.cfg, &ctx.model, ctx.today, ctx.now_tz);
-    let yesterday = ctx.hysteresis_input();
+    let yesterday = &inputs.yesterday;
     let (days, _) = planwire::horizon(ctx.today, priority::lookahead_days(&cands, ctx.today));
-    let (request, _) = request_on(ctx, &state, allow_home, days, Some(&Ranked { cands: &cands, yesterday: &yesterday }))?;
+    let ranked = Ranked { cands: &cands, yesterday };
+    let (request, _) = request_with(ctx, &state, allow_home, days, Some(&ranked), &inputs.reads)?;
     let tz = ctx.cfg.tz;
     let date = planwire::plan_date(&state, ctx.now_tz);
     let routines = planwire::routine_instances(&cands, &ctx.tree, ctx.now_tz, date, tz);

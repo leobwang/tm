@@ -35,7 +35,12 @@
 //!   `sorted_candidates` nor `d60_cands` is the fork planner.
 //!
 //! The three fork comparisons are one `BEGIN THE FORK PLANNER` region, which R3
-//! deletes; the kernel's half of each is `PlannerWit`'s W-38 block.
+//! deletes; the kernel's half of each is `PlannerWit`'s W-38 block — and, since W-45
+//! track C (README gap 4682), the same three days asked of the kernel through the FFI
+//! outside the region ([`the_kernel_draws_the_interruption_and_the_meeting_in_the_forks_order`],
+//! [`gap_320s_inputs_are_planned_by_the_kernel_from_the_states_window`],
+//! [`the_kernel_plans_the_woken_day_from_the_logged_arrival`]): until W-45 the region's tests
+//! asserted the kernel's rows and windows beside the fork's, and R3 would have deleted them.
 
 mod planner_common;
 
@@ -195,6 +200,118 @@ fn the_day_carries_the_order_step_five_serves() {
     assert!(c.impossible_first > 0, "on no day was an impossible item served first");
 }
 
+/// The kinds and items of the rows that start at `t`, in the day's order.
+fn rows_at(day: &tm_core::dayplan::DayPlan, t: DateTime<Tz>) -> Vec<(String, Option<String>)> {
+    day.segments
+        .iter()
+        .filter(|s| s.start == t)
+        .map(|s| (tm_core::dayplan::kind_label(&s.kind).to_string(), s.item.as_ref().map(ToString::to_string)))
+        .collect()
+}
+
+/// **The kernel's day for `state` at `now`, through the FFI** — the request R3's host sends
+/// (`planner_common::planreq`), read back by the host's codec. `label` names a refusal.
+fn kernel_day(fx: &Fixture, label: &str, state: &RuntimeState, now: DateTime<Tz>) -> tm_core::dayplan::DayPlan {
+    fx.kernel_day(state, now).unwrap_or_else(|e| panic!("{label}: the kernel did not plan the day: {e}"))
+}
+
+/// `plan-basic`'s state with an interruption running since `^g1`'s meeting began at 12:50, naming
+/// `id` (README gap 3281).
+fn interrupted_at_the_meeting(id: Option<&str>) -> RuntimeState {
+    RuntimeState {
+        interrupt: Some(tm_core::store::InterruptState {
+            started: Some(NaiveTime::from_hms_opt(12, 50, 0).expect("time")),
+            id: id.map(tm_core::model::Id::new),
+        }),
+        ..basic_state()
+    }
+}
+
+/// README gap 320's three states and the window each is planned in: a stored window with no
+/// date, the same window dated today with NO budget beside it (08:00–15:00, which §8.1's formula
+/// from the 07:00 arrival does not give, so the two readings are told apart), and a state naming
+/// no day that carries an arrival and no window.
+fn gap_320_states() -> [(&'static str, RuntimeState, (u32, u32, u32, u32)); 3] {
+    let eight_to_three = Some((NaiveTime::from_hms_opt(8, 0, 0).expect("time"), NaiveTime::from_hms_opt(15, 0, 0).expect("time")));
+    [
+        ("undated window and budget", RuntimeState { date: None, ..basic_state() }, (7, 0, 16, 0)),
+        ("window with no budget", RuntimeState { budget: None, window: eight_to_three, ..basic_state() }, (8, 0, 15, 0)),
+        ("undated arrival, no window", RuntimeState { date: None, window: None, budget: None, ..basic_state() }, (7, 0, 16, 0)),
+    ]
+}
+
+/// README gap 3390's woken day: no arrival stored (`tm wake` after `tm arrive` clears it), the
+/// log keeping the 07:00 `arrive`.
+fn woken_state() -> RuntimeState {
+    RuntimeState { arrival: None, window: None, budget: None, ..basic_state() }
+}
+
+/// **README gap 3281, of the kernel alone**: planned at 13:50 the Lost row and the Wall row of
+/// `^g1`'s meeting tie on start and end, and the kernel draws them in fork collect_walls'
+/// `(blocked_start, id)` order — an interruption naming `t4` after `g1`, one naming `a1` or no
+/// block before it; at 13:30 the Lost row ends first and is drawn first. The fork's half, against
+/// the live fork, is the region's the_interruption_and_the_meeting_are_drawn_as_the_fork_draws_them.
+#[test]
+fn the_kernel_draws_the_interruption_and_the_meeting_in_the_forks_order() {
+    let fx = basic();
+    let begun = at("2026-09-07", 12, 50);
+    let wall = (String::from("wall"), Some(String::from("g1")));
+    let mut days = 0;
+    for (id, after_the_wall) in [(Some("t4"), true), (Some("a1"), false), (None, false)] {
+        let state = interrupted_at_the_meeting(id);
+        let lost = (String::from("lost"), id.map(str::to_string));
+        for (h, m, tie) in [(13, 50, true), (13, 30, false)] {
+            let now = at("2026-09-07", h, m);
+            let label = format!("interrupted {id:?} at {h}:{m:02}");
+            let k = kernel_day(&fx, &label, &state, now);
+            let want = if tie && after_the_wall { vec![wall.clone(), lost.clone()] } else { vec![lost.clone(), wall.clone()] };
+            assert_eq!(rows_at(&k, begun), want, "{label}: the kernel's rows at 12:50");
+            days += 1;
+        }
+    }
+    assert_eq!(days, 6);
+}
+
+/// **README gap 320's inputs, of the kernel alone**: each state's day is the window the state
+/// says, at four instants — not one from `now`. The fork's half is the region's
+/// gap_320s_inputs_are_planned_as_the_forks_planner_plans_them.
+#[test]
+fn gap_320s_inputs_are_planned_by_the_kernel_from_the_states_window() {
+    let fx = basic();
+    let tz = fx.cfg.tz;
+    let mut days = 0;
+    for (name, state, (h0, m0, h1, m1)) in &gap_320_states() {
+        for (h, m) in [(8, 0), (10, 30), (12, 0), (14, 0)] {
+            let now = at("2026-09-07", h, m);
+            let label = format!("{name} at {h}:{m:02}");
+            let k = kernel_day(&fx, &label, state, now);
+            let want = (at("2026-09-07", *h0, *m0), at("2026-09-07", *h1, *m1));
+            assert_eq!((k.window.0.with_timezone(&tz), k.window.1.with_timezone(&tz)), want, "{label}: the kernel's window");
+            days += 1;
+        }
+    }
+    assert_eq!(days, 12);
+}
+
+/// **README gap 3390, of the kernel alone**: the woken day starts at the logged 07:00 arrival
+/// (`Look.Today.planArrivalSec`), not at `now`, at four instants. The fork's half is the region's
+/// the_logged_arrival_is_the_forks_planners_and_the_kernels.
+#[test]
+fn the_kernel_plans_the_woken_day_from_the_logged_arrival() {
+    let fx = basic();
+    let tz = fx.cfg.tz;
+    let state = woken_state();
+    for (h, m) in [(8, 0), (10, 30), (12, 0), (14, 0)] {
+        let now = at("2026-09-07", h, m);
+        let label = format!("woken after arriving, at {h}:{m:02}");
+        let k = kernel_day(&fx, &label, &state, now);
+        let want = (at("2026-09-07", 7, 0), at("2026-09-07", 16, 0));
+        assert_eq!((k.window.0.with_timezone(&tz), k.window.1.with_timezone(&tz)), want, "{label}: the kernel's window");
+        assert_ne!(k.window.0.with_timezone(&tz), now, "{label}: the kernel no longer starts the day at `now`");
+    }
+}
+
+
 // BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gaps 2722, 3281, 320)
 /// The fork's day for `state` at `now`, ranked by the kernel's own §7 answer —
 /// `planning::build_ranked`'s wiring (D53).
@@ -236,15 +353,6 @@ fn compare(
     (k.day, fork)
 }
 
-/// The kinds and items of the rows that start at `t`, in the day's order.
-fn rows_at(day: &tm_core::dayplan::DayPlan, t: DateTime<Tz>) -> Vec<(String, Option<String>)> {
-    day.segments
-        .iter()
-        .filter(|s| s.start == t)
-        .map(|s| (tm_core::dayplan::kind_label(&s.kind).to_string(), s.item.as_ref().map(ToString::to_string)))
-        .collect()
-}
-
 /// **README gap 3281: the interruption and the meeting are drawn as the fork
 /// draws them.** `^g1`'s meeting runs 12:50–13:50 and an interruption has run
 /// since 12:50. Planned at 13:50 the Lost row and the Wall row tie on start and
@@ -260,20 +368,13 @@ fn the_interruption_and_the_meeting_are_drawn_as_the_fork_draws_them() {
     let begun = at("2026-09-07", 12, 50);
     let wall = (String::from("wall"), Some(String::from("g1")));
     for (id, after_the_wall) in [(Some("t4"), true), (Some("a1"), false), (None, false)] {
-        let state = RuntimeState {
-            interrupt: Some(tm_core::store::InterruptState {
-                started: Some(NaiveTime::from_hms_opt(12, 50, 0).expect("time")),
-                id: id.map(tm_core::model::Id::new),
-            }),
-            ..basic_state()
-        };
+        let state = interrupted_at_the_meeting(id);
         let lost = (String::from("lost"), id.map(str::to_string));
         for (h, m, tie) in [(13, 50, true), (13, 30, false)] {
             let now = at("2026-09-07", h, m);
             let label = format!("interrupted {id:?} at {h}:{m:02}");
-            let (k, f) = compare(&fx, &label, &state, now, &mut t, &mut findings);
+            let (_, f) = compare(&fx, &label, &state, now, &mut t, &mut findings);
             let want = if tie && after_the_wall { vec![wall.clone(), lost.clone()] } else { vec![lost.clone(), wall.clone()] };
-            assert_eq!(rows_at(&k, begun), want, "{label}: the kernel's rows at 12:50");
             assert_eq!(rows_at(&f, begun), want, "{label}: the fork's rows at 12:50");
         }
     }
@@ -294,22 +395,15 @@ fn gap_320s_inputs_are_planned_as_the_forks_planner_plans_them() {
     let mut t = forkday::DayTally::default();
     let mut findings = Vec::new();
     let tz = fx.cfg.tz;
-    // The no-budget window is not the one §8.1's formula gives from the 07:00 arrival
-    // (07:00–16:00): a window equal to the formula's cannot tell the two readings apart.
-    let eight_to_three = Some((NaiveTime::from_hms_opt(8, 0, 0).expect("time"), NaiveTime::from_hms_opt(15, 0, 0).expect("time")));
-    let states = [
-        ("undated window and budget", RuntimeState { date: None, ..basic_state() }, (7, 0, 16, 0)),
-        ("window with no budget", RuntimeState { budget: None, window: eight_to_three, ..basic_state() }, (8, 0, 15, 0)),
-        ("undated arrival, no window", RuntimeState { date: None, window: None, budget: None, ..basic_state() }, (7, 0, 16, 0)),
-    ];
+    let states = gap_320_states();
     for (name, state, (h0, m0, h1, m1)) in &states {
         for (h, m) in [(8, 0), (10, 30), (12, 0), (14, 0)] {
             let now = at("2026-09-07", h, m);
             let label = format!("{name} at {h}:{m:02}");
-            let (k, f) = compare(&fx, &label, state, now, &mut t, &mut findings);
-            // The day is the window the state says, on both sides — not one from `now`.
+            let (_, f) = compare(&fx, &label, state, now, &mut t, &mut findings);
+            // The day is the window the state says, on both sides — not one from `now` (the kernel's
+            // side: `gap_320s_inputs_are_planned_by_the_kernel_from_the_states_window`).
             let want = (at("2026-09-07", *h0, *m0), at("2026-09-07", *h1, *m1));
-            assert_eq!((k.window.0.with_timezone(&tz), k.window.1.with_timezone(&tz)), want, "{label}: the kernel's window");
             assert_eq!((f.window.0.with_timezone(&tz), f.window.1.with_timezone(&tz)), want, "{label}: the fork's window");
         }
     }
@@ -334,15 +428,13 @@ fn the_logged_arrival_is_the_forks_planners_and_the_kernels() {
     let tz = fx.cfg.tz;
     let mut t = forkday::DayTally::default();
     let mut findings = Vec::new();
-    let state = RuntimeState { arrival: None, window: None, budget: None, ..basic_state() };
+    let state = woken_state();
     for (h, m) in [(8, 0), (10, 30), (12, 0), (14, 0)] {
         let now = at("2026-09-07", h, m);
         let label = format!("woken after arriving, at {h}:{m:02}");
-        let (k, f) = compare(&fx, &label, &state, now, &mut t, &mut findings);
+        let (_, f) = compare(&fx, &label, &state, now, &mut t, &mut findings);
         let want = (at("2026-09-07", 7, 0), at("2026-09-07", 16, 0));
         assert_eq!((f.window.0.with_timezone(&tz), f.window.1.with_timezone(&tz)), want, "{label}: the fork's window");
-        assert_eq!((k.window.0.with_timezone(&tz), k.window.1.with_timezone(&tz)), want, "{label}: the kernel's window");
-        assert_ne!(k.window.0.with_timezone(&tz), now, "{label}: the kernel no longer starts the day at `now`");
     }
     println!("{}", t.line("gap 3390's woken day", findings.len()));
     forkday::no_disagreement(&findings);

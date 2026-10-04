@@ -6534,27 +6534,27 @@ theorem stepOneOrder_perm (r : PlanReq) : (stepOneOrder r).Perm (stepOneSegs r) 
   · exact Look.adhoc_walk_perm _ _ _ _ _ _ _
 
 /-- **The day's rows**: steps 1, 2, 6 and **7**, §8.2 choice 5b's reservation and step 5's Block and Batch rows (D50, README
-gaps **803** item 4 and **1790**: `PlanReq.assignedRows` is the composition, whose switch-shaped change (D19) made four
-`PlanCheck` emptiness theorems false and took `PlanCheck.dayPlan_ok_core_given_the_budget`'s `hblk` with them, each of the
-five restated with a computed refutation of the old form, AGENTS §3.1 item 3), in the fork's order: step 1 as
-`emit_segments` walks it (`stepOneOrder`, W-38), the optionals and then the Rest slots (`planner.rs:1900-1957`), and the
-sort puts every row where its start says. -/
+gaps 803/1790), in an order the stable sort leaves as fork `emit_segments` pushes two rows of one start and one end: step 1
+(`stepOneOrder`, W-38), the reservation, the work, the kept breaks, the optionals, the Rest slots, and the routines with the
+evening LAST -- since W-45 (README gap 4623; the evening came before the reservation, so a block running past bed to midnight
+was drawn under its Sleep row).  The routines are pushed by the fork before the work, and no work, break, optional or Rest
+row shares a routine's span; a wall, a break or an interruption on `now` pauses the block, so no step-1 row shares its. -/
 def dayRows (r : PlanReq) : List WfSeg :=
-  sortRows ((stepOneOrder r ++ dayRoutineSegs r ++ reservationSegs r ++ r.assignedRows ++
-    r.keptBreakRows ++ r.optionalRows ++ r.restRows).map segOf)
+  sortRows ((stepOneOrder r ++ reservationSegs r ++ r.assignedRows ++ r.keptBreakRows ++
+    r.optionalRows ++ r.restRows ++ dayRoutineSegs r).map segOf)
 
 theorem mem_dayRows {r : PlanReq} {s : WfSeg} (h : s ∈ dayRows r) :
     ∃ t ∈ stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r ++ r.assignedRows ++
       r.keptBreakRows ++ r.optionalRows ++ r.restRows, s = segOf t := by
   have hm := mem_sortRows.1 h
-  simpa [eq_comm, (stepOneOrder_perm r).mem_iff] using List.mem_map.1 hm
+  simpa [eq_comm, (stepOneOrder_perm r).mem_iff, or_comm, or_left_comm, or_assoc] using List.mem_map.1 hm
 
 /-- **A row the planner places is a row of the day** — the converse `dayRows` owes, used to
 show the reservation really reaches `dayPlan`. -/
 theorem mem_dayRows_of_mem {r : PlanReq} {t : Seg}
     (h : t ∈ stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r ++ r.assignedRows ++
       r.keptBreakRows ++ r.optionalRows ++ r.restRows) : segOf t ∈ dayRows r :=
-  mem_sortRows.2 (List.mem_map.2 ⟨t, by simpa [(stepOneOrder_perm r).mem_iff] using h, rfl⟩)
+  mem_sortRows.2 (List.mem_map.2 ⟨t, by simpa [(stepOneOrder_perm r).mem_iff, or_comm, or_left_comm, or_assoc] using h, rfl⟩)
 
 /-- **The open row reaches the day** (W-34) — `openBlockRows` is not built beside `dayRows`, it
 is composed into it, through `stepOneSegs`' replayed half (D50: a row built and not joined is
@@ -8275,9 +8275,9 @@ theorem the_wind_down_row_runs_to_bed (r : PlanReq)
   refine ⟨segOf r.windDownSeg, ?_, segOf_kind _, ?_, ?_⟩
   · rw [dayPlan_segments]
     exact mem_sortRows.2
-      (List.mem_map.2 ⟨_, List.mem_append_left _ (List.mem_append_left _
-        (List.mem_append_left _ (List.mem_append_left _ (List.mem_append_left _
-          (List.mem_append_right _ hseg))))), rfl⟩)
+      (List.mem_map.2 ⟨_, List.mem_append_right _ hseg, rfl⟩)
+    -- (the routines and the evening are the list's LAST piece since W-45, README gap 4623: one append on the
+    -- right, where their place beside step 1 took five appends on the left.)
   · show clampSec r.windDownSec = _
     exact clampSec_id _ h3
   · show max (clampSec r.windDownSec) (clampSec (min r.bedSec r.dayEnd)) = _
@@ -9644,6 +9644,31 @@ theorem plan_reserves_one_block_at_a_time_off_the_running_row (r : PlanReq)
   have := plan_reserves_one_block_at_a_time r hday s hs hk hnow
   rw [if_neg hoff] at this
   omega
+
+/-- **`dayRows`' list since W-45 is the list it was, reordered** (README gap 4623): fork `emit_segments`
+pushes the running block's reservation before the routines and the wind-down and Sleep rows after the
+Rest slots, and the stable sort keeps that push order for two rows of one start and one end — a block
+running past bed to midnight was drawn under its Sleep row until W-45.  Nothing is added and nothing is
+dropped: every law over the day's rows as a multiset reads the old list through this. -/
+theorem dayRows_list_perm (r : PlanReq) :
+    (stepOneOrder r ++ reservationSegs r ++ r.assignedRows ++ r.keptBreakRows ++
+      r.optionalRows ++ r.restRows ++ dayRoutineSegs r).Perm
+    (stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r ++ r.assignedRows ++
+      r.keptBreakRows ++ r.optionalRows ++ r.restRows) := by
+  rw [List.perm_iff_count]
+  intro a
+  simp only [List.count_append, (stepOneOrder_perm r).count_eq]
+  omega
+
+/-- **Fork `emit_segments`' order where two rows tie, read off `dayRows`' own list**: the reservation is
+pushed before the evening (`PlanReq.eveningRows`, the last rows of `dayRoutineSegs`), so the reservation of a
+block running past bed to midnight is drawn above the Sleep row it ties with (README gap 4623;
+`PlannerWit.the_running_block_precedes_the_sleep_it_ties_with` decides it on a day). -/
+theorem the_reservation_precedes_the_evening_in_the_list (r : PlanReq) :
+    ∃ pre mid, (stepOneOrder r ++ reservationSegs r ++ r.assignedRows ++ r.keptBreakRows ++
+      r.optionalRows ++ r.restRows ++ dayRoutineSegs r) = pre ++ reservationSegs r ++ mid ++ r.eveningRows :=
+  ⟨stepOneOrder r, r.assignedRows ++ r.keptBreakRows ++ r.optionalRows ++ r.restRows ++
+    r.finalRoutines.flatMap r.routineRow, by simp only [dayRoutineSegs, routineRows, List.append_assoc]⟩
 
 end Planner
 end Tm

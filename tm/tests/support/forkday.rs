@@ -29,16 +29,19 @@
 //! one `BEGIN THE FORK PLANNER` … `END THE FORK PLANNER` region, which
 //! [`fork_scan`] holds to that: R3 deletes the region and nothing else.
 //!
-//! Re-bless with, from the repository root, while the fork is still there:
+//! Re-bless with, from the repository root, asking fork 4748911 out of the tree
+//! (`tm-oracle plan`, built by `kernel/tm-kernel-ffi/examples/oracle/build-oracle.sh`):
 //!
 //! ```text
-//! TM_PLANNER_BLESS=1 cargo test -p tm --test planner_fixtures -- --ignored \
+//! TM_ORACLE=<oracle> TM_PLANNER_BLESS=1 cargo test -p tm --test planner_fixtures -- --ignored \
 //!   the_frozen_fork_days_are_reblessed
 //! ```
 //!
 //! A re-bless is a decision about what the fork says, never a way to make a
-//! failure go away (AGENTS §7.2) — and after R3 it cannot be run at all: this
-//! file is the fork's last word on these days.
+//! failure go away (AGENTS §7.2). Until W-45 it planned with the in-tree fork,
+//! in the region R3 deletes, and this file would have been the fork's last word
+//! on these days; since W-45 track C (README gap 4680) it asks the oracle, so it
+//! outlives R3.
 //!
 //! # The one class the kernel's day may differ by, and nothing else
 //!
@@ -152,22 +155,35 @@ pub fn frozen_basic_days() -> Vec<Value> {
 
 /// One line of the frozen `plan-basic` file: the state and the instant planned at, and the day.
 pub fn basic_line(name: &str, state: &tm_core::store::RuntimeState, now: DateTime<Tz>, day: &DayPlan) -> String {
+    basic_line_of(name, state, now, &day.hash(), &serde_json::to_value(day).expect("a day serialises"))
+}
+
+/// [`basic_line`] of a day as its JSON spells it and its digest — the ONE writer of the line, so a
+/// bless that asks fork 4748911 out of the tree (`tm-oracle plan`, which answers a day as JSON)
+/// writes the bytes the in-tree fork's line had (W-45 track C, README gap 4680).
+pub fn basic_line_of(name: &str, state: &tm_core::store::RuntimeState, now: DateTime<Tz>, hash: &str, day: &Value) -> String {
     let row = serde_json::json!({
         "name": name,
         "state": serde_json::to_value(state).expect("a state serialises"),
         "now": now.to_rfc3339(),
-        "hash": day.hash(),
-        "day": serde_json::to_value(day).expect("a day serialises"),
+        "hash": hash,
+        "day": day,
     });
     serde_json::to_string(&row).expect("a frozen line serialises") + "\n"
 }
 
 /// One line of the frozen file.
 pub fn frozen_line(name: &str, day: &DayPlan) -> String {
+    frozen_line_of(name, &day.hash(), &serde_json::to_value(day).expect("a day serialises"))
+}
+
+/// [`frozen_line`] of a day as its JSON spells it and its digest — the one writer, as
+/// [`basic_line_of`] is (W-45 track C, README gap 4680).
+pub fn frozen_line_of(name: &str, hash: &str, day: &Value) -> String {
     let row = serde_json::json!({
         "name": name,
-        "hash": day.hash(),
-        "day": serde_json::to_value(day).expect("a day serialises"),
+        "hash": hash,
+        "day": day,
     });
     serde_json::to_string(&row).expect("a frozen line serialises") + "\n"
 }
@@ -395,12 +411,15 @@ pub fn region_names(source: &str) -> Vec<String> {
 /// region's `Fork` outside any region, with the guard green and R3's simulated deletion failing to
 /// build. Another file's item is reached only through that file's MODULE, so `foreign` is
 /// `(module, name)` and an outside code line escapes when it spells `module::` and names the word
-/// — `planner_common::Fork`, or the `use planner_common::{…, Fork}` that imports it. What this
-/// cannot see: a glob import (`use m::*`) followed by a bare use of the name.
+/// — `planner_common::Fork`, or the `use planner_common::{…, Fork}` that imports it. **And a `use`
+/// statement that imports the fork's planner module by no needle** (W-45 track C, README gap 4683):
+/// a grouped or renamed import (`use tm_core::{config, planner as fp};`, one line or several) is an
+/// escape at the line it begins on ([`use_names_the_fork`]), since every later `fp::…` is a reach no
+/// needle sees. What this cannot see: a glob import (`use m::*`) followed by a bare use of the name,
+/// and the crate imported under another name (`extern crate tm_core as c;`).
 pub fn fork_scan_with(source: &str, foreign: &[(String, String)]) -> ForkScan {
     const BEGIN: &str = "// BEGIN THE FORK PLANNER";
     const END: &str = "// END THE FORK PLANNER";
-    const NEEDLES: [&str; 6] = ["planner::", "tm_core::planner", "PlanInput", "with_ranking", ".input(&", "fn input"];
     // A banner is a banner only at the start of a line: the constants above
     // spell both inside a string, and that is not a region.
     let at_line_start = |needle: &str| {
@@ -419,7 +438,7 @@ pub fn fork_scan_with(source: &str, foreign: &[(String, String)]) -> ForkScan {
     // CODE only (W-36 track H): `srcwalk::code_lines` drops comments -- a
     // trailing one too, which the old `starts_with("//")` filter read as code --
     // and `blank_strings` empties every string literal, so this file's own
-    // NEEDLES line is not a reference to the fork and needs no exemption.
+    // FORK_NEEDLES line is not a reference to the fork and needs no exemption.
     // **And what the region DEFINES** (W-38, README gap 3472): a name the region declares at the
     // top level — a free `fn`, a `static`, a `const`, a type — is deleted with it, so code outside
     // that names one would not build after R3. The needles above could not see that shape: W-38's
@@ -427,11 +446,16 @@ pub fn fork_scan_with(source: &str, foreign: &[(String, String)]) -> ForkScan {
     // the kernel's §7 answers through the region's own `kernel_prios`. A property of the file,
     // per file: the region's own top-level names, read off its code at column zero.
     let region_names = region_names(source);
-    let escapes = srcwalk::code_lines(&outside)
+    let lines: Vec<(usize, String)> = srcwalk::code_lines(&outside).into_iter().map(|(i, code)| (i - 1, blank_strings(&code))).collect();
+    let imports: Vec<String> = use_statements(lines.iter().map(|(i, l)| (*i, l.as_str())))
         .into_iter()
-        .map(|(i, code)| (i - 1, blank_strings(&code)))
+        .filter(|(_, s)| use_names_the_fork(s) && !FORK_NEEDLES.iter().any(|n| s.contains(*n)))
+        .map(|(i, s)| format!("line {i}: a `use` of the fork's planner module, in {}", s.split_whitespace().collect::<Vec<_>>().join(" ")))
+        .collect();
+    let mut escapes: Vec<String> = lines
+        .into_iter()
         .flat_map(|(i, l)| {
-            let mut found: Vec<String> = NEEDLES
+            let mut found: Vec<String> = FORK_NEEDLES
                 .iter()
                 .filter(|n| l.contains(**n))
                 .map(|n| format!("line {i}: `{n}` in {}", l.trim()))
@@ -451,8 +475,168 @@ pub fn fork_scan_with(source: &str, foreign: &[(String, String)]) -> ForkScan {
             found
         })
         .collect();
+    escapes.extend(imports);
     ForkScan { region_bytes, escapes, deleted }
 }
+
+/// **Every `use` statement among `lines`**, `(index, code)` pairs: from the line its keyword begins
+/// (`use`, `pub use` or `pub(crate) use`, after the indentation) to the line its `;` ends, joined,
+/// with the index of the line it begins on.
+pub fn use_statements<'a>(lines: impl IntoIterator<Item = (usize, &'a str)>) -> Vec<(usize, String)> {
+    let mut out = Vec::new();
+    let mut cur: Option<(usize, String)> = None;
+    for (i, l) in lines {
+        let t = l.trim_start();
+        let (start, mut text) = match cur.take() {
+            Some(c) => c,
+            None if ["use ", "pub use ", "pub(crate) use "].iter().any(|p| t.starts_with(p)) => (i, String::new()),
+            None => continue,
+        };
+        text.push_str(t);
+        text.push(' ');
+        if t.contains(';') {
+            out.push((start, text));
+        } else {
+            cur = Some((start, text));
+        }
+    }
+    out
+}
+
+/// **Whether a `use` statement imports the fork's planner module** (W-45 track C, README gap 4683):
+/// rooted at `tm_core` and naming the word `planner` — which a grouped or renamed import does with no
+/// needle (`use tm_core::{config, planner as fp};`), after which `fp::diff(…)` reaches the fork.
+pub fn use_names_the_fork(stmt: &str) -> bool {
+    let Some(at) = stmt.find("use ") else { return false };
+    stmt[at + "use ".len()..].trim_start().trim_start_matches("::").starts_with("tm_core") && names_word(stmt, "planner")
+}
+
+/// **The tests a fork region holds that reach NO fork planner** (stage 6 W-45 track C, README gap
+/// 4682) — the other half of [`fork_scan`]: that guard keeps every reference to the fork INSIDE the
+/// region, and this keeps nothing BUT the fork there. R3 deletes the region whole, so a test in it that
+/// asks the kernel alone, or a harness check, or a bless that reaches no fork (W-45 moved one of each
+/// out: the class worlds' re-draw, `planner_w40_runs.rs`' P64 precondition and the kernel halves of
+/// three other tests) would be deleted for nothing.
+///
+/// A test reaches the fork when its code names one of [`fork_scan`]'s needles or imports the fork's
+/// module ([`use_names_the_fork`]), a top-level item of its region that reaches it, or an item another
+/// file's region declares (`foreign`, as [`fork_scan_with`] reads it). An item of the region reaches it by the same rule, to a fixpoint;
+/// an `impl` of a type the region declares carries its reach to that type, and an `impl` of a type
+/// declared elsewhere to its methods, read as `.method(`. Every `#[test]` function of the region —
+/// at column zero or inside a `proptest!` block — is read; comments and string contents are not.
+/// What it cannot see: a reach through a macro, a glob import, or a trait method called by a name
+/// the impl does not declare — and it reads a string literal that spans lines as code on its later
+/// lines (`srcwalk::code_lines` blanks strings line by line), so such a literal's braces can end a
+/// test's body early or late.
+pub fn region_tests_unreached(source: &str, foreign: &[(String, String)]) -> Vec<String> {
+    const BEGIN: &str = "// BEGIN THE FORK PLANNER";
+    const END: &str = "// END THE FORK PLANNER";
+    let at_line_start = |needle: &str| {
+        source.match_indices(needle).map(|(i, _)| i).find(|&i| i == 0 || source.as_bytes()[i - 1] == b'\n')
+    };
+    let (Some(i), Some(j)) = (at_line_start(BEGIN), at_line_start(END)) else { return Vec::new() };
+    if i >= j {
+        return Vec::new();
+    }
+    let code: Vec<String> = srcwalk::code_lines(&source[i..j]).into_iter().map(|(_, c)| blank_strings(&c)).collect();
+    let direct = |text: &str| -> bool {
+        FORK_NEEDLES.iter().any(|n| text.contains(*n))
+            || foreign.iter().any(|(m, n)| text.contains(&format!("{m}::")) && text.lines().any(|l| names_word(l, n)))
+            || use_statements(text.lines().enumerate()).iter().any(|(_, s)| use_names_the_fork(s))
+    };
+    // The region's column-zero items: each runs from its first line to the line before the next.
+    let starts: Vec<usize> =
+        (0..code.len()).filter(|k| code[*k].chars().next().is_some_and(|c| c.is_alphabetic() || c == '_')).collect();
+    let mut items: Vec<(Vec<String>, String)> = Vec::new();
+    let declared: Vec<String> = starts.iter().filter_map(|k| top_level_name(&code[*k])).collect();
+    for (n, k) in starts.iter().enumerate() {
+        let end = starts.get(n + 1).copied().unwrap_or(code.len());
+        let text = code[*k..end].join("\n");
+        let head = code[*k].trim_end();
+        let mut names: Vec<String> = top_level_name(head).into_iter().collect();
+        if let Some(rest) = head.strip_prefix("use ").or_else(|| head.strip_prefix("pub use ")) {
+            let inner = rest.trim_end_matches(';').rsplit("::").next().unwrap_or_default().to_string();
+            let path_tail = rest.trim_end_matches(';').to_string();
+            let list = if path_tail.contains('{') {
+                path_tail.split_once('{').map(|(_, r)| r.trim_end_matches('}').to_string()).unwrap_or_default()
+            } else {
+                inner
+            };
+            for part in list.split(',').map(str::trim).filter(|p| !p.is_empty() && *p != "self") {
+                names.push(part.rsplit(" as ").next().unwrap_or(part).trim().to_string());
+            }
+        }
+        if let Some(rest) = head.strip_prefix("impl") {
+            let ty = rest.rsplit(" for ").next().unwrap_or(rest).trim().trim_end_matches('{').trim();
+            let ty: String = ty.trim_start_matches(|c: char| c == '<' || c.is_whitespace()).chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+            if declared.contains(&ty) {
+                names.push(ty);
+            } else {
+                for l in &code[*k..end] {
+                    if let Some(m) = l.trim_start().strip_prefix("pub fn ").or_else(|| l.trim_start().strip_prefix("fn ")) {
+                        let m: String = m.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+                        names.push(format!(".{m}("));
+                    }
+                }
+            }
+        }
+        items.push((names, text));
+    }
+    let mut reach: Vec<bool> = items.iter().map(|(_, t)| direct(t)).collect();
+    let names_one = |text: &str, n: &str| -> bool {
+        if n.starts_with('.') {
+            text.contains(n)
+        } else {
+            text.lines().any(|l| names_word(l, n))
+        }
+    };
+    loop {
+        let reached: Vec<&String> = items.iter().zip(&reach).filter(|(_, r)| **r).flat_map(|((ns, _), _)| ns.iter()).collect();
+        let mut moved = false;
+        for (k, (_, text)) in items.iter().enumerate() {
+            if !reach[k] && reached.iter().any(|n| names_one(text, n)) {
+                reach[k] = true;
+                moved = true;
+            }
+        }
+        if !moved {
+            break;
+        }
+    }
+    let reached: Vec<&String> = items.iter().zip(&reach).filter(|(_, r)| **r).flat_map(|((ns, _), _)| ns.iter()).collect();
+    // Every `#[test]` function of the region, and whether it reaches the fork.
+    let mut out = Vec::new();
+    let mut k = 0;
+    while k < code.len() {
+        if code[k].trim() != "#[test]" {
+            k += 1;
+            continue;
+        }
+        let Some(f) = (k..code.len()).find(|x| code[*x].trim_start().starts_with("fn ")) else { break };
+        let name: String = code[f].trim_start()[3..].chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+        let (mut depth, mut opened, mut e) = (0i64, false, f);
+        for (x, l) in code.iter().enumerate().skip(f) {
+            depth += l.matches('{').count() as i64 - l.matches('}').count() as i64;
+            opened |= l.contains('{');
+            if opened && depth <= 0 {
+                e = x;
+                break;
+            }
+        }
+        let body = code[f..=e].join("\n");
+        if !direct(&body) && !reached.iter().any(|n| names_one(&body, n)) {
+            out.push(name);
+        }
+        k = e + 1;
+    }
+    out
+}
+
+/// **What a code line names when it reaches the fork's planner**: its module, its input, its ranking
+/// seam and the fixture's builder of the fork's input — [`fork_scan`]'s needles and
+/// [`region_tests_unreached`]'s, one list (the harness's in-tree backend and
+/// planner_common's fork planner are reached as other files' region names).
+const FORK_NEEDLES: [&str; 6] = ["planner::", "tm_core::planner", "PlanInput", "with_ranking", ".input(&", "fn input"];
 
 /// The name a column-zero code line DECLARES — `fn`, `static`, `const`, `struct`, `enum`,
 /// `type` or `trait`, public or not — or `None`. The keyword must begin the line, so an

@@ -6,8 +6,11 @@
 //! one comparison (`forkclass::compare_line`); `forkplan::p56_cut` over fork 4748911's drawing
 //! held, by value, to the day the in-tree fork's `cut_out` drew; and every frozen world its
 //! seed's draw. Inside it, while `tm-core/src/planner.rs` is here: the frozen answers still
-//! the in-tree fork's, `p56_cut` against `cut_out` live on more seeded days than are frozen,
-//! the oracle against the in-tree fork on the same days (`TM_ORACLE`), and the bless.
+//! the in-tree fork's, `p56_cut` against `cut_out` live on more seeded days than are frozen, and
+//! the oracle against the in-tree fork on the same days (`TM_ORACLE`). The bless asks
+//! `tm-oracle plan` alone and sits outside the region since W-45 track C (README gap 4680), so the
+//! file is not final at R3: it re-blesses every answer out of the tree and carries each line's
+//! `cut` — the in-tree fork's own drawing, which no backend left after R3 can draw — by value.
 
 #[path = "support/replay.rs"]
 #[allow(dead_code)]
@@ -183,12 +186,51 @@ fn the_frozen_p56_days_are_the_forks_oracle_answer_today() {
 /// The fresh arm's census: `[days, compared, P56 lines]`.
 static FRESH: std::sync::Mutex<[u64; 3]> = std::sync::Mutex::new([0; 3]);
 
+/// The plain fresh arm's census: `[days, planned by the kernel, typed]`.
+static KERNEL_FRESH: std::sync::Mutex<[u64; 3]> = std::sync::Mutex::new([0; 3]);
+
 proptest::proptest! {
     #![proptest_config(proptest::prelude::ProptestConfig {
         cases: std::env::var("TM_PROPTEST_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(16),
         max_shrink_iters: 0,
         ..proptest::prelude::ProptestConfig::default()
     })]
+
+    /// **The kernel plans every fresh P56 day — of the kernel alone, in a plain run** (W-45 track C,
+    /// README gap 4682): the first P56 day of a fresh seed's draw, asked as R3's host asks it
+    /// (`forkclass::kernel_answer_with_grants`) and decoded by the host's codec, and its paused rows
+    /// held to P56 by the rule the comparand applies (the part of a replayed pause a wall covers is
+    /// not drawn: no `paused` row of the kernel's day overlaps a wall's blocked span). The region's
+    /// meeting arm (`planner_invariants`' the_kernel_cuts_a_meeting_out_of_a_pause_as_the_fork_does)
+    /// asserted the kernel PLANS such a day beside its fork comparison, and R3 deletes it; the fork's
+    /// half meets fresh P56 days only under `TM_ORACLE` after R3 (the arm below), and this keeps the
+    /// kernel's half in every `cargo test` run.
+    #[test]
+    fn the_kernel_plans_every_fresh_p56_day(bytes in proptest::prelude::any::<[u8; 12]>()) {
+        let seed: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+        let (d, w) = forkp56::p56_days(&seed).next().expect("a P56 day");
+        let b = Built::of(w);
+        let (k, _) = forkclass::kernel_answer_with_grants(&b)
+            .map_err(|e| proptest::test_runner::TestCaseError::fail(format!("seed {seed} (p56 draw {}): the kernel refused a P56 day the binary holds: {e}", d.index)))?;
+        let walls = walls(&b);
+        let over: Vec<String> = k
+            .day
+            .segments
+            .iter()
+            .filter(|s| s.is_pause())
+            .filter(|s| walls.iter().any(|(lo, hi)| s.start < *hi && *lo < s.end))
+            .map(|s| format!("{}–{}", s.start, s.end))
+            .collect();
+        proptest::prop_assert!(over.is_empty(), "seed {} (p56 draw {}): a paused row the kernel drew over a wall (P56): {:?}", seed, d.index, over);
+        let [days, planned, typed] = {
+            let mut c = KERNEL_FRESH.lock().expect("census");
+            c[0] += 1;
+            c[1] += 1;
+            c[2] += u64::from(d.typed);
+            *c
+        };
+        eprintln!("planner_p56_cut plain fresh census: {days} fresh P56 day(s), {planned} planned by the kernel, {typed} with a typed pause");
+    }
 
     /// **The kernel plans every fresh P56 day as fork 4748911 does, P56 by `p56_cut`** — the
     /// exploring half after R3 (D46): the first P56 day of a fresh seed's draw
@@ -228,13 +270,6 @@ proptest::proptest! {
     }
 }
 
-// BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gap 3719)
-//
-// **Everything below reaches the in-tree fork, and R3 deletes it whole.** The live
-// cross-check of `p56_cut` against the in-tree fork's `cut_out` on more seeded P56 days than
-// are frozen, the frozen lines held to the in-tree fork today, the oracle against the in-tree
-// fork on the same days, and the bless. After R3 the frozen file is the fork's last word.
-
 /// The kernel's grants for a world — what the fork is ranked by (D53).
 fn grants(b: &Built) -> Vec<tm_core::priority::Prio> {
     forkclass::kernel_answer_with_grants(b).unwrap_or_else(|e| panic!("the kernel refused a seeded P56 day: {e}")).1
@@ -244,6 +279,91 @@ fn grants(b: &Built) -> Vec<tm_core::priority::Prio> {
 fn shipped_ask<'a>(b: &'a Built, prios: &'a [tm_core::priority::Prio]) -> forkplan::ForkAsk<'a> {
     forkplan::ForkAsk { state: &b.world.state, now: b.world.now, d60: false, p64: false, prios, extend: None, log_line: None }
 }
+
+/// **Freeze the seeded P56 days** — inert without both `TM_P56_BLESS` and `TM_ORACLE`. The
+/// first `forkp56::P56_FROZEN` seeded P56 days, each a class line (`forkp56::p56_line`) whose
+/// answers are `forkplan::comparand_answers` over `tm-oracle plan` — fork 4748911 out of the tree,
+/// P56 by `p56_cut` — and whose `cut` is the in-tree fork's shipped day as the committed line holds
+/// it. A line it already holds is held to the owner's D64 (`forkclass::d64_allows`,
+/// `TM_P56_BLESS_BECAUSE`, and since the owner's D85 `TM_P56_BLESS_HARNESS`, D64(c)), its world by
+/// value; a refusal writes nothing.
+///
+/// **Out of the tree and outside the fork region since W-45 track C** (README gap 4680): until then
+/// the bless computed every answer by BOTH backends and `cut` by the in-tree fork's `cut_out`, in the
+/// region R3 deletes, so the file was final at R3 (gap 4463). The two backends' agreement is the
+/// region's cross-check, the_oracle_draws_every_seeded_p56_day_as_the_in_tree_fork, while both exist.
+/// **`cut` is never recomputed**: it is the in-tree fork's own drawing, and
+/// `p56_cut_is_the_in_tree_cut_on_every_frozen_p56_day` holds `forkplan::p56_cut` to it — a `cut`
+/// rewritten by `p56_cut` would hold the rule to itself (the comparison R3 must not leave
+/// kernel-against-kernel's shape, lesson 5). So `cut` is carried from the committed line, and a draw
+/// no committed version holds is refused by name. `TM_P56_BLESS_OUT` writes elsewhere, for a dry run. **What a line is held against is the file's COMMITTED
+/// history** (W-42 track C, README gap 4151; `frozenhist::held`), never the working copy — and a
+/// line HEAD holds that the seed no longer draws is refused.
+#[test]
+#[ignore]
+fn the_seeded_p56_days_are_blessed() {
+    if std::env::var_os("TM_P56_BLESS").is_none() {
+        eprintln!("inert: set TM_P56_BLESS=1 and TM_ORACLE to write {}", forkp56::FROZEN_P56);
+        return;
+    }
+    let oracle = forkplan::Oracle::new(forkplan::oracle_path().expect("the bless asks fork 4748911: set TM_ORACLE"));
+    let because: Vec<u32> = std::env::var("TM_P56_BLESS_BECAUSE")
+        .unwrap_or_default()
+        .split(',')
+        .filter_map(|s| s.trim().trim_start_matches('P').parse().ok())
+        .collect();
+    let harness = forkclass::harness_of("TM_P56_BLESS_HARNESS");
+    let registered = forkclass::registered_parity();
+    let held = frozenhist::held(&forkp56::p56_path(), frozenhist::key_of("draw")).unwrap_or_else(|e| panic!("{e}"));
+    eprintln!("{}", held.census(forkp56::FROZEN_P56));
+    let (mut out, mut refused, mut changed, mut drawn) = (String::new(), Vec::new(), Vec::new(), Vec::new());
+    for (d, w) in forkp56::p56_days(forkp56::P56_SEED).take(forkp56::P56_FROZEN) {
+        let b = Built::of(w.clone());
+        let prios = grants(&b);
+        let answers = forkplan::comparand_answers(&b, &prios, &oracle).unwrap_or_else(|e| panic!("p56 draw {}: the oracle: {e}", d.index));
+        let p = forkplan::ForkPlan::plan(&oracle, &b, &shipped_ask(&b, &prios)).unwrap_or_else(|e| panic!("p56 draw {}: the oracle: {e}", d.index));
+        let mut line = forkp56::p56_line(&d, &w, &forkclass::class_of(&b).key());
+        for key in forkclass::ANSWERS {
+            forkclass::set_answer(&mut line, key, answers[key].clone());
+        }
+        drawn.push(line["draw"].to_string());
+        match held.get(&line["draw"].to_string()) {
+            None => refused.push(format!(
+                "{}: no committed version holds this draw, and its `cut` is the in-tree fork's own drawing, which no \
+                 backend after R3 draws (a `cut` written by `p56_cut` would hold the rule to itself)",
+                line["name"]
+            )),
+            Some(old) => {
+                line["cut"] = old["cut"].clone();
+                if old["world"] != line["world"] || old["typed"] != line["typed"] {
+                    refused.push(format!("{}: the seed draws another world — a re-draw, which D64(b) must decide", line["name"]));
+                } else {
+                    match forkclass::d64_allows(old, &line, &p.fork_day, &because, harness.as_deref(), &registered) {
+                        Err(e) => refused.push(e),
+                        Ok(k) if !k.is_empty() => changed.push(format!("{} `{}`", line["name"], k.join("`, `"))),
+                        Ok(_) => {}
+                    }
+                }
+            }
+        }
+        out.push_str(&serde_json::to_string(&line).expect("a line serialises"));
+        out.push('\n');
+    }
+    for draw in held.head.iter().filter(|d| !drawn.contains(d)) {
+        refused.push(format!("p56 draw {draw}: a frozen line the seed no longer draws"));
+    }
+    eprintln!("seeded P56 days: {} changed ({}), {} refused", changed.len(), changed.join("; "), refused.len());
+    assert!(refused.is_empty(), "the re-bless is refused and wrote nothing:\n  {}", refused.join("\n  "));
+    let out_path = std::env::var_os("TM_P56_BLESS_OUT").map(std::path::PathBuf::from).unwrap_or_else(forkp56::p56_path);
+    std::fs::write(out_path, out).expect("the frozen P56 days are written");
+}
+
+// BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gap 3719)
+//
+// **Everything below reaches the in-tree fork, and R3 deletes it whole.** The live
+// cross-check of `p56_cut` against the in-tree fork's `cut_out` on more seeded P56 days than
+// are frozen, the frozen lines held to the in-tree fork today, and the oracle against the
+// in-tree fork on the same days. The bless asks the oracle alone and sits above (W-45 track C).
 
 /// Map `f` over `items` on eight threads, keeping their order: every call here plans a whole
 /// day through the FFI and the in-tree fork, as the parallel test threads already do.
@@ -352,71 +472,4 @@ fn the_oracle_draws_every_seeded_p56_day_as_the_in_tree_fork() {
     assert_eq!(n, forkp56::P56_LIVE);
 }
 
-/// **Freeze the seeded P56 days** — inert without both `TM_P56_BLESS` and `TM_ORACLE`. The
-/// first `forkp56::P56_FROZEN` seeded P56 days, each a class line (`forkp56::p56_line`) whose
-/// answers are computed by BOTH backends and must agree — the in-tree fork's `cut_out` and
-/// reconstruction against fork 4748911 and `p56_cut` — and whose `cut` is the in-tree fork's
-/// shipped day. A line it already holds is held to the owner's D64 (`forkclass::d64_allows`,
-/// `TM_P56_BLESS_BECAUSE`, and since the owner's D85 `TM_P56_BLESS_HARNESS`, D64(c)), its world and
-/// `cut` by value; a refusal writes nothing. **What a line is held against is the file's COMMITTED
-/// history** (W-42 track C, README gap 4151; `frozenhist::held`), never the working copy — and a
-/// line HEAD holds that the seed no longer draws is refused.
-#[test]
-#[ignore]
-fn the_seeded_p56_days_are_blessed() {
-    if std::env::var_os("TM_P56_BLESS").is_none() {
-        eprintln!("inert: set TM_P56_BLESS=1 and TM_ORACLE to write {}", forkp56::FROZEN_P56);
-        return;
-    }
-    let oracle = forkplan::Oracle::new(forkplan::oracle_path().expect("the bless asks fork 4748911: set TM_ORACLE"));
-    let because: Vec<u32> = std::env::var("TM_P56_BLESS_BECAUSE")
-        .unwrap_or_default()
-        .split(',')
-        .filter_map(|s| s.trim().trim_start_matches('P').parse().ok())
-        .collect();
-    let harness = forkclass::harness_of("TM_P56_BLESS_HARNESS");
-    let registered = forkclass::registered_parity();
-    let held = frozenhist::held(&forkp56::p56_path(), frozenhist::key_of("draw")).unwrap_or_else(|e| panic!("{e}"));
-    eprintln!("{}", held.census(forkp56::FROZEN_P56));
-    let (mut out, mut refused, mut changed, mut drawn) = (String::new(), Vec::new(), Vec::new(), Vec::new());
-    for (d, w) in forkp56::p56_days(forkp56::P56_SEED).take(forkp56::P56_FROZEN) {
-        let b = Built::of(w.clone());
-        let prios = grants(&b);
-        let a_in = forkplan::comparand_answers(&b, &prios, &forkplan::InTree).expect("the in-tree fork answers");
-        let a_or = forkplan::comparand_answers(&b, &prios, &oracle).unwrap_or_else(|e| panic!("p56 draw {}: the oracle: {e}", d.index));
-        for key in forkclass::ANSWERS {
-            if let Some(diff) = forkplan::first_difference(key, &a_in[key], &a_or[key]) {
-                panic!("p56 draw {}: the two backends answer `{key}` differently: {diff}", d.index);
-            }
-        }
-        let p = forkplan::ForkPlan::plan(&forkplan::InTree, &b, &shipped_ask(&b, &prios)).expect("the in-tree fork plans");
-        let mut line = forkp56::p56_line(&d, &w, &forkclass::class_of(&b).key());
-        for key in forkclass::ANSWERS {
-            forkclass::set_answer(&mut line, key, a_in[key].clone());
-        }
-        line["cut"] = forkplan::frozen_day_json(&p.day);
-        drawn.push(line["draw"].to_string());
-        if let Some(old) = held.get(&line["draw"].to_string()) {
-            if old["world"] != line["world"] || old["typed"] != line["typed"] {
-                refused.push(format!("{}: the seed draws another world — a re-draw, which D64(b) must decide", line["name"]));
-            } else if old["cut"] != line["cut"] {
-                refused.push(format!("{}: the in-tree fork's cut moved over the same world", line["name"]));
-            } else {
-                match forkclass::d64_allows(old, &line, &p.fork_day, &because, harness.as_deref(), &registered) {
-                    Err(e) => refused.push(e),
-                    Ok(k) if !k.is_empty() => changed.push(format!("{} `{}`", line["name"], k.join("`, `"))),
-                    Ok(_) => {}
-                }
-            }
-        }
-        out.push_str(&serde_json::to_string(&line).expect("a line serialises"));
-        out.push('\n');
-    }
-    for draw in held.head.iter().filter(|d| !drawn.contains(d)) {
-        refused.push(format!("p56 draw {draw}: a frozen line the seed no longer draws"));
-    }
-    eprintln!("seeded P56 days: {} changed ({}), {} refused", changed.len(), changed.join("; "), refused.len());
-    assert!(refused.is_empty(), "the re-bless is refused and wrote nothing:\n  {}", refused.join("\n  "));
-    std::fs::write(forkp56::p56_path(), out).expect("the frozen P56 days are written");
-}
 // END THE FORK PLANNER

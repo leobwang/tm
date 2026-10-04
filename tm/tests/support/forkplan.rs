@@ -17,8 +17,9 @@
 //! as the shipped binary's fork plans it — and the two backends are:
 //!
 //! * **the in-tree fork** ([`InTree`], this file's one region, deleted at R3): what the
-//!   re-bless of every frozen line and the live check that the frozen answers are
-//!   still the fork's have always called;
+//!   live checks that the frozen answers are still the in-tree fork's call (and, until
+//!   W-45 track C, every bless of a frozen line — README gap 4680: each asks the oracle
+//!   now, so none is final at R3);
 //! * **the out-of-tree oracle** ([`Oracle`]): fork `4748911` extracted and built by
 //!   `kernel/tm-kernel-ffi/examples/oracle/build-oracle.sh`, run as `tm-oracle plan`.
 //!

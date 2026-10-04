@@ -24,9 +24,48 @@
 //! routine row's `⚠` and the `due today` note the renderer prints beside it) —
 //! closed at W-37 (track R), and their lines are counted and bounded exactly as
 //! lines the two renderings share. **The fork's arm** — the snapshots
-//! themselves — is one region R3 deletes.
+//! themselves, written by the in-tree fork's own §7 day — is one region R3
+//! deletes.
+//!
+//! **The snapshots are not final at R3** (W-45 track C, README gap 4680): until
+//! W-45 the region's three `insta` assertions were the files' only writers, so R3
+//! would have made them the fork's last word. [`the_frozen_fork_renderings_are_blessed`]
+//! writes them out of the tree: the day `tm-oracle plan` (fork 4748911, ranked as the
+//! shipped binary ranks it, D53) answers — held to the frozen fixture day
+//! (`forkday::FROZEN_DAYS`, the day comparand of the same three days) — rendered over
+//! the kernel's day where the kernel's day IS that day, by value.
 
 mod planner_common;
+
+/// The comparand's backends and the frozen day comparand the bless reads (W-45 track C).
+#[path = "support/replay.rs"]
+#[allow(dead_code)]
+mod chokepoint;
+
+#[allow(dead_code)]
+#[path = "support/planreq.rs"]
+mod planreq;
+
+#[allow(dead_code)]
+#[path = "support/forkday.rs"]
+mod forkday;
+
+#[allow(dead_code)]
+#[path = "support/plangen.rs"]
+mod plangen;
+
+#[allow(dead_code)]
+#[path = "support/forkclass.rs"]
+mod forkclass;
+
+#[allow(dead_code)]
+#[path = "support/forkplan.rs"]
+mod forkplan;
+
+/// The committed history a bless holds what it writes against (README gap 4151).
+#[allow(dead_code)]
+#[path = "support/frozenhist.rs"]
+mod frozenhist;
 
 use chrono::NaiveTime;
 use planner_common::{at, basic_state, date, load, load_with_log, DayPlanner, Fixture, Kernel, BASIC_LOG};
@@ -277,6 +316,157 @@ fn no_row_repeats_its_own_title_or_actual_on(p: &dyn DayPlanner) {
 #[test]
 fn no_row_repeats_its_own_title_or_actual() {
     no_row_repeats_its_own_title_or_actual_on(&Kernel);
+}
+
+/// The three days a snapshot renders, each with the frozen fixture day (`forkday::FROZEN_DAYS`,
+/// `planner_fixtures.rs`' `DAYS`) that is the same world, state and instant.
+const EMIT_DAYS: [(&str, &str); 3] = [
+    ("plan_basic_early_emit", "plan-basic early 07:00"),
+    ("plan_basic_late_emit", "plan-basic late 10:30"),
+    ("plan_home_day_emit", "plan-home-day 09:00"),
+];
+
+/// The committed snapshot a rendering is frozen in.
+fn snapshot_path(which: &str) -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/snapshots/emit_planner__{which}.snap"))
+}
+
+/// **The fork's rendering of one day, asked out of the tree** (W-45 track C, README gap 4680):
+/// `tm-oracle plan`'s day for the world — fork 4748911 ranked by the kernel's grants for its
+/// request, as the shipped binary ranks it (D53) — which must be the frozen fixture day of the
+/// same world by value (the day comparand, re-blessed through the oracle by `planner_fixtures.rs`'
+/// bless): a fork day that moved is that comparand's to decide under D64, never this rendering's.
+/// It is rendered over the kernel's day, which the codec decodes into the type the renderer reads,
+/// where that day IS the fork's — every field `forkday::compare_day_with_fork` compares, by value,
+/// no under-used note left to the renderer, and the one field it cannot compare
+/// (`Diagnostics::unplaced`, printed and never serialised) set to the fork's, which names none.
+/// So the snapshot is a function of a day held by value, and a kernel that drifts from the fork
+/// cannot be blessed into it.
+fn fork_rendering(which: &str, frozen_name: &str, oracle: &forkplan::Oracle) -> Result<String, String> {
+    let (fx, state, h, m) = fixture_day(which);
+    let now = at("2026-09-07", h, m);
+    let b = forkclass::Built::of_fixture(&fx.docs, &fx.log, &state, now, &fx.cfg)?;
+    let (_, ans) = planreq::kernel_day(&b.request_world(), None).map_err(|e| format!("the kernel's grants: {e}"))?;
+    let ask = forkplan::ForkAsk { state: &state, now, d60: false, p64: false, prios: &ans.prios, extend: None, log_line: None };
+    let day = forkplan::ForkPlan::plan(oracle, &b, &ask).map_err(|e| format!("the oracle: {e}"))?.day;
+    let fork = serde_json::json!({"hash": forkplan::day_hash(&day), "day": day});
+    let frozen = forkday::frozen_days().get(frozen_name).ok_or_else(|| format!("no frozen fixture day `{frozen_name}`"))?;
+    if fork["day"] != frozen["day"] || fork["hash"] != frozen["hash"] {
+        return Err(format!(
+            "fork 4748911's day is not the frozen fixture day `{frozen_name}` ({}) — re-bless the day comparand first, under D64",
+            forkplan::first_difference("day", &frozen["day"], &fork["day"]).unwrap_or_else(|| "the hash".to_string())
+        ));
+    }
+    let cands = tm_core::priority::collect_candidates(&fx.tree, &fx.replay, &fx.cfg, &fx.model, tm_core::planwire::plan_date(&state, now), now);
+    let w = planner_common::planreq::World {
+        docs: &fx.docs,
+        log: &fx.log,
+        tree: &fx.tree,
+        cfg: &fx.cfg,
+        state: &state,
+        now,
+        cands: &cands,
+        replay: &fx.replay,
+    };
+    let (k, _) = planner_common::planreq::kernel_day(&w, None).map_err(|e| format!("the kernel: {e}"))?;
+    let mut t = forkday::DayTally::default();
+    let findings = forkday::compare_day_with_fork(which, &k, &fork, now, &mut t);
+    if !findings.is_empty() || t.underused_notes > 0 {
+        return Err(format!("the kernel's day is not fork 4748911's by value, so it cannot stand for it: {findings:?} ({t:?})"));
+    }
+    let mut day = k.day;
+    day.diagnostics.unplaced.clear();
+    Ok(rendered(&day, &fx.tree, &fx.cfg, h, m))
+}
+
+/// **A committed snapshot, split**: the commit that holds it, its insta header (kept as committed)
+/// and its body — or why not. `held` is `frozenhist::held_text`'s answer for [`snapshot_path`].
+fn held_snapshot(which: &str, held: Result<Option<(String, String)>, String>) -> Result<(String, String, String), String> {
+    let path = snapshot_path(which);
+    let (sha, text) = held?.ok_or_else(|| format!("{}: no committed version holds it", path.display()))?;
+    let mut parts = text.splitn(3, "---\n");
+    let (open, meta, body) = (parts.next(), parts.next(), parts.next());
+    match (open, meta, body) {
+        (Some(""), Some(meta), Some(body)) => Ok((sha, format!("---\n{meta}---\n"), body.to_string())),
+        _ => Err(format!("{}: the committed snapshot at {sha} has no insta header", path.display())),
+    }
+}
+
+/// **The frozen renderings are the fork's today, out of the tree** (W-45 track C, README gap 4680):
+/// [`fork_rendering`] of every day is the committed snapshot's body, byte for byte — what the
+/// region's three `insta` assertions claim of the in-tree fork's own §7 day, claimed of fork
+/// 4748911 as the shipped binary runs it, so it outlives R3. Inert without `TM_ORACLE`.
+#[test]
+#[ignore]
+fn the_frozen_fork_renderings_are_the_forks_oracle_answer_today() {
+    let Some(bin) = forkplan::oracle_path() else {
+        eprintln!("inert: set TM_ORACLE to an oracle built by kernel/tm-kernel-ffi/examples/oracle/build-oracle.sh");
+        return;
+    };
+    let oracle = forkplan::Oracle::new(bin);
+    let mut stale = Vec::new();
+    for (which, frozen_name) in EMIT_DAYS {
+        let (sha, _, body) = held_snapshot(which, frozenhist::held_text(&snapshot_path(which))).unwrap_or_else(|e| panic!("{e}"));
+        match fork_rendering(which, frozen_name, &oracle) {
+            Err(e) => stale.push(format!("{which}: {e}")),
+            Ok(again) => {
+                let (_, findings) = compare_with_the_frozen_render(&body, &again, "00:00");
+                if again != body {
+                    stale.push(format!("{which}: the fork's rendering is not the snapshot held since {sha}: {findings:?}"));
+                }
+            }
+        }
+    }
+    println!("frozen renderings the fork oracle answers byte for byte: {} of {} ({} oracle request(s))", EMIT_DAYS.len() - stale.len(), EMIT_DAYS.len(), oracle.asked.lock().expect("census"));
+    assert!(stale.is_empty(), "{}", stale.join("\n  "));
+}
+
+/// **Freeze the fork's renderings of the three days** — inert without `TM_EMIT_BLESS`, and it asks
+/// `TM_ORACLE` (W-45 track C, README gap 4680). Each snapshot keeps its committed insta header and
+/// gets [`fork_rendering`]'s body. **What a snapshot is held against is its COMMITTED text**
+/// (`frozenhist::held_text`, README gap 4151's rule for a whole file), never the working copy, and
+/// it is held by what it is a function of: the day it renders is held by value to the frozen
+/// fixture day ([`fork_rendering`] refuses a fork day that moved), so a body that moves here moves
+/// because the RENDERER moved — the binary's own `emit`, which the snapshot is drawn with — and every
+/// moved line is printed. A snapshot no committed version holds is refused (this bless never makes
+/// one). `TM_EMIT_BLESS_OUT` names a directory to write into instead, for a dry run.
+#[test]
+#[ignore]
+fn the_frozen_fork_renderings_are_blessed() {
+    if std::env::var_os("TM_EMIT_BLESS").is_none() {
+        eprintln!("inert: set TM_EMIT_BLESS=1 (with TM_ORACLE) to rewrite tests/snapshots/emit_planner__*.snap");
+        return;
+    }
+    let oracle = forkplan::Oracle::new(forkplan::oracle_path().expect("TM_EMIT_BLESS asks fork 4748911 out of the tree: set TM_ORACLE"));
+    let out_dir = std::env::var_os("TM_EMIT_BLESS_OUT").map(std::path::PathBuf::from);
+    let (mut out, mut refused) = (Vec::new(), Vec::new());
+    for (which, frozen_name) in EMIT_DAYS {
+        let (sha, header, body) = match held_snapshot(which, frozenhist::held_text(&snapshot_path(which))) {
+            Ok(x) => x,
+            Err(e) => {
+                refused.push(e);
+                continue;
+            }
+        };
+        match fork_rendering(which, frozen_name, &oracle) {
+            Err(e) => refused.push(format!("{which}: {e}")),
+            Ok(again) => {
+                if again != body {
+                    let (_, moved) = compare_with_the_frozen_render(&body, &again, "00:00");
+                    eprintln!("{which}: the renderer moved {} line(s) of the snapshot held since {sha}:\n  {}", moved.len(), moved.join("\n  "));
+                }
+                out.push((which, format!("{header}{again}")));
+            }
+        }
+    }
+    assert!(refused.is_empty(), "the rendering bless is refused and wrote nothing:\n  {}", refused.join("\n  "));
+    for (which, text) in out {
+        let path = match &out_dir {
+            Some(d) => d.join(format!("emit_planner__{which}.snap")),
+            None => snapshot_path(which),
+        };
+        std::fs::write(&path, text).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    }
 }
 
 // BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gaps 2722, 2872)

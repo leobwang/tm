@@ -348,7 +348,34 @@ fn the_frozen_separator_days_are_the_forks_oracle_answer_today() {
 fn no_departure(name: &str, b: &Built, day: &Value, fp: &dyn forkplan::ForkPlan) {
     let prios = forkplan::capacity_grants(b, None).unwrap_or_else(|e| panic!("{name}: {e}"));
     let a = forkplan::comparand_answers(b, &prios, fp).unwrap_or_else(|e| panic!("{name}: the comparand: {e}"));
-    assert!(a["shipped"].is_null() && a["day"] == *day, "{name}: the comparand departs from the shipped day ({:?})", forkplan::first_difference("day", day, &a["day"]));
+    if let Some(why) = departure(name, &a, day) {
+        panic!("{why}");
+    }
+}
+
+/// **[`no_departure`]'s check, without the backend that computes the answers** (W-45 track C, README
+/// gap 4682): `None` where the comparand's answers `a` depart from the shipped day `day` by nothing —
+/// its `shipped` null and its `day` this day — else why, by name. Split out so its bite is witnessed
+/// on frozen comparand answers with no fork ([`a_departing_comparand_is_refused`]).
+fn departure(name: &str, a: &Value, day: &Value) -> Option<String> {
+    (!(a["shipped"].is_null() && a["day"] == *day))
+        .then(|| format!("{name}: the comparand departs from the shipped day ({:?})", forkplan::first_difference("day", day, &a["day"])))
+}
+
+/// **[`departure`] bites, and does not over-bite** (AGENTS §5.8), on frozen comparand answers and
+/// with no fork (W-45 track C, README gap 4682): a frozen class line whose comparand departs from the
+/// shipped day (D60's order, parity P51 — its `shipped` held beside a `day` that is not it) is
+/// refused, and a frozen line whose comparand departs on nothing passes. Until W-45 the bite was
+/// witnessed only in the fork region, the in-tree fork computing the comparand
+/// (the region's no_departure_refuses_a_world_a_registered_number_departs_on), and R3 would have left the check
+/// the oracle arm and the bless still call with no witness that it bites.
+#[test]
+fn a_departing_comparand_is_refused() {
+    let lines = forkclass::frozen_lines();
+    let p51 = lines.iter().find(|l| l["d60"]["p51"] == true && !l["shipped"].is_null()).expect("a frozen class line D60's order departs on");
+    assert!(departure("a P51 line", p51, &p51["shipped"]).is_some(), "a comparand that departs from the shipped day passed");
+    let plain = lines.iter().find(|l| l["shipped"].is_null()).expect("a frozen class line no number departs on");
+    assert_eq!(departure("a plain line", plain, &plain["day"]), None, "a comparand that departs on nothing was refused");
 }
 
 /// **Freeze the separator days** — inert without `TM_SEPARATORS_BLESS`; it asks `TM_ORACLE`, fork

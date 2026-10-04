@@ -626,9 +626,37 @@ fn comparand_is_the_frozen_one(l: &Value, b: &Built, fp: &dyn forkplan::ForkPlan
     }
     let prios = forkplan::capacity_grants(b, None).unwrap_or_else(|e| panic!("{}: {e}", l["name"]));
     let answers = forkplan::comparand_answers(b, &prios, fp).unwrap_or_else(|e| panic!("{}: {e}", l["name"]));
-    for key in forkclass::ANSWERS {
-        assert_eq!(answers[key], l[key], "{}: `{key}` is not the comparand's ({:?})", l["name"], forkplan::first_difference(key, &l[key], &answers[key]));
-    }
+    let unmet = comparand_unmet(l, &answers);
+    assert!(unmet.is_empty(), "{}", unmet.join("\n"));
+}
+
+/// **[`comparand_is_the_frozen_one`]'s comparison, without the backend that computes the answers**
+/// (W-45 track C, README gap 4682): every key of `forkclass::ANSWERS` where `answers` is not the line's,
+/// by name. Split out so its bite is witnessed on frozen answers with no fork
+/// ([`a_comparand_that_is_not_the_frozen_one_is_caught`]).
+fn comparand_unmet(l: &Value, answers: &Value) -> Vec<String> {
+    forkclass::ANSWERS
+        .iter()
+        .filter(|key| answers[**key] != l[**key])
+        .map(|key| format!("{}: `{key}` is not the comparand's ({:?})", l["name"], forkplan::first_difference(key, &l[*key], &answers[*key])))
+        .collect()
+}
+
+/// **A line that is not the comparand's is caught, with no fork** (AGENTS §5.8; W-45 track C, README
+/// gap 4682): the frozen P69 line is its own comparand's answer, and the same line with a step-5 row
+/// a minute longer is not — so the comparison the oracle arm makes bites. Until W-45 the bite was
+/// witnessed only in the fork region, the in-tree fork computing the answers
+/// (the region's a_comparand_that_is_not_the_forks_is_caught), and R3 would have deleted it.
+#[test]
+fn a_comparand_that_is_not_the_frozen_one_is_caught() {
+    let l = starts_lines().into_iter().find(|l| l["p69"]["p69"] == true).expect("the P69 line");
+    assert!(comparand_unmet(&l, &l).is_empty(), "the frozen line is not its own comparand's answer");
+    let mut bent = l.clone();
+    let rows = bent["day"]["day"]["segments"].as_array_mut().expect("the comparand's rows");
+    let r = rows.iter_mut().find(|r| r["kind"] == "block" && r["flags"]["current"] != true).expect("a step-5 row");
+    r["end"] = json!((forkplan::at(&r["end"]).expect("an end") + Duration::minutes(1)).to_rfc3339());
+    let unmet = comparand_unmet(&bent, &l);
+    assert!(unmet.iter().any(|u| u.contains("`day` is not the comparand's")), "a bent step-5 row passed: {unmet:?}");
 }
 
 /// **Freeze the start days** — inert without `TM_STARTS_BLESS`, and it asks `TM_ORACLE`. Every

@@ -735,6 +735,44 @@ pub fn after_midnight_app(now: DateTime<Tz>) -> (App, String) {
     (app_with_log_text(now, state, &log), log)
 }
 
+/// **The world `tui_today_prompts::a_block_started_before_midnight_still_goes_overtime` plans over**
+/// (stage 6 W-45 track C, README gap 4321): the world the TUI holds since the owner's D84, which
+/// re-collects at the date change, under D42, by which the running block is the LOG's — the §4.3
+/// fixture's log with `^t3` stopped at 22:30 an hour short and started again at 23:30, and the
+/// runtime state as the TUI holds it past midnight: `state.date` rolled to `now`'s, `active.started`
+/// `23:30`, `est_min` 60. Until W-45 that test built `.tm/state.json` still dated the day before over
+/// an EMPTY log, a world D42's reconcile ends on every load and D84's roll never plans over (README
+/// gap 4262). `now` is an instant of the day AFTER the fixture's. The app and the log's text.
+pub fn before_midnight_app(now: DateTime<Tz>) -> (App, String) {
+    let cfg = config();
+    let mut entries = log_entries(&cfg);
+    entries.extend([
+        entry(&cfg, 22, 30, Event::Stop { id: "t3".into(), remaining_min: 60 }),
+        entry(
+            &cfg,
+            23,
+            30,
+            Event::Start {
+                id: "t3".into(),
+                pred: 4,
+                rep: Some(4),
+                hsw: 17.42,
+                slept_min: 490,
+                loc: "lounge".into(),
+                blocks_done: 2,
+                since_break_min: 0,
+            },
+        ),
+    ]);
+    let log = chokepoint::text_of(&entries);
+    let state = RuntimeState {
+        date: Some(now.date_naive()),
+        active: Some(ActiveBlock { id: Id::new("t3"), started: time(23, 30), est_min: 60, paused: false }),
+        ..state()
+    };
+    (app_with_log_text(now, state, &log), log)
+}
+
 /// An app with nothing running, for §9.2's idle prompt and the Now pane's
 /// "nothing running" row: no `active` in `state.json`, and no segment flagged
 /// `current` — the planner marks the block it is inside, and there is none.

@@ -273,6 +273,20 @@ impl Built {
         Built { world, cfg, tree, replay, model, cands }
     }
 
+    /// **A fixture tree's world, built as a class world reads it — or why not, by name** (W-45 track
+    /// C, README gap 4680). The fixture suites (`planner_fixtures.rs`' four days, `plan-basic` every
+    /// ten minutes, the conference Wednesday, `emit_planner.rs`' three renderings) read trees under
+    /// `tm-core/tests/fixtures/` at the configuration their `config.toml` holds, and `tm-oracle plan`
+    /// reads every world at `Config::default()` (the world's `ratio` aside), as [`Built::of`] does. So
+    /// a fixture's world is asked of the oracle only where its configuration IS the default, field
+    /// for field: any other is refused here, never asked at a configuration it does not hold.
+    pub fn of_fixture(docs: &[(String, String)], log: &str, state: &RuntimeState, now: DateTime<Tz>, cfg: &Config) -> Result<Built, String> {
+        if *cfg != Config::default() {
+            return Err("the fixture's configuration is not `Config::default()`, the one the comparand and the oracle read a world at".to_string());
+        }
+        Ok(Built::of(ClassWorld { docs: docs.to_vec(), log: log.to_string(), state: state.clone(), now, mult: None, ratio: None }))
+    }
+
     /// The request's builder, over this world.
     pub fn request_world(&self) -> planreq::World<'_> {
         planreq::World {
@@ -2480,15 +2494,16 @@ pub fn p45_paused_row(mut row: Value, brk: DateTime<Tz>, host: Option<u32>) -> V
     row
 }
 
-// BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gaps 3121, 3122)
 /// **A P51 day**: D60's key moves the fork's §7.4 order — `sorted_candidates`
-/// over the candidates as collected, and over [`d60_cands`]'. Counted, never
-/// asserted: the comparand runs D60's key on every day, so this says only which
-/// days it changed. One copy (README gap 3122), for both fork arms.
+/// over the candidates as collected, and over [`d60_cands`]'. Counted by the fork
+/// arms (the comparand runs D60's key on every day, so there it says only which
+/// days it changed). One copy (README gap 3122). **It reads no fork planner** —
+/// `tm_core::priority`'s order over the kernel's grants — and since W-45 track C
+/// (README gap 4682) the reversed day's kernel half asserts it outside every region,
+/// so it left the fork region it sat in, which held nothing else.
 pub fn is_p51(cands: &[Candidate], prios: &[Prio]) -> bool {
     let dvec = d60_cands(cands, prios);
     let a: Vec<&str> = priority::sorted_candidates(prios, cands).iter().map(|c| c.id.as_str()).collect();
     let b: Vec<&str> = priority::sorted_candidates(prios, &dvec).iter().map(|c| c.id.as_str()).collect();
     a != b
 }
-// END THE FORK PLANNER

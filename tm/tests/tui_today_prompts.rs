@@ -178,28 +178,18 @@ fn the_elapsed_minutes_are_worked_minutes_not_wall_clock() {
 
 #[test]
 fn a_block_started_before_midnight_still_goes_overtime() {
-    // §10.2: `active.started` is a bare `HH:MM` and `state.date` says which
-    // day it belongs to. Anchoring it to *today* makes a block that started at
-    // 23:30 report zero elapsed for ever.
+    // §10.2: `active.started` is a bare `HH:MM`, and a block that started at 23:30 must not report
+    // zero elapsed once the date has rolled. Since the owner's D42 the block's start is the LOG's
+    // instant, and since D84 the TUI holds its state rolled to the new date past midnight — the
+    // world `tui_common::before_midnight_app` builds (README gap 4321). Until W-45 this test built a
+    // state still dated the day before over an empty log, a world the binary can no longer hold.
     let cfg = tui_common::config();
-    let mut state = tui_common::state();
-    if let Some(active) = state.active.as_mut() {
-        active.started = NaiveTime::from_hms_opt(23, 30, 0).expect("time");
-        active.est_min = 60;
-    }
     let midnight = cfg
         .tz
-        .from_local_datetime(
-            &tui_common::date()
-                .succ_opt()
-                .expect("tomorrow")
-                .and_hms_opt(0, 30, 0)
-                .expect("time"),
-        )
+        .from_local_datetime(&tui_common::date().succ_opt().expect("tomorrow").and_hms_opt(0, 30, 0).expect("time"))
         .single()
         .expect("unambiguous");
-    // An empty log: the state is all there is to go on.
-    let app = tui_common::app_with_log_text(midnight, state, "");
+    let (app, _) = tui_common::before_midnight_app(midnight);
     assert_eq!(app.active_elapsed_min(), Some(60));
     assert!(app.overtime_due().is_some(), "an hour into a one-hour block");
 }

@@ -13,11 +13,19 @@
 //!   the base is `ratchet.py`'s;
 //! * **the rule as a CLASS** (lesson 2): every bless of a fork comparand in `tm/tests` — a
 //!   `#[test]` function that writes a file, reads a `TM_…BLESS…` or `TM_PLANNER_DRAW` variable and
-//!   names the fork — calls `frozenhist::held`. The one family outside it is named by its property,
-//!   not listed by name: the D21 differential fixtures `TM_FORK_BLESS` rewrites from the oracle hold
-//!   no line (each run writes the oracle's answer over committed inputs, and no line records a
-//!   departure a gate could license), README gap 4285. A pin of the binary's OWN bytes (`tm log`'s,
-//!   `TM_LOG_BLESS`) names no fork and is a snapshot, which is never re-blessed: not a bless here.
+//!   names the fork — calls `frozenhist::held` (or, for a whole-file comparand, `frozenhist::held_text`).
+//!   The one family outside it is named by its property, not listed by name: the D21 differential
+//!   fixtures `TM_FORK_BLESS` rewrites from the oracle hold no line (each run writes the oracle's
+//!   answer over committed inputs, and no line records a departure a gate could license), README gap
+//!   4285. A pin of the binary's OWN bytes (`tm log`'s, `TM_LOG_BLESS`) names no fork and is a
+//!   snapshot, which is never re-blessed: not a bless here.
+//! * **and since W-45 track C (README gap 4680) the rule that keeps every comparand re-blessable
+//!   after R3, as a CLASS too**: no bless sits inside a `BEGIN THE FORK PLANNER` region (R3 deletes
+//!   the region, and a bless there makes its file final — README gap 4463 found six), every frozen
+//!   comparand file `frozenhist::frozen_files` finds is named by a bless outside every region, and
+//!   every test file that reads a committed snapshot as a frozen answer holds such a bless. Until
+//!   W-45 this file asked for twelve blesses BY NAME, seven of them inside regions, so it went red
+//!   the moment R3 deleted them (W-44's simulation): a LIST where the rule is a CLASS.
 
 #[allow(dead_code)]
 #[path = "support/frozenhist.rs"]
@@ -318,6 +326,9 @@ fn the_plain_history_check_bites_and_does_not_over_bite() {
 /// are counted on the code with every string literal blanked ([`blank_literals`], over the whole
 /// file, so a literal continued across lines is still one literal).
 fn test_fns(text: &str) -> Vec<(String, String)> {
+    if text.is_empty() {
+        return Vec::new();
+    }
     let lines: Vec<String> = srcwalk::code_lines(text).into_iter().map(|(_, c)| c).collect();
     let blank: Vec<String> = blank_literals(&lines.join("\n")).split('\n').map(str::to_string).collect();
     assert_eq!(blank.len(), lines.len(), "blanking keeps the lines");
@@ -357,9 +368,69 @@ fn is_bless(body: &str) -> bool {
     code.contains("fs::write(") && reads && names_the_fork(&code)
 }
 
-/// Does the code — string literals blanked — call the history reader?
+/// Does the code — string literals blanked — call the history reader: `frozenhist::held` for a
+/// file of lines, or `frozenhist::held_text` for a whole-file comparand (W-45 track C, README gap
+/// 4680: `emit_planner.rs`' renderings)?
 fn holds_history(body: &str) -> bool {
-    blank_literals(body).contains("frozenhist::held(")
+    let code = blank_literals(body);
+    code.contains("frozenhist::held(") || code.contains("frozenhist::held_text(")
+}
+
+/// **A test file's text, split at its fork region**: `(outside, region)` — the text before the
+/// line-start `// BEGIN THE FORK PLANNER` banner and after the line-start `// END THE FORK PLANNER`
+/// banner, and the text between them (`""` where the file holds no region). One banner without the
+/// other is the region guard's to refuse (`forkday::fork_scan`); here it reads as no region.
+fn split_at_region(text: &str) -> (String, String) {
+    let at = |needle: &str| text.match_indices(needle).map(|(i, _)| i).find(|&i| i == 0 || text.as_bytes()[i - 1] == b'\n');
+    match (at("// BEGIN THE FORK PLANNER"), at("// END THE FORK PLANNER")) {
+        (Some(i), Some(j)) if i < j => (format!("{}{}", &text[..i], &text[j..]), text[i..j].to_string()),
+        _ => (text.to_string(), String::new()),
+    }
+}
+
+/// **The `const`s that name a frozen comparand file in code**: every `const NAME: &str =
+/// "fork-4748911-…"` the test tree declares, as `(declaring file, module, NAME, value)` — a bless names
+/// the file by its literal name, by its module-qualified name, or by the bare name in the file that declares it
+/// ([`names_file`]).
+fn file_consts(files: &[(String, String)]) -> Vec<(String, String, String, String)> {
+    let mut out = Vec::new();
+    for (label, text) in files {
+        let path = std::path::Path::new(label);
+        let stem = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        let module = if stem == "mod" {
+            path.parent().and_then(|d| d.file_name()).map(|d| d.to_string_lossy().to_string()).unwrap_or_default()
+        } else {
+            stem
+        };
+        for line in text.lines() {
+            let l = line.trim_start();
+            let l = l.strip_prefix("pub ").unwrap_or(l);
+            let Some(rest) = l.strip_prefix("const ") else { continue };
+            let Some((name, value)) = rest.split_once(": &str = \"") else { continue };
+            let Some(value) = value.strip_suffix("\";") else { continue };
+            if value.starts_with("fork-4748911-") {
+                out.push((label.clone(), module.clone(), name.trim().to_string(), value.to_string()));
+            }
+        }
+    }
+    out
+}
+
+/// Does the bless `body`, in the file `label`, name the frozen file `file`?
+fn names_file(body: &str, label: &str, file: &str, consts: &[(String, String, String, String)]) -> bool {
+    let code = blank_literals(body);
+    body.contains(file)
+        || consts.iter().any(|(declared_in, module, name, value)| {
+            value == file && (is_word_in(&code, &format!("{module}::{name}")) || (declared_in == label && is_word_in(&code, name)))
+        })
+}
+
+/// Whether `word` occurs in `code` as a whole identifier.
+fn is_word_in(code: &str, word: &str) -> bool {
+    let ident = |c: char| c.is_alphanumeric() || c == '_';
+    code.match_indices(word).any(|(i, _)| {
+        !code[..i].chars().next_back().is_some_and(|c| ident(c) || c == ':') && !code[i + word.len()..].chars().next().is_some_and(ident)
+    })
 }
 
 /// The code with every string literal's contents blanked (its quotes kept), so a call spelled
@@ -404,52 +475,102 @@ fn is_d21(body: &str) -> bool {
     !vars.is_empty() && vars.iter().all(|v| *v == "TM_FORK_BLESS")
 }
 
-/// **Every bless of a frozen fork comparand holds its lines against the committed history** —
-/// README gap 4151 as a CLASS (lesson 2): every bless-shaped `#[test]` in `tm/tests` calls
-/// `frozenhist::held`, but the D21 family named by its property. The census is printed, and it may
-/// not be vacuous: the eleven W-42 converted are among them.
+/// **Every bless of a frozen fork comparand holds its lines against the committed history, sits
+/// outside every fork region, and every frozen comparand has one** — README gap 4151 as a CLASS
+/// (lesson 2), and since W-45 track C (README gap 4680) the rule that no comparand is final at R3:
+///
+/// 1. every bless-shaped `#[test]` in `tm/tests` calls the history reader (`frozenhist::held`, or
+///    `frozenhist::held_text` for a whole file), but the D21 family named by its property;
+/// 2. **no bless sits inside a `BEGIN THE FORK PLANNER` region** — R3 deletes the region, so a bless
+///    there makes its file final (README gap 4463's six, and the class worlds' re-draw);
+/// 3. **every frozen comparand file** (`frozenhist::frozen_files`, a property of the fixtures
+///    directory) **is named by a bless outside every region** — by its name, or by a `const` whose
+///    value it is (`file_consts`) — **and every test file that reads a committed snapshot as a frozen
+///    answer** (its code spells `tests/snapshots/`) **holds a bless outside its region**.
+///
+/// So the gate is green while the fork's regions stand and once R3 has deleted them, and the switch
+/// has nothing in it to rewrite. Until W-45 clause 3 was a list of twelve names, seven of them inside
+/// regions, and the gate went red at R3's simulated deletion (W-44 track C §6). The census is printed.
 #[test]
 fn every_bless_holds_its_lines_against_the_committed_history() {
-    let mut found = Vec::new();
+    let tests: Vec<(String, String)> = srcwalk::every_rust_file().into_iter().filter(|(label, _)| label.starts_with("tm/tests/")).collect();
+    let consts = file_consts(&tests);
+    let mut found: Vec<(String, String)> = Vec::new();
     let mut d21 = Vec::new();
     let mut bad = Vec::new();
-    for (label, text) in srcwalk::every_rust_file() {
-        if !label.starts_with("tm/tests/") {
-            continue;
+    for (label, text) in &tests {
+        let (outside, region) = split_at_region(text);
+        for (name, body) in test_fns(&region) {
+            if is_bless(&body) {
+                bad.push(format!("{label}::{name} sits inside the fork region: R3 deletes it, and its file is final after R3 (README gap 4680)"));
+            }
         }
-        for (name, body) in test_fns(&text) {
+        for (name, body) in test_fns(&outside) {
             if !is_bless(&body) {
                 continue;
             }
             if is_d21(&body) {
                 d21.push(format!("{label}::{name}"));
             } else if holds_history(&body) {
-                found.push(format!("{label}::{name}"));
+                found.push((format!("{label}::{name}"), body));
             } else {
-                bad.push(format!("{label}::{name}"));
+                bad.push(format!("{label}::{name} holds its lines against the working copy, or against nothing (README gap 4151)"));
+            }
+        }
+        // A committed snapshot read as a frozen answer (`emit_planner.rs`' renderings): its file holds a
+        // bless. The path is spelled in pieces here so this file's own code does not read as a reader.
+        let snapshots = ["tests/", "snapshots/"].concat();
+        if srcwalk::code_lines(&outside).iter().any(|(_, c)| c.contains(&snapshots)) {
+            let here: Vec<&String> = found.iter().filter(|(n, _)| n.starts_with(&format!("{label}::"))).map(|(n, _)| n).collect();
+            if here.is_empty() {
+                bad.push(format!("{label} reads a committed snapshot as a frozen answer and holds no bless outside its region (README gap 4680)"));
             }
         }
     }
-    println!("blesses holding the committed history ({}):\n  {}", found.len(), found.join("\n  "));
-    println!("the D21 family, holding no line ({}):\n  {}", d21.len(), d21.join("\n  "));
-    assert!(bad.is_empty(), "blesses that hold their lines against the working copy, or against nothing (README gap 4151):\n  {}", bad.join("\n  "));
-    for want in [
-        "the_frozen_tui_days_are_blessed",
-        "the_frozen_start_days_are_blessed",
-        "the_frozen_week_grids_are_blessed",
-        "the_seeded_p56_days_are_blessed",
-        "the_frozen_plan_basic_days_are_blessed",
-        "the_frozen_fork_classes_are_reblessed",
-        "the_frozen_batch_is_blessed",
-        "the_frozen_driven_days_are_blessed",
-        "the_frozen_class_worlds_are_redrawn",
-        "the_frozen_conference_days_are_blessed",
-        "the_frozen_fork_days_are_reblessed",
-        "the_frozen_p85_days_are_blessed",
-    ] {
-        assert!(found.iter().any(|f| f.ends_with(&format!("::{want}"))), "{want} is not among the blesses found — the walk is not reading what it claims");
+    let files = frozenhist::frozen_files().unwrap_or_else(|e| panic!("{e}"));
+    for (file, _) in &files {
+        let by: Vec<&String> = found.iter().filter(|(n, body)| names_file(body, n.split("::").next().unwrap_or_default(), file, &consts)).map(|(n, _)| n).collect();
+        if by.is_empty() {
+            bad.push(format!("{file}: no bless outside a fork region names it, so R3 would leave it final (README gap 4680)"));
+        }
+        println!("{file}: blessed by {by:?}");
     }
+    println!("blesses holding the committed history ({}):\n  {}", found.len(), found.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>().join("\n  "));
+    println!("the D21 family, holding no line ({}):\n  {}", d21.len(), d21.join("\n  "));
+    assert!(bad.is_empty(), "{} bless finding(s):\n  {}", bad.len(), bad.join("\n  "));
+    assert!(files.len() >= 11 && found.len() >= files.len(), "{} bless(es) found for {} frozen file(s) — the walk is not reading what it claims", found.len(), files.len());
     assert!(d21.len() >= 2, "the D21 family was not found: {d21:?}");
+}
+
+/// **Clause 2 and 3 of the gate bite, and do not over-bite** (AGENTS §5.8; W-45 track C, README gap
+/// 4680): a bless inside a region is seen there and nowhere else; a file split at its banners keeps
+/// both sides; a frozen file named by a `const` in another module, by the bare `const` in its own
+/// file, or by its literal name is named, and one named by none — or by a same-named `const` of
+/// another value — is not.
+#[test]
+fn the_region_and_naming_clauses_bite() {
+    let b = ["// BEGIN THE FORK", " PLANNER\n"].concat();
+    let e = ["// END THE FORK", " PLANNER\n"].concat();
+    let bless = "#[test]\nfn x() {\n    if std::env::var_os(\"TM_X_BLESS\").is_none() { return; }\n    let held = frozenhist::held(&p, k); let day = forkplan::plan();\n    std::fs::write(p, out).expect(\"w\");\n}\n";
+    let text = format!("fn a() {{}}\n{b}{bless}{e}fn z() {{}}\n");
+    let (outside, region) = split_at_region(&text);
+    assert!(test_fns(&region).iter().any(|(n, body)| n == "x" && is_bless(body)), "a bless inside the region was not seen there");
+    assert!(test_fns(&outside).is_empty() && outside.contains("fn a()") && outside.contains("fn z()"), "the split lost a side: {outside:?}");
+    let (whole, none) = split_at_region(bless);
+    assert!(none.is_empty() && whole == bless, "a file with no region is all outside");
+    let tests = vec![
+        ("tm/tests/support/forkx.rs".to_string(), "pub const FROZEN_X: &str = \"fork-4748911-planner-x.jsonl\";\n".to_string()),
+        ("tm/tests/other.rs".to_string(), "const FROZEN_X: &str = \"fork-4748911-planner-y.jsonl\";\nconst FROZEN_Z: &str = \"fork-4748911-planner-z.jsonl\";\n".to_string()),
+    ];
+    let consts = file_consts(&tests);
+    let file = "fork-4748911-planner-x.jsonl";
+    assert!(names_file("eprintln!(\"{}\", forkx::FROZEN_X);", "tm/tests/a.rs", file, &consts), "a `module::NAME` spelling was not read");
+    assert!(names_file("let p = \"fork-4748911-planner-x.jsonl\";", "tm/tests/a.rs", file, &consts), "the literal name was not read");
+    assert!(names_file("w(FROZEN_Z)", "tm/tests/other.rs", "fork-4748911-planner-z.jsonl", &consts), "a bare `NAME` in its own file was not read");
+    assert!(!names_file("w(FROZEN_X)", "tm/tests/other.rs", file, &consts), "another value's same-named `const` named the file");
+    assert!(!names_file("w(FROZEN_Z)", "tm/tests/a.rs", "fork-4748911-planner-z.jsonl", &consts), "a bare `NAME` outside its file named the file");
+    assert!(!names_file("let x = forkx::FROZEN_XY;", "tm/tests/a.rs", file, &consts), "a longer name was read as the `const`");
+    assert!(holds_history("let h = frozenhist::held_text(&p);") && !holds_history("let h = \"frozenhist::held_text(\";"), "the whole-file reader is not read as a history reader, or a literal is");
 }
 
 /// **The class test bites** (AGENTS §5.8): a bless-shaped function that reads its held lines off the

@@ -357,8 +357,8 @@ def dayPlanFrom (r : PlanReq) (m : Memo) (df : List Placed × Assign) : DayPlan 
       inst := none, flags := SegFlags.none, planned := some o.want, mult := none,
       note := none })
   -- `dayRows`
-  let rows := sortRows ((stepOneOrder r ++ routineSegs ++ resSegs ++ assignedSegs ++ keptSegs ++
-    optSegs ++ rest).map segOf)
+  let rows := sortRows ((stepOneOrder r ++ resSegs ++ assignedSegs ++ keptSegs ++
+    optSegs ++ rest ++ routineSegs).map segOf)
   -- `dayAssigned`
   let assigned := (rows.filter (fun s => s.val.kind.isWork)).flatMap segItems
   -- `PlanReq.dayImpossible`

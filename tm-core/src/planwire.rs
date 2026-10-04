@@ -1807,7 +1807,13 @@ fn diagnostics_of(v: &Value, segments: &[Segment], ctx: &DayCtx<'_>) -> W<Diagno
         .collect::<W<Vec<_>>>()?;
 
     let honesty = &v["planHonesty"];
-    let planned = nat32(&honesty["planned"], &at("planHonesty.planned"))?;
+    // The kernel's `planned` is the committed minutes EXACTLY, and fork `diagnose` sums
+    // them `u32::saturating_add` (an estimate at the host's `u32` width is legal on the
+    // edit wire, README gap 2929's residue) -- so the host reads the natural and takes
+    // the fork's own saturation, as it does `total` below: never a refusal (W-45 track
+    // D, README gap 4620: a running block at the host's width made this decoder refuse
+    // the day once R3 asked the kernel for it, `tm now` a kernel fault).
+    let planned = u32::try_from(nat(&honesty["planned"], &at("planHonesty.planned"))?).unwrap_or(u32::MAX);
     // The kernel's `total` is `remaining_budget × block_min` EXACTLY, and fork
     // `diagnose` divides by `remaining_budget.saturating_mul(block_min)` -- a
     // `state.json` budget is hand-editable, and the fork saturates rather than
@@ -2331,6 +2337,16 @@ mod tests {
         let mut edge = v.clone();
         edge["diagnostics"]["planHonesty"] = json!({"planned": 780, "total": u32::MAX});
         assert_eq!(read_plan(&edge, &ctx).expect("reads").day.diagnostics.plan_honesty, sat, "past the edge is the edge");
+        // ...and a `planned` past `u32` as the fork's saturating sum reads it (W-45 track D,
+        // README gap 4620): a running block at the host's width commits more than `u32`
+        // minutes, and fork `diagnose`'s `committed` saturates there.
+        let mut wide = v.clone();
+        wide["diagnostics"]["planHonesty"] = json!({"planned": 6_000_000_000u64, "total": 360});
+        let read = read_plan(&wide, &ctx).expect("a planned past u32 reads").day.diagnostics.plan_honesty;
+        assert_eq!(read, Some(f64::from(u32::MAX) / 360.0));
+        let mut at_edge = v.clone();
+        at_edge["diagnostics"]["planHonesty"] = json!({"planned": u32::MAX, "total": 360});
+        assert_eq!(read_plan(&at_edge, &ctx).expect("reads").day.diagnostics.plan_honesty, read, "past the edge is the edge");
     }
 
     #[test]
