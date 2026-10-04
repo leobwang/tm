@@ -396,8 +396,10 @@ pub(crate) fn open_interruption(replay: &Replay) -> Option<&tm_core::log::Interr
 /// field, each through the event it logs, over the open block's rows in file
 /// order (undone rows skipped): `tm start` begins it paused exactly when an
 /// interruption is open (P60); `pause` and `unpause` of this block (a typed
-/// `tm pause`, and D61's wall marks) set and clear it; `interrupt` sets it and
-/// `resume` clears it (`day.rs`' `interrupt` and `resume`); and a `break`,
+/// `tm pause`, and D61's wall marks) set and clear it; `interrupt` and `resume`
+/// set and clear the interruption, which holds it too, and a `resume` leaves a
+/// pause taken before the interruption standing ([`logged_stops`], the W-44
+/// repair, README gap 4610 — it cleared it until then); and a `break`,
 /// logged when it ends, leaves it as it found it (`end_break`): the break
 /// paused a running block and ending it runs the block again, and a block a
 /// `tm pause` or an interruption held stays held — the kernel's replay reads
@@ -411,6 +413,30 @@ pub(crate) fn open_interruption(replay: &Replay) -> Option<&tm_core::log::Interr
 /// `None` when the scope's rows do not reach the block's `start` — the rebuild
 /// then keeps the replay's own reading.
 pub(crate) fn logged_pause(replay: &Replay, open: &tm_core::log::OpenBlock) -> Option<bool> {
+    logged_stops(replay, open).map(|s| s.paused || s.interrupted)
+}
+
+/// **The two stops the log holds on the open block** — the block's own pause
+/// and an open interruption — each with its own end (the W-44 repair, README
+/// gap 4610, parity **P96**): `pause` and `unpause` of this block (a typed `tm
+/// pause`, D61's wall marks) set and clear the pause; `interrupt` and `resume`
+/// set and clear the interruption; a block begun inside an interruption starts
+/// held by it (P60). A `resume` ends the interruption and NOT a pause the user
+/// took before it, as the kernel's replay reads it (`Replay.resumeBlock`), so
+/// `tm resume` leaves such a block paused. Until the repair this fold kept one
+/// flag that a `resume` cleared, and the block ran to `tm now` and `tm stop`
+/// while the replay held it paused. [`logged_pause`] is either stop.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct LoggedStops {
+    /// The block's own pause (`pause` … `unpause`).
+    pub paused: bool,
+    /// An open interruption (`interrupt` … `resume`).
+    pub interrupted: bool,
+}
+
+/// [`LoggedStops`], read back from the log; `None` when the scope's rows do not
+/// reach the block's `start`.
+pub(crate) fn logged_stops(replay: &Replay, open: &tm_core::log::OpenBlock) -> Option<LoggedStops> {
     // Each tag is asked of `Event` rather than spelled a second time (§5.3).
     let tag = |e: Event| e.name().to_string();
     let pause = tag(Event::Pause { id: String::new() });
@@ -436,21 +462,21 @@ pub(crate) fn logged_pause(replay: &Replay, open: &tm_core::log::OpenBlock) -> O
             }
         })
         .unwrap_or(false);
-    let mut paused = interrupted;
+    let mut stops = LoggedStops { paused: false, interrupted };
     for r in rows[at + 1..].iter().filter(|r| !r.cancelled) {
         if r.tag == pause && mine(r) {
-            paused = true;
+            stops.paused = true;
         } else if r.tag == unpause && mine(r) {
-            paused = false;
+            stops.paused = false;
         } else if r.tag == interrupt {
-            paused = true;
+            stops.interrupted = true;
         } else if r.tag == resume {
-            paused = false;
+            stops.interrupted = false;
         } else if r.tag == brk {
             // A break leaves the timer as it found it (P84): nothing to fold.
         }
     }
-    Some(paused)
+    Some(stops)
 }
 
 fn derived_state(replay: &Replay, tz: Tz, today: NaiveDate, running_break: bool) -> RuntimeState {
@@ -1455,29 +1481,6 @@ impl Ctx {
             base,
             before: (self.state.clone(), self.files.clone(), self.tree.clone(), self.replay.clone()),
         });
-        Ok(())
-    }
-
-    /// **Hold an automatic close in memory** (the owner's D91): its changed and created documents, its
-    /// log lines and its stamps (`closed`), laid over what this context holds ([`Ctx::hold_begin`]);
-    /// then the files, the tree and the replay are read as the plan directory would then stand
-    /// ([`Ctx::settle`]). A tree that cannot be read as held is not held: the context is put back as
-    /// it was read.
-    pub fn hold(&mut self, docs: BTreeMap<String, String>, lines: &[String], closed: store::Closed) -> Result<(), CliError> {
-        self.hold_begin()?;
-        if let Some(held) = &self.held {
-            for (rel, text) in &docs {
-                held.mirror.insert(rel, text);
-            }
-            for l in lines {
-                held.mirror.append_text(LOG_PATH, &format!("{l}\n"))?;
-            }
-        }
-        self.state.closed = closed;
-        if let Err(e) = self.settle() {
-            self.release();
-            return Err(e);
-        }
         Ok(())
     }
 

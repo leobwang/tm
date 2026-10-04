@@ -1104,6 +1104,22 @@ impl App {
         self.replan();
     }
 
+    /// **Whether a wall of the day began or ended between the App's instant and
+    /// `now` while a block is open** — the instant D61's wall marks can change,
+    /// and so the instant `tm plan`'s housekeeping would write one (the W-44
+    /// repair, README gap 4553). The driver re-collects then, in memory, as it
+    /// does at a date change (`mod.rs`' `advance_clock`): the owner's D96 has the
+    /// TUI plan exactly the day `tm plan` plans at that instant, and between two
+    /// such instants the wall rule writes nothing new. The walls are read off the
+    /// App's own day — the trigger, never the rule (the kernel's `WallTimer`
+    /// decides what is written).
+    pub fn crosses_a_wall(&self, now: DateTime<Tz>) -> bool {
+        self.state.active.is_some()
+            && self.plan.segments.iter().filter(|s| s.kind == SegKind::Wall).any(|s| {
+                [s.start, s.end].iter().any(|b| self.now < *b && *b <= now)
+            })
+    }
+
     /// Advance to `now`: replan when the minute has moved on (the timeline is
     /// written to the minute) and raise §9's prompts.
     ///

@@ -708,7 +708,27 @@ fn stamp_refused_write(ctx: &Ctx, verb: &str, e: CliError) -> CliError {
 /// same reason [`gate`] takes one: a refusal that names a file and a line, and
 /// does not say whether the command went through, is half an answer
 /// ([`stamp_refused_write`], README gap 1080).
+///
+/// **While the context holds its housekeeping in memory** (the owner's D96) the
+/// documents are read as held ([`Ctx::reading`]) and the changed ones written to
+/// the hold ([`Ctx::writes`]), so a verb's own body run under a hold — the
+/// automatic close past midnight in the TUI (`closing::close_in_memory`, the W-44
+/// repair, README gap 4615) — writes nothing to disk and is the same body.
 pub fn apply(ctx: &Ctx, verb: &str, cmds: &[Cmd]) -> Result<Applied, CliError> {
+    if ctx.holding() {
+        let reading = ctx.reading()?;
+        let mut docs: Vec<(String, String)> = Vec::new();
+        for rel in reading.store().list_files()? {
+            let text = reading.store().read_text(&rel)?;
+            docs.push((rel, text));
+        }
+        drop(reading);
+        let applied = answer(ctx, verb, cmds, docs)?;
+        for doc in applied.docs.iter().filter(|d| d.changed) {
+            ctx.writes().write_file(&doc.path, &doc.returned)?;
+        }
+        return Ok(applied);
+    }
     // 1. The whole tree, guarded.
     let mut docs: Vec<(String, String)> = Vec::new();
     let mut guards: Vec<FileGuard> = Vec::new();

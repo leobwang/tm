@@ -411,14 +411,20 @@ fn recollect(app: &mut App, read: &mut Ctx, now: DateTime<Tz>) -> Result<(), Cli
 }
 
 /// **One turn of the clock**: at a date change the TUI re-collects in memory
-/// ([`recollect`], D84), then [`App::tick`] moves `now`, replans on a new
-/// minute and raises §9's prompts. Returns whether anything changed.
+/// ([`recollect`], D84), and — since the W-44 repair (README gap 4553) — at the
+/// minute a wall of the day begins or ends while a block is open
+/// ([`App::crosses_a_wall`]), the one other instant `tm plan`'s housekeeping
+/// writes something new (D61's wall marks, held by D96's one body); then
+/// [`App::tick`] moves `now`, replans on a new minute and raises §9's prompts.
+/// Returns whether anything changed. Every other minute asks the kernel
+/// nothing (D38: the TUI replans on reload, not on a tick).
 fn advance_clock(app: &mut App, read: &mut Ctx, now: DateTime<Tz>) -> Result<bool, CliError> {
     let dated = now.date_naive() != app.today;
-    if dated {
+    let walled = !dated && app.crosses_a_wall(now);
+    if dated || walled {
         recollect(app, read, now)?;
     }
-    Ok(app.tick(now) || dated)
+    Ok(app.tick(now) || dated || walled)
 }
 
 /// Re-read the plan directory into an existing [`App`], keeping the UI state,
@@ -1705,6 +1711,83 @@ mod tests {
         assert!(read.held.is_none());
         assert_eq!(read.state, rolled, "release puts back the state as read");
         assert!(read.replay == replay0, "release puts back the replay as read");
+    }
+
+    /// **A wall that begins within the day is held at its minute** (the owner's D96, the W-44 repair,
+    /// README gap 4553). `^t3` started at 12:00 on Monday and left running, a call at 12:20-12:40 in the
+    /// calendar, the TUI opened at 12:10 — and its clock run through the loop's own step
+    /// ([`advance_clock`]) with no date change and no file changed:
+    ///
+    /// * at 12:15 nothing is crossed and nothing is asked (D38: the TUI replans on reload, not on a tick);
+    /// * at 12:21 the call has begun while `^t3` runs, and the TUI holds what `tm plan` writes at that
+    ///   instant — the `pause` at 12:20 and its journal line — writes nothing, draws `^t3` paused and says
+    ///   so, and asks the kernel what `tm plan` asks (key for key but for the checkpoint's reseal day);
+    /// * at 12:41 the call has ended, and it holds the `unpause` too.
+    ///
+    /// Until the repair the hold was asked only at a date change or a reload, so between them the TUI's
+    /// timer counted a meeting that began after its last read as work: driven through a pty, `elapsed`
+    /// ran on through the call while `tm now` at the same instant printed `paused ^m1 for …`.
+    #[test]
+    fn w44_repair_a_wall_that_begins_within_the_day_is_held_at_its_minute() {
+        let _env = kernel_env();
+        let (tmp, g) = fixture();
+        let plan = g.dir.clone().expect("the plan directory");
+        let calendar = plan.join("calendar/2026-W37.md");
+        let mut text = fs::read_to_string(&calendar).expect("calendar");
+        text.push_str("- [ ] 3 Noon call         at:2026-09-07T12:20/12:40 ^g7\n");
+        fs::write(&calendar, text).expect("write the calendar");
+        for (when, args) in [
+            ("2026-09-07T06:05:00-05:00", &["wake", "06:05", "--slept", "8h10m"][..]),
+            ("2026-09-07T07:00:00-05:00", &["arrive", "lounge"][..]),
+            ("2026-09-07T12:00:00-05:00", &["start", "^t3", "--energy", "3"][..]),
+        ] {
+            let argv: Vec<String> = args.iter().map(|a| (*a).to_string()).collect();
+            let said = verb(&at_str(&g, when), &argv).expect("a verb of the world");
+            assert!(said.ends_with(": ok"), "`tm {}`: {said}", args.join(" "));
+        }
+        let (mut read, mut app) = load(&at_str(&g, "2026-09-07T12:10:00-05:00")).expect("the TUI opens at 12:10");
+        let tz = app.cfg.tz;
+        let at = |s: &str| DateTime::parse_from_rfc3339(s).expect("now").with_timezone(&tz);
+        let before = tree_bytes(&plan);
+
+        assert!(!app.crosses_a_wall(at("2026-09-07T12:15:00-05:00")), "nothing is crossed by 12:15");
+        assert!(advance_clock(&mut app, &mut read, at("2026-09-07T12:15:00-05:00")).expect("12:15"));
+        assert!(read.held.is_none(), "a minute that crosses no wall asks nothing");
+
+        assert!(app.crosses_a_wall(at("2026-09-07T12:21:00-05:00")), "the call began at 12:20");
+        crate::cli::kernel_bridge::capture_kernel_stderr(true);
+        let changed = advance_clock(&mut app, &mut read, at("2026-09-07T12:21:00-05:00"));
+        crate::cli::kernel_bridge::capture_kernel_stderr(false);
+        assert!(changed.expect("12:21"));
+        assert!(tree_bytes(&plan) == before, "the hold wrote nothing under the plan directory");
+        let held = read.held.as_ref().expect("the wall's pause is held");
+        let evs: Vec<String> = held
+            .log
+            .lines()
+            .map(|l| serde_json::from_str::<serde_json::Value>(l).expect("a log line")["ev"].as_str().unwrap_or_default().to_string())
+            .collect();
+        assert_eq!(evs, ["pause"], "{}", held.log);
+        assert!(held.docs.get("day/2026-09-07.md").is_some_and(|t| t.contains("12:20 pause ^t3")), "the journal line is held");
+        assert_eq!(app.state.active.as_ref().map(|a| (a.id.as_str(), a.paused)), Some(("t3", true)), "^t3 is drawn paused");
+        assert!(
+            app.message.as_deref().is_some_and(|m| m.contains("paused ^t3 for Noon call 12:20–12:40")),
+            "the status line says the held pause: {:?}",
+            app.message
+        );
+        let (plan_text, _copy) = tm_plans_request(&tmp, &plan, at("2026-09-07T12:21:00-05:00"), "tm-plan-1221");
+        let tui: serde_json::Value =
+            serde_json::from_str(&crate::cli::kernel_capacity::planner_request(&read, false).expect("the TUI's request")).expect("JSON");
+        let tm_plan: serde_json::Value = serde_json::from_str(&plan_text).expect("JSON");
+        let mut differ = Vec::new();
+        json_diff(&tui, &tm_plan, "", &mut differ);
+        differ.retain(|k| k != "log.ckpt.resealDay");
+        assert!(differ.is_empty(), "the TUI asks what `tm plan` asks at 12:21: {differ:?}");
+
+        assert!(advance_clock(&mut app, &mut read, at("2026-09-07T12:41:00-05:00")).expect("12:41"));
+        assert!(tree_bytes(&plan) == before, "nothing written at the call's end either");
+        let held = read.held.as_ref().expect("the call's marks are held");
+        assert_eq!(held.log.lines().filter(|l| l.contains("\"ev\":\"unpause\"")).count(), 1, "{}", held.log);
+        assert_eq!(app.state.active.as_ref().map(|a| a.paused), Some(false), "the call has ended");
     }
 
     /// **D96 is one catch-up from the files as read, at every date change and every reload** — never

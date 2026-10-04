@@ -2198,18 +2198,18 @@ theorem the_lift_applies_at_the_census_request :
     the_census_request_agrees.2
     the_census_request_is_inside_the_calendar (by decide) the_census_request_is_plain
 
-/-! ### A break the log holds across a block the log CLOSED before it logged the break — a world with one reading
+/-! ### A break the log holds across a block the log CLOSED before it logged the break — gap 4520's closed half
 
-`Goals.plan_places_no_block_over_a_break` quantified over **every** Block and Break row of the day, both the replay's
-(`Planner.a_break_row_is_a_replayed_row`, `PlanCheck.dayPlan_block_rows_are_replayed_reserved_or_assigned`).  The replay
-nets a break logged INSIDE `m1`'s running block since D87 (section 31), one before its `start` and lasting into it since
-D92 (section 32), and since the owner's D94 every break of a block's ledger days wherever its clock meets it (section 33:
-gap 4361's, which this section held from W-43 to W-44).  What it still draws a Block across is a break logged AFTER the
-block was **closed**: the census log with its break spliced in after `m1`'s 08:05 `done`, stamped 07:10 — a log a clock
-behind the log writes (driven, `scratchpad/w44-k/drive` S9).  **One reading**: `m1`'s minutes are the `done`'s
-`actual_min`, logged by the host before the break existed and credited by the replay; no host reading of a closed block
-nets a break logged after it.  So the goal is refuted on it (`plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted`,
-below; README gap 4362).  The six original lines are still `witLines`, renumbered by one rather than respelled. -/
+`Goals.plan_places_no_block_over_a_break` quantifies over **every** Block and Break row of the day, both the replay's.
+The replay nets a break logged INSIDE `m1`'s running block since D87 (section 31), one before its `start` and lasting
+into it since D92 (section 32), and since D94 every break of a block's ledger days wherever its clock meets it (33).
+What it still draws a Block across is a break logged AFTER the block was **closed**: the census log with its break
+spliced in after `m1`'s 08:05 `done`, stamped 07:10.  W-44 track K refuted the goal here as a world with one reading
+(the block's MINUTES are the `done`'s `actual_min`); the W-44 repair withdrew that refutation (README gaps 4611,
+4520): the break's SPAN is read twice — the heat grid puts sixty Block minutes and twenty Break minutes in one hour,
+the reading the owner's D87 declined by name — so it stands on a kernel reading D94 reaches and the kernel does not
+yet make.  The goal is back in `Goals.lean`; this day stays as the record of the hole, by value.  The six original
+lines are still `witLines`, renumbered by one rather than respelled. -/
 
 def midBreakLine : Log.Line :=
   ⟨5, some ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','9','T','0','7',':','1','0',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','b','r','e','a','k','"',',','"','p','l','a','n','n','e','d','_','m','i','n','"',':','1','5','}']⟩
@@ -2232,7 +2232,7 @@ def theMidBreakRequest : PlanReq := { theCensusRequest with run := midBreakRun }
 
 set_option maxRecDepth 400000 in
 /-- **The day lays a Block across a Break**, computed: `m1`'s replayed block runs 07:05-08:05 and the break the log
-records runs 07:10-07:25, inside it — logged after `m1`'s `done` had closed the block, so no clock read it.  Both
+records runs 07:10-07:25, inside it — logged after `m1`'s `done` had closed the block (gap 4520's closed half).  Both
 halves are here — the overlapping pair, **and** `PlanCheck.noBlockOverABreak`'s own verdict on the day, which is the
 battery's opinion and not a restatement of a `Planner` theorem. -/
 theorem the_mid_break_day_lays_a_block_across_a_break :
@@ -2258,30 +2258,30 @@ theorem the_mid_break_day_lays_a_block_across_a_break :
       PlanCheck.planOkCore theMidBreakRequest (dayPlan theMidBreakRequest) = false := by
   decide
 
-set_option maxRecDepth 400000 in
-/-- **`Goals.plan_places_no_block_over_a_break` is FALSE as stage 6 wrote it** (AGENTS §3.1 item 3, D5; the owner's
-D94, README gap 4362) — on a world where the kernel and the host read **one** number: `m1`'s block, closed by its
-`done` at 08:05, and a break logged after that `done` but stamped inside the block (the day above).  The goal left
-`Goals.lean` refuted at W-18, came back at W-43 when its refutation turned out to stand on a log the kernel and the
-host read two ways (gap 4241's, then gap 4361's), and leaves again now that D94 reads every such log one way
-(section 33): no reading of `m1` nets a break logged after `m1` was closed — the host's union reads the running block
-alone, and the `done` logged its minutes before the break existed.  `PlanCheck.plan_places_no_block_over_a_break`, the
-law over the Block rows that start at or after `now`, stays proved beside it. -/
-theorem plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted :
+/-! **plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted stood here from W-44 track K to the W-44
+repair, which DELETED it** (README gaps 4611 and 4520; the campaign's lesson 4; W-43's precedent at `cd14952`).  It
+read
+
     ¬ (∀ (r : PlanReq) (b k : WfSeg), b ∈ (dayPlan r).segments → k ∈ (dayPlan r).segments →
         b.val.kind = SegKind.block → k.val.kind = SegKind.brk →
-        b.val.stop ≤ k.val.start ∨ k.val.stop ≤ b.val.start) := by
-  intro h
-  have hbad : PlanCheck.noBlockOverABreak theMidBreakRequest (dayPlan theMidBreakRequest)
-      = false := the_mid_break_day_lays_a_block_across_a_break.2.1
-  have hok : PlanCheck.noBlockOverABreak theMidBreakRequest (dayPlan theMidBreakRequest)
-      = true :=
-    (PlanCheck.noBlockOverABreak_iff theMidBreakRequest _).mpr
-      (fun b hb k hk hbk hkk => h theMidBreakRequest b k hb hk hbk hkk)
-  rw [hok] at hbad
-  exact absurd hbad (by simp)
+        b.val.stop ≤ k.val.start ∨ k.val.stop ≤ b.val.start)
 
+and was computed at `theMidBreakRequest` above, through `the_mid_break_day_lays_a_block_across_a_break`'s verdict
+and `PlanCheck.noBlockOverABreak_iff`.  Track K called that world one reading: no host reading of a closed block nets
+a break logged after it, and the `done` logged the block's minutes before the break existed.  That is true of the
+block's MINUTES and false of its SPAN: driven at the repair on the shipped binary (S9: `start` 08:00, `done` 09:00,
+`--now 08:30 break 20m` and its end), `tm --json review week` puts `[60, 20]` in hour 8 — eighty minutes in sixty,
+the reading the owner's D87 declined by name ("the heat grid counted the break as break AND as block") — and the
+plan lays the Block across the Break.  It is gap 4520's mechanism, a mark logged after the replay closed the stretch
+it lies across, on a closed block; the owner's D94 says a block and a break are read one way on every log, and the
+kernel does not yet read this one so.  A refutation that stands on that reading is not a discharge, so it went, and
+the goal returned to `Goals.lean` (burn-down 0 → 1), as at W-43.  What the deleted theorem showed is still held by
+value: the day above lays the Block across the Break, and the battery says so.
 
+`PlanCheck.plan_places_no_block_over_a_break`, the law over the Block rows that start at or after `now`, stands, and
+the census request below applies it.  The debt, as `Goals.lean` states it: close gap 4520 (its open half is D94's,
+its closed half the owner's), then prove the goal over the runs the decoder builds or refute it on a world with ONE
+reading. -/
 
 /-- **The restated law is not vacuous at the census request**: choice 5b's reservation is a
 Block row starting at `now`, the morning's break is a Break row, and
@@ -5088,8 +5088,8 @@ set_option maxRecDepth 400000 in
 /-- **The other half of how far §6.1's lift goes, and it is not the eligibility's.**  The seven
 eligibility-free checks are `false` on the WHOLE day at three requests this module already
 builds — the morning wall that moved onto a worked hour, the block longer than a shortened
-`block_min`, and a break the log records across a block (logged after the block was closed: since the owner's D94 a
-world with one reading, section 14).  Each refuted a goal that quantified over the replayed past
+`block_min`, and a break the log records across a block (logged after the block was closed: gap 4520's closed half,
+section 14).  Each refuted, or (the third, until the W-44 repair) stood as refuting, a goal over the replayed past
 (`plan_places_no_block_over_a_wall_as_stage_6_wrote_it_is_refuted`,
 `plan_reserves_one_block_at_a_time_as_stage_6_wrote_it_is_refuted`,
 plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted); what is new here is

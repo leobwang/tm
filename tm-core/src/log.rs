@@ -1249,8 +1249,10 @@ pub enum IdleMark {
 /// gap 3134 — `day.rs` carried a second copy of these arms, and the W-36 run
 /// had to add the `Pause(t) if t < started` arm to both). **Since W-37 D61's
 /// wall pause is decided by the kernel** (README gap 3139), whose
-/// `WallTimer.idleSpans` is this function ported arm for arm — two definitions
-/// of one pairing again, across the wire, README gap 3243.
+/// `WallTimer.idleSpans` is this pairing's pauses and interruptions (it reads
+/// no break's span since the W-44 repair: a break is not the user's stop, README
+/// gap 4550) — two definitions of one pairing again, across the wire, README gap
+/// 3243.
 ///
 /// **A pause stamped before `started` was ANOTHER block's** (W-36 track T,
 /// README gap 2920). `tm done` and `tm stop` on a paused block log no
@@ -1277,6 +1279,19 @@ pub enum IdleMark {
 /// record read. A break's span does not touch the pause and interruption
 /// pairing (it opens and closes nothing), so reading it from the record moves
 /// no other span.
+///
+/// **Two stops, each with its own end** (the W-44 repair, README gap 4610,
+/// parity **P96**): a `pause` opens the block's pause and only an `unpause`
+/// closes it; an `interrupt` opens the interruption and only a `resume` closes
+/// it; the block is idle while either is open. That is the kernel's replay
+/// (`Replay.arm`: `pause`/`unpause` set and clear the block's `paused`,
+/// `interrupt`/`resume` the interruption, and a block resumed from an
+/// interruption it was paused across stays paused, `Replay.resumeBlock`) and
+/// the wall rule's (`WallTimer.spanStep`, the same repair). Fork `idle_spans`
+/// kept ONE open span that an `unpause` or a `resume` closed: `start` 09:00,
+/// `pause` 09:10, `interrupt` 09:20, `resume` 09:30, `stop` 10:00 — driven,
+/// `tm stop` said "after 40m" and `tm now` drew the block running while `tm
+/// review day` credited 10 and `tm plan` drew 09:30-10:00 as the pause.
 pub fn idle_spans(
     marks: &[IdleMark],
     breaks: &[&BreakRecord],
@@ -1284,17 +1299,24 @@ pub fn idle_spans(
     running_break: Option<DateTime<FixedOffset>>,
 ) -> Vec<(DateTime<FixedOffset>, Option<DateTime<FixedOffset>>)> {
     let mut out = Vec::new();
-    let mut open: Option<DateTime<FixedOffset>> = None;
+    let mut paused: Option<DateTime<FixedOffset>> = None;
+    let mut interrupted: Option<DateTime<FixedOffset>> = None;
     for mark in marks {
         match *mark {
             IdleMark::Pause(t) if t < started => {}
-            IdleMark::Pause(t) | IdleMark::Interrupt(t) => {
-                if open.is_none() {
-                    open = Some(t);
+            IdleMark::Pause(t) => {
+                paused.get_or_insert(t);
+            }
+            IdleMark::Interrupt(t) => {
+                interrupted.get_or_insert(t);
+            }
+            IdleMark::Unpause(t) => {
+                if let Some(a) = paused.take() {
+                    out.push((a, Some(t)));
                 }
             }
-            IdleMark::Unpause(t) | IdleMark::Resume(t) => {
-                if let Some(a) = open.take() {
+            IdleMark::Resume(t) => {
+                if let Some(a) = interrupted.take() {
                     out.push((a, Some(t)));
                 }
             }
@@ -1306,7 +1328,7 @@ pub fn idle_spans(
         let (from, until) = b.span();
         out.push((from, Some(until)));
     }
-    if let Some(a) = open {
+    for a in [paused, interrupted].into_iter().flatten() {
         out.push((a, None));
     }
     if let Some(s) = running_break {

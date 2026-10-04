@@ -534,9 +534,14 @@ the last call's answer with the records returned reads the replay by law 1.  The
 /-! ############################################################################
 # STAGE 6 — the planner; §8.3's invariants; L24 and L25
 
-**W-44 track K (2026-10-03): THIS SECTION HOLDS NO GOAL, and check 7 reads 0** — the owner's D94 netted the log the
-last goal's refutation could not stand on, and `plan_places_no_block_over_a_break` left refuted on a world with one
-reading (the note where it stood, below `open Planner`; README gap 4362).  The paragraph below is W-43's record.
+**W-44 repair (2026-10-04): THIS SECTION HOLDS ONE GOAL AGAIN, and check 7 reads 1** —
+`plan_places_no_block_over_a_break`, whose refutation W-44 track K stood on a break logged after `m1`'s `done` and
+called a world with one reading; the break's SPAN is read two ways there (the heat grid's hour holds the block's sixty
+minutes and the break's twenty), which is README gap 4520's closed half, and a refutation that stands on a kernel
+reading the owner's D94 reaches and the kernel does not yet honour is not a discharge (README gap 4611).
+**W-44 track K (2026-10-03): THIS SECTION HELD NO GOAL, and check 7 read 0** — the owner's D94 netted the log the
+last goal's refutation could not stand on, and `plan_places_no_block_over_a_break` left refuted on a world track K
+read as one reading (README gap 4362).  The paragraph below is W-43's record.
 **W-43 track K (2026-10-03): THIS SECTION HOLDS ONE GOAL AGAIN, and check 7 reads 1** —
 `plan_places_no_block_over_a_break`, whose refutation stood on a break the log holds running INTO a block's start
 and fell when the owner's D92 had the kernel net it as the host does (README gaps 4241 and 4362; the goal and why it
@@ -662,7 +667,7 @@ row **inside** a Block row — neither of them the planner's doing, which is
 `PlanCheck`'s finding 1 (README gap 385) for the third time after E1 and the wall
 law.  So the goal is **false as it was written here** and it left the way those
 two left: PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted
-(deleted at W-43 track K, its goal back below) computed on a day whose log breaks at 07:30 inside `m1`'s 07:05–08:05
+(deleted at W-43 track K and at the W-44 repair, its goal back below) computed on a day whose log breaks at 07:30 inside `m1`'s 07:05–08:05
 block, with the restatement `PlanCheck.plan_places_no_block_over_a_break` beside
 it (AGENTS §3.1 item 3, D5).  The restriction is E1's own — Block rows that start
 **at or after `now`**, the fork's `assigned_set(day, w.now)` — and it is **not
@@ -1228,29 +1233,29 @@ Gap 1529 stays where W-28 left it — R3 enables it, not P9 — and `PlanCheck.h
 
 open Planner
 
-/-! **plan_places_no_block_over_a_break has LEFT this file AGAIN** (stage 6, run **W-44**, track K; the owner's D94,
-README gaps 4361, 4506 and 4362).  It read
+/-- **E5 (P\*), stage 6 — BACK in this file since the W-44 repair (README gaps 4520 and 4611).**  The statement for
+breaks: "free positions included breaks" is the shipped defect, and §8.2 step 3 puts "a break of `break_min` after
+every `break_after_blocks` blocks" into the slot list, so a planner that treats free time as free will place work on
+top of one.
 
-    theorem plan_places_no_block_over_a_break (r : PlanReq) (b k : WfSeg)
-        (hb : b ∈ (dayPlan r).segments) (hk : k ∈ (dayPlan r).segments)
-        (hbk : b.val.kind = SegKind.block) (hkk : k.val.kind = SegKind.brk) :
-        b.val.stop ≤ k.val.start ∨ k.val.stop ≤ b.val.start
+**Its history.**  It left at W-18 refuted on a break logged inside `m1`'s running block (D87 netted that one), at W-42
+on one logged before `m1`'s `start` and lasting into it (D92, gap 4241), and at W-44 track K on one logged AFTER `m1`'s
+`done` but stamped inside it (`PlannerWit.theMidBreakRequest`), which track K called a world with one reading because
+the block's MINUTES are the `done`'s `actual_min`.  Its SPAN is read two ways there: the heat grid's hour holds the
+Block's sixty minutes and the Break's twenty (driven at the W-44 repair, `[60, 20]`), the reading the owner's D87
+declined by name, and the day draws one across the other (`PlannerWit.the_mid_break_day_lays_a_block_across_a_break`).
+That is gap 4520's mechanism — a mark logged after the replay closed the stretch it lies across — which D94 ("a block
+and a break are read one way on every log") reaches and the kernel does not yet net.  A refutation standing on it is
+not a discharge (the campaign's lesson 4), so the refutation was withdrawn and the goal returned, as W-43 did.
 
-— E5, the statement for breaks: "free positions included breaks" is the shipped defect.
-
-**It is FALSE, and it left by refute-and-rename on a world with ONE reading** (AGENTS §3.1 item 3, D5; the campaign's
-lesson 4).  It left at W-18 refuted on a day whose log held a break inside `m1`'s running block; D87 netted that one,
-D92 the next (a break logged before `m1`'s `start` and lasting into it), and W-43 found the refutation's last log —
-a break logged ahead of the `start` but begun after it — read two ways by the kernel and the host (gap 4361), so the
-goal came back.  The owner's D94 has the replay net every break on a block's ledger days wherever its clock meets it
-(`Replay.restartAt`, `Replay.closeSub`, `Replay.openOf`; parity P92), and that day keeps its Block off its Break now
-(`PlannerWit.the_ahead_break_day_keeps_its_block_off_the_break`).  The refutation is
-`PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted`, computed at
-`PlannerWit.theMidBreakRequest`: `m1`'s block, closed by its `done` at 08:05, and a `break` logged AFTER that `done`
-but stamped 07:10, inside it — a log a clock behind the log writes, on which no reading nets the break: the `done`'s
-`actual_min` was the host's union before the break existed, the replay credits it, and the host's union reads the
-running block alone.  The restatement `PlanCheck.plan_places_no_block_over_a_break` (the Block rows from `now`) stays
-proved beside it. -/
+**The debt.**  Close gap 4520 — net a late mark into the stretches the replay already closed, open block and closed —
+and then prove the law over the runs the decoder builds or refute it on a world with one reading.
+`PlanCheck.plan_places_no_block_over_a_break`, the law over the Block rows that start at or after `now`, stays proved
+beside it. -/
+theorem plan_places_no_block_over_a_break (r : PlanReq) (b k : WfSeg)
+    (hb : b ∈ (dayPlan r).segments) (hk : k ∈ (dayPlan r).segments)
+    (hbk : b.val.kind = SegKind.block) (hkk : k.val.kind = SegKind.brk) :
+    b.val.stop ≤ k.val.start ∨ k.val.stop ≤ b.val.start := sorry
 
 /-! **plan_does_not_overbook has LEFT this file** (stage 6, run **W-31**, track G).  It read
 

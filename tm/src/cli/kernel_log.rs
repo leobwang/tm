@@ -117,15 +117,9 @@ pub fn kernel_id() -> &'static str {
     tm_kernel_ffi::KERNEL_ID
 }
 
-/// FNV-1a-64 (§9.8's prefix digest, and since the owner's D93 each sealed month file's — [`month_digest`]).
-pub fn fnv1a64(bytes: &[u8]) -> u64 {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for &b in bytes {
-        h ^= u64::from(b);
-        h = h.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    h
-}
+/// FNV-1a-64 (§9.8's prefix digest, and since the owner's D93 each sealed month file's — [`month_digest`]): the
+/// binary's one body, `tm_core::fnv` (the W-44 repair, README gap 4612).
+pub use tm_core::fnv::fnv1a64;
 
 // ---------------------------------------------------------------------------
 // The byte split.

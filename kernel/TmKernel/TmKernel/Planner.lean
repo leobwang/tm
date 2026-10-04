@@ -8085,8 +8085,8 @@ fold and left the breaks it made keepable undrawn, and W-37 draws them.
 the break side of it is still vacuous over what the planner places"*, and both halves are now
 false** (W-18 repair; the README copy of the same sentence was corrected by track G and this
 one was not).  (a) The goal **left `Goals.lean` at `fc26630`** as a §3.1-item-3 discharge —
-`PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted` is the refutation (deleted at W-43, back
-at W-44 on a world with one reading, README gap 4362); `PlanCheck.plan_places_no_block_over_a_break` stands.
+PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted was the refutation (deleted at W-43, back
+at W-44, withdrawn at the W-44 repair, README gap 4611); `PlanCheck.plan_places_no_block_over_a_break` stands.
 (b) It was never vacuous *in that way*: the goal's Break rows are the **log's**, not the cut's,
 so a_break_row_is_a_replayed_row was precisely what made the comparison have a subject — a
 log that records a `break` while a block runs gives the day a Break row inside a Block row, and

@@ -129,3 +129,24 @@ fn a_break_logged_the_evening_before_is_netted_after_midnight() {
         assert_eq!(stop["worked_min"].as_u64(), Some(50), "hand-edited: {hand_edited}: {stop}");
     }
 }
+
+/// **`tm start`'s `since_break_min` measures from the break's END as every other reader reads it** —
+/// its `actual_min`, else its planned minutes (the W-44 repair, README gap 4550, parity P97). The
+/// kernel's seam anchored a break logged without `actual_min` at its START (fork 4748911's `t +
+/// actual_min.unwrap_or(0)`), so with a hand-edited break at 08:30 planned 20, `tm start` at 09:00
+/// logged `since_break_min: 30` while the replay, `tm stop` and `tm review day` all ended that break
+/// at 08:50. Now 10, the same as its logged twin.
+#[test]
+fn a_planned_only_break_anchors_since_break_at_its_end() {
+    let mut seen = Vec::new();
+    for line in [
+        r#"{"t":"2026-09-07T08:30:00-05:00","ev":"break","planned_min":20}"#,
+        r#"{"t":"2026-09-07T08:30:00-05:00","ev":"break","planned_min":20,"actual_min":20}"#,
+    ] {
+        let tm = woken();
+        hand_append(&tm, line);
+        tm.ok_at(&at("09:00"), &["start", "^m1", "--energy", "3"]);
+        seen.push(tm.last_ev("start")["since_break_min"].clone());
+    }
+    assert_eq!(seen, vec![serde_json::json!(10), serde_json::json!(10)], "both spellings end the break at 08:50");
+}

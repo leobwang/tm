@@ -11,7 +11,8 @@
 //! workspace (`srcwalk::every_rust_file`, the walk with a prune rule, not a list of roots).  A file
 //! of it that spells FNV-1a-64's offset basis — in hex, with or without `_` separators, in either
 //! case, or in decimal — holds an FNV body, and the one file that may is `tm/tests/support/fnv.rs`.
-//! The binary's own `kernel_log::fnv1a64`, `tm-core`'s two and `tm-kernel-ffi/build.rs`'s are the
+//! The binary's own body (`tm-core/src/fnv.rs`, one since the W-44 repair — README gap 4612 — and held
+//! to one by [`the_binary_computes_fnv_1a_64_in_one_place`]) and `tm-kernel-ffi/build.rs`'s are the
 //! code under test or the build's, outside every `tests` directory, and stay apart on purpose: a
 //! test's reading of the rule is independent of the code under test.
 //!
@@ -53,6 +54,29 @@ fn the_harness_computes_fnv_1a_64_in_one_place() {
         bodies,
         vec!["tm/tests/support/fnv.rs".to_string()],
         "the test harness carries an FNV-1a-64 body outside support/fnv.rs — include that file by #[path] instead"
+    );
+}
+
+/// **The binary computes FNV-1a-64 in ONE place too** (the W-44 repair, README gap 4612) — the same
+/// property over every `.rs` file of the workspace OUTSIDE the harness: the one file that may spell the
+/// basis is `tm-core/src/fnv.rs`, which `kernel_log`'s prefix and cache digests, `tz_table`'s,
+/// `dayplan`'s `DayPlan::hash` and `ics`'s stable ids all read; and one other, by its stated reason,
+/// `kernel/tm-kernel-ffi/build.rs` — a build script of a crate outside this workspace, hashing the kernel
+/// archive at build time, which links nothing of `tm-core` and may take no new dependency (R7). Until the
+/// repair the binary carried four bodies and only the harness's copies were held to one (a LIST where the
+/// rule is a CLASS). The 32-bit FNV-1a of `emit::hue_index` is another hash and another basis.
+#[test]
+fn the_binary_computes_fnv_1a_64_in_one_place() {
+    let bodies: Vec<String> = srcwalk::every_rust_file()
+        .into_iter()
+        .filter(|(rel, _)| !in_the_harness(rel))
+        .filter(|(_, text)| spells_the_basis(text))
+        .map(|(rel, _)| rel)
+        .collect();
+    assert_eq!(
+        bodies,
+        vec!["kernel/tm-kernel-ffi/build.rs".to_string(), "tm-core/src/fnv.rs".to_string()],
+        "the shipped sources carry an FNV-1a-64 body outside tm-core/src/fnv.rs — call tm_core::fnv instead"
     );
 }
 

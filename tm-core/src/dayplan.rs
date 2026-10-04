@@ -35,10 +35,6 @@ use serde::Serialize;
 use crate::model::{Dep, Id, InstanceKey};
 use crate::priority::Prio;
 
-/// The offset basis of the 64-bit FNV-1a hash behind [`DayPlan::hash`].
-const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-/// The prime of the 64-bit FNV-1a hash.
-const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 
 // ---------------------------------------------------------------------------
 // Output types
@@ -369,12 +365,8 @@ impl DayPlan {
         let placement: Vec<Placement<'_>> = self.segments.iter().map(Placement::of).collect();
         let body =
             serde_json::to_string(&placement).unwrap_or_else(|_| format!("{placement:?}"));
-        let mut h = FNV_OFFSET;
-        for byte in body.as_bytes() {
-            h ^= u64::from(*byte);
-            h = h.wrapping_mul(FNV_PRIME);
-        }
-        format!("{h:016x}")
+        // FNV-1a-64 through the binary's one body (README gap 4612).
+        crate::fnv::fnv1a64_hex(body.as_bytes())
     }
 
     /// Σ minutes of every `Block` and `Batch` segment, the replayed morning

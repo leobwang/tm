@@ -546,9 +546,10 @@ can_fail
 # W-35 track K (owner D57, README gap 2740): the running break is a Break row no log replays, so
 # `Planner.a_break_row_is_replayed_or_the_running_break` REPLACES the old law, which
 # `PlannerWit.a_break_row_is_a_replayed_row_is_refuted` refutes.  The two live spellings are a
-# README "consumed by name" list (W-17) and `Goals.lean`'s stage-6 prose, both append-only history.
+# README "consumed by name" list (W-17) and `Goals.lean`'s stage-6 prose, both append-only history.  (9 -> 8 at
+# the W-44 repair: PlannerWit section 14's header, rewritten line-neutral, no longer cites it.)
 3 a_break_row_is_a_replayed_row
-9 Planner.a_break_row_is_a_replayed_row
+8 Planner.a_break_row_is_a_replayed_row
 # W-37 track R (README gap 551 closed): the cut's kept breaks are Break rows of the day that are
 # neither replayed nor the running break, so the W-35 law named on the next line is REFUTED by
 # `PlannerWit.a_break_row_is_replayed_or_the_running_break_is_refuted` and restated as
@@ -1357,3 +1358,11 @@ with_minute
 # into `tests/kernel_log_door.rs` with `kernel_log::replay_unsealed` below the door banner.  Track H's append-only
 # README block, its land block and the door file's doc comment cite it four times in all, each as history.
 4 kernel_log_unsealed
+
+# W-44 REPAIR (README gaps 4611 and 4520).  PlannerWit section 14's refutation of plan_places_no_block_over_a_break,
+# back at W-44 track K on a break logged after m1's done, is DELETED again: that world reads the break's span two ways
+# (gap 4520's closed half), and the goal is back in Goals.lean.  Every citation counted here names it as it stood, in
+# the append-only README blocks of W-18 and the W-18 merge (the bare name, once) and of the W-18 merge, W-44 track K and
+# the W-44 land (the qualified name, three times); the repair's own prose, PlannerWit's note where it stood and the Lean notes name it without backticks.
+1 plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted
+3 PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted

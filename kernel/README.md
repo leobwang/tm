@@ -88357,3 +88357,395 @@ number on them.
   `planner_invariants` ×5, the arm ×3; the oracle built and its fifteen arms (02:08-02:23); the R3 simulation
   (02:23-02:33); latency ×2 (02:34-02:35).
 * Then this block, `check.sh` on the final tree, and the octopus commit.
+
+<!-- =====================================================================
+     APPENDED 2026-10-04: stage 6 (the planner), run **W-44**, **REPAIR**
+     — the two independent auditors' findings on the W-44 land (`c1405f2`),
+     most severe first.  Built in the worktree `.claude/worktrees/repair-w44`
+     (branch `repair-w44`, off `c1405f2`); plants, drives and `check.sh` in
+     `scratchpad/repair-w44/`, never the shared tree; the main checkout on
+     `rebuild-on-lean` throughout.  Gaps 4610-4639; parity P96-P99 taken
+     (the next free numbers at `c1405f2`, which ran P1-P95).
+     ===================================================================== -->
+
+## Stage 6 — W-44 repair: the break law's goal back where it is owed, a resume that keeps the user's pause, a wall that a break does not hide, every cached file digested — and what R3 is
+
+### 0. The findings, reproduced before they were acted on
+
+Every finding was driven first on the verifier's build of `c1405f2` (`scratchpad/verify-w44/drive/my-tm`, copied as
+`scratchpad/repair-w44/drive/base-tm`) or read off the source at `c1405f2`.  **All reproduced**; none is left as
+"did not reproduce".  The status note at the end is kept current while the step runs.
+
+| finding (most severe first) | reproduced on `base-tm` | what this step did |
+|---|---|---|
+| the refutation of `plan_places_no_block_over_a_break` stands on a world that reads the break's span twice (critic: blocker; auditor: major) | S9: `tm review week`'s hour 8 `[60, 20]` | **the goal is back in `Goals.lean`** (§1, gap 4611) |
+| D94 applied to a list: a mark logged after the replay closed the stretch it lies across (gap 4520) | S7 90 / 110, X1 60 / 70, S9's span | **not fixed — measured, its shape written down, split into the half D94 owes and the half that is the owner's** (§8) |
+| a planned-only break read three ways in the kernel (gap 4550; the WallTimer half driven) | `g4550-base.out`: 55 beside 95 | **one reading** (§3, P97, P98); and a forward-log defect the drive exposed: a break ended inside a meeting restarted the clock there (95 for 55, no hand edit) |
+| `pause`, `interrupt`, `resume` read two ways on a log the binary writes (gap 3042's aside) | `pir-base.out`: `tm stop` 40, review 10 | **one reading: the host follows the replay** (§2, gap 4610, P96) |
+| `tz.json` served as written, no digest (critic) | the critic's planted tree: `nowDisagrees`, then 20 minutes on 09-07 | **digested, a mismatch re-probed** (§4, gap 4613) |
+| D96 held only at a date change or a reload (gap 4553) | driven through a pty (`drive/tui-wall-base.out`): `elapsed 0m`, no `paused`, while `tm now` paused | **held at the minute a wall begins or ends** (§6) |
+| overlapping breaks counted twice in the heat grid | S3: hour 9 `[30, 40]` | **a style's minutes are its union** (§5, gap 4614, P99) |
+| the per-piece floor against the host's floor of elapsed minus union (critic) | the critic's seconds drive, re-driven (`drive/seconds.out`): `tm stop` 40, review 39, on both binaries | **not fixed — Q6(c)'s "fix later", recorded with its shape** (§8, gap 4617) |
+| three definitions of a break's span; `WallTimer.idleSpans` a pre-D95 port | read off the source | two of three made one (§3); the wall's day range left, named (gap 4616) |
+| D96's close had two bodies (critic) | read off `closing.rs` | **one body: `run` under the hold** (§6, gap 4615) |
+| the D96 pty drive excluded the cache (critic) | read off `d96-tui.sh:21` | re-driven with the cache **included** (§6) |
+| the binary keeps four FNV-1a-64 bodies (critic) | `grep` | **one** (`tm_core::fnv`), and a guard over the shipped sources (§7, gap 4612) |
+| the R3 record contradicts itself (auditor) | 29 measured by the land, the 12 test files and `prompts.rs` by `grep` | the record corrected below (§8, gap 4618) |
+| the open row does not match its note (gap 4525), section 26's run (gap 4523) | X7: row 10:15-10:30, note 25m | **not fixed** — standing gaps, re-measured (§8) |
+
+### 1. The blocker: `plan_places_no_block_over_a_break` is back in `Goals.lean` (gap 4611; burn-down 0 → 1)
+
+Track K refuted the goal at `PlannerWit.theMidBreakRequest` — a break logged after `m1`'s `done` but stamped inside it
+— and called that world one reading because the block's MINUTES are one number (the `done`'s `actual_min`).  Its
+SPAN is two: driven on `base-tm` (the shapes script's S9: `start` 08:00, `done` 09:00, then `--now 08:30 break 20m`
+and its end), `tm --json review week`'s heat hour 8 is `[60, 20]` — eighty minutes in a sixty-minute hour, the
+reading the owner's D87 declined by name ("the heat grid counted the break as break AND as block") — and the plan lays
+the Block 08:00-09:00 across the Break 08:30-08:50.  It is gap 4520's mechanism (a mark logged after the replay closed
+the stretch it lies across), on a closed block.  **A refutation standing on a reading the kernel does not yet make one
+is not a discharge** (the campaign's lesson 4; W-43's precedent at `cd14952`): the refutation is DELETED with its audit
+line, and the goal is back in `Goals.lean` with its history and its debt (close gap 4520, then prove over the runs the
+decoder builds or refute on a world with one reading).  `PlannerWit.the_mid_break_day_lays_a_block_across_a_break`
+stays, as the record of the hole by value; `PlanCheck.plan_places_no_block_over_a_break` stays proved.  The notes in
+`PlannerWit` (section 14 and the core-seven doc), `PlanCheck.lean` and `Planner.lean` that cited the refutation now
+name it unbackticked as dead (`citations-allow.txt`'s convention), each edit line-neutral.
+
+### 2. A resume ends the interruption, not the user's pause — the host follows the replay (gap 4610, P96)
+
+**Reproduced** (`drive/pir-base.out`, the verifier's `pir.sh` on `base-tm`): `start` 09:00, `pause` 09:10, `interrupt`
+09:20, `resume` 09:30 ("resumed · lost 10m") — `tm now` at 09:45 drew `▶ … 25m of 360m` running, `tm stop` at 10:00
+said "after 40m", while `tm review day` credited 10 and `tm plan` drew 09:30-10:00 as the pause; shape B (a break
+taken while paused) the same.  Pre-existing (`head-tm` identical), recorded only inside gap 3042's text.
+
+**The two readings.**  The kernel's replay is fork 4748911's own machine: `pause`/`unpause` set and clear the block's
+`paused`, `interrupt`/`resume` the interruption, and a block resumed from an interruption it was paused across stays
+paused (`Replay.resumeBlock`).  The host kept ONE open idle span that an `unpause` or a `resume` closed
+(`tm_core::log::idle_spans`) and one flag that a `resume` cleared (`ctx::logged_pause`, W-38's gap 3521), and `tm
+resume` wrote `active.paused = false`.  **The campaign's call, revisable by the owner: the host follows the log's
+replay** — D42 and D69's rule (the cache follows the log, never the reverse), D71's (the interruption's end is not the
+user's unpause), and the cheaper and better-founded direction: no kernel law moves, and the reading is the fork's own
+replay's.  So: `idle_spans` pairs TWO stops, each closed only by its own end; `ctx::logged_stops` folds the two flags
+(`logged_pause` is either); `tm resume` leaves a block the user paused paused and says so — `resumed · lost 10m · ^m1
+still paused — \`tm pause\` resumes it`, `--json` `still_paused` — and `tm pause` resumes it.  `WallTimer.spanStep`
+pairs the same two stops (§3), so the wall rule does not read a paused block as running after a resume.
+
+**Parity P96 taken**: `tm resume` ends the interruption and NOT a pause the user took before it — the block stays paused (`tm now` draws it paused, its worked minutes stop at the pause), `tm resume` says `^id still paused` (`--json` `still_paused`), and `tm pause` resumes it — as the kernel's replay reads the log (`Replay.resumeBlock`), the host's pairing of idle marks (`tm_core::log::idle_spans`: a pause closed only by an unpause, an interruption only by a resume) and the cache's derivation (`ctx::logged_stops`); fork 4748911's `tm resume` un-paused the block whatever held it, so `tm now` and `tm stop` counted the time after the resume while `tm review day` and `tm plan` read the pause (the W-44 repair, README gap 4610; the campaign's call, revisable by the owner)
+
+Behaviour row (driven, `drive/pir-repair.out`): shape A — `tm now` 09:45 `10m of 360m · paused`, `tm stop` 10:00
+"after 10m", review 10, the plan's 09:30-10:00 `pause` (was 25 / 40 / 10); shape B the same; shape C (the pause lifted
+before the interruption) unchanged at 45 everywhere.  Pinned by `tm/tests/cli_resume_keeps_a_pause.rs` (4 tests:
+the shape with the cache deleted and rebuilt, the `--json` field, `tm pause` resuming it, the control).
+
+### 3. A planned-only break read one way in the kernel, and a break the wall does not hide (gap 4550 closed; P97, P98)
+
+**The seam** (`Replay.SeamOp.apply`): a `break`'s since-break anchor is now `Replay.brkEnd` — its `actual_min`, else its
+planned minutes — the one definition of a break's span (`SeamKind.brk` carries the planned minutes beside the
+`actual_min`; `brkEnd` moved above the seam, its body unchanged).  `tm/tests/cli_planned_break.rs`'s
+`a_planned_only_break_anchors_since_break_at_its_end`: a hand-edited break at 08:30 planned 20, `tm start` 09:00 logs
+`since_break_min: 10` for both spellings (was 30 for the planned-only one).
+
+**Parity P97 taken**: a `break` line's since-break anchor on its day's seam is its END as `Replay.brkEnd` reads it — its `actual_min`, else its planned minutes — so `tm start`'s `since_break_min` measures from where the replay's segment, its clock and (D95) the host's worked minutes end the break; fork 4748911's seam anchored at `t + actual_min.unwrap_or(0)`, the START of a break logged without `actual_min` (the W-44 repair, README gap 4550; D95's one reading carried to the seam)
+
+**The wall rule** (`WallTimer.spanStep`, D61): a logged `break` opens and closes nothing in the wall's question "did the
+USER stop the timer at the wall's start" — the running break still defers the rule until it is logged.  Two
+defects are one change: (a) the planned-only spelling read as no span and the logged spelling as a span, so one break
+wrote different lines (driven, `g4550-base.out`: `tm stop` 55 beside 95); (b) **a forward log the binary writes** —
+`start` 12:00, `break 30m` at 12:40, `break` at 13:10, across the example's 12:50-13:50 meeting — logged no pause, and
+the clock restarted at 13:10 INSIDE the meeting: `tm stop` at 14:05 "after 95m", the meeting's last forty minutes
+counted as work, D61's own motivating defect (`drive/wallbrk.sh`, `wallbrk-base.out`; no hand edit, no clock behind
+the log).  Now (`wallbrk-repair.out`, `g4550-repair.out`): the pause at 12:50 and the unpause at 13:50 are written once
+the break is logged, both spellings, `tm stop` and `tm review day` 55.  The kernel's replay reads the pause stamped
+inside the ended break as closing nothing (its clock restarted past the break, `Replay.restartAt`), and the host's
+union merges the two spans — one number.  `WallTimer.idleSpans` is now what its doc says, the user's stops and the
+running break, and no longer a pre-D95 port of the host's span reader.  Witnesses:
+`WallTimer.a_break_across_the_walls_start_does_not_stand_for_the_users_stop` (both spellings one answer; a running
+break still waits), `WallTimer.a_resume_ends_the_interruption_and_not_the_users_pause` (§2's two stops),
+`the_rule_is_run`'s seventh case re-decided; CLI: `cli_wall_kernel.rs`'s
+`a_break_ended_inside_the_meeting_leaves_the_meeting_paused` and `a_planned_only_break_and_its_logged_twin_write_the_same_marks`.
+
+**Parity P98 taken**: D61's wall rule reads a logged `break` as no stop of the user's — a break that covered the wall's start and ended inside the meeting no longer leaves the meeting unpaused: once the break is logged, the wall's `pause` at its start and `unpause` at its end are written, so the clock does not restart inside the meeting at the break's end (`tm stop` 55 where it said 95), one answer whether the break was logged with `actual_min` or without it; and its pairing is the replay's two stops (a pause closed only by an unpause, an interruption only by a resume); fork 4748911 logs nothing at a wall (P53), and W-37's port of the rule read a logged break covering the wall's start as the timer stopped for the whole meeting (the W-44 repair, README gaps 4550 and 4610)
+
+**Gap 4550 — CLOSED.**  Both kernel readers it named read `brkEnd` or no span by design: the seam's anchor is
+`brkEnd`'s, and the wall rule asks no break's span.  The third reading the critic counted (`WallTimer.idleSpans` as a
+second "clock stopped at t") is now the user's-stop pairing, a different question; what is left of it is its day
+range (gap 4616).
+
+### 4. Every cached file is digested: `tz.json` (gap 4613)
+
+**Reproduced** on the critic's two trees (`drive/tzA`, `drive/tzB`: one offset of the cached table moved, its key
+kept): `review day` at 09-06 23:58 refused `nowDisagrees`, and at 09-07 00:10 credited the evening's 20 minutes to
+09-07.  `tm/src/cli/tz_table.rs` now writes `tz.json` as D98 writes the checkpoint — `{"digest":"<FNV-1a-64>",` over
+the rest of its own text (`cache_text`), read back by `from_cache_text` — and a table whose digest does not match, or a
+file written before the digest, is probed afresh and overwritten, never served.  That completes the class D93 and D98
+began: `.tm/cache/replay/` holds `ckpt.json` (digested, D98), the sealed month files (digested, D93) and `tz.json`
+(digested here), and nothing else.  Pinned: `kernel_tz_table.rs` (the cache test rewritten over the digested text,
+and `every_one_byte_edit_of_the_zone_table_is_refused` — every digit of a written Chicago table, each edited alone,
+is refused) and `cli_tz_cache_digest.rs` (the critic's plant through the binary, with the bite shown first: the same
+edit re-digested — a table a binary could have written — is served, so the digest is what refuses it).  No parity
+number: no output moves on a cache the binary wrote.  **Gap 4554** stands (a hold that finds the table absent, or now
+mismatched, writes it).
+
+### 5. The heat grid counts a style's minutes once (gap 4614, P99)
+
+`tm_core::review::heat_of` unions each style's pieces before it fills the hours — only an OVERLAP merges, as the
+host's `idle_min_since` merges — so two breaks logged over one another are thirty break minutes, not forty (S3:
+`[30, 40]` → `[30, 30]`).  Cross-style overlap (a Block drawn across a Break, gap 4520's S7/S9) is the drawing's
+defect, not the grid's, and is unchanged (S9 still `[60, 20]`).  `cli_week_grid.rs`'s
+`overlapping_breaks_are_one_span_in_the_week_grid`.
+
+**Parity P99 taken**: `tm review week`'s heat grid (and the TUI's Review screen) counts each style's minutes as the union of its pieces — two segments of one style that overlap (two breaks logged over one another) are one span, merged as the host's worked minutes merge idle spans (only an overlap merges) — so no style puts more minutes in an hour than the hour holds; fork 4748911's `heat_of` summed every segment, so a break of 09:00-09:30 and one of 09:10-09:20 were forty break minutes in the hour (the W-44 repair, README gap 4614)
+
+### 5b. The frozen comparands these changes move — named, each under its clause
+
+* **`tm/tests/fixtures/fork-4748911-week-grid.jsonl`, three lines RE-DRAWN under the owner's D64(b)** — `week draw
+  15`, `week draw 25` and `midnight draw 7` (W-40 track H's seeds, gap 3718).  The first workspace run failed
+  `every_frozen_week_is_the_world_its_steps_build` on exactly these: their steps now build another `.tm/log.jsonl`,
+  because P96's `tm resume` leaves a pause standing that the fork's resume cleared, so a later `tm pause` toggles the
+  other way and the `done` logs other minutes (driven, `drive/gridworld.py` over `base-tm` and `repair-tm`: 50 → 7,
+  26 → 25, and `pause` → `unpause` with 44 → 66).  The old lines describe worlds the shipped binary can no longer
+  build from their steps, which is D64(b); the bless (`TM_GRID_BLESS=1`, `TM_GRID_BLESS_REDRAW` naming P96 and gap
+  4610, over a freshly built oracle; `bless.log`, then `bless2.log` with the reason dated and recorded on the line as
+  `d64b`, §11) changed exactly these three lines' `world` and `fork` (and `midnight draw 7`'s `p63`), refused nothing
+  and added nothing; the gate (`forkgrid::rebless_allows`) held every other line to the committed history unchanged.  Then the frozen arm read 46 of 46 as the fork's answer today, and
+  the fresh-weeks arm passed (`grid-oracle.log`).  P98 and P99 move no frozen line.
+* **`tm/tests/snapshots/log_replay__three_days_replay.snap`, ONE field hand-edited, not re-blessed** (W-35's precedent,
+  `3fe4637`): `seams.2026-09-08.since_break` `08:45` → `09:05` — the fixture's break at 08:45 is logged without
+  `actual_min`, planned 20, and is drawn 08:45-09:05 by the same replay (`seg_lines`' `08:45-09:05 break - 20m`); P97
+  is exactly that anchor.  Nothing else in the snapshot moved.
+* **No other frozen file changed** (`git diff c1405f2 -- tm/tests/fixtures kernel/corpus` names the week grid alone),
+  and T5 and the door — the fork's frozen replay — are green unchanged in every workspace run (§10); the host's
+  pairing (P96) and the grid (P99) are not theirs, and no input of theirs is moved by P97's anchor.
+
+### 6. The TUI: a wall held at its minute (gap 4553 closed), the close through one body (gap 4615), the cache drive
+
+* **Gap 4553 — CLOSED.**  `advance_clock` re-collects in memory, as at a date change, at the minute a wall of the day
+  begins or ends while a block is open (`App::crosses_a_wall`, the trigger read off the App's own day; the rule is
+  the kernel's `WallTimer`).  Every other minute asks the kernel nothing (D38).  Between two such minutes `tm plan`'s
+  housekeeping writes nothing new (the close and §5.1's timeouts move at a date), so the TUI plans what `tm plan`
+  plans at every instant.  `tui::tests::w44_repair_a_wall_that_begins_within_the_day_is_held_at_its_minute`: at 12:15
+  nothing held; at 12:21 the `pause` and its journal line held, `^t3` drawn paused, the status line says so, nothing
+  written, and the request equal to `tm plan`'s at 12:21 key for key but the reseal day; at 12:41 the `unpause` held.
+* **Gap 4615 — the close's two bodies, CLOSED.**  `kernel_bridge::apply` reads and writes through the hold while a
+  context holds (`Ctx::reading`, `Ctx::writes`), so `closing::close_in_memory` is `run` under `Ctx::hold_begin` — the
+  events rendered and `state.closed` stamped by `run`'s own `leaves`, through `Ctx::append_event` and
+  `Ctx::save_state`, which already answered into the hold.  `Ctx::hold` (D91's re-implementation's entrance) is
+  deleted.  The D91/D96 tests (`d91_*`, `d96_*`, `w44_land_*`) are green unchanged.
+* **The pty drive with the cache INCLUDED** (`drive/tui-wall.sh`, `tui-wall-base.out`, `tui-wall-repair.out`;
+  `TM_TUI_CLOCK_RUNS=1`, the critic's point that `d96-tui.sh` hashed with `! -path './.tm/cache/*'`): plan-basic, a
+  call at 12:20-12:40, `^t3` started 12:00, the TUI opened at 12:19:40 with its clock running and quit at 12:20:50.
+  **Every file under the plan directory, `.tm/cache/replay/` included, byte-identical across the crossing** on both
+  binaries.  At 12:20:48 `base-tm`'s Now pane reads `elapsed 0m` with no `paused` and its timeline still draws `▶`
+  on `^t3`, while `tm now` in a copy at the same instant prints `tm: paused ^t3 for Noon call 12:20–12:40 … 20m of
+  60m · paused` and writes the pause — gap 4553 as the auditor drove it; `repair-tm`'s Now pane reads `· paused`
+  and `^t3` loses its `▶`, the day `tm now` describes, with nothing written.
+
+### 7. One FNV-1a-64 body in the binary (gap 4612)
+
+`tm-core/src/fnv.rs` (new) is the binary's one body: `kernel_log::fnv1a64` re-exports it (the prefix digest, D93's
+month digests, D98's checkpoint digest), and `dayplan`'s `DayPlan::hash`, `ics`'s stable ids and `tz_table`'s new
+digest call it.  Until the repair the binary carried four bodies (track C held only the harness's to one — a LIST where
+the rule is a CLASS).  `harness_one_fnv.rs` gains `the_binary_computes_fnv_1a_64_in_one_place`, the same property over
+every `.rs` file outside a `tests` directory: exactly `tm-core/src/fnv.rs` and, by its stated reason,
+`kernel/tm-kernel-ffi/build.rs` (a build script of a crate outside this workspace that hashes the kernel archive at
+build time and may take no new dependency, R7).  The harness's own body stays apart on purpose (a test's reading of the
+rule is independent of the code under test), and the kernel's `Planner.fnv1a` is the other side of the wire.
+
+### 8. What this step did NOT fix, by name, and the R3 record corrected
+
+**Gap 4520 — re-split, and D94's half priced.**  The auditor is right that D94 reaches it — D94's row says "a block and
+a break are read one way on every log" and declines ruling a clock behind the log out of scope — and the critic is
+right that one half of it is a question no decision has answered.  Re-measured on this binary (`shapes.py`): S7 90 /
+110, X1 60 / 70 — unchanged — and S9's span `[60, 20]`.  So:
+
+**Gap 4520a — a late mark over an OPEN block's closed stretch (S7, S8, X1): D94's, owed, not done.**  1. *What.*  The
+replay closes the running stretch at every clock-stopping mark and credits and draws it then; a `break`, `pause` or
+`interrupt` logged later but stamped inside that stretch is netted by the host's union at the next reading and never by
+the replay.  2. *Why not done here.*  Its one sound shape is the host's own: the open `Block` holds its closed
+stretches and its pause and interruption spans (bounded as `brks` is, through the checkpoint codec), and the credit and
+the drawn pieces are computed at the cut as elapsed minus the union of every idle span of the block's ledger days — so
+a closed stretch is never drawn while the block runs (the planner's past rows draw the open block's pieces from the run
+instead, which is gap 4525 too) — and every law over `closeSub`, `cut`, `brkFx`, the conservation and late-binding
+invariants and the sixteen window laws re-proved over it (D5).  That is D94's whole re-architecture again, not a
+repair-sized edit, and starting it here would have left this step with nothing green to land.  3. *Cost.*  On a log a
+clock behind the log writes behind the clock, the host's minutes and the replay's differ (S7: 90 beside 110) and the
+plan lays a Block across the late break.  0 of T5's 473 inputs hold it (track K's census).  4. *Clears it.*  A step of
+its own, with the shape above; the generated arm's stated rule (`kernel_break_union.rs`, "in-block lines not in their
+stamps' order", 79-85 of 257 days left out) is then deleted, not widened.
+
+**Gap 4520b — a late break over a CLOSED block (S9): the owner's.**  1. *What.*  A `break` logged after a block's
+`done` (or `stop`) but stamped inside it: the log says the block worked sixty minutes (the `done`'s `actual_min`,
+logged by the host before the break existed) and that twenty of them were a break.  2. *Why not decided here.*  One
+reading needs a rule for which fact wins — net the break from the logged credit (the drawing and the heat grid then
+agree with D87, and `tm review day`'s block minutes fall below the `done`'s `actual_min`, which also feeds the duration
+fit), or let the logged `actual_min` stand and draw the break beside the block (and say where) — and D94's text names
+the mechanism for a block's clock, not a closed block's logged credit.  3. *Cost.*  The heat grid's hour holds 80
+minutes; the plan draws the Block across the Break; the last goal stands on it (§1).  4. *Clears it.*  The owner.
+
+**Gap 4616 — the wall rule's day range.**  1. *What.*  `WallTimer.answer` reads the marks of day `d` and those of day
+`d − 1` stamped at or after the block's start; the host's worked minutes read every ledger day from the block's
+`start` row's day (`Replay::idle_min_since`).  A block open since before `d − 1` with a pause of its own that early is
+read by the wall rule as running.  2. *Why not changed.*  It needs the open block's ledger day on `Seal.Answer`'s
+`OpenBlock` (the machine's `Block.day`, D94), a field the planner and the host decode beside it.  3. *Cost.*  On a
+block left open across two ledger days with an early pause: a meeting pause written over a block the user paused,
+whose unpause at the meeting's end would restart it.  4. *Clears it.*  `OpenBlock.day`, and `answer` reading the
+days `[day, d]`.
+
+**Gap 4617 — one number to the second (the critic's seconds drive).**  1. *What.*  The replay floors each worked piece
+(site R8, `Replay.closeSub`/`pieces`); the host floors the elapsed minutes and each merged idle span
+(`Replay::idle_min_since`).  Driven by the critic on the HEAD binary with no hand edit — `start` at 09:00:40, a ten-minute
+break 09:30-09:40, `stop` at 09:50:50: `tm stop` 40, `tm review day` 39 (re-driven here, `drive/seconds.out`, the same
+on `base-tm` and this commit's binary).  2. *Why not changed.*  It is design Q6(c),
+whose disposition (D18) is "fix later — floor the block's total"; the one rule both readers would share is "the whole
+minutes of the block's worked seconds", which moves R8's laws and the block's codec (seconds in `Block.workedMin`) and
+the host's formula together.  The generated arm draws whole minutes only, so it cannot see this (a class its draws
+do not reach — the critic's point).  3. *Cost.*  At most one minute per piece on a log stamped to the second.  4.
+*Clears it.*  The step that takes Q6(c), with the arm drawing seconds.
+
+**Gap 4619 — an interruption left open on an earlier ledger day is netted by the replay and not by the host.**  1.
+*What.*  Found by this step's re-derivation of the frozen week grids (§6): on `week draw 15` (W-40 track H's seed) a
+block is started on a day whose `tm wake` was refused because yesterday's interruption is still open; the kernel's
+machine carries that interruption into the new block (`Replay.Machine.interrupt`: the clock is held from the `start`
+until the `resume`, P60), while the host's worked minutes read the idle marks of the block's own ledger days only
+(`Replay::idle_min_since`, from the `start` row's day), see no interruption, and count the minutes before the `resume`
+as worked (the `done` logs 7 there with this repair, 50 at `c1405f2`; the machine's clock — read off `Replay.arm`'s
+`start`, `since := none` while an interruption is open — runs only from the `resume`, not driven).  The wall rule's
+day range (gap 4616) misses the same interruption.  2. *Why not changed.*  Pre-existing (`base-tm` logs the same), and the fix is the host reading the
+open interruption the log holds at the block's `start` (`ctx::logged_stops` already folds it for the cache, from every
+row before the start) in its union too — a change to `idle_min_since`'s day range that every worked-minutes reader
+sees.  3. *Cost.*  On a day begun inside an interruption left open overnight, the host's worked minutes exceed the
+replay's by the minutes from the `start` to the `resume`.  4. *Clears it.*  `idle_min_since` opening the interruption
+the log holds open at the block's `start`, as the replay's machine does.
+
+**Standing, re-measured, not this step's**: gap 4521 (the bound's edge), 4522 (P92 has no fork comparand), 4523
+(section 26's refutations over a run the decoder does not build), 4524 (`openOf` has no `now`), **4525** (X7 on this
+binary: the open row 10:15-10:30, `25m so far`, the banked 09:50-10:00 undrawn — the same as `c1405f2`; its shape is
+gap 4520a's), 4551, 4554, 4556, 4398, 4582.
+
+**Gap 4618 — the R3 record, corrected.**  The land's §4 answered "Is R3 now only the body swap and the deletion?
+Yes" and was wrong in three places, each measured here: (1) **the swap class is 29, not 23** (the land's own
+`r3-ws-exact.log`: 31 failed = the 2 region gates + 29; this step adds one more test reaching `planner::plan`
+in-process through `App`, the in-day wall test of §6, so it is **30**); (2) gap 4553's clearing said "a per-tick
+request is a read; it asks the walls again" — beyond a body swap — and is moot now (§6: closed here); (3) "nothing
+outside `planner.rs` and those callers names the module" missed **`tm/src/tui/prompts.rs`** (a doc link to
+`tm_core::planner::overtime_drops`) and **twelve test files** that `use tm_core::planner` — `planner_classes.rs`,
+`planner_common/mod.rs`, `planner_dynamics.rs`, `planner_fixtures.rs`, `planner_invariants.rs`, `planner_w37_rows.rs`,
+`planner_w38_order.rs`, `planner_w39_arrival.rs`, `planner_w39_conference.rs`, `planner_w40_runs.rs`,
+`support/forkday.rs`, `support/forkplan.rs` — whose in-tree fork comparands R3's deletion must move to the frozen files
+or the oracle (D72), not delete; and gap 4583's dead `wednesday` lands in the deletion commit.
+
+### 9. Acceptance, capped (`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`; 16 GB for the drives, the oracle, the mutations and the latency run)
+
+* **`check.sh`, seventeen lines, all ok, exit 0**, in `scratchpad/repair-w44/clone` synced to this commit's tree
+  (`check3.log`; `check2.log` before the last README, `mutations.txt` and grid-bless edits): the build; totality;
+  **the axiom audit 6,344** (6,341 at `c1405f2`: one out — the deleted refutation — and four in, two `WallTimer` and two
+  `Replay` witnesses); `Negative.lean` rejected; FFI **95**; the corpus **29/37 files and 4/5 plans**; **stage goals 1**
+  (0 at `c1405f2`: §1); prose citations **59,413** (56,981 resolved, 2,432 allowed, 0 allow entries unused; 59,415 once this paragraph's own citations are in); check 9
+  **734 new or changed since `86c4dc6`, 734 rostered (263 unfoldable, 168 witness fixtures, 45 pinned by nothing; 2
+  literal), 0 owed**; parity **P1-P99, next free P100**; check 11 **3,402 bodies, 0 UNANSWERED**; check 12 **1,518
+  reachable, 1,099 exempt**; check 13 fields 17/17, inputs 33 of 37, sent 169, written 220, 0 UNANSWERED; check 14
+  **94 modules**.
+* **`cargo test --workspace --no-fail-fast`, THREE runs on the code of this commit** (`ws1..3.log`; porcelain and
+  diff hashed equal at each start and end, `7039eddc152d` / `bc35c3295aae`; loads 2.4-6.2; 9 m 13 s - 9 m 21 s each):
+  **each 148 result lines, 2,768 passed, 0 failed, 36 ignored**, no compiler warning, no `.proptest-regressions`
+  file moved.  By arithmetic against the land's 2,755 over 146: + `cli_resume_keeps_a_pause` 4 and
+  `cli_tz_cache_digest` 2 (two binaries), + `kernel_tz_table` 1, `cli_wall_kernel` 2, `cli_planned_break` 1,
+  `cli_week_grid` 1, `harness_one_fnv` 1 and the binary's `tui::tests` 1 = 2,768.  A first run of the three
+  (`ws-first/ws1.log`) failed `fork_rebless_history` alone — §11 — and the three were run again from the start on the
+  repaired tree; an earlier run on the first build (`ws0.log`, 2,766 / 2 failed) found the week grid's moved worlds
+  and the snapshot's `since_break` (§5b).
+* **The named suites** (run 1; runs 2 and 3 the same): T5 `kernel_replay_parity` 48 (4 ignored), the door
+  `kernel_log_door` 42, `cli_switch_acceptance` 16, `cli_latency` 6 (1 ignored), `kernel_call_counts` 2, `one_padder`
+  9, `one_renderer` 34, `kernel_row_cells` 35, `kernel_item_grammar` 6, `kernel_planner_wire` 27, `planner_classes` 71
+  (6 ignored), `planner_invariants` 47 (2 ignored), `cli_conformance` 7, `cli_json_matrix` 8; beside them
+  `fork_week_grid` 21 (3 ignored), `fork_rebless_history` 9, `kernel_break_union` 18, `log_replay` 18 and this step's
+  `cli_resume_keeps_a_pause` 4, `cli_tz_cache_digest` 2, `cli_wall_kernel` 10, `cli_planned_break` 7, `cli_week_grid`
+  5, `kernel_tz_table` 5 (2 ignored), `harness_one_fnv` 3.  FFI 95 and the corpus in `check.sh`.
+* **Every `TM_ORACLE` arm** over an oracle built for this step (`build-oracle.sh` into `scratchpad/repair-w44/oracle`,
+  `oracle-arms.sh`, one at a time, 16 GB, no bless variable set): all fifteen rc=0 — T5's whole-`Replay` arm (469 logs
+  over 6 zones, 8,442 keys: P97 moves none of them, so like P92 it has no fork comparand by value, held instead by
+  `a_planned_only_break_anchors_since_break_at_its_planned_end` and `cli_planned_break.rs`), the grammar's read-back,
+  `cli_end_at`, `planner_classes`' frozen lines, the separator, start, TUI, P85 and P56 days, the P56 draws,
+  `planner_invariants`' two fresh-draw arms, and the week grid's frozen and fresh arms (46 of 46 frozen).  This was
+  run on the first bless's file; the re-bless that only added `d64b` was checked by the grid suite and the history
+  gate.
+* **`cli_latency --include-ignored`**, one run, nothing else running (`lat1.log`, load 2.65 → 2.41): 7 passed in 26.6 s — T18's
+  planner call 9.7 ms on the example tree, 69.6 ms on T11's, 95.7 / 206.5 ms on T14's 3- and 10-year trees; a later
+  verb 71.0 ms, at one year 111.4, at three years 162.2 and 157.2; the first verb at three years 2,488 and 2,440 ms
+  (genesis 2,431).  No band touched.
+* **Drives** (`scratchpad/repair-w44/drive`; `base-tm` is the verifier's build of `c1405f2`, `repair-tm` this
+  commit's): `pir.sh` (§2), `g4550.sh` and `wallbrk.sh` (§3), `shapes.py` (S3, S7, X1, S9, X7: §5 and §8), the
+  critic's `tz.json` trees (§4), `gridworld.py` (§5b), `tui-wall.sh` through a pty (§6).
+* **New `decide` witnesses probed under an 8 GB cap with `timeout 120`**: `Replay.lean` whole 11.0 s, 1.27 GB;
+  `WallTimer.lean` whole 0.7 s, 0.76 GB.
+
+### 10. D40 and the plants — every changed definition constant-folded, every fix planted, in the clone
+
+* **D40** (`scratchpad/repair-w44/d40.log`; in `scratchpad/repair-w44/clone`, never the worktree; porcelain hashed
+  before and after with `kernel/mutations.txt` excluded, the diff `62fffe7c85fc` both times).  Check 9 named four
+  owed, each audited with `mutate.py --write --only` under a 16 GB cap and its row brought into the worktree's
+  `mutations.txt`: `Replay.SeamOp.apply` (ABSENT: changed for the first time since check 9's baseline `86c4dc6`; `a` and
+  `SeamAcc.empty` PINNED on `seamOp_lastT` and `a_days_seam_holds_its_break_its_marks_and_its_latest_stamp`,
+  `default` UNFOLDABLE), `Replay.seamKindOf` (ABSENT, likewise; **pinned by nothing, by name**: no constant of `Event →
+  SeamKind`, no identity, no synthesised term — what holds it is `seam_since_break_is_brkEnd` and the witnesses that
+  step real entries, which no fold reaches), `WallTimer.spanStep` (STALE; `default` PINNED on `the_rule_is_run`, the
+  synthesised `(none, none, none)` UNAVAILABLE — it does not elaborate at the new state type) and `WallTimer.idleSpans`
+  (STALE; `default` and `[]` PINNED on `the_rule_is_run`).  The library edits were kept **line-neutral** (each hunk
+  balanced; the new laws appended at the ends of `Replay.lean` and `WallTimer.lean`) after a first build that moved
+  lines showed **294 roster rows drifted** in check 9 (`check1.log`) — a `--verify --write` at one kernel build per
+  row was not the repair, not moving the pins was.
+* **The plants** (`plants.py`, `plants.log`, `plants-p1.log`; each in the clone, porcelain and diff equal before and
+  after every one):
+
+  | plant | bites |
+  |---|---|
+  | P1 the host's pairing back to the fork's (a `resume` closes the user's pause too) | `cli_resume_keeps_a_pause` 2 of 4 FAIL |
+  | P2 `tm resume` un-pauses as the fork did | `cli_resume_keeps_a_pause` 3 of 4 FAIL |
+  | P3 `tz.json` served without checking its digest | `cli_tz_cache_digest` 1 of 2, `kernel_tz_table` 2 of 5 FAIL |
+  | P4 the heat grid sums a style again | `cli_week_grid`'s overlapping-breaks test FAILS |
+  | P5 the TUI holds only at a date change | `w44_repair_a_wall_that_begins_within_the_day_is_held_at_its_minute` FAILS |
+  | P6 `apply` writes the disk under a hold | `d96_*` 2 of 4, `d91*` 5 of 6 FAIL |
+  | P7 a second FNV-1a-64 body in `dayplan.rs` | `the_binary_computes_fnv_1a_64_in_one_place` FAILS |
+
+  **P1's first spelling did not bite** (`plants.log`: 4 of 4 passed) — it closed the pause at a `resume` only when no
+  interruption was open, which the binary never logs; respelled as the fork's one span (a `resume` closes the pause
+  as well), it bites.  The Lean halves are held by the witnesses themselves: `the_rule_is_run`'s seventh case and
+  `a_break_across_the_walls_start_does_not_stand_for_the_users_stop` are decided values that W-37's `.brk` arm fails,
+  and `a_planned_only_break_anchors_since_break_at_its_planned_end` fails at the fork's `am.getD 0`.
+* **P8, the harness half of the re-draw** (`plant-p8.log`): `TM_GRID_BLESS_REDRAW="D64(b): undated"` over the three
+  moved worlds — all three REFUSED ("a re-draw records its reason on the line, dated and naming D64(b)"), nothing
+  written, porcelain equal.  A first run of this plant read a STALE binary: `rsync -a` from the worktree had put the
+  sources' older mtimes back over the files the P1 plant had restored, so cargo kept the planted build and two of the
+  three worlds came out as the P1 plant builds them — re-run after a `touch` of the planted files, with a binary built
+  for it (04:52).  Recorded because it is how a plant silently reads the wrong code.
+
+### 11. The history gate this step tripped over, and the class it was (part of gap 4618)
+
+The first of the three final workspace runs failed one test the targeted runs had not touched:
+`fork_rebless_history::every_committed_frozen_line_kept_its_world_and_the_shipped_answer` — "`week draw 15` moved
+`world` … moved the SHIPPED fork's answer" for each re-drawn line (`ws-first/ws1.log`).  The plain history check
+(W-43 track C) licenses a moved world only where the newer line carries `d64b`, a dated reason naming D64(b)
+(`frozenhist::redrawn`), and **the week grid's bless admitted a re-draw (`TM_GRID_BLESS_REDRAW`, any non-empty text)
+and wrote no such field** — the one bless of a frozen comparand that re-draws without recording why, a LIST where the
+rule is a CLASS (`planner_w41_starts.rs` and `tui_kernel_answers.rs` record it; this one never had, because the W-41
+land's re-derivation of the grid predates the history check and is "counted, never judged").  Repaired in
+`tm/tests/fork_week_grid.rs`: a re-draw writes `d64b` = the reason, refused unless `forkclass::is_d64b_reason` (dated,
+naming D64(b)) — the one reader the other blesses use — and a line that keeps its world keeps the reason it was last
+re-drawn with.  The three lines were re-blessed with `"2026-10-04 D64(b): …P96…"` (`bless2.log`), and the history
+check, the grid suite and the re-file gate are green on them.  `forkgrid::rebless_allows` is unchanged: it still
+admits the re-draw on a non-empty reason, and the bless now refuses one that does not say when and by which clause.
+
+### 12. Status note (kept current while the step ran)
+
+* 03:33 — HEAD `c1405f2`, tree clean; worktree `repair-w44` made, `.lake` copied from `verify-w44/clone` (built at
+  `c1405f2`).  Every finding reproduced on `base-tm` (§0).
+* 03:40-03:53 — the Lean (Goals, PlannerWit, the seam, WallTimer) and the Rust built; the targeted suites green.
+* 03:53-04:08 — workspace run 0 (`ws0.log`): 2,766 / 2 failed — the week grid's moved worlds and the snapshot (§5b).
+* 04:03-04:19 — `check.sh` in the clone (`check1.log`): check 8 (two README citations of the deleted refutation),
+  check 9 (**294 roster rows drifted** — the first edits moved lines) and check 10 (P96-P99 unregistered) failed.
+  The library edits re-done line-neutral, the dead name counted in `citations-allow.txt`, P96-P99 issued.
+* 04:11-04:20 — the kernel rebuilt; 04:20-04:35 `check.sh` again (`check2.log`): seventeen ok, check 9 with four owed
+  run live.  04:20 the oracle built, the grid re-drawn (`bless.log`), every `TM_ORACLE` arm green (04:20-04:32).
+* 04:22 — the pty drive (§6); 04:35 D40's rows (§10); 04:37 the plants (§10).
+* 04:38-04:48 — the first final workspace run failed the history gate (§11); the grid bless repaired, the three lines
+  re-blessed with a dated reason (`bless2.log`), plant P8 (04:52).
+* 04:53-05:21 — the workspace, three runs, green (§9).
+* Then this block, `check.sh` on the final tree in the clone, the latency run, and the commit.

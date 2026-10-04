@@ -2608,10 +2608,10 @@ deriving DecidableEq, Repr
 
 def SeamAcc.empty : SeamAcc := ⟨none, [], none⟩
 
-/-- What an entry's kind writes to its day's seam beyond `last_t`. -/
+/-- What an entry's kind writes to its day's seam beyond `last_t` (a break: its planned and logged minutes, gap 4550). -/
 inductive SeamKind
   | other
-  | brk (actualMin : Option Nat)
+  | brk (planned : Nat) (actualMin : Option Nat)
   | start
   | pause
   | interrupt
@@ -2625,12 +2625,12 @@ structure SeamOp where
   kind : SeamKind
 deriving DecidableEq, Repr
 
-/-- Fork `Machine::step`'s seam half, for one survivor whose stamp is `op.t`. -/
+/-- Fork `Machine::step`'s seam half, for one survivor whose stamp is `op.t` (a break's anchor: `seam_since_break_is_brkEnd`). -/
 def SeamOp.apply (op : SeamOp) (a : SeamAcc) : SeamAcc :=
   let a := { a with lastT := lastMaxStep atLe a.lastT op.t }
   match op.kind with
   | .other => a
-  | .brk am => { a with sinceBreak := some (addMinutes op.t.1 (am.getD 0), op.t.2), idleMarks := .brk op.t am :: a.idleMarks }
+  | .brk pl am => { a with sinceBreak := some (addMinutes op.t.1 (am.getD pl), op.t.2), idleMarks := .brk op.t am :: a.idleMarks }
   | .start =>
     match a.sinceBreak with
     | none => { a with sinceBreak := some op.t }
@@ -2642,7 +2642,7 @@ def SeamOp.apply (op : SeamOp) (a : SeamAcc) : SeamAcc :=
 
 /-- The seam kind of an event (fork `step`'s seam match). -/
 def seamKindOf : Event → SeamKind
-  | .brk _ actual _ => .brk (actual.map (·.val))
+  | .brk planned actual _ => .brk planned.val (actual.map (·.val))
   | .start .. => .start
   | .pause _ => .pause
   | .interrupt _ => .interrupt
@@ -9088,6 +9088,22 @@ theorem pruneBrks_drops_a_break_past_the_bound :
   decide
 
 end BreakWitnesses94
+
+/-- **A break's since-break anchor is its END as `brkEnd` reads it** (the W-44 repair, README gap 4550, parity P97): its
+`actual_min`, else its planned minutes — the one definition of a break's span the replay's segment (`dayArm`), its clock
+(`brkFx`, `restartAt`) and, since the owner's D95, the host's worked minutes read, so `tm start`'s `since_break_min`
+measures from where every other reader ends the break.  Fork 4748911's seam anchored at `t + actual_min.unwrap_or(0)`,
+so a `break` line logged without `actual_min` anchored at its START.  `rfl`: the seam's anchor is `brkEnd`, written
+inline only because `SeamOp.apply` is defined above it. -/
+theorem seam_since_break_is_brkEnd (t : At) (pl : Nat) (am : Option Nat) (a : SeamAcc) :
+    (SeamOp.apply ⟨t, .brk pl am⟩ a).sinceBreak = some (brkEnd t pl am) := rfl
+
+/-- **The anchor of a break logged without `actual_min` is its planned end** (not its start, fork 4748911's): a break
+stamped at second 1000 planned 20 anchors at 2200; logged with `actual_min` 5, at 1300. -/
+theorem a_planned_only_break_anchors_since_break_at_its_planned_end :
+    (SeamOp.apply ⟨(⟨1000, 0⟩, ⟨false, 0⟩), .brk 20 none⟩ SeamAcc.empty).sinceBreak = some (⟨2200, 0⟩, ⟨false, 0⟩) ∧
+    (SeamOp.apply ⟨(⟨1000, 0⟩, ⟨false, 0⟩), .brk 20 (some 5)⟩ SeamAcc.empty).sinceBreak = some (⟨1300, 0⟩, ⟨false, 0⟩) := by
+  decide
 
 end Replay
 end Tm

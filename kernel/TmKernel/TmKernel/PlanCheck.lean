@@ -2065,9 +2065,9 @@ gives the day a Break row *inside* a Block row — neither of them the planner's
 took that clause for E1, W-17 took it for the wall law, and this is the third and last of the
 three block-side comparisons it reaches.
 
-Its refutation, `PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted`, fell
-at W-43 with the log it stood on (D92 netted it, P85) and stands again since W-44 on a world with one
-reading, a break logged after `m1`'s `done` (D94, P92; README gap 4362), the goal out of `Goals.lean`.
+Its refutation, PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted, fell
+at W-43 with the log it stood on (D92 netted it, P85), stood at W-44 track K on a break logged after `m1`'s `done`,
+and fell again at the W-44 repair: that break's span is read two ways (README gaps 4520, 4611); the goal is back.
 This law, over the Block rows from `now`, stands beside it.
 
 **The restriction is E1's own** — Block rows that start at or after `now`, the fork's

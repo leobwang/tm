@@ -8245,7 +8245,6 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- renamed `…_is_not_netted_is_refuted` (D5).
 -- =====================================================================
 #print axioms Tm.PlannerWit.aheadBreakRun_resumes_ok
-#print axioms Tm.PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted
 #print axioms Tm.PlannerWit.the_ahead_break_day_keeps_its_block_off_the_break
 #print axioms Tm.PlannerWit.the_open_row_is_read_past_a_break_held_ahead_of_its_clock
 #print axioms Tm.Replay.a_break_logged_before_a_start_but_begun_after_it_is_netted
@@ -8288,3 +8287,15 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Seal.closeReads_mi
 #print axioms Tm.Seal.pruneBrks_is_bounded_by_maxKeepDays
 #print axioms Tm.Seal.the_compiled_resume_reads_its_open_block_through_openOf
+
+/-
+   APPENDED 2026-10-04: stage 6, run W-44, THE REPAIR — one line removed above:
+   Tm.PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted (deleted;
+   the world it stood on reads the break's span two ways, gap 4520's closed half, and the goal
+   is back in Goals.lean, README gap 4611).  Added: the wall rule's two new witnesses (README
+   gaps 4550 and 4610) and the seam's since-break anchor read through `brkEnd` (gap 4550, P97).
+-/
+#print axioms Tm.Replay.seam_since_break_is_brkEnd
+#print axioms Tm.Replay.a_planned_only_break_anchors_since_break_at_its_planned_end
+#print axioms Tm.WallTimer.a_resume_ends_the_interruption_and_not_the_users_pause
+#print axioms Tm.WallTimer.a_break_across_the_walls_start_does_not_stand_for_the_users_stop

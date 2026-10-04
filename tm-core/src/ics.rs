@@ -106,6 +106,9 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+// FNV-1a, 64-bit — the binary's one body (README gap 4612).
+use crate::fnv::fnv1a64;
+
 use crate::config::Config;
 use crate::grammar::{ItemLine, FLAGS, ID_ALPHABET};
 use crate::model::{fmt_interval, Id, IsoWeek};
@@ -991,16 +994,6 @@ pub fn stable_id(uid: &str, occurrence_start: Option<NaiveDateTime>) -> Id {
         None => uid.to_string(),
     };
     Id::new(encode_id(fnv1a64(key.as_bytes())))
-}
-
-/// FNV-1a, 64-bit.
-fn fnv1a64(bytes: &[u8]) -> u64 {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in bytes {
-        hash ^= *b as u64;
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    hash
 }
 
 /// Render the low 5 bits of `hash`, [`CAL_ID_LEN`] times, through

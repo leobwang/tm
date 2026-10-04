@@ -1506,9 +1506,20 @@ impl PauseCut {
 /// wall touches is; the binary's two callers (`tm review week`, the TUI's
 /// Review screen) hand over a cut the kernel answered for every Pause of the
 /// week, and refuse by name otherwise.
+///
+/// **A style's minutes are the UNION of its pieces** (the W-44 repair, README
+/// gap 4614, parity **P99**): pieces of one style that OVERLAP — two breaks
+/// logged over one another by a clock behind the log, a pause the replay
+/// draws over another — are one span of that style, merged exactly as the
+/// host's worked minutes merge idle spans (`Replay::idle_min_since`: only an
+/// overlap merges, so touching pieces keep their own whole minutes). Fork
+/// 4748911's grid summed every segment, so a break of 09:00-09:30 and one of
+/// 09:10-09:20 were forty break minutes in the hour (driven: `[30, 40]`, seventy
+/// minutes in one sixty-minute hour) where the host nets thirty.
 fn heat_of(day: Option<&DayReplay>, date: NaiveDate, tz: Tz, cut: &PauseCut) -> DayHeat {
     let mut hours = vec![[0u32; HEAT_STYLES]; HEAT_HOURS];
     if let Some(day) = day {
+        let mut by_style: Vec<Vec<(DateTime<Tz>, DateTime<Tz>)>> = vec![Vec::new(); HEAT_STYLES];
         for seg in &day.segments {
             let (start, end) = (seg.start.with_timezone(&tz), seg.end.with_timezone(&tz));
             if end <= start {
@@ -1519,7 +1530,22 @@ fn heat_of(day: Option<&DayReplay>, date: NaiveDate, tz: Tz, cut: &PauseCut) -> 
                 (kind, _) => vec![(start, end, Style::of(kind))],
             };
             for (start, end, style) in pieces {
-                let style = style.index();
+                if start < end {
+                    by_style[style.index()].push((start, end));
+                }
+            }
+        }
+        for (style, mut spans) in by_style.into_iter().enumerate() {
+            spans.sort();
+            let mut merged: Vec<(DateTime<Tz>, DateTime<Tz>)> = Vec::new();
+            for (a, b) in spans {
+                match merged.last_mut() {
+                    // Only an OVERLAP merges, as the host's union does.
+                    Some(last) if a < last.1 => last.1 = last.1.max(b),
+                    _ => merged.push((a, b)),
+                }
+            }
+            for (start, end) in merged {
                 let mut cursor = start;
                 while cursor < end {
                     let hour = cursor.hour() as usize;

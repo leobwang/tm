@@ -21,12 +21,12 @@ one fact the log does not carry: a break is logged when it ends), and `now`.  Th
 the `emit` section's walls form (`Boundary.readEmitSection`), appends the lines the kernel renders
 (`Log.emitLine`, D16's one writer), and no longer reads a wall to decide anything.
 
-**The rule, as W-36 wrote it and as the host ran it, port for port** — fork
-`tm_core::log::idle_spans` (`idleSpans`), and `day.rs`' timer_stopped_at (`stoppedAt`),
+**The rule, as W-36 wrote it and as the host ran it, port for port** — fork `tm_core::log::idle_spans` (`idleSpans`;
+the replay's two stops and no break's span since the W-44 repair, gap 4550), and `day.rs`' timer_stopped_at (`stoppedAt`),
 touched_after (`touchedAfter`) and last_timer_mark (`lastTimerMark`), deleted from the host here.  For each joined span
 `[lo, hi)` in order: a span that began at or before the block's start, or after `now`, is not the
 block's; if no pause is logged at `lo`, the wall writes one there unless the timer was already
-stopped at `lo` (a pause, interruption or break covering it, the running break included) or a timer
+stopped at `lo` (a pause or an interruption covering it, or the running break) or a timer
 mark was stamped after `lo` (the user has been deciding since); and once `hi` has passed, it writes
 an `unpause` at `hi` if none is logged there and the wall's own pause is still the last word on the
 timer.  Its laws are below, each named for the case it is about:
@@ -55,27 +55,27 @@ def unpauseAt (t : Cal.Instant) : Replay.IdleMark → Bool
   | .unpause a => a.1 == t
   | _ => false
 
-/-- One mark of fork `idle_spans`' pairing: a pause before `started` was another block's; a pause or
-interruption opens a span unless one is open; an unpause or resume closes the open one; a break
-logged with its length is a span of its own; one logged without is none. -/
-def spanStep (started : Cal.Instant) (st : Option Cal.Instant × List (Cal.Instant × Option Cal.Instant))
-    (m : Replay.IdleMark) : Option Cal.Instant × List (Cal.Instant × Option Cal.Instant) :=
+/-- One mark of the timer's pairing — TWO stops, each closed only by its own end (W-44 repair, README gaps 4550 and
+4610): a pause opens the block's pause (one before `started` was another block's) and only an unpause closes it; an
+interruption opens the interruption and only a resume closes it — the replay's machine (`Replay.arm`, `resumeBlock`).
+A `break` opens and closes nothing: it is not the USER's stop, so one that covered a wall's start and ended inside the
+meeting no longer leaves the meeting unpaused; the running break is the caller's (`idleSpans`' `brk`, which waits). -/
+def spanStep (started : Cal.Instant) (st : (Option Cal.Instant × Option Cal.Instant) × List (Cal.Instant × Option Cal.Instant))
+    (m : Replay.IdleMark) : (Option Cal.Instant × Option Cal.Instant) × List (Cal.Instant × Option Cal.Instant) :=
   match m with
-  | .pause t => if t.1 < started then st else (st.1.or (some t.1), st.2)
-  | .interrupt t => (st.1.or (some t.1), st.2)
-  | .unpause t | .resume t =>
-    match st.1 with
-    | some a => (none, st.2 ++ [(a, some t.1)])
-    | none => st
-  | .brk t (some am) => (st.1, st.2 ++ [(t.1, some (Replay.addMinutes t.1 am))])
-  | .brk _ none => st
+  | .pause t => if t.1 < started then st else ((st.1.1.or (some t.1), st.1.2), st.2)
+  | .unpause t => (match st.1.1 with | some a => ((none, st.1.2), st.2 ++ [(a, some t.1)]) | none => st)
+  | .interrupt t => ((st.1.1, st.1.2.or (some t.1)), st.2)
+  | .resume t => (match st.1.2 with | some a => ((st.1.1, none), st.2 ++ [(a, some t.1)]) | none => st)
+  | .brk _ _ => st
 
-/-- **Fork `idle_spans`** (`tm_core::log`): the spans the block begun at `started` was not worked,
-`none` for an end still open — the open pause or interruption, then the running break. -/
+/-- **The user's stops of the block begun at `started`** (D61's question, README gap 4550): the closed pauses and
+interruptions, the pause and the interruption still open, then the running break — `none` for an end still open. -/
 def idleSpans (marks : List Replay.IdleMark) (started : Cal.Instant) (brk : Option Cal.Instant) :
     List (Cal.Instant × Option Cal.Instant) :=
-  (marks.foldl (spanStep started) (none, [])).2 ++
-    ((marks.foldl (spanStep started) (none, [])).1.map (fun a => (a, none))).toList ++
+  (marks.foldl (spanStep started) ((none, none), [])).2 ++
+    ((marks.foldl (spanStep started) ((none, none), [])).1.1.map (fun a => (a, none))).toList ++
+    ((marks.foldl (spanStep started) ((none, none), [])).1.2.map (fun a => (a, none))).toList ++
     (brk.map (fun s => (s, none))).toList
 
 /-- **Was the timer stopped at `t`** (the host's timer_stopped_at, W-36): an idle span covers it. -/
@@ -222,8 +222,8 @@ theorem a_wall_that_has_not_begun_writes_nothing (started now : Cal.Instant)
     (h : now < ⟨lo, 0⟩) : writes started now brk marks [(lo, hi)] = [] := by
   simp [writes, step, h]
 
-/-- **A timer already stopped at the wall's start is not the wall's to stop** — a pause, an
-interruption or a break (the running break included) covered `lo`. -/
+/-- **A timer already stopped at the wall's start is not the wall's to stop** — a pause or an
+interruption covered `lo`, or the running break does (the rule waits for it to be logged). -/
 theorem a_timer_already_stopped_at_the_wall_is_left_alone (started now : Cal.Instant)
     (brk : Option Cal.Instant) (marks : List Replay.IdleMark) (lo hi : Nat)
     (hp : marks.any (pauseAt ⟨lo, 0⟩) = false) (hs : stoppedAt marks started ⟨lo, 0⟩ brk = true) :
@@ -603,10 +603,10 @@ which check 12 must then exempt by name (README gap 3333, W-37 repair; D51). -/
 
 /-- **The rule, run**: the pause and the unpause; the pause alone while the wall runs; nothing before
 it or for a block started inside it; nothing over a timer already stopped (a pause at 900, the
-running break, a break logged over 1000) and the wall's pause over a pause another block left
-(400) or a stop that ended before the wall (900–950, an interruption 990–995, a break logged
-without its length); nothing under a mark stamped after the wall's start; the end alone when the
-pause is logged; nothing when the user resumed inside the meeting; and two walls in order. -/
+running break) and the wall's pause over a pause another block left (400), a stop that ended before
+the wall (900–950, an interruption 990–995) and — since the W-44 repair — a break logged across the
+wall's start or without its length (gap 4550); nothing under a mark stamped after the wall's start;
+the end alone when the pause is logged; nothing when the user resumed inside it; two walls in order. -/
 theorem the_rule_is_run :
     writes (⟨500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) none [] [(1000, 2000)] = [(true, 1000, 2000), (false, 1000, 2000)] ∧
     writes (⟨500, 0⟩ : Cal.Instant) (⟨1500, 0⟩ : Cal.Instant) none [] [(1000, 2000)] = [(true, 1000, 2000)] ∧
@@ -614,7 +614,7 @@ theorem the_rule_is_run :
     writes (⟨1500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) none [] [(1000, 2000)] = [] ∧
     writes (⟨500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) none [.pause ((⟨900, 0⟩, Cal.Offset.utc) : Replay.At)] [(1000, 2000)] = [] ∧
     writes (⟨500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) (some (⟨900, 0⟩ : Cal.Instant)) [] [(1000, 2000)] = [] ∧
-    writes (⟨500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) none [.brk ((⟨950, 0⟩, Cal.Offset.utc) : Replay.At) (some 1)] [(1000, 2000)] = [] ∧
+    writes (⟨500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) none [.brk ((⟨950, 0⟩, Cal.Offset.utc) : Replay.At) (some 1)] [(1000, 2000)] = [(true, 1000, 2000), (false, 1000, 2000)] ∧
     writes (⟨500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) none [.pause ((⟨400, 0⟩, Cal.Offset.utc) : Replay.At)] [(1000, 2000)]
       = [(true, 1000, 2000), (false, 1000, 2000)] ∧
     writes (⟨500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) none [.pause ((⟨900, 0⟩, Cal.Offset.utc) : Replay.At), .unpause ((⟨950, 0⟩, Cal.Offset.utc) : Replay.At)] [(1000, 2000)]
@@ -710,6 +710,31 @@ the timer, so the wall's end still writes the unpause. -/
 theorem a_break_inside_the_meeting_leaves_the_pause_the_last_word :
     writes (⟨500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) none [.pause ((⟨1000, 0⟩, Cal.Offset.utc) : Replay.At), .brk ((⟨1200, 0⟩, Cal.Offset.utc) : Replay.At) (some 5)] [(1000, 2000)]
       = [(false, 1000, 2000)] := by
+  decide
+
+/-- **A block the user paused stays paused across an interruption** (the W-44 repair, README gap 4610): a pause at 900,
+an interruption 950–980 — the resume ends the interruption, not the pause — so the timer is still stopped at the
+wall's start and the wall writes nothing; with the pause unpaused at 990 it writes both marks.  Until the repair the
+pairing closed the one open span at the resume, read the timer running at 1000 and wrote a pause over a paused block
+whose unpause, at the wall's end, restarted the block the user had paused. -/
+theorem a_resume_ends_the_interruption_and_not_the_users_pause :
+    writes (⟨500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) none [.pause ((⟨900, 0⟩, Cal.Offset.utc) : Replay.At),
+      .interrupt ((⟨950, 0⟩, Cal.Offset.utc) : Replay.At), .resume ((⟨980, 0⟩, Cal.Offset.utc) : Replay.At)] [(1000, 2000)] = [] ∧
+    writes (⟨500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) none [.pause ((⟨900, 0⟩, Cal.Offset.utc) : Replay.At),
+      .interrupt ((⟨950, 0⟩, Cal.Offset.utc) : Replay.At), .resume ((⟨980, 0⟩, Cal.Offset.utc) : Replay.At),
+      .unpause ((⟨990, 0⟩, Cal.Offset.utc) : Replay.At)] [(1000, 2000)]
+      = [(true, 1000, 2000), (false, 1000, 2000)] := by
+  decide
+
+/-- **A break across the wall's start is not the user's stop** (the W-44 repair, README gap 4550): logged with its
+length (950, one minute) or without it, the wall writes its pause and its unpause, one answer for both spellings; a
+break still RUNNING at the wall's start (`brk`, 950) writes nothing yet. -/
+theorem a_break_across_the_walls_start_does_not_stand_for_the_users_stop :
+    writes (⟨500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) none [.brk ((⟨950, 0⟩, Cal.Offset.utc) : Replay.At) (some 30)] [(1000, 2000)]
+      = writes (⟨500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) none [.brk ((⟨950, 0⟩, Cal.Offset.utc) : Replay.At) none] [(1000, 2000)] ∧
+    writes (⟨500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) none [.brk ((⟨950, 0⟩, Cal.Offset.utc) : Replay.At) (some 30)] [(1000, 2000)]
+      = [(true, 1000, 2000), (false, 1000, 2000)] ∧
+    writes (⟨500, 0⟩ : Cal.Instant) (⟨1500, 0⟩ : Cal.Instant) (some (⟨950, 0⟩ : Cal.Instant)) [] [(1000, 2000)] = [] := by
   decide
 
 end WallTimer

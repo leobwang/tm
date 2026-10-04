@@ -148,3 +148,25 @@ fn the_grid_and_the_plan_cut_one_pause_alike() {
     }
     assert_eq!(total, 20 + 20, "the straddle's 10 + 10 and the plain pause's 20 were compared");
 }
+
+/// **A style's minutes are the union of its pieces** (the W-44 repair, README gap 4614, parity P99):
+/// a thirty-minute break from 09:00 and a ten-minute one logged inside it (a clock behind the log,
+/// `--now` moved back) are thirty break minutes in the 09 hour, as the host's union nets them —
+/// never forty, which put seventy minutes in one sixty-minute cell. The block started at 09:15 inside
+/// both runs from 09:30: thirty block minutes, the cell at sixty.
+#[test]
+fn overlapping_breaks_are_one_span_in_the_week_grid() {
+    let tm = Tm::new();
+    tm.ok_at("2026-09-07T06:05:00-05:00", &["wake", "06:05", "--slept", "8h"]);
+    tm.ok_at("2026-09-07T09:00:00-05:00", &["break", "30m"]);
+    tm.ok_at("2026-09-07T09:30:00-05:00", &["break"]);
+    tm.ok_at("2026-09-07T09:10:00-05:00", &["break", "10m"]);
+    tm.ok_at("2026-09-07T09:20:00-05:00", &["break"]);
+    tm.ok_at("2026-09-07T09:15:00-05:00", &["start", "^t4", "--energy", "4"]);
+    tm.ok_at("2026-09-07T10:00:00-05:00", &["stop"]);
+    let day = heat(&tm, "2026-09-07T10:01:00-05:00");
+    assert_eq!(cell(&day, 9, Style::Break), 30, "the union of the two breaks: {day}");
+    assert_eq!(cell(&day, 9, Style::Block), 30, "{day}");
+    let total: u64 = (0..8).map(|i| day["hours"][9][i].as_u64().unwrap_or_default()).sum();
+    assert_eq!(total, 60, "one hour holds sixty minutes: {day}");
+}

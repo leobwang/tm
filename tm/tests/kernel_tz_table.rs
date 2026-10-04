@@ -19,6 +19,10 @@
 //! (c) and (d) are run once at B4 and their results recorded in kernel/README.md.
 
 #[allow(dead_code)]
+#[path = "support/fnv.rs"]
+mod fnv;
+
+#[allow(dead_code)]
 #[path = "../src/cli/tz_table.rs"]
 mod tz_table;
 
@@ -136,9 +140,11 @@ fn the_wire_table_is_spelled_as_the_kernel_reads_it() {
     assert!(w["key"].as_str().expect("key").starts_with("America/Chicago|"));
 }
 
-/// The cache (D13): a first call probes and writes the wire value; a file with
-/// the right key is passed on as read; a file with another key or that does not
-/// parse is probed afresh and overwritten; no directory touches no disk.
+/// The cache (D13): a first call probes and writes the wire value — since the W-44 repair as a text
+/// opening with the digest of the rest of itself (`cache_text`, README gap 4613); a file with the right
+/// key and a matching digest is passed on as read; a file with another key, one that does not parse, one
+/// written before the digest and one whose digest does not match its text are probed afresh and
+/// overwritten; no directory touches no disk.
 #[test]
 fn the_cache_keeps_the_wire_value_under_its_key() {
     let tz = chrono_tz::Asia::Kolkata;
@@ -147,18 +153,47 @@ fn the_cache_keeps_the_wire_value_under_its_key() {
     let fresh = tz_table::probe(tz).to_wire();
     assert_eq!(tz_table::wire_for(Some(&cache), tz), fresh);
     let file = cache.join(tz_table::CACHE_FILE);
-    let on_disk: Value = serde_json::from_slice(&std::fs::read(&file).expect("written")).expect("json");
-    assert_eq!(on_disk, fresh);
+    let on_disk = std::fs::read_to_string(&file).expect("written");
+    assert_eq!(on_disk, tz_table::cache_text(&fresh));
+    assert_eq!(tz_table::from_cache_text(&on_disk), Some(fresh.clone()));
     let doctored = json!({"key": tz_table::key_of(tz), "base": "+05:30:00", "then": []});
+    std::fs::write(&file, tz_table::cache_text(&doctored)).expect("write");
+    assert_eq!(tz_table::wire_for(Some(&cache), tz), doctored, "a matching key and digest is read, not re-probed");
     std::fs::write(&file, doctored.to_string()).expect("write");
-    assert_eq!(tz_table::wire_for(Some(&cache), tz), doctored, "a matching key is read, not re-probed");
-    std::fs::write(&file, json!({"key": "Asia/Kolkata|1999z|1900-2200", "then": []}).to_string()).expect("write");
+    assert_eq!(tz_table::wire_for(Some(&cache), tz), fresh, "a file with no digest is probed afresh");
+    let flipped = tz_table::cache_text(&doctored).replace("+05:30:00", "+05:31:00");
+    std::fs::write(&file, &flipped).expect("write");
+    assert_eq!(tz_table::wire_for(Some(&cache), tz), fresh, "a file whose digest does not match is probed afresh");
+    std::fs::write(&file, tz_table::cache_text(&json!({"key": "Asia/Kolkata|1999z|1900-2200", "then": []}))).expect("write");
     assert_eq!(tz_table::wire_for(Some(&cache), tz), fresh);
     std::fs::write(&file, "{not json").expect("write");
     assert_eq!(tz_table::wire_for(Some(&cache), tz), fresh);
-    let on_disk: Value = serde_json::from_slice(&std::fs::read(&file).expect("rewritten")).expect("json");
-    assert_eq!(on_disk, fresh);
+    assert_eq!(std::fs::read_to_string(&file).expect("rewritten"), tz_table::cache_text(&fresh));
     assert_eq!(tz_table::wire_for(None, tz), fresh);
+}
+
+/// **The digest is the harness's FNV-1a-64 of the rest of the text** (README gap 4613), computed by the
+/// harness's own body and never borrowed from the binary, and **every one-byte edit of a written table
+/// is refused** — the offsets, the instants, the key and the digest itself (`from_cache_text` is
+/// `None`), so the edit is probed afresh rather than served.
+#[test]
+fn every_one_byte_edit_of_the_zone_table_is_refused() {
+    let wire = tz_table::probe(chrono_tz::America::Chicago).to_wire();
+    let text = tz_table::cache_text(&wire);
+    let rest = text.strip_prefix("{\"digest\":\"").expect("the digest first");
+    let (hex, body) = rest.split_at(16);
+    assert_eq!(hex, fnv::fnv1a64_hex(body.strip_prefix("\",").expect("then the rest").as_bytes()));
+    let bytes = text.as_bytes();
+    let mut refused = 0usize;
+    for (i, b) in bytes.iter().enumerate() {
+        let swap = if b.is_ascii_digit() { if *b == b'9' { b'0' } else { b + 1 } } else { continue };
+        let mut edit = bytes.to_vec();
+        edit[i] = swap;
+        let edit = String::from_utf8(edit).expect("ascii");
+        assert_eq!(tz_table::from_cache_text(&edit), None, "a digit edited at byte {i} was read");
+        refused += 1;
+    }
+    assert!(refused > 1000, "the sweep reached {refused} digits");
 }
 
 /// **T4 (c), `#[ignore]`.** Every minute of [1900, 2200) in the five zones:

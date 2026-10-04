@@ -1879,6 +1879,10 @@ pub struct InterruptOut {
     /// ending, `action` `ended`; absent when no break was running.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub break_ended: Option<BreakOut>,
+    /// **The block a `tm resume` leaves paused** — one the user paused before the
+    /// interruption (the W-44 repair, README gap 4610, parity P96); absent otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub still_paused: Option<String>,
 }
 
 /// **A running break, ended FIRST, as `tm break`'s ending arm reports it** — the one body
@@ -1983,6 +1987,7 @@ pub fn interrupt(g: &Globals) -> Result<i32, CliError> {
         lost_min: None,
         dropped: Vec::new(),
         break_ended: ended,
+        still_paused: None,
     };
     emit(
         ctx.json,
@@ -2045,9 +2050,24 @@ pub fn resume(g: &Globals) -> Result<i32, CliError> {
     // with `tm break`'s journal line — the block runs after the resume as the
     // verb says, and the `resume` is not stamped inside a running break.
     let ended = end_break_first(&mut ctx)?;
+    // **A resume ends the interruption, not a pause the user took before it**
+    // (the W-44 repair, README gap 4610, parity P96): the block the user paused
+    // stays paused, as the kernel's replay reads the log (`Replay.resumeBlock`)
+    // and the cache's own derivation does (`ctx::logged_stops`). Fork 4748911's
+    // resume un-paused the block whatever held it, so `tm now` drew it running and
+    // `tm stop` counted the time after the resume while `tm review day` and `tm
+    // plan` read the pause.
+    let still_paused = ctx.state.active.as_ref().and_then(|a| {
+        ctx.replay
+            .open_block
+            .as_ref()
+            .filter(|b| b.id == a.id.as_str())
+            .and_then(|b| super::ctx::logged_stops(&ctx.replay, b))
+            .map(|s| s.paused)
+    });
     ctx.state.interrupt = None;
     if let Some(a) = ctx.state.active.as_mut() {
-        a.paused = false;
+        a.paused = still_paused.unwrap_or(false);
     }
     ctx.save_state()?;
     if ended.is_some() {
@@ -2088,21 +2108,34 @@ pub fn resume(g: &Globals) -> Result<i32, CliError> {
     )?;
     rec.finish(&ctx, format!("resume (lost {lost}m)"))?;
 
+    let held = ctx
+        .state
+        .active
+        .as_ref()
+        .filter(|a| a.paused && still_paused == Some(true))
+        .map(|a| a.id.to_string());
     let out = InterruptOut {
         action: "resume".to_string(),
         id: int.id.map(|i| i.to_string()),
         lost_min: Some(lost),
         dropped,
         break_ended: ended,
+        still_paused: held,
     };
     emit(
         ctx.json,
-        || match &out.break_ended {
-            Some(b) => format!(
-                "{} · resumed · lost {lost}m",
-                break_ended_line(b.actual_min.unwrap_or(0), b.planned_min)
-            ),
-            None => format!("resumed · lost {lost}m"),
+        || {
+            let said = match &out.break_ended {
+                Some(b) => format!(
+                    "{} · resumed · lost {lost}m",
+                    break_ended_line(b.actual_min.unwrap_or(0), b.planned_min)
+                ),
+                None => format!("resumed · lost {lost}m"),
+            };
+            match &out.still_paused {
+                Some(id) => format!("{said} · ^{id} still paused — `tm pause` resumes it"),
+                None => said,
+            }
         },
         &out,
     )?;

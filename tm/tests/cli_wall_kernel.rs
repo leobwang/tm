@@ -45,6 +45,66 @@ fn a_break_running_at_the_walls_start_leaves_the_wall_nothing_to_stop() {
     assert!(!during.stderr.contains("paused ^t4 for"), "nothing was paused: {:?}", during.stderr);
 }
 
+/// **A break that covered the wall's start and ENDED inside the meeting is not the user's stop**
+/// (the W-44 repair, README gap 4550, parity P98): once the break is logged, the wall writes its
+/// pause at its start and its unpause at its end, so the clock does not restart inside the meeting
+/// at the break's end. DRIVEN on the shipped binary before the repair — `start` 12:00, a break
+/// 12:40-13:10 across the 12:50-13:50 meeting, `tm stop` at 14:05 — `after 95m`: the meeting's last
+/// forty minutes counted as work, where D61 stops the clock for them. Now 40 before the break and the
+/// minutes after the meeting: one number on `tm done` and `tm review day`.
+#[test]
+fn a_break_ended_inside_the_meeting_leaves_the_meeting_paused() {
+    let tm = running_before_the_meeting();
+    tm.ok_at("2026-09-07T12:40:00-05:00", &["break", "30m"]);
+    tm.ok_at("2026-09-07T13:10:00-05:00", &["break"]);
+    tm.ok_at("2026-09-07T13:20:00-05:00", &["now"]);
+    assert_eq!(
+        timer_marks(&tm),
+        vec![("pause".to_string(), "2026-09-07T12:50:00-05:00".to_string())],
+        "the meeting's pause, at its start, once the break is logged"
+    );
+    let during = tm.json_at("2026-09-07T13:30:00-05:00", &["now"]);
+    assert_eq!(during["active"]["elapsed_min"], 40, "{during}");
+    tm.ok_at("2026-09-07T14:10:00-05:00", &["now"]);
+    assert_eq!(
+        timer_marks(&tm),
+        vec![
+            ("pause".to_string(), "2026-09-07T12:50:00-05:00".to_string()),
+            ("unpause".to_string(), "2026-09-07T13:50:00-05:00".to_string()),
+        ]
+    );
+    tm.ok_at("2026-09-07T14:20:00-05:00", &["done"]);
+    assert_eq!(tm.last_ev("done")["actual_min"], 70, "forty before the break, thirty after the meeting");
+}
+
+/// **One answer for both spellings of one break** (README gap 4550): the same break hand-logged
+/// with `actual_min` and without it (D95: its planned minutes are its span) writes the same marks
+/// and the same minutes. Until the repair the wall rule read the first as a span covering the
+/// meeting's start (no pause) and the second as no span at all (a pause): driven, `tm stop` 95
+/// beside 55.
+#[test]
+fn a_planned_only_break_and_its_logged_twin_write_the_same_marks() {
+    let mut seen = Vec::new();
+    for line in [
+        r#"{"t":"2026-09-07T12:40:00-05:00","ev":"break","planned_min":30}"#,
+        r#"{"t":"2026-09-07T12:40:00-05:00","ev":"break","planned_min":30,"actual_min":30}"#,
+    ] {
+        let tm = running_before_the_meeting();
+        let log = tm.plan.join(".tm/log.jsonl");
+        let mut text = std::fs::read_to_string(&log).expect("log");
+        text.push_str(line);
+        text.push('\n');
+        std::fs::write(&log, text).expect("hand-edited break");
+        tm.ok_at("2026-09-07T14:00:00-05:00", &["now"]);
+        let out = tm.ok_at("2026-09-07T14:05:00-05:00", &["stop"]);
+        let review = tm.json_at("2026-09-07T14:06:00-05:00", &["review", "day"]);
+        seen.push((timer_marks(&tm), out.stdout.clone(), review["review"]["block_min"].clone()));
+    }
+    assert_eq!(seen[0], seen[1], "one break, one reading");
+    assert!(seen[0].1.contains("after 55m"), "{}", seen[0].1);
+    assert_eq!(seen[0].2, 55);
+}
+
 /// **A tree the kernel will not load writes nothing**: the walls cannot be
 /// read, so no mark is appended (the automatic close's rule), and the refusal
 /// is said by name.

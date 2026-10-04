@@ -493,15 +493,22 @@ pub enum InMemory {
 }
 
 /// **§6.3's automatic close, IN MEMORY** — the owner's **D91** (W-43 track H,
-/// README gap 4342). A TUI left open past local midnight asks the kernel for
-/// the documents the automatic close would leave — the one request [`run`]
-/// sends ([`kernel_bridge::answer`]: the same commands, the same
-/// destinations, the same `now`), over the plan directory as this context
-/// read it — and HOLDS them, with the log lines and the stamps [`run`] would
-/// write ([`leaves`]), writing nothing (D84: nothing writes on a timer).
-/// Every request built from the context afterwards reads them (`Ctx::reading`,
-/// `Ctx::log_now`), so the TUI asks the kernel what `tm plan` asks after its
-/// own close. Gated by [`due`], as [`auto_close`] is.
+/// README gap 4342). A TUI left open past local midnight runs the automatic
+/// close **through [`run`], the body every verb's close runs**, while the context
+/// HOLDS its housekeeping ([`Ctx::hold_begin`], the owner's D96): the one request
+/// over the plan directory as this context read it, the documents it leaves, the
+/// log lines and the stamps — each through the door [`run`] writes by
+/// (`kernel_bridge::apply`, [`Ctx::append_event`], [`Ctx::save_state`]), each of
+/// which answers into the hold — writing nothing (D84: nothing writes on a
+/// timer). Every request built from the context afterwards reads them
+/// (`Ctx::reading`, `Ctx::log_now`), so the TUI asks the kernel what `tm plan`
+/// asks after its own close. Gated by [`due`], as [`auto_close`] is.
+///
+/// **One body** (the W-44 repair, README gap 4615): until the repair this
+/// function re-implemented [`run`]'s tail — rendering the events, stamping
+/// `state.closed` — because `kernel_bridge::apply` wrote through the store
+/// directly, outside the hold's doors; `apply` holds now, so there is nothing to
+/// re-implement.
 ///
 /// **One close, from the files as read.** A close held at an earlier date
 /// change is let go first ([`Ctx::release`]): the TUI writes nothing, so at
@@ -515,33 +522,24 @@ pub fn close_in_memory(ctx: &mut Ctx) -> Result<InMemory, CliError> {
     if !due(&ctx.state.closed, ctx.today) {
         return Ok(InMemory::NotDue);
     }
-    let reading = ctx.reading()?;
-    let mut docs = Vec::new();
-    for rel in reading.store().list_files()? {
-        let text = reading.store().read_text(&rel)?;
-        docs.push((rel, text));
-    }
-    drop(reading);
-    let applied = match kernel_bridge::answer(ctx, "close", &commands(Which::All, &[]), docs) {
-        Ok(applied) => applied,
-        Err(CliError::Kernel(issue)) if !issue.is_fault() => return Ok(InMemory::Refused(explain(&issue))),
-        Err(e) => return Err(e),
+    ctx.hold_begin()?;
+    let report = match run(ctx, Which::All, "close", &[]) {
+        Ok(report) => report,
+        Err(CliError::Kernel(issue)) if !issue.is_fault() => {
+            ctx.release();
+            return Ok(InMemory::Refused(explain(&issue)));
+        }
+        Err(e) => {
+            ctx.release();
+            return Err(e);
+        }
     };
-    let left = leaves(Which::All, &[], &applied, &ctx.state.closed, ctx.today);
-    let mut lines = Vec::with_capacity(left.events.len());
-    for event in left.events {
-        // The bytes `Ctx::append_event` appends — `Ctx::render_entry`, its one definition — of the
-        // entry stamped `now`.
-        lines.push(Ctx::render_entry(&tm_core::log::LogEntry::new(ctx.now, event))?);
+    // A tree that cannot be read as held is not held: the context is put back as it was read.
+    if let Err(e) = ctx.settle() {
+        ctx.release();
+        return Err(e);
     }
-    let changed = applied
-        .docs
-        .iter()
-        .filter(|d| d.changed)
-        .map(|d| (d.path.clone(), d.returned.clone()))
-        .collect();
-    ctx.hold(changed, &lines, left.closed)?;
-    Ok(InMemory::Held(left.report))
+    Ok(InMemory::Held(report))
 }
 
 /// §6.3's automatic close, run by [`Ctx::load`] ahead of every verb that

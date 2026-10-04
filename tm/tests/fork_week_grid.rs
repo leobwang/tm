@@ -535,13 +535,35 @@ fn the_frozen_week_grids_are_blessed() {
         other => panic!("TM_GRID_BLESS={other}: say 1 or p63"),
     };
     let (mut refused, mut changed, mut added) = (Vec::new(), Vec::new(), 0usize);
-    for n in &fresh {
+    // **A re-draw is RECORDED on its line** (the W-44 repair, README gap 4618's harness half): the plain
+    // history check (`fork_rebless_history.rs`, `frozenhist::redrawn`) licenses a moved world only where the
+    // newer version carries `d64b`, a dated reason naming D64(b) — the field every other bless that re-draws
+    // writes (`planner_w41_starts.rs`, `tui_kernel_answers.rs`). This bless admitted the re-draw and wrote no
+    // such field, so its first re-draw since that check landed failed every plain run that followed. A line
+    // that keeps its world keeps the reason it was last re-drawn with.
+    let drawn = ["name", "from", "steps", "date", "at", "sealed", "world"];
+    let mut fresh = fresh;
+    for n in &mut fresh {
         match committed.get(n["name"].as_str().unwrap_or_default()) {
             None => added += 1,
             Some(o) => match forkgrid::rebless_allows(o, n, &because, redraw.as_deref(), harness.as_deref(), &reg) {
                 Err(e) => refused.push(e),
-                Ok(k) if !k.is_empty() => changed.push(format!("{} `{}`", n["name"], k.join("`, `"))),
-                Ok(_) => {}
+                Ok(k) => {
+                    if k.iter().any(|f| drawn.contains(&f.as_str())) {
+                        match redraw.as_deref() {
+                            Some(why) if forkclass::is_d64b_reason(why) => n["d64b"] = json!(why),
+                            _ => refused.push(format!(
+                                "{}: a re-draw records its reason on the line, dated and naming D64(b) (TM_GRID_BLESS_REDRAW)",
+                                n["name"]
+                            )),
+                        }
+                    } else if let Some(why) = o.get("d64b") {
+                        n["d64b"] = why.clone();
+                    }
+                    if !k.is_empty() {
+                        changed.push(format!("{} `{}`", n["name"], k.join("`, `")));
+                    }
+                }
             },
         }
     }

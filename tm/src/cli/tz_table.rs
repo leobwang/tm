@@ -35,10 +35,11 @@
 //! from, and the span, so a table from another tzdb never passes for this one.
 //!
 //! [`wire_for`] caches the wire value under `.tm/cache/replay/tz.json` (D13),
-//! keyed by that key. Nothing in the binary calls it yet: W3's `kernel_log.rs`
+//! keyed by that key, and since the W-44 repair opening with a digest of its own
+//! text ([`cache_text`]). Nothing in the binary calls it yet: W3's `kernel_log.rs`
 //! is its first caller. Until then the tests, `examples/tzprobe.rs` and
 //! `logbench` (c) include this file by path, so it depends on nothing but chrono,
-//! chrono-tz and serde_json.
+//! chrono-tz, serde_json and `tm_core`'s one FNV-1a body (`tm_core::fnv`).
 
 use std::path::Path;
 
@@ -138,21 +139,52 @@ impl ZoneTable {
     }
 }
 
+/// What the cached `tz.json` opens with since the W-44 repair: the digest of the rest of its text.
+const DIGEST_HEAD: &str = "{\"digest\":\"";
+
+/// **The text of `tz.json`, opening with the digest of the rest of itself** (the W-44 repair,
+/// README gap 4613): `{"digest":"<16 hex>",` and then the wire value's text after its `{`, through a
+/// final newline — exactly the bytes the digest is taken over, FNV-1a-64 in the binary's one body
+/// (`tm_core::fnv`). The owner's D93 gave every sealed month file of `.tm/cache/replay/` a digest and
+/// the campaign's D98 gave the checkpoint one; this is the third file of that directory, and the one
+/// a corrupted byte of moved a day's minutes onto another date with nothing said (driven: one
+/// offset of the table changed, its key kept — every verb refused `nowDisagrees` at 23:58 and, at
+/// 00:10, the evening's twenty minutes were credited to the next day).
+pub fn cache_text(wire: &Value) -> String {
+    let text = wire.to_string();
+    let body = format!("{}\n", text.strip_prefix('{').unwrap_or(&text));
+    format!("{DIGEST_HEAD}{}\",{body}", tm_core::fnv::fnv1a64_hex(body.as_bytes()))
+}
+
+/// **`tz.json` read back**: its wire value when the digest it opens with is the digest of the rest of
+/// it, else `None` — a file written before the digest, a byte changed on disk or by hand, or a text
+/// that is not this shape, each probed afresh and overwritten ([`wire_for`]), never served.
+pub fn from_cache_text(text: &str) -> Option<Value> {
+    let rest = text.strip_prefix(DIGEST_HEAD)?;
+    let (hex, body) = (rest.get(..16)?, rest.get(16..)?.strip_prefix("\",")?);
+    if tm_core::fnv::fnv1a64_hex(body.as_bytes()) != hex {
+        return None;
+    }
+    serde_json::from_str::<Value>(&format!("{{{body}")).ok()
+}
+
 /// **The wire value for `tz`, from the cache when its key matches, else probed.**
 ///
 /// `cache_dir` is `.tm/cache/replay/` (D13); `None` never touches the disk. A
 /// cached file whose key is not [`key_of`]`(tz)` — another zone, another tzdb, or
-/// a file that does not parse — is probed afresh and overwritten. The file is
-/// written to a temporary name and renamed into place; a write that fails leaves
-/// the answer unchanged (the probe is the source, the file only saves it). The
-/// cached value is passed on as read, never decoded: the kernel validates every
-/// table it is sent (`readTz`, `Cal.mkTz?`).
+/// a file that does not parse — is probed afresh and overwritten, and since the
+/// W-44 repair so is one whose text does not match the digest it opens with
+/// ([`from_cache_text`], README gap 4613: D93's rule for the replay cache's
+/// other files). The file is written to a temporary name and renamed into place;
+/// a write that fails leaves the answer unchanged (the probe is the source, the
+/// file only saves it). The cached value is passed on as read, never decoded: the
+/// kernel validates every table it is sent (`readTz`, `Cal.mkTz?`).
 pub fn wire_for(cache_dir: Option<&Path>, tz: Tz) -> Value {
     let key = key_of(tz);
     if let Some(dir) = cache_dir {
-        let cached = std::fs::read(dir.join(CACHE_FILE))
+        let cached = std::fs::read_to_string(dir.join(CACHE_FILE))
             .ok()
-            .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+            .and_then(|t| from_cache_text(&t))
             .filter(|v| v.get("key").and_then(Value::as_str) == Some(key.as_str()));
         if let Some(v) = cached {
             return v;
@@ -162,7 +194,7 @@ pub fn wire_for(cache_dir: Option<&Path>, tz: Tz) -> Value {
     if let Some(dir) = cache_dir {
         let tmp = dir.join(format!("{CACHE_FILE}.tmp{}", std::process::id()));
         let written = std::fs::create_dir_all(dir)
-            .and_then(|()| std::fs::write(&tmp, wire.to_string()))
+            .and_then(|()| std::fs::write(&tmp, cache_text(&wire)))
             .and_then(|()| std::fs::rename(&tmp, dir.join(CACHE_FILE)));
         if written.is_err() {
             let _ = std::fs::remove_file(&tmp);
