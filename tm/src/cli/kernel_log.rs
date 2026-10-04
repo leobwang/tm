@@ -402,14 +402,18 @@ pub fn request(
     want: &Want,
     sealed: Option<(&[String], &[String])>,
 ) -> String {
-    let section = log_section(ckpt, from, lines, terminated, reseal, want, sealed);
+    wrap_log(now, tz, &log_section(ckpt, from, lines, terminated, reseal, want, sealed))
+}
+
+/// A `log` section wrapped as [`request`] wraps it: the empty documents, the clock and the zone around it.
+fn wrap_log(now: &str, tz: &Value, section: &str) -> String {
     let mut r = String::with_capacity(section.len() + 4096);
     r.push_str(r#"{"docs":[],"now":"#);
     r.push_str(&Value::String(now.to_string()).to_string());
     r.push_str(r#","tz":"#);
     r.push_str(&tz.to_string());
     r.push_str(r#","log":"#);
-    r.push_str(&section);
+    r.push_str(section);
     r.push('}');
     r
 }
@@ -2307,6 +2311,65 @@ fn caches() -> &'static std::sync::Mutex<BTreeMap<PathBuf, ReplayCache>> {
     CACHES.get_or_init(|| std::sync::Mutex::new(BTreeMap::new()))
 }
 
+/// **The replay of `bytes` that WRITES NOTHING** — the owner's **D96** (W-44 track H, README gaps 4393 and
+/// 4392): how a TUI past midnight reads its log while it holds in memory every housekeeping write `tm plan` makes,
+/// the file's bytes with the held lines after them (`Ctx::log_now`), so its replay is the one `tm plan` reads after
+/// writing them. The section is [`capacity_log_section`]'s — this process's checkpoint and the tail since its cut,
+/// or genesis in one call — and it **never reseals** (`reseal: null`); the scope's sealed records are READ from the
+/// snapshot's month files ([`records_for`]) and merged ([`merge_records`]) and the facts decoded ([`decode_facts`]),
+/// as [`replay_scoped`] does. `Ok(None)` when the scope needs a sealed month file that is missing or does not match its
+/// digest: answering it would mean rebuilding the cache ([`ReplayCache::rebuild_missing`]), which is a write, so the
+/// caller holds nothing rather than write on a timer.
+///
+/// **Placed above the door banner, and why** (README gap 4557): the banner's functions are the ones
+/// `Ctx` calls at S, and `every_door_function_the_switch_calls_is_exercised_here` asks each of them
+/// for a test by name in `tests/kernel_log_door.rs`, a file track K holds in W-44. This one is D96's;
+/// its test by name is `tests/kernel_log_unsealed.rs`, and the land step, which holds every file,
+/// moves it below the banner with its test.
+pub fn replay_unsealed(
+    root: &Path,
+    bytes: &[u8],
+    tz: Tz,
+    tz_wire: &Value,
+    today: NaiveDate,
+    scope: Scope,
+) -> Result<Option<Read>, GenesisError> {
+    let now_day = day_of(today);
+    let (section, snapshot) = resume_section_from(root, bytes, tz_wire, now_day, None)?;
+    let answer = match log_call(&wrap_log(&date_of(now_day), tz_wire, &section)).map_err(GenesisError::Fault)? {
+        Ok(a) => a,
+        Err(r) => return Err(GenesisError::Refused(r)),
+    };
+    let (days, window, ledger_day) = match snapshot {
+        // Genesis in one call sealed nothing: every day of the log is in its answer.
+        None => (BTreeMap::new(), BTreeMap::new(), None),
+        Some(sn) => {
+            let ledger_day = (sn.meta.ledger_day > 0).then_some(sn.meta.ledger_day);
+            let dir = root.join(CACHE_DIR);
+            let mut all = caches().lock().unwrap_or_else(|p| p.into_inner());
+            let cache = all.entry(root.to_path_buf()).or_insert_with(|| ReplayCache::new(Some(dir)));
+            let r = Replayed {
+                answer: answer.clone(),
+                outcome: Outcome::Hot,
+                snapshot: sn,
+                days: BTreeMap::new(),
+                window: BTreeMap::new(),
+                notices: vec![],
+                rebuilt_because: None,
+            };
+            let Some((d, w)) = records_for(cache, &r, scope) else {
+                return Ok(None);
+            };
+            (d, w, ledger_day)
+        }
+    };
+    let facts = answer.facts.clone().ok_or_else(|| GenesisError::Fault("the answer carries no facts".into()))?;
+    let merged = merge_records(&facts, &days, &window).map_err(GenesisError::Fault)?;
+    let answer = serde_json::json!({"lines": answer.lines, "facts": merged, "headers": answer.headers});
+    let replay = decode_facts(&answer, tz).map_err(GenesisError::Fault)?;
+    Ok(Some(Read { replay, outcome: Outcome::Hot, notices: vec![], ledger_day }))
+}
+
 // ===========================================================================
 // THE DOOR THE SWITCH OPENS (design §14.6 item 1, §11.1, §11.4).
 //
@@ -2721,6 +2784,17 @@ fn resume_log_section(
     now_day: u64,
     sealed: Option<(u64, u64)>,
 ) -> Result<String, GenesisError> {
+    resume_section_from(root, bytes, tz, now_day, sealed).map(|(section, _)| section)
+}
+
+/// [`resume_log_section`], and the snapshot it resumed from (`None` for genesis in one call).
+fn resume_section_from(
+    root: &Path,
+    bytes: &[u8],
+    tz: &Value,
+    now_day: u64,
+    sealed: Option<(u64, u64)>,
+) -> Result<(String, Option<Snapshot>), GenesisError> {
     let want = Want { facts: true, headers_from: None, render: vec![] };
     let s = split(bytes);
     let tz_key = tz.get("key").and_then(Value::as_str).unwrap_or_default().to_string();
@@ -2759,13 +2833,14 @@ fn resume_log_section(
                 _ => Vec::new(),
             };
             let sealed_in = sealed.map(|_| (days.as_slice(), &[] as &[String]));
-            return Ok(log_section(Some(&sn.ckpt), cut as u64 + 1, &s.lines[cut..], s.terminated, None, &want, sealed_in));
+            let section = log_section(Some(&sn.ckpt), cut as u64 + 1, &s.lines[cut..], s.terminated, None, &want, sealed_in);
+            return Ok((section, Some(sn)));
         }
         break;
     }
     // Genesis in one call seals nothing: every day of the log is in the answer.
     if s.lines.len() <= RESEND_LINES && s.bytes_between(0, s.lines.len()) <= RESEND_BYTES {
-        return Ok(log_section(None, 1, &s.lines, s.terminated, None, &want, None));
+        return Ok((log_section(None, 1, &s.lines, s.terminated, None, &want, None), None));
     }
     Err(GenesisError::ReachTooFar {
         line: 1,

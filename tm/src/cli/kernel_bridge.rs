@@ -983,7 +983,9 @@ pub fn answer(ctx: &Ctx, verb: &str, cmds: &[Cmd], docs: Vec<(String, String)>) 
 /// problem separately, naming the line, and `tm check` prints it beside
 /// whatever the kernel says.
 pub fn tree_refusal(ctx: &Ctx) -> Result<Option<KernelIssue>, CliError> {
-    refusal_in(&ctx.store, ctx.block_min())
+    // The plan directory as every request from this context reads it (`Ctx::reading`): held in
+    // memory past midnight, the tree `tm plan`'s housekeeping has written by then (the owner's D96).
+    refusal_in(ctx.reading()?.store(), ctx.block_min())
 }
 
 /// **The same question, of any store** — the body [`tree_refusal`] is now a

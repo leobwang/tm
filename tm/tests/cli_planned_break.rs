@@ -105,3 +105,27 @@ fn a_planned_only_break_before_the_block_takes_nothing() {
     tm.ok_at(&at("09:00"), &["start", "^m1", "--energy", "3"]);
     assert_eq!(three_readings(&tm), (50, 60, 60));
 }
+
+/// **A break logged on the evening before is read from that evening's records** — `^m1` started
+/// Monday 23:00, a break from 23:20 to 23:40 (logged by `tm break`'s end, and once more by hand
+/// with no `actual_min`), and the block read after midnight: the break's record is filed under
+/// Monday, and the host reads the records of every day from the block's start to today, as it
+/// reads their idle marks (D75) — fifty minutes worked at 00:10, not seventy.
+#[test]
+fn a_break_logged_the_evening_before_is_netted_after_midnight() {
+    for hand_edited in [false, true] {
+        let tm = woken();
+        let mon = |hhmm: &str| format!("2026-09-07T{hhmm}:00-05:00");
+        tm.ok_at(&mon("23:00"), &["start", "^m1", "--energy", "3"]);
+        if hand_edited {
+            hand_append(&tm, r#"{"t":"2026-09-07T23:20:00-05:00","ev":"break","planned_min":20}"#);
+        } else {
+            tm.ok_at(&mon("23:20"), &["break", "20m"]);
+            tm.ok_at(&mon("23:40"), &["break"]);
+        }
+        let now = tm.json_at("2026-09-08T00:05:00-05:00", &["now"]);
+        assert_eq!(now["active"]["elapsed_min"].as_u64(), Some(45), "hand-edited: {hand_edited}: {now}");
+        let stop = tm.json_at("2026-09-08T00:10:00-05:00", &["stop"]);
+        assert_eq!(stop["worked_min"].as_u64(), Some(50), "hand-edited: {hand_edited}: {stop}");
+    }
+}

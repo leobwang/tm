@@ -87046,6 +87046,13 @@ and its paragraph corrected; CLOSED.
   TUI's keys (`d`, `s`, `b`, `i`, `r`, a queue start) run those verbs through `cli::run`, so they are not a separate
   member.  Driven on the base binary (`drive/d97.sh` → `d97-base.out`): no `break ended` line for `tm start`, `tm
   stop` or `tm done`.
+* **D96's three writes are the whole class, and two of the brief's files needed nothing.**  `Ctx::load_with` with
+  housekeeping on runs the roll, the reconcile (in memory), the automatic close, the waiting timeouts and the wall marks
+  and nothing else; on the base binary (`drive/d96-tui.sh` → `d96-tui-base.out`) a TUI past midnight held the roll and
+  the close (P83, P87) and left `^a4`'s elapsed wait `[?]` and the call's pause unwritten until a CLI verb — `tm plan`
+  in a copy at the same instant wrote both.  `closing.rs` (its in-memory close is reused as it stands),
+  `kernel_capacity.rs` (its requests read `Ctx::reading` and `Ctx::log_now` since D91) and `lifecycle.rs` needed no
+  change; the hold lives in `ctx.rs`, the journal in `dayfile.rs`, the tree question in `kernel_bridge.rs` (gap 4552).
 * **D98 (a)'s "the FNV-1a D93 reuses"** is `kernel_log::month_digest` (FNV-1a-64 of a text, `fnv1a64`), reused here as
   the one digest of every file of the cache.  On the base binary a checkpoint edited by hand and left consistent with
   its manifest is SERVED (`drive/d98.sh` → `d98-base.out`: the August record poisoned 4 → 3 and its manifest digest
@@ -87064,7 +87071,7 @@ pause/interruption pairing, so reading it from the record moves no other span.  
 block's worked minutes goes through `idle_min_since` — `tm now`'s header and `--json`, `tm stop`/`tm done`'s logged
 minutes, the TUI's timer and overtime prompt, the planner request's `workedMin` — so the class is one function.
 
-**Driven** (`drive/d95.sh`, both binaries, unabridged in `d95-*.out`):
+**Behaviour rows**, driven (`drive/d95.sh`, both binaries, unabridged in `d95-*.out`):
 
 | world (hand-edited `break`, planned 20, no `actual_min`) | `ed72e36`: now / stop / review | this step |
 |---|---|---|
@@ -87072,15 +87079,105 @@ minutes, the TUI's timer and overtime prompt, the planner request's `workedMin` 
 | run into the start, break at 08:50 | 50 / **60** / 50 | 40 / 50 / 50 |
 | the binary's own shape (`actual_min` 20), inside | 30 / 40 / 40 | 30 / 40 / 40 |
 
-Tests: `tests/cli_planned_break.rs` (5): both worlds read one way by `tm now`, `tm stop` and `tm review day`; `tm done
+Tests: `tests/cli_planned_break.rs` (6): both worlds read one way by `tm now`, `tm stop` and `tm review day`; `tm done
 --partial` logs the review's minutes; a break logged with its minutes (and one SHORTER than its plan) as before; a
-planned-only break that ended before the block takes nothing.
+planned-only break that ended before the block takes nothing; and a break logged on the evening before — by `tm break`,
+and by hand with no `actual_min` — netted from a block read after midnight (the records of every day from the block's
+start, as its idle marks are read, D75: plant C3, §6).
 
 **Not reached, by name (gap 4550):** two readings of a planned-only break stay in the KERNEL, whose files are not this
 track's — `WallTimer.spanStep` (D61's "was the timer stopped at the wall's start", ported arm for arm from the
 pairing this step changed) reads one as no span, and the seam's `sinceBreak` (`Replay.SeamOp.apply`, `am.getD 0`,
 §10.1's `start{since_break_min}`) as ending at its start (driven: world B's `start` logs `since_break_min: 10`, its
 break ending ten minutes AFTER the start).
+
+### 2. D96 — a TUI past midnight holds EVERY housekeeping write `tm plan` makes, in memory (gaps 4393 and 4392 CLOSED; P94)
+
+**The class, read off the code.**  `tm plan`'s housekeeping is what `Ctx::load` runs before any verb plans
+(`Ctx::load_with` with housekeeping on): the day's roll of `.tm/state.json` (`RuntimeState::roll_to`), the reconcile with
+the log (D42, in memory), §6.3's automatic close (`closing::auto_close`), then §5.1's waiting timeouts
+(`Ctx::resolve_timeouts`) and D61's wall marks (`day::stop_the_timer_at_walls`).  Their writes: plan lines (the close's
+documents, a timed-out item's line), journal lines (a wall mark's, D65), log lines (`demote`, `move`, `close`, `edit`,
+`pause`, `unpause`) and `.tm/state.json` (the roll, the close's stamps, a wall mark's `active.paused`).  D84 held the
+roll and D91 the close; the timeouts and the wall marks were written by the next CLI verb and by nothing the TUI did.
+
+| housekeeping step | what it writes | a TUI past midnight, `ed72e36` | this step |
+|---|---|---|---|
+| the roll (`RuntimeState::roll_to`) | `.tm/state.json` | held (D84, P83) | held |
+| the automatic close | the documents, `demote`/`move`/`close`, `state.closed` | held (D91, P87) | held, its lines in the replay |
+| the waiting timeouts | the item's line `[?]` → `[ ]`, an `edit` line | not held: the next verb wrote them | held |
+| D61's wall marks | `pause`/`unpause`, their journal lines, `active.paused` | not held: the next verb wrote them | held, read by the timer |
+
+**One body, two sinks.**  The timeouts and the wall marks are now one function, `Ctx::after_the_close`, which
+`Ctx::load_with` runs for every verb and the TUI's `read_as_tm_plan` runs too — while the context HOLDS
+(`Ctx::hold_begin`).  Every write a housekeeping step makes goes through three doors that answer into the hold while a
+context holds and into the disk otherwise: `Ctx::writes` (a timed-out item's `write_line`, and the journal's
+`dayfile::ensure`/`note` — `dayfile::note_underneath` rebases the undo stack only when it does not hold: nothing moved
+under it), `Ctx::append_line` (every log line, `append_event` included) and `Ctx::save_state` (which writes nothing
+while holding: the state in memory IS the held one).  A step's `reload` is `Ctx::settle` while holding.  So the TUI runs
+the code `tm plan` runs, not a copy of it, and nothing reaches the disk.
+
+**The hold** (`Ctx::held`) is a mirror of `config.toml` and every plan file (a `store::MemStore`) that held writes land
+in, the held log lines under `.tm/log.jsonl` in it, and what the context read before, which `Ctx::release` puts back
+(the state, the files, the tree, the replay).  D91's `Ctx::hold` now lays the close over the hold rather than being
+the hold.  `Ctx::settle` reads the context as the hold leaves it: `held.docs` (every plan document a held write changed
+or created) and `held.log` off the mirror, the files and the tree parsed from it — **and the replay of the log as `tm
+plan` reads it after writing the held lines, through a replay that writes nothing** (`kernel_log::replay_unsealed`:
+the process's checkpoint and the tail with the held lines after it, `reseal: null`, the scope's sealed records read and
+never rebuilt — a month file missing or not matching its digest holds nothing rather than rebuild, which is a write;
+held to the door's own answer by value in `tests/kernel_log_unsealed.rs`, and placed above the door banner, gap 4557).
+That is gap 4392's remedy, and it is what lets a held wall pause reach the worked minutes, the planner request's
+`workedMin`, the candidates and the TUI's timer, as `tm plan`'s reload of the written pause does; the held close's
+`demote` lines reach the Review screen with it.  `kernel_bridge::tree_refusal` (the timeouts' D35 gate) reads the tree
+through `Ctx::reading` too, so the held close's tree is the one asked.
+
+**When.**  `read_as_tm_plan` runs at every date change (`recollect`) and every reload: it lets go of what it held (ONE
+catch-up from the files as read — never a second stacked on the first), rolls the state, asks the close in memory,
+begins the hold, runs `after_the_close`, and lets go of a hold with nothing in it.  A wall mark's D65 notice
+(`paused ^t3 for Late call 00:05–00:20`) is taken from the notice queue onto the status line.  A reload is a fresh read
+of the directory (a file changed), and its replay may reseal the derived cache as any read does (D13) — that is not a
+housekeeping write and D96 does not move it; the date change itself writes nothing, cache included.
+
+**The class is held as a property** (`tui::tests::d96_every_housekeeping_write_goes_through_the_hold`): over every
+source file of the binary, `Ctx::load_with` runs `closing::auto_close` and `Ctx::after_the_close`, and `read_as_tm_plan`
+runs `closing::close_in_memory`, `Ctx::hold_begin` and the same `Ctx::after_the_close`; the closure of
+`after_the_close`'s calls (each resolved to its file — a bare call, a module path, a method of the context) reaches the
+timeouts, the wall marks, the journal writers, the tree question, `append_line`, `settle` and `save_state`; every
+function whose body writes the disk through the store directly is out of that closure but two — `Ctx::save_state`,
+which asks the hold first, and `tz_table::wire_for`, D13's derived zone-table cache, written only when absent (the TUI's
+own opening read writes it) — and `Ctx::reload` and `dayfile::note_underneath` ask the hold before their disk path.
+
+**Behaviour rows**, driven (a pty, `drive/d96-tui.sh`, both binaries, `TM_TUI_CLOCK_RUNS`; unabridged in `d96-tui-*.out`):
+plan-basic with `^p1` left open in Monday's `# Pinned`, `^a4`'s wait begun 2026-08-31, a call
+`at:2026-09-08T00:00/00:30`, `^t3` started Monday 23:30; the TUI opened at Monday 23:59:40 with its clock running, `3`
+pressed after midnight:
+
+| at Tuesday 00:00:07 | `ed72e36` | this step |
+|---|---|---|
+| every file of the plan directory but the replay cache, across the date change | byte-identical | byte-identical |
+| the Week pane | `0/26`, `p1` listed (D91's close held) | the same |
+| the Now pane | `ci3 p0 Late call · elapsed 0m` | `… elapsed 0m · paused` (the held pause) |
+| the Today pane's Waiting / Diagnostics | `? a4 Ask Prof. Lee…`, `waiting: a4` | gone: `^a4` is open |
+| the Necessities screen (`3`) | `? a4 … 8d / 7d · timed out` under Waiting | no Waiting section |
+| the status line | (empty) | `paused ^t3 for Late call 00:00–00:30` |
+| `tm plan` in a copy at 00:00:11 writes | the close, `^a4` `[ ]`, the `pause` at 00:00, Tuesday's day file | the same — what this TUI holds |
+
+**Tests** (`tui::tests`):
+`d96_a_tui_past_midnight_holds_every_housekeeping_write_and_asks_what_tm_plan_asks` — the D96 world (D91's, with `^a4`'s
+wait begun 2026-08-31, `on-event:reply/7d`, and a call `at:2026-09-08T00:05/00:20`) at Tuesday 00:30: every byte of the
+plan directory, cache included, the same; the held documents (`backlog.md`, both day files, the week file) and the held
+log (`demote`, `close`, `edit`, `pause`, `unpause`) byte for byte what `tm plan`'s housekeeping writes in a copy; the App
+reading `^a4` open and `^t3` unpaused, the status line saying the pause; R3's builder over the TUI and over `tm plan`
+agreeing key for key but for the checkpoint's reseal day, `workedMin` 45 on both (the call netted); one day from the
+two, hash and all; a reorder in `backlog.md` (whose held write left its items in place) runs and one in the week file
+(whose items the close moved) is refused; and `Ctx::release` putting back the state and the replay as read.
+`d96_the_housekeeping_is_held_once_from_the_files_as_read` — across two midnights one `edit` of `^a4`, stamped at
+Wednesday's instant, and a reload past midnight holding the same.  `d96_with_nothing_to_hold_nothing_is_held` — a reload
+within Monday leaves nothing held.  The class test above.  The D84 and D91 tests stand unchanged but for the
+held-mutation refusal's words.  **The held-mutation refusal is narrowed to what it was for** (`tui::held_mutation`): a
+file whose held write MOVED its items (the close's) is refused as before; one whose held write left its item lines where
+they stand on disk (a timeout's line rewritten in place, a meeting's journal line) is not — without that, a reload that
+held a meeting's journal line would have refused `J`/`K` in today's day file all afternoon.
 
 ### 3. D97 — every verb that ends a running break writes `tm break`'s journal line (gap 4391 CLOSED; P95)
 
@@ -87104,7 +87201,9 @@ running break is TAKEN out of the state (`.break_.take()`) in `end_break_at` alo
 `note_break_ended` — the six members read off the code (`done`, `interrupt`, `resume`, `start`, `stop`,
 `take_break`), so a seventh verb that ends a break silently fails it by name.
 
-**Driven** (`drive/d97.sh`, both binaries; every other line of the six transcripts byte-identical):
+**Behaviour rows**, driven (`drive/d97.sh`, both binaries; every other line of the six transcripts byte-identical; and the TUI's `s`
+key over a running break through a pty, `drive/d97-tui.sh`: the day file gains `09:35 break ended 15m/30m` before
+`09:35 stop ^m1 20m · 340m left`, where `ed72e36`'s gains the stop alone):
 
 | verb (a break running) | `ed72e36`'s journal | this step's |
 |---|---|---|
@@ -87132,7 +87231,7 @@ one-byte edit**: D93's argument (`a_digest_moves_with_every_single_byte_edit`) o
 itself is an edit of what the body must match — held exhaustively over a checkpoint's every byte
 (`a_checkpoint_one_byte_edited_is_never_read`).
 
-**Driven** (`drive/d98.sh`, both binaries):
+**Behaviour rows**, driven (`drive/d98.sh`, both binaries):
 
 | `ckpt.json` edited by hand (plan-basic + `energy-14d`, warmed at 09-10 09:00) | `ed72e36` | this step |
 |---|---|---|
@@ -87154,14 +87253,57 @@ wrong reason.  T9's `deleting_the_replay_cache_changes_nothing` green.
 
 **Parity P93 taken**: the host's worked minutes read a `break` line's span as the kernel's replay does -- `[t, t + actual_min)`, else `[t, t + planned_min)` for a line logged without `actual_min` (`BreakRecord::span`, `Replay.brkEnd`) -- so `tm now`, `tm stop`, `tm done`, the TUI's timer and the planner request's `workedMin` read a block one way with `tm review day` on a hand-edited log; fork 4748911's `idle_spans` read a break logged without `actual_min` as no span, so on such a log `tm stop` said 60 minutes beside `tm review day`'s 40 (the owner's D95, W-44 track H, README gap 4360)
 
+**Parity P94 taken**: a TUI left open past local midnight holds in memory EVERY housekeeping write `tm plan` makes at that instant -- beside §6.3's close (P87), §5.1's waiting timeouts (an elapsed wait's `[?]` line back to `[ ]`, its `edit` line) and D61's wall marks (the `pause`/`unpause` lines, their journal lines, `active.paused`) -- through the one body every verb's housekeeping runs (`Ctx::after_the_close`), the log read over the held lines by a replay that writes nothing (`kernel_log::replay_unsealed`), at every date change and every reload, writing nothing; so its tree, its timer, its Review screen and the request R3 sends are `tm plan`'s; fork 4748911's TUI kept an elapsed wait `[?]` past midnight and logged no meeting pause (D61 is P53) until a CLI verb ran its housekeeping (the owner's D96, W-44 track H, README gaps 4393 and 4392)
+
 **Parity P95 taken**: every verb that ends a running break writes `tm break`'s journal line `break ended Xm/Ym` at the instant the break ended, before its own -- `tm start`, `tm stop` and `tm done` beside `tm break`, `tm interrupt` and `tm resume` (`day::end_break_first_at`, `day::note_break_ended`, one writer); fork 4748911's `tm start`, `tm stop` and `tm done` ended a running break and wrote only their own line (the owner's D97, W-44 track H, README gap 4391)
 
-P92 is track K's (D94) and P94 this track's for D96 (§2): both are declared holes in `parity.txt` on this branch until
-the land, which deletes each hole line when its row lands or renumbers down into it.
+P92 is track K's (D94): a declared hole in `parity.txt` on this branch until the land, which deletes the hole line when
+K's row lands or renumbers down into it.
+
+### 6. Plants
+
+Each in `scratchpad/w44-h/plant` — a clone carrying this step's whole tree, its `git status --porcelain` + `git diff`
+hashed before and after each plant (equal every time), the shared tree's before and after the run (`e3b0c44298fc`, empty,
+both) — by `plants.py` (W-43 track H's runner, its plants replaced; `plants.out`, `plants-c3.out`, and `plants-said.out`
+for the failure messages quoted).  29 plants (27 in `plants.out`; D15 and D16, written with gap 4557's test, in
+`plants-d15.out`), 28 caught — C3 only by the test written for it — and D7 by nothing, the two trees it reads being
+equivalent by construction.
+
+| plant | caught by |
+|---|---|
+| A1 `note_break_ended` writes nothing | `cli_break_ended_journal`: 5 of 8 FAILED |
+| A2 `tm start` ends the break silently (the fork's) | the class test and `tm_start_ends_a_running_break_and_says_so` |
+| A3 `tm stop` ends the break silently | the class test, the stop and the stated-end tests |
+| A4 the break ends at now, not at the stated end | `a_stated_end_ends_the_break_there_and_says_so_there` |
+| A5 `ended_report` answers nothing | 4 FAILED |
+| B1 `from_text` checks no digest | both `kernel_log` unit tests and 3 of `cli_ckpt_digest` FAILED |
+| B2 `to_text` digests the empty text | the round trip and both new unit tests FAILED |
+| B3 a corrupt checkpoint rebuilt silently | the unit test, the one-byte and the bite tests FAILED |
+| B4 `FORMAT` stays 4 | `cli_ckpt_digest` 2, `cli_sealed_month_digest` 1 FAILED |
+| B5 an older format named as corrupt | the unit tests and `a_checkpoint_written_before_d98_is_rebuilt_once` FAILED |
+| C1 a break's span its `actual_min` alone (the fork's reading) | `cli_planned_break`: 3 FAILED |
+| C2 `idle_spans` reads no break record | `cli_planned_break` and `cli_interrupt_break` FAILED |
+| C3 `idle_min_since` reads the records of today alone | **nothing, at first** — no test logged a break on the evening before a block read after midnight; `a_break_logged_the_evening_before_is_netted_after_midnight` was written for it and FAILED on the plant (`plants-c3.out`) |
+| D1 `Ctx::writes` always the disk | both D96 world tests FAILED ("the date change wrote nothing under the plan directory") |
+| D2 `Ctx::save_state` writes while holding | the class test and both D96 world tests FAILED |
+| D3 `Ctx::settle` keeps the replay as read | `d96_a_tui_past_midnight…` FAILED: the request is not `tm plan`'s key for key |
+| D4 the TUI holds the close alone (D91's) | the class test and both D96 world tests FAILED |
+| D5 `dayfile::note_underneath` rebases while holding | the class test ("the hold is asked before rebase_underneath") and both D96 world tests FAILED (the rebase errs on the held file, so nothing is held) |
+| D6 `Ctx::release` keeps what the hold changed | `d96_a_tui_past_midnight…` FAILED |
+| D7 the timeouts' tree question reads the disk | **NOTHING** — gap 4398, joined (§7): the two trees load alike by construction |
+| D8 an empty hold kept | `d96_with_nothing_to_hold_nothing_is_held` FAILED |
+| D9 the held notice not said | `d96_a_tui_past_midnight…` FAILED |
+| D10 a log line appended to the disk while holding | the class test and both D96 world tests FAILED |
+| D11 the held replay reseals (a write) | both D96 world tests and two D91 tests FAILED |
+| D12 `Ctx::files_as_read` answers nothing | `d96_a_tui_past_midnight…` FAILED ("^a4's line rewritten in place moves no item": the reorder refused) |
+| D13 `Ctx::hold_begin` begins again over a hold | three D91 tests FAILED |
+| D14 `after_the_close` marks no wall | the class test, the D96 world test and `cli_wall_pause` FAILED |
+| D15 `replay_unsealed` reads the file's bytes, not the held ones | `kernel_log_unsealed` ("Hot: the held lines read as the written ones") and the D96 world test FAILED (`plants-d15.out`) |
+| D16 `replay_unsealed` rebuilds a missing month (a write) | `a_missing_sealed_month_is_answered_none_and_rebuilt_never` FAILED |
 
 ### 7. Gaps 4550-4579
 
-**Closed here**: **4360** (D95, §1), **4391** (D97, §3), **4394** (D98 (a), §4).
+**Closed here**: **4360** (D95, §1), **4393** and **4392** (D96, §2), **4391** (D97, §3), **4394** (D98 (a), §4).  Open: 4550-4557.
 
 **Gap 4550 — the kernel still reads a planned-only break two more ways.**  1. *What.*  The kernel's seam mark
 `Replay.IdleMark.brk` carries the `actual_min` a `break` line was logged with and not its planned minutes, so two
@@ -87186,34 +87328,155 @@ the break was.  4. *Clears it.*  The owner, if the one rule should reach the hum
 **Gap 4552 — files outside the brief's list.**  `tm/tests/cli_common/mod.rs` (`ckpt_redigested`, beside the harness's
 `fnv1a64_hex`), `tm/tests/cli_replay_cache_kernel.rs`, `tm/tests/cli_sealed_month_digest.rs` and
 `tm/tests/cli_break_into_block.rs` (each re-digests the checkpoint it edits, §4 — the last is W-43 track K's D92 test,
-named for the land step in case track K edits it this run) and `tm-spec-v1.md` §13 (a new paragraph, §3).  Recorded for
-the land step.
+named for the land step in case track K edits it this run) and `tm-spec-v1.md` §13 (a new paragraph, §3).  And for D96:
+`tm/src/cli/ctx.rs` (the hold, its three doors, `Ctx::after_the_close`, `Ctx::settle`), `tm/src/cli/dayfile.rs` (the
+journal through `Ctx::writes`) and `tm/src/cli/kernel_bridge.rs` (`tree_refusal` through `Ctx::reading`) — W-43's D91 held
+the same two outside the list (its gap 4399); `closing.rs`, `kernel_capacity.rs` and `lifecycle.rs`, which the brief
+named for D96, needed no change (`tm check`'s side is gap 4556).  Recorded for the land step.
+
+**Gap 4392 — CLOSED** (§2): the TUI's host replay carries the held lines — `Ctx::settle` reads the log as held
+through `kernel_log::replay_unsealed`, which reseals nothing — so the held close's `demote` lines reach the Review
+screen and a held wall pause the timer, as `tm plan`'s reload of the written lines does.
+
+**Gap 4553 — the TUI's minute tick holds nothing.**  1. *What.*  The hold is asked at every date change and every
+reload (`read_as_tm_plan`); between them the TUI's tick (`App::tick`) replans its App and asks nothing, so a calendar
+wall that begins while a block runs, in the middle of a TUI session with no file change, is held only at the next
+reload or date change, and written by the next verb (D61's own rule).  2. *Why not changed.*  D96 names the TUI past
+midnight; the tick is a replan of what was read, not a read, and a hold on every tick is a kernel call a minute.  3.
+*Cost.*  Within a day, the TUI's timer counts a meeting that began after its last read as work until something reads
+the directory again.  4. *Clears it.*  R3: a per-tick request is a read; it asks the walls again at its instant, as gap
+4400's clearing said for the close's stamp.
+
+**Gap 4554 — the derived zone table is the one disk write a hold can reach.**  1. *What.*  `Ctx::settle` (and every
+request since W-37) reads the zone table through `tz_table::wire_for`, which writes `.tm/cache/replay`'s table when it
+is absent or of another zone — D13's derived cache, as the replay cache's reseal is.  2. *Why not changed.*  The TUI's
+own opening read writes it before any hold, so a hold never finds it absent unless the cache is deleted under a
+running TUI; a read-only variant of `wire_for` is a change to `tz_table.rs`, which no track lists.  3. *Cost.*  A TUI
+whose cache was deleted under it writes the zone table at its next date change.  4. *Clears it.*  A `wire_for` that a
+hold asks without writing, if a cache deleted under a TUI is ever a case.
+
+**Gap 4398 — still open, and joined by its twin.**  The walls request's read through the hold is pinned by no test
+(C10, W-43); plant D7 (§6) finds the same of the timeouts' whole-tree question through the hold: a tree the kernel
+refuses cannot be closed, and a closed tree is a `WfPlan` post-state the kernel loads, so the disk's tree and the held
+one load alike whenever the question is asked — the two are equivalent by construction, and no test can tell them apart.
+
+**Gap 4555 — R3's swap class is TWENTY-FIVE.**  `tui::tests::d96_a_tui_past_midnight_holds_every_housekeeping_write_and_asks_what_tm_plan_asks`
+and `d96_the_housekeeping_is_held_once_from_the_files_as_read` reach `planner::plan` through an `App`
+(`advance_clock`, then `App::tick`), beside gap 4397's twenty-three.  R3 counts twenty-five, and re-runs its simulation.
+
+**Gap 4556 — `tm check` past midnight asks the planner over the files as they stand.**  1. *What.*  `tm check` asks the
+kernel for "the day `tm plan` asks" (P78, `lifecycle::planner_problems`) from a context loaded with no housekeeping
+(`Ctx::load_tolerant`); since the W-42 repair the builder rolls the state as `tm plan` does, but nothing closes,
+times out or marks the walls in memory, so past midnight its request can differ from `tm plan`'s by exactly the writes
+D96 holds for the TUI.  2. *Why not changed.*  D96 names the TUI; and `tm check` names problems at their lines ON DISK
+— a held close moves an item to another file, and a refusal named at a line the disk does not hold would send the user
+to the wrong place — so holding there needs a rule for which tree a problem is named in, which no decision gives.  3.
+*Cost.*  A planner refusal that only the housekeeping's writes would cause or cure is named, or missed, by `tm check`
+past midnight until a verb writes the housekeeping (none is known: the planner's refusals are an item's own fields).
+4. *Clears it.*  The owner, if `tm check` should ask the day as held, naming each problem at its line on disk.
+
+**Gap 4557 — `kernel_log::replay_unsealed` sits above the door banner.**  1. *What.*  The banner in `kernel_log.rs` marks
+the functions `Ctx` calls at the switch, and `kernel_log_door.rs`' `every_door_function_the_switch_calls_is_exercised_here`
+asks each `pub fn` below it for a test BY NAME in that file.  D96's read-only replay is a door function by that rule; the
+first workspace run on this step's final code failed the guard with it below the banner (`ws5`, "shipped into the binary,
+called by no test: [\"replay_unsealed\"]").  2. *Why not changed.*  `tests/kernel_log_door.rs` is track K's file in W-44,
+and a track adds its tests in files of its own: the function is placed above the banner with a doc paragraph saying so,
+and its test by name — by value against the door's own answer at every scope, and the missing-month case — is
+`tests/kernel_log_unsealed.rs` (plants D15 and D16 caught there).  3. *Cost.*  The guard does not ask for this
+function's test, so a later change that left it untested would not fail there.  4. *Clears it.*  The land step, which
+holds every file: the function below the banner and its test in the door file (or the guard reading this file too).
+
+### 8. Acceptance, capped (`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`; 16 GB for the drives, the plants and the latency run)
+
+Every measurement ran in `scratchpad/w44-h/clone`, its tree this step's (its `git status --porcelain` and `git diff`
+hashed at every run's start and end, equal each time, and equal to the worktree's after `sync.sh`).
+
+* **Part 1** (`aa6b48f`: D95, D97, D98 (a)) — §9's 21:35-22:10 line: `check.sh` 17 ok twice (`check2.log`,
+  `check3.log`), workspace runs 2-4 each 2,726 passed / 0 failed / 36 ignored over 144, 0 warnings.  Run 1, before the
+  `tm break --help` paragraph was taken out, failed `cli_break_place.rs`' `the_help_lists_the_tables_words` (§3).
+* **This commit** (part 2, D96): `check.sh` **seventeen lines, all ok, exit 0** (`check5.log` on the final code, and
+  `check6.log` and `check7.log` after this section): the build; totality; **the axiom audit 6,298** (no Lean change); `Negative.lean` rejected; FFI **95**;
+  the corpus **29/37 files and 4/5 plans**; **stage goals 1, all stage 6** (`plan_places_no_block_over_a_break`, track
+  K's); prose citations **58,465** (56,045 resolved, 2,420 allowed, 0 allow entries unused, at `check5`); check 9 **709** rostered, **0 owed**; parity **P1-P95, P92 a declared hole (track K's),
+  next free P96**; check 11 **3,385 bodies, 14 groups, 0 UNANSWERED**; check 12 **1,507** reachable, **1,099** exempt;
+  check 13 fields 17/17, inputs 33 of 37, sent 169, written 220; check 14 94 modules.
+* **`cargo test --workspace --no-fail-fast`, THREE runs on the final code** (`ws8..10.log`, `ws8..10.uptime`): each **2,746 passed / 0 failed / 36 ignored
+  over 145 result lines, 0 warnings**, 22:26-22:54 at a 1-minute load of 4.6-14.7 from the other tracks.
+  By arithmetic: part 1's 2,726 + the binary's `tui::tests` 4 (`d96_a_tui_past_midnight…`,
+  `d96_the_housekeeping_is_held_once…`, `d96_with_nothing_to_hold…`, `d96_every_housekeeping_write…`) +
+  `cli_planned_break` 1 + `kernel_log_unsealed` 15 (its 2, and `kernel_log`'s 13 unit tests, the 73rd place a test crate
+  compiles that file) = 2,746; 145 result lines.  A run before them, on the final code but for gap 4557, FAILED one test
+  (`ws5.log`: 2,730 / 1 / 36, the door guard); runs 6 and 7 of that start were stopped and their logs discarded.  No
+  `.proptest-regressions` file moved.
+* **The named suites, in run 10** (each the same in runs 8 and 9): T5 `kernel_replay_parity` 48 (4 ignored), the door
+  `kernel_log_door` 40, `cli_switch_acceptance` 16, `cli_latency` 6 (1 ignored), `kernel_call_counts` 2, `one_padder` 9,
+  `one_renderer` 34, `kernel_row_cells` 35, `kernel_item_grammar` 6, `kernel_planner_wire` 27, `planner_classes` 70
+  (6 ignored), `planner_invariants` 47 (2 ignored), `cli_conformance` 7, `cli_json_matrix` 8; this step's
+  `cli_break_ended_journal` 8, `cli_ckpt_digest` 4, `cli_planned_break` 6, `kernel_log_unsealed` 15, the binary's own 108;
+  and the cache's `cli_replay_cache_kernel` 1, `cli_sealed_month_digest` 4, `cli_break_into_block` 2, with
+  `cli_interrupt_break` 6 and `cli_pause_in_break` 6 (`suites.py`).  The suites that compile `kernel_log.rs` count its two
+  new unit tests at each place they compile it (73 in all, counted in the log) — T5 48, the door 40, `planner_classes` 70
+  against the W-43 repair's 44, 36 and 66.
+* **`cli_latency --include-ignored`**, one run at a 1-minute load of 7.6-9.1 (`lat1.log`): 7 passed in 29.4 s — T18's planner call
+  8.0 ms on the example tree, 77.6 ms on T11's, 108.1 / 199.7 ms on T14's 3- and 10-year trees; a later verb 70.9 ms,
+  at one year 111.5, at three years 172.1; `review week` at three years 521.5.  No band touched.
+* **The drives**: §1, §2, §3, §4 (`scratchpad/w44-h/drive/`), both binaries, the pty drives of §2 and §3 among them;
+  every one re-run on the final binary (§9, 22:59-23:00), each transcript as quoted.
+* **The plants**: §6.
 
 ### 9. Status note (kept current as the step runs; the sections above it are written as each part lands)
 
+Times are the scratch files' own (`ls --time-style=+%H:%M:%S`), the logs' stamps and the commits'.
+
 * 20:53 — HEAD `ed72e36`, tree clean; worktree `w44-h` made; the Lean build copied from the main checkout and
-  `lake build TmKernel:static` a no-op (192 jobs); `cargo test --workspace --no-run` 1m17s; the base binary saved
-  as `scratchpad/w44-h/base-tm` for the before/after drives.
-* 21:40 — **D97 written and green alone** (`day::end_break_first_at`, `day::note_break_ended`, `day::ended_report`;
-  `tm start`, `tm stop`, `tm done` through the one body; `tests/cli_break_ended_journal.rs` 8 and the §13/`--help`
-  conformance test); driven on both binaries (`scratchpad/w44-h/drive/d97.sh` → `d97-base.out`, `d97-new.out`).
-* 22:05 — **D98 (a) written and green alone** (`kernel_log::FORMAT` 5, `Snapshot::to_text`/`from_text`,
+  `lake build TmKernel:static` a no-op (192 jobs); `cargo test --workspace --no-run` 1m17s (`build0.log`, 21:04); the
+  base binary saved as `scratchpad/w44-h/base-tm` (21:05) for the before/after drives.
+* 21:08 — **D97 written and green alone** (`day::end_break_first_at`, `day::note_break_ended`, `day::ended_report`;
+  `tm start`, `tm stop`, `tm done` through the one body; `tests/cli_break_ended_journal.rs` 8 and the conformance
+  test); driven on both binaries (`scratchpad/w44-h/drive/d97.sh` → `d97-base.out`, `d97-new.out`).
+* 21:15 — **D98 (a) written and green alone** (`kernel_log::FORMAT` 5, `Snapshot::to_text`/`from_text`,
   `ReplayCache::read_ckpt`, `corrupt_ckpt_notice`; `tests/cli_ckpt_digest.rs` 4, two unit tests; the three test files
   that edit `ckpt.json` re-digest it through `cli_common::ckpt_redigested`); driven on both binaries
-  (`drive/d98.sh` → `d98-base.out`, `d98-new.out`).  Next: D95, then D96.
-* 22:20 — **D95 written and green alone** (`BreakRecord::span`, `log::idle_spans` over the break records;
+  (`drive/d98.sh` → `d98-base.out`, `d98-new.out`).
+* 21:16 — **D95 written and green alone** (`BreakRecord::span`, `log::idle_spans` over the break records;
   `tests/cli_planned_break.rs` 5); driven on both binaries (`drive/d95.sh` → `d95-base.out`, `d95-new.out`).
 * 21:20-21:33 — in `scratchpad/w44-h/clone` (D95, D97, D98 (a) only): `check.sh` 17 ok (`check1.log`); workspace run 1
   **2,725 passed / 1 failed / 36 ignored over 144** (`ws1.log`): `cli_break_place.rs`' `the_help_lists_the_tables_words`
   — a `tm break --help` paragraph moved its `--where` line into clap's long layout; the paragraph is removed (§3).
-* 21:35 — D96 being written in the worktree beside the clone, and not in the clone's commit: the hold made to
-  accumulate every housekeeping write, the timeouts and wall marks shared by every verb's load and the TUI, a replay
-  that writes nothing; the D91 and D84 tests green with it.
-* 21:35-22:10 — **part 1 (D95, D97, D98 (a)) measured in `scratchpad/w44-h/clone`, its tree this commit's** (porcelain
-  and diff hashed equal at each run's start and end): `check.sh` 17 ok (`check2.log`, 29 s, and `check3.log` after this
-  note); workspace runs 2, 3 and 4
-  (`ws2..4.log`, `ws2..4.uptime`, load 3-11 from the other tracks) each **2,726 passed / 0 failed / 36 ignored over 144
-  result lines, 0 warnings**.  By arithmetic: 2,564 (`f5d7a16`) + `cli_break_ended_journal` 8 + `cli_ckpt_digest` 4 +
-  `cli_planned_break` 5 + `cli_conformance` 1 + `kernel_log`'s two new unit tests in each of the 72 crates that compile it
-  (144, counted in the log) = 2,726; 141 + 3 new binaries = 144.  Plants are run once, over the whole step (§6).
-  Committed as part 1; D96 continues in the worktree.
+* 21:35 — D96 begun in the worktree beside the clone, outside part 1's commit: the hold made to accumulate every
+  housekeeping write, the timeouts and wall marks shared by every verb's load and the TUI, a replay that writes nothing;
+  the D91 and D84 tests green with it.
+* 21:35-22:05 — **part 1 (D95, D97, D98 (a)) measured in `scratchpad/w44-h/clone`, its tree that commit's** (porcelain
+  and diff hashed equal at each run's start and end): `check.sh` 17 ok (`check2.log`, 21:35, and `check3.log`, 22:04);
+  workspace runs 2, 3 and 4 (`ws2..4.log`, `ws2..4.uptime`, 21:35-22:03, at a 1-minute load of 3.3-9.0 from the other
+  tracks) each **2,726 passed / 0 failed / 36 ignored over 144 result lines, 0 warnings**.  By arithmetic: 2,564
+  (`f5d7a16`) + `cli_break_ended_journal` 8 + `cli_ckpt_digest` 4 + `cli_planned_break` 5 + `cli_conformance` 1 +
+  `kernel_log`'s two new unit tests at each of the 72 places a test crate compiles it (144, counted in the log) = 2,726;
+  141 + 3 new binaries = 144.
+* 21:36-21:48 — the D96 pty drive (`drive/d96-tui.sh`) and D97's through the TUI's `s` key (`drive/d97-tui.sh`), on the
+  base binary and on `new-tm`, the worktree's code as it stood at 21:47 (`build-d96.log`); re-run on the final binary at
+  22:59-23:00, below.
+* 21:56-22:07 — the plants (§6) in `scratchpad/w44-h/plant`, a clone carrying the step's whole tree: the baseline of the
+  suites they run (`plant-baseline.log`, 21:56); 27 plants in 2.5 minutes (`plants.out`, 22:03:53-22:06:19); C3 not
+  caught, the cross-midnight test written, C3 caught (`plants-c3.out`, 22:06); four failure messages re-captured
+  (`plants-said.out`, 22:07).
+* 22:05 — **part 1 committed on `w44-h` as `aa6b48f`** (22:04:53), from the clone, and the worktree's branch moved onto
+  it with D96 above it unstaged.
+* 22:08 — `check.sh` 17 ok on the final code but one doc comment (`check4.log`); that comment fixed (the held-mutation
+  rule stated as it is), the clone re-synced, and workspace runs 5-7 started on the final code at 22:10:10 (a first start
+  at 22:08:33, still compiling at 22:09:14, was stopped for the comment and its log discarded).
+* 22:20 — workspace run 5 on the final code: **2,730 passed / 1 failed / 36 ignored** (`ws5.log`): the door guard
+  (gap 4557).  Runs 6 and 7 stopped; `replay_unsealed` placed above the banner with its reason (22:22), its test by name
+  written (`tests/kernel_log_unsealed.rs`, 22:24), plants D15 and D16 caught there (`plants-d15.out`, 22:25); `check.sh`
+  17 ok (`check5.log`, 22:26).
+* 22:26-22:54 — **workspace runs 8, 9 and 10 on the final code** (`ws8..10.log`, `ws8..10.uptime`, porcelain and diff
+  hashed equal at each start and end): each **2,746 passed / 0 failed / 36 ignored over 145 result lines, 0 warnings**
+  (§8).  No source file changed after 22:24.
+* 22:55 — `cli_latency --include-ignored` (`lat1.log`): 7 passed (§8).
+* 22:59-23:00 — **every drive re-run on the final binary** (`final-tm`, `cargo build -p tm` in the clone): `d95` and
+  `d97` byte-identical to `*-new.out`; `d98` but for the checkpoint digest its transcript prints, which moves with the
+  fresh `gen` every rebuild writes (two runs on the final binary differ there as well); the two pty drives' frames, files
+  and copies byte-identical (the D96 transcript but for its scratch directory's name).
+* Then — §8 and this note brought to the measurements (`check6.log`: 17 ok), the four drive tables captioned as the
+  behaviour rows they are; `check.sh` 17 ok on this commit's tree (`check7.log`); part 2 committed on `w44-h` above
+  `aa6b48f`.

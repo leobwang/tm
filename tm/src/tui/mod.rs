@@ -281,35 +281,73 @@ fn load(g: &Globals) -> Result<(Ctx, App), CliError> {
 
 /// **The plan directory as `tm plan` reads it at the context's instant — in
 /// memory**: `.tm/state.json` as its roll leaves it (the owner's D84, W-42
-/// track H, README gap 4050, parity P83) and the documents as its automatic
-/// close leaves them (the owner's D91, W-43 track H, README gap 4342).
+/// track H, README gap 4050, parity P83), the documents as its automatic
+/// close leaves them (the owner's D91, W-43 track H, README gap 4342), and —
+/// since the owner's D96 (W-44 track H, README gap 4393, parity P94) — as
+/// EVERY housekeeping write `tm plan` makes at that instant leaves them:
+/// §5.1's waiting timeouts and D61's wall marks too.
 ///
 /// The CLI's housekeeping rolls the state at the first verb of a new local date
-/// (`RuntimeState::roll_to`, `ctx.rs`' `roll_day`) and then runs §6.3's
-/// automatic close, and writes both; the TUI reads its plan directory without
-/// housekeeping, so past midnight it held the stale state and the unclosed
-/// files. It reads the state through the same one rule here, and asks the
-/// kernel for the documents the close would leave
-/// (`closing::close_in_memory`: the same request, held — the log lines and the
-/// stamps too), and writes nothing (D81: nothing writes on a timer);
+/// (`RuntimeState::roll_to`, `ctx.rs`' `roll_day`), runs §6.3's automatic close,
+/// then the waiting timeouts and the wall marks (`Ctx::after_the_close`), and
+/// writes all of them; the TUI reads its plan directory without housekeeping,
+/// so past midnight it held the stale state, the unclosed files, the waiting
+/// items whose timeout had elapsed and the block a meeting had paused. Here it
+/// lets go of whatever it held before ([`Ctx::release`]: ONE catch-up from the
+/// files as read), reads the state through the same one rule, asks the kernel
+/// for the documents the close would leave (`closing::close_in_memory`), and
+/// runs the rest of `tm plan`'s housekeeping through THE SAME BODY
+/// (`Ctx::after_the_close`) while the context holds (`Ctx::hold_begin`), so
+/// every write it makes — a line, a journal line, a log line, the state —
+/// answers into memory, and writes nothing (D81: nothing writes on a timer);
 /// `planwire::plan_date` keeps its meaning, fork `PlanInput::date`. A state of
 /// today's date, or of none, is read as it is, and a close that is not due asks
-/// nothing.
+/// nothing; a hold with nothing in it is let go.
 ///
-/// Returns a sentence for the status line when the close could not be held — a
-/// refusal by name, or a file that could not be read — in which case the TUI
-/// plans from the files as they stand, as `tm plan` does after a refused close;
-/// a kernel fault is an error.
+/// Returns a sentence for the status line: the meeting pause a held wall mark
+/// says (D65), and when the close or the rest could not be held — a refusal by
+/// name, or a file that could not be read — what was not held, in which case
+/// the TUI plans from the files as they stand, as `tm plan` does after a
+/// refused close; a kernel fault is an error.
 fn read_as_tm_plan(ctx: &mut Ctx) -> Result<Option<String>, CliError> {
+    ctx.release();
     ctx.state.roll_to(ctx.today);
-    match crate::cli::closing::close_in_memory(ctx) {
+    let mut said = Vec::new();
+    let refused = match crate::cli::closing::close_in_memory(ctx) {
         Ok(crate::cli::closing::InMemory::Refused(why)) => {
-            Ok(Some(format!("the automatic close was refused, so these are the files as they stand: {why}")))
+            said.push(format!("the automatic close was refused, so these are the files as they stand: {why}"));
+            true
         }
-        Ok(_) => Ok(None),
-        Err(e) if e.is_kernel_fault() => Err(e),
-        Err(e) => Ok(Some(format!("the automatic close could not be asked, so these are the files as they stand: {e}"))),
+        Ok(_) => false,
+        Err(e) if e.is_kernel_fault() => return Err(e),
+        Err(e) => {
+            said.push(format!("the automatic close could not be asked, so these are the files as they stand: {e}"));
+            true
+        }
+    };
+    // §5.1's waiting timeouts and D61's wall marks, HELD: the one body `tm plan`'s housekeeping runs (D96).
+    let close_held = ctx.holding();
+    let earlier = crate::cli::kernel_bridge::take_notices();
+    let held = ctx.hold_begin().and_then(|()| ctx.after_the_close(refused, true));
+    let mut notices = crate::cli::kernel_bridge::take_notices();
+    match held {
+        Ok(()) => {
+            let empty = ctx.held.as_ref().is_some_and(|h| h.docs.is_empty() && h.log.is_empty());
+            if !close_held && empty {
+                ctx.release();
+            }
+        }
+        Err(e) if e.is_kernel_fault() => return Err(e),
+        Err(e) => {
+            ctx.release();
+            notices.clear();
+            said.push(format!("the housekeeping could not be held, so these are the files as they stand: {e}"));
+        }
     }
+    let mut out: Vec<String> = earlier;
+    out.extend(notices);
+    out.extend(said);
+    Ok((!out.is_empty()).then(|| out.join(" · ")))
 }
 
 /// **[`read_as_tm_plan`] at `now`, for a context already read** — the date
@@ -780,8 +818,10 @@ fn on_disk(read: &Ctx, file: &str, line: usize) -> (String, usize) {
     }
 }
 
-/// **A screen mutation that addresses a file the TUI holds closed in memory is
-/// refused by name** (README gap 4505, the W-43 repair; the owner's D91). Past
+/// **A screen mutation that addresses a file whose items the TUI holds MOVED
+/// in memory is refused by name** (README gap 4505, the W-43 repair; the owner's
+/// D91 — since D96 the hold is every housekeeping write, and of those the close
+/// is the one that moves an item from one file to another). Past
 /// midnight the App's rows are the held close's tree — `^p1` in the week file —
 /// while the file on disk still has it in Monday's day file, and the two screen
 /// mutations that are not §13 verbs (`J`/`K`, the inbox line) load the disk
@@ -790,8 +830,11 @@ fn on_disk(read: &Ctx, file: &str, line: usize) -> (String, usize) {
 /// not hold. Gap 4396 mapped the editor (`on_disk`) and only the editor; this is
 /// the rest of the class — every mutation whose file a held close changed. A §13
 /// verb is not refused: its own housekeeping writes the very close the TUI
-/// holds, so the file it addresses is the file the App shows. Returns the
-/// message, or `None` for a mutation that may run.
+/// holds, so the file it addresses is the file the App shows. And a file a held
+/// write changed WITHOUT moving its items (D96: a timeout's line rewritten in
+/// place, a meeting's journal line) is not refused either — its item lines on
+/// disk are the ones the App shows, and a reorder there is the one the user
+/// sees. Returns the message, or `None` for a mutation that may run.
 fn held_mutation(read: &Ctx, m: &queue::Mutation) -> Option<String> {
     let held = read.held.as_ref()?;
     let (who, files): (String, Vec<String>) = match m {
@@ -806,10 +849,17 @@ fn held_mutation(read: &Ctx, m: &queue::Mutation) -> Option<String> {
         }
         _ => return None,
     };
-    let file = files.into_iter().find(|f| held.docs.contains_key(f))?;
+    // A file whose held write MOVED its items — the item lines, in order, are not the disk's (the close
+    // took one out or filed one in) — is refused; one whose held write left them where they stand (a
+    // timeout's line rewritten in place, a meeting's journal line, D96) reorders on disk as the App shows.
+    let ids = |files: Option<&tm_core::store::PlanFiles>, f: &str| -> Vec<tm_core::model::Id> {
+        files.and_then(|fs| fs.file(f)).map(|pf| pf.items().map(tm_core::tree::Tree::key_of).collect()).unwrap_or_default()
+    };
+    let moved = |f: &String| held.docs.contains_key(f) && (f == "inbox.md" || ids(Some(&read.files), f) != ids(read.files_as_read(), f));
+    let file = files.into_iter().find(moved)?;
     Some(format!(
-        "{who}: {file} is held closed in memory past midnight and is not yet on disk (D91) — \
-         a verb (`tm plan`) writes the close, and then this reorders it"
+        "{who}: {file} is held in memory as `tm plan`'s housekeeping leaves it, and the disk does not hold its \
+         lines yet (D91, D96) — a verb (`tm plan`) writes it, and then this reorders it"
     ))
 }
 
@@ -1434,7 +1484,7 @@ mod tests {
         let tuesday = DateTime::parse_from_rfc3339("2026-09-08T00:30:00-05:00").expect("now").with_timezone(&app.cfg.tz);
         advance_clock(&mut app, &mut read, tuesday).expect("the date change");
         let said = held_mutation(&read, &reorder("p1", "week/2026-W37.md")).expect("refused");
-        assert!(said.starts_with("^p1: week/2026-W37.md is held closed in memory past midnight"), "{said}");
+        assert!(said.starts_with("^p1: week/2026-W37.md is held in memory as `tm plan`'s housekeeping leaves it"), "{said}");
         assert!(held_mutation(&read, &queue::Mutation::Reorder { id: tm_core::model::Id::new("p1"), file: None, delta: -1 }).is_some());
         let held = read.held.as_ref().expect("a held close");
         let x2 = read.tree.get(&tm_core::model::Id::new("d2")).map(|i| i.src.file.clone()).expect("^d2");
@@ -1526,5 +1576,345 @@ mod tests {
             tui_scope(Screen::Today, &today, wednesday),
             "the TUI opens on Today"
         );
+    }
+
+
+    /// **The D96 world** — the D91 world (`^p1` left open in Monday's `# Pinned`, `^t3` started at
+    /// 23:30 and left running, the TUI opened at 23:50, its housekeeping run) with two more things
+    /// `tm plan`'s housekeeping does at Tuesday's first instant: `^a4`'s wait begun 2026-08-31
+    /// (`on-event:reply/7d`, so its timeout elapses at Tuesday's date, §5.1) and a call
+    /// `at:2026-09-08T00:05/00:20` in the calendar (D61: it begins and ends while `^t3` runs). On
+    /// Monday at 23:50 none of the three is due.
+    fn housekeeping_world() -> (tempfile::TempDir, Globals, Ctx, App) {
+        let (tmp, g) = fixture();
+        let plan = g.dir.clone().expect("the plan directory");
+        let backlog = plan.join("backlog.md");
+        let text = fs::read_to_string(&backlog).expect("backlog");
+        assert_eq!(text.matches("waiting:2026-09-05 ^a4").count(), 1, "{text}");
+        fs::write(&backlog, text.replace("waiting:2026-09-05 ^a4", "waiting:2026-08-31 ^a4")).expect("write the backlog");
+        let calendar = plan.join("calendar/2026-W37.md");
+        let mut text = fs::read_to_string(&calendar).expect("calendar");
+        text.push_str("- [ ] 3 Late call         at:2026-09-08T00:05/00:20 ^g7\n");
+        fs::write(&calendar, text).expect("write the calendar");
+        for (when, args) in [
+            ("2026-09-07T06:05:00-05:00", &["wake", "06:05", "--slept", "8h10m"][..]),
+            ("2026-09-07T07:00:00-05:00", &["arrive", "lounge"][..]),
+            ("2026-09-07T23:30:00-05:00", &["start", "^t3", "--energy", "3"][..]),
+        ] {
+            let argv: Vec<String> = args.iter().map(|a| (*a).to_string()).collect();
+            let said = verb(&at_str(&g, when), &argv).expect("a verb of the world");
+            assert!(said.ends_with(": ok"), "`tm {}`: {said}", args.join(" "));
+        }
+        let (read, app) = load(&at_str(&g, "2026-09-07T23:50:00-05:00")).expect("the TUI opens at 23:50");
+        (tmp, g, read, app)
+    }
+
+    /// **D96: a TUI past midnight holds EVERY housekeeping write `tm plan` makes at that instant,
+    /// in memory, and asks the kernel what `tm plan` asks** (the owner's D96, W-44 track H, README
+    /// gap 4393, parity P94). At the date change (Tuesday 00:30, through the loop's own step,
+    /// [`advance_clock`]) the TUI runs `tm plan`'s housekeeping through its one body
+    /// (`closing::close_in_memory`, then `Ctx::after_the_close`) while it holds:
+    ///
+    /// * every byte of the plan directory, `.tm/` and its replay cache included, is the same after
+    ///   the date change;
+    /// * what is held is what `tm plan`'s housekeeping WRITES, file for file and line for line: the
+    ///   close's week file, `^a4` back to `[ ]` in the backlog (§5.1), and Tuesday's day file with the
+    ///   journal lines of the call's pause and unpause (D61, D65) — and the log lines `demote`,
+    ///   `close`, `edit`, `pause`, `unpause`, in `tm plan`'s order;
+    /// * the App reads them: `^a4` is open, `^t3` runs unpaused, and the status line says the pause;
+    /// * R3's builder over what the TUI holds and over `tm plan`'s own load at 00:30 agree KEY FOR
+    ///   KEY but for the replay checkpoint's reseal day — the documents, the log section, the
+    ///   candidates and the running block's worked minutes, which read the held pause through a
+    ///   replay that writes nothing — and the kernel plans ONE day from the two.
+    #[test]
+    fn d96_a_tui_past_midnight_holds_every_housekeeping_write_and_asks_what_tm_plan_asks() {
+        let _env = kernel_env();
+        let (tmp, g, mut read, mut app) = housekeeping_world();
+        let plan = g.dir.clone().expect("the plan directory");
+        assert!(read.held.is_none(), "nothing is held before midnight");
+        let before = tree_bytes(&plan);
+        let (state0, replay0) = (read.state.clone(), read.replay.clone());
+        let tuesday = DateTime::parse_from_rfc3339("2026-09-08T00:30:00-05:00").expect("now").with_timezone(&app.cfg.tz);
+        crate::cli::kernel_bridge::capture_kernel_stderr(true);
+        let changed = advance_clock(&mut app, &mut read, tuesday);
+        crate::cli::kernel_bridge::capture_kernel_stderr(false);
+        assert!(changed.expect("the date change"));
+        assert!(tree_bytes(&plan) == before, "the date change wrote nothing under the plan directory");
+
+        let held = read.held.as_ref().expect("the housekeeping is held");
+        let evs: Vec<String> = held
+            .log
+            .lines()
+            .map(|l| serde_json::from_str::<serde_json::Value>(l).expect("a log line")["ev"].as_str().unwrap_or_default().to_string())
+            .collect();
+        assert_eq!(evs, ["demote", "close", "edit", "pause", "unpause"], "{}", held.log);
+        let mut paths: Vec<&str> = held.docs.keys().map(String::as_str).collect();
+        paths.sort_unstable();
+        assert_eq!(paths, ["backlog.md", "day/2026-09-07.md", "day/2026-09-08.md", "week/2026-W37.md"], "the held documents");
+        assert!(held.docs["backlog.md"].lines().any(|l| l.starts_with("- [ ]") && l.ends_with("^a4")), "{}", held.docs["backlog.md"]);
+        let tuesday_file = &held.docs["day/2026-09-08.md"];
+        assert!(tuesday_file.contains("00:05 pause ^t3") && tuesday_file.contains("00:20 unpause ^t3"), "{tuesday_file}");
+
+        assert!(app.tree.get(&tm_core::model::Id::new("a4")).is_some_and(|i| i.state == tm_core::model::State::Todo), "the App reads ^a4 open");
+        assert_eq!(app.state.active.as_ref().map(|a| (a.id.as_str(), a.paused)), Some(("t3", false)), "the call has ended");
+        assert!(
+            app.message.as_deref().is_some_and(|m| m.contains("paused ^t3 for Late call 00:05–00:20")),
+            "the status line says the held pause: {:?}",
+            app.message
+        );
+
+        // A held write that leaves a file's items where they stand does not refuse a reorder there; the close's
+        // files, whose items it moved, still do.
+        let reorder = |id: &str, file: &str| queue::Mutation::Reorder { id: tm_core::model::Id::new(id), file: Some(file.to_string()), delta: 1 };
+        assert_eq!(held_mutation(&read, &reorder("a1", "backlog.md")), None, "^a4's line rewritten in place moves no item");
+        assert!(held_mutation(&read, &reorder("p1", "week/2026-W37.md")).is_some(), "the close filed ^p1 into the week");
+
+        // `tm plan` at the same instant, in a copy: its housekeeping WRITTEN.
+        let (plan_text, copy) = tm_plans_request(&tmp, &plan, tuesday, "tm-plan");
+        for (rel, text) in &held.docs {
+            let written = fs::read_to_string(copy.join(rel)).unwrap_or_else(|e| panic!("{rel}: {e}"));
+            assert_eq!(&written, text, "{rel}: the TUI holds the file `tm plan` writes, byte for byte");
+        }
+        let log = fs::read_to_string(copy.join(".tm/log.jsonl")).expect("tm plan's log");
+        assert!(log.ends_with(&held.log), "the held lines are the lines `tm plan` appends, in its order");
+        let tui_text = crate::cli::kernel_capacity::planner_request(&read, false).expect("the TUI's request");
+        let tui: serde_json::Value = serde_json::from_str(&tui_text).expect("JSON");
+        let tm_plan: serde_json::Value = serde_json::from_str(&plan_text).expect("JSON");
+        let mut differ = Vec::new();
+        json_diff(&tui, &tm_plan, "", &mut differ);
+        assert_eq!(differ, ["log.ckpt.resealDay"], "key for key, but for the checkpoint `tm plan`'s read resealed");
+        // The running block's worked minutes net the held call: 23:30 to 00:30 less 00:05-00:20.
+        assert!(tui.to_string().contains("\"workedMin\":45"), "the worked minutes net the held call: {}", tui["planner"]);
+        let (tui_resp, _) = crate::cli::kernel_bridge::call_text(&tui_text).expect("the kernel plans the TUI's request");
+        let (plan_resp, _) = crate::cli::kernel_bridge::call_text(&plan_text).expect("the kernel plans tm plan's request");
+        assert!(tui_resp["ok"]["plan"].is_object(), "a day: {}", tui_resp["ok"]);
+        assert_eq!(tui_resp["ok"]["plan"], plan_resp["ok"]["plan"], "one day from the two requests, hash and all");
+
+        // Letting go puts back what was read: the state as read (rolled to Tuesday, as the read rolls it before
+        // it holds), the replay as read, and nothing held.
+        read.release();
+        let mut rolled = state0;
+        rolled.roll_to(tui_date(2026, 9, 8));
+        assert!(read.held.is_none());
+        assert_eq!(read.state, rolled, "release puts back the state as read");
+        assert!(read.replay == replay0, "release puts back the replay as read");
+    }
+
+    /// **D96 is one catch-up from the files as read, at every date change and every reload** — never
+    /// a second set of housekeeping stacked on the first: across a second midnight the held `edit` of
+    /// `^a4` is asked again (one line, stamped at Wednesday's instant), and a reload past midnight holds
+    /// the same. And with nothing to hold, nothing is held.
+    #[test]
+    fn d96_the_housekeeping_is_held_once_from_the_files_as_read() {
+        let _env = kernel_env();
+        let (_tmp, g, mut read, mut app) = housekeeping_world();
+        let plan = g.dir.clone().expect("the plan directory");
+        let before = tree_bytes(&plan);
+        let tz = app.cfg.tz;
+        let wednesday = DateTime::parse_from_rfc3339("2026-09-09T00:30:00-05:00").expect("now").with_timezone(&tz);
+        let tuesday = DateTime::parse_from_rfc3339("2026-09-08T00:30:00-05:00").expect("now").with_timezone(&tz);
+        assert!(advance_clock(&mut app, &mut read, tuesday).expect("Tuesday"));
+        assert!(advance_clock(&mut app, &mut read, wednesday).expect("Wednesday"));
+        assert!(tree_bytes(&plan) == before, "nothing written across two midnights");
+        let held = read.held.as_ref().expect("held");
+        let edits: Vec<serde_json::Value> = held
+            .log
+            .lines()
+            .map(|l| serde_json::from_str::<serde_json::Value>(l).expect("a log line"))
+            .filter(|e| e["ev"] == "edit")
+            .collect();
+        assert_eq!(edits.len(), 1, "one timeout, not one per midnight: {}", held.log);
+        assert!(edits[0]["t"].as_str().is_some_and(|t| t.starts_with("2026-09-09T00:30")), "{}", edits[0]);
+        // A reload is a fresh read of the directory (a file changed), whose replay may reseal the derived
+        // cache as any read does (D13); no housekeeping write is made — every other byte stands.
+        let g_wed = at(&g, wednesday);
+        reload(&mut app, &mut read, &g_wed, &Clock::of(&g_wed)).expect("a reload past midnight");
+        let uncached = |t: std::collections::BTreeMap<String, Vec<u8>>| {
+            t.into_iter().filter(|(rel, _)| !rel.starts_with(".tm/cache/")).collect::<std::collections::BTreeMap<_, _>>()
+        };
+        assert!(uncached(tree_bytes(&plan)) == uncached(before), "no housekeeping written by the reload");
+        let again = read.held.as_ref().expect("the reload holds the housekeeping");
+        assert_eq!(again.log.lines().filter(|l| l.contains("\"ev\":\"edit\"")).count(), 1, "{}", again.log);
+    }
+
+    /// **With nothing to hold, nothing is held** (D96): a reload within Monday, before the call, the
+    /// timeout and the close are due, leaves `read.held` empty — the context reads the disk as it is,
+    /// and the editor and the screen mutations address the disk's lines.
+    #[test]
+    fn d96_with_nothing_to_hold_nothing_is_held() {
+        let _env = kernel_env();
+        let (_tmp, g, mut read, mut app) = housekeeping_world();
+        let monday = DateTime::parse_from_rfc3339("2026-09-07T23:55:00-05:00").expect("now").with_timezone(&app.cfg.tz);
+        let g_mon = at(&g, monday);
+        reload(&mut app, &mut read, &g_mon, &Clock::of(&g_mon)).expect("a reload within the day");
+        assert!(read.held.is_none(), "an empty hold is let go");
+        assert_eq!(app.state.active.as_ref().map(|a| (a.id.as_str(), a.paused)), Some(("t3", false)));
+    }
+
+
+    /// Every function of a source file, `(name, body)`, cut at its `fn` lines, `//` comments dropped.
+    fn source_bodies(text: &str) -> Vec<(String, String)> {
+        let lines: Vec<&str> = text.lines().map(|l| l.find("//").map_or(l, |i| &l[..i])).collect();
+        let starts: Vec<(usize, String)> = lines
+            .iter()
+            .enumerate()
+            .filter_map(|(i, l)| {
+                let t = l.trim_start();
+                let rest = ["pub(crate) fn ", "pub(super) fn ", "pub fn ", "fn "].iter().find_map(|p| t.strip_prefix(p))?;
+                Some((i, rest.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect()))
+            })
+            .collect();
+        starts
+            .iter()
+            .enumerate()
+            .map(|(n, (i, name))| {
+                let end = starts.get(n + 1).map_or(lines.len(), |(j, _)| *j);
+                (name.clone(), lines[*i + 1..end].join("\n"))
+            })
+            .collect()
+    }
+
+    /// The binary's own functions `body` (in source file `file`, relative to `src/`) calls, resolved the
+    /// ways the binary calls one: bare (`name(`, a function of the same file), by a module path
+    /// (`super::day::name(`, `crate::cli::day::name(`, `day::name(`: that module's file), or as a method of
+    /// the context (`Ctx::name(`, `ctx.name(`, `cx.name(`, and `self.name(` inside `cli/ctx.rs`) — and not a
+    /// method of any other value (`.insert(` on a map is not the binary's `insert`). Each as `(file, name)`.
+    fn callees(file: &str, body: &str, defined: &std::collections::BTreeSet<(String, String)>) -> Vec<(String, String)> {
+        let ident = |c: char| c.is_alphanumeric() || c == '_';
+        let mut out = Vec::new();
+        for (i, _) in body.match_indices('(') {
+            let before = &body[..i];
+            let name: String = before.chars().rev().take_while(|c| ident(*c)).collect::<Vec<_>>().into_iter().rev().collect();
+            if name.is_empty() {
+                continue;
+            }
+            let head = &before[..before.len() - name.len()];
+            let target = if let Some(path) = head.strip_suffix("::") {
+                let module: String = path.chars().rev().take_while(|c| ident(*c)).collect::<Vec<_>>().into_iter().rev().collect();
+                match module.as_str() {
+                    "Ctx" => Some("cli/ctx.rs".to_string()),
+                    "" => None,
+                    m => ["cli/", "tui/", ""].iter().map(|d| format!("{d}{m}.rs")).find(|f| defined.contains(&(f.clone(), name.clone()))),
+                }
+            } else if let Some(recv) = head.strip_suffix('.') {
+                let r: String = recv.chars().rev().take_while(|c| ident(*c)).collect::<Vec<_>>().into_iter().rev().collect();
+                let lone = !recv[..recv.len() - r.len()].ends_with(|c: char| ident(c) || c == '.');
+                match r.as_str() {
+                    "ctx" | "cx" if lone => Some("cli/ctx.rs".to_string()),
+                    "self" if lone && file == "cli/ctx.rs" => Some("cli/ctx.rs".to_string()),
+                    _ => None,
+                }
+            } else if head.ends_with(|c: char| ident(c)) {
+                None
+            } else {
+                Some(file.to_string())
+            };
+            if let Some(t) = target {
+                if defined.contains(&(t.clone(), name.clone())) {
+                    out.push((t, name));
+                }
+            }
+        }
+        out
+    }
+
+    /// **The class, read off the code** (the owner's D96, README gap 4393): what `tm plan`'s
+    /// housekeeping writes, and that the TUI holds every bit of it.
+    ///
+    /// * `Ctx::load_with` — every verb's housekeeping — runs the automatic close and then
+    ///   `Ctx::after_the_close` (the waiting timeouts and the wall marks), and the TUI's read runs the
+    ///   close in memory (`closing::close_in_memory`) and THE SAME `after_the_close`, holding.
+    /// * Every function the CLI holds a disk write in — a `.store.` call that writes, over every source
+    ///   file of the binary — is out of reach of `after_the_close` (the closure of the calls its body
+    ///   makes, over the functions those files define), so every write `after_the_close` makes goes
+    ///   through `Ctx::writes`, `Ctx::append_line` or `Ctx::save_state`, which answer into the hold;
+    ///   and the one rebase of the undo stack it reaches (`dayfile::note_underneath`) is behind the hold.
+    #[test]
+    fn d96_every_housekeeping_write_goes_through_the_hold() {
+        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut bodies: Vec<(String, String, String)> = Vec::new();
+        let mut stack = vec![src.clone()];
+        while let Some(dir) = stack.pop() {
+            for e in fs::read_dir(&dir).expect("a source directory").flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else if p.extension().is_some_and(|x| x == "rs") {
+                    let rel = p.strip_prefix(&src).expect("inside").display().to_string();
+                    let text = fs::read_to_string(&p).expect("a source file");
+                    // The tests of a file are not the binary: cut at its test module.
+                    let text = text.split("#[cfg(test)]").next().unwrap_or_default().to_string();
+                    for (name, body) in source_bodies(&text) {
+                        bodies.push((rel.clone(), name, body));
+                    }
+                }
+            }
+        }
+        let body_of = |file: &str, name: &str| -> String {
+            let hits: Vec<&String> = bodies.iter().filter(|(f, n, _)| f == file && n == name).map(|(_, _, b)| b).collect();
+            assert_eq!(hits.len(), 1, "{file}: {name}");
+            hits[0].clone()
+        };
+        let load_with = body_of("cli/ctx.rs", "load_with");
+        let defined: std::collections::BTreeSet<(String, String)> = bodies.iter().map(|(f, n, _)| (f.clone(), n.clone())).collect();
+        let named = |b: &str, file: &str, name: &str| callees(file, b, &defined).contains(&(file.to_string(), name.to_string()))
+            || callees("cli/ctx.rs", b, &defined).iter().any(|(_, n)| n == name);
+        assert!(
+            named(&load_with, "cli/closing.rs", "auto_close") && callees("cli/ctx.rs", &load_with, &defined).contains(&("cli/ctx.rs".to_string(), "after_the_close".to_string())),
+            "tm plan's housekeeping is the automatic close and after_the_close"
+        );
+        let tui = body_of("tui/mod.rs", "read_as_tm_plan");
+        let tui_calls = callees("tui/mod.rs", &tui, &defined);
+        for want in [("cli/closing.rs", "close_in_memory"), ("cli/ctx.rs", "hold_begin"), ("cli/ctx.rs", "after_the_close")] {
+            assert!(tui_calls.contains(&(want.0.to_string(), want.1.to_string())), "the TUI's read calls {want:?}: {tui_calls:?}");
+        }
+
+        // The writers: a function whose body writes through the store directly.
+        let writes = [".store.write_", ".store.append", ".store.ensure_file", ".store.modify_", ".store.save_state", ".store.insert_line",
+            ".store.remove_line", ".store.move_line", ".store.replace_generated", ".store.delete_file", "fs::write("];
+        let writers: Vec<(String, String)> = bodies
+            .iter()
+            .filter(|(_, _, b)| writes.iter().any(|w| b.contains(w)))
+            .map(|(f, n, _)| (f.clone(), n.clone()))
+            .collect();
+        assert!(writers.iter().any(|(f, n)| f == "cli/ctx.rs" && n == "save_state"), "the scan sees a writer: {writers:?}");
+
+        // The closure of `after_the_close`'s calls, each call resolved to its file.
+        let root = ("cli/ctx.rs".to_string(), "after_the_close".to_string());
+        let mut reached: std::collections::BTreeSet<(String, String)> = [root.clone()].into();
+        let mut work = vec![root];
+        while let Some((f, n)) = work.pop() {
+            for (_, _, b) in bodies.iter().filter(|(bf, bn, _)| *bf == f && *bn == n) {
+                for c in callees(&f, b, &defined) {
+                    if reached.insert(c.clone()) {
+                        work.push(c);
+                    }
+                }
+            }
+        }
+        let has = |f: &str, n: &str| reached.contains(&(f.to_string(), n.to_string()));
+        for (f, n) in [("cli/ctx.rs", "resolve_timeouts"), ("cli/day.rs", "stop_the_timer_at_walls"), ("cli/dayfile.rs", "note_underneath"),
+            ("cli/dayfile.rs", "note"), ("cli/dayfile.rs", "ensure"), ("cli/kernel_bridge.rs", "tree_refusal"), ("cli/ctx.rs", "append_line"),
+            ("cli/ctx.rs", "settle"), ("cli/ctx.rs", "save_state")] {
+            assert!(has(f, n), "{f}:{n} is reached from after_the_close: {reached:?}");
+        }
+        // `save_state` writes the disk unless the context holds, `reload` reads it unless it holds, and
+        // `note_underneath` rebases the undo stack unless it holds; every other writer is out of reach.
+        let held_first = |file: &str, name: &str, write: &str| {
+            let b = body_of(file, name);
+            let (h, w) = (b.find("holding()"), b.find(write));
+            assert!(h.is_some() && h < w, "{name}: the hold is asked before {write}");
+        };
+        held_first("cli/ctx.rs", "save_state", ".store.save_state");
+        held_first("cli/ctx.rs", "reload", "replay_with");
+        held_first("cli/dayfile.rs", "note_underneath", "rebase_underneath");
+        // `tz_table::wire_for` writes the zone table's cache — D13's derived cache, under `.tm/cache/` — and
+        // only when it is absent or of another zone; the TUI's own opening read has written it before any hold.
+        let stray: Vec<&(String, String)> = writers
+            .iter()
+            .filter(|w| reached.contains(*w))
+            .filter(|w| !(w.0 == "cli/ctx.rs" && w.1 == "save_state") && !(w.0 == "cli/tz_table.rs" && w.1 == "wire_for"))
+            .collect();
+        assert!(stray.is_empty(), "a housekeeping write that does not go through the hold: {stray:?}");
     }
 }
