@@ -75,9 +75,12 @@
 //! happened to read as the fork does — a reading the owner's D92 takes away (README gap 4250).
 //! So [`ForkPlan::worked`] is each backend's own reading, and the comparand asks it of the
 //! backend it plans with: the oracle answers `tm-oracle plan`'s `worked` op, the in-tree fork
-//! the replay it is handed. And since W-43 the comparand carries **P81's answer** ([`p81_after`],
-//! README gap 4248): on a world whose log holds a break P81 nets, the comparand asked the D87
-//! day, so the frozen lines hold fork 4748911's own answer by value and not P81's rule as a model.
+//! the replay it is handed. Since W-44 track C the op is fork 4748911's OWN lines, which
+//! `worked-seam.patch` moves out of `active_run` into a method both call — until then the oracle
+//! re-typed the selection (README gap 4507) — and [`Oracle::worked`] refuses an oracle that still
+//! does. And since W-43 the comparand carries **P81's answer** ([`p81_after`], README gap 4248):
+//! on a world whose log holds a break P81 nets, the comparand asked the D87 day, so the frozen
+//! lines hold fork 4748911's own answer by value and not P81's rule as a model.
 
 #![allow(dead_code)]
 
@@ -93,6 +96,12 @@ mod p81;
 #[allow(dead_code)]
 #[path = "p85.rs"]
 mod p85;
+
+/// FNV-1a-64, the test harness's one definition (`support/fnv.rs`, README gap 4581, W-44 track C):
+/// [`day_hash`] digests a serialised day with it, as fork 4748911's `DayPlan::hash` does.
+#[allow(dead_code)]
+#[path = "fnv.rs"]
+mod fnv;
 
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Write};
@@ -186,7 +195,8 @@ fn segments_mut(day: &mut Value) -> Option<&mut Vec<Value>> {
 /// `Placement` fields in their declared order, each carried as the value the day
 /// holds, so the digest of a day the comparand bent on its JSON (P46's row, P47's
 /// clip) is the digest of the bent day. `the_hash_of_every_frozen_day_is_its_digest`
-/// holds it to the digest every frozen line was written with.
+/// holds it to the digest every frozen line was written with. The digest is the
+/// harness's one FNV-1a-64 (`support/fnv.rs`, README gap 4581), no longer a fold of its own.
 pub fn day_hash(day: &Value) -> String {
     #[derive(Serialize)]
     struct Placement<'a> {
@@ -213,12 +223,7 @@ pub fn day_hash(day: &Value) -> String {
         })
         .collect();
     let body = serde_json::to_string(&placement).expect("a placement serialises");
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for byte in body.as_bytes() {
-        h ^= u64::from(*byte);
-        h = h.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    format!("{h:016x}")
+    fnv::fnv1a64_hex(body.as_bytes())
 }
 
 /// A serialised day and its digest — the shape a frozen line's `day` and `shipped` carry.
@@ -915,6 +920,11 @@ pub fn oracle_path() -> Option<std::path::PathBuf> {
     std::env::var_os("TM_ORACLE").map(std::path::PathBuf::from)
 }
 
+/// **The entry of fork 4748911 that reads the running block's worked minutes for the oracle's
+/// `worked` op** — `worked-seam.patch`'s, which MOVES fork `active_run`'s own lines into a method both
+/// call (README gap 4507). [`Oracle::worked`] refuses an answer that does not name it.
+pub const WORKED_READ_BY: &str = "planner::active_worked";
+
 /// **`tm-oracle plan`, running**: one request line in, one answer line out — or, built
 /// [`Oracle::with_mode`], another mode of the same protocol (`review`, the fork's week grid,
 /// README gap 3718).
@@ -1040,6 +1050,12 @@ impl ForkPlan for Oracle {
 
     /// Fork 4748911's own reading, asked of `tm-oracle plan`'s `worked` op (W-43 track C, README
     /// gap 4460) — an oracle built before W-43 refuses the op by name, and is stale (gap 196).
+    ///
+    /// **Since W-44 track C the answer must name the fork's own entry that read it** (README gap
+    /// 4507): `worked-seam.patch` moves fork `active_run`'s reading, unchanged, into a method the op
+    /// calls, and the answer says `"read_by": "planner::active_worked"`. An oracle built before W-44
+    /// answers the same minutes through a selection the oracle RE-TYPED, which made the comparand
+    /// partly code this repository owns — so its answer is refused as STALE by name, not trusted.
     fn worked(&self, b: &Built, st: &RuntimeState) -> Result<Option<u32>, String> {
         let req = json!({
             "op": "worked",
@@ -1055,6 +1071,13 @@ impl ForkPlan for Oracle {
                 e
             }
         })?;
+        if a["read_by"] != WORKED_READ_BY {
+            return Err(format!(
+                "the oracle's `worked` answer is not read by fork 4748911's own lines (read_by {}, not {WORKED_READ_BY:?}) \
+                 — an oracle built before W-44 re-types `active_run`'s selection: it is STALE, rebuild it (build-oracle.sh)",
+                a["read_by"]
+            ));
+        }
         match &a["worked"] {
             Value::Null => Ok(None),
             Value::Number(n) => n.as_u64().and_then(|m| u32::try_from(m).ok()).map(Some).ok_or_else(|| format!("the oracle's `worked` is {n}")),

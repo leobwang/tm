@@ -1786,6 +1786,27 @@ fn log_a_break_into_the_running_block(
     BreakDraw { drew, one_reading, marked, d90, starting_inside }
 }
 
+/// **A case every one of whose days admits the clock-starting world** (README gap 4509, W-44 track
+/// C): the case with nothing else stamped over its running block — no meeting (the walls go, and the
+/// late day's evening wall with them, which would pause the block at 15:00), no interruption, no
+/// energy report — planned at least ninety minutes after the arrival with one block done, and a
+/// block running since a minute after that block: `active_block` starts it at the arrival plus
+/// 56 minutes, so it has run 34, 124 or 244 minutes at `now`.  Everything else is the case's
+/// own draw (its items, routines, home or lounge, estimate).  A day the binary writes: a block
+/// started after one done block, on a day with no calendar.
+fn clock_starting_case(case: &Case) -> Case {
+    let mut c = case.clone();
+    c.walls.clear();
+    c.late = false;
+    c.interrupt = None;
+    c.report = None;
+    c.now_idx = 1 + c.now_idx % 3;
+    c.done_blocks = 1;
+    let (idx, _, est) = c.active.unwrap_or((0, 0, 60));
+    c.active = Some((idx, 24 * 60, est));
+    c
+}
+
 /// **The replay's worked minutes of the running block** — the log's own open block when it is this
 /// item's (`OpenBlock::worked_min_at`), `None` otherwise: the reading the kernel's replay gives, which
 /// the one-reading arm holds to the host's.
@@ -1832,18 +1853,22 @@ proptest! {
     /// worked_min_at`); on every generated day where nothing else stops the block's clock they are
     /// one number.  **Outside the fork region** (README gap 4491): this was the D87 arm's own
     /// assertion, inside a region R3 deletes though it compares no fork; lifted here with its census
-    /// and floors, it outlives the deletion.
+    /// and floors, it outlives the deletion.  **Since W-44 track C (README gap 4509) the clock-starting
+    /// member is PLACED on every case** (`clock_starting_case`) as well as drawn, so its count has a
+    /// floor no run can miss.
     #[test]
     fn the_host_and_the_replay_read_a_logged_break_one_way(
         case in case_strategy(),
         logged in prop::option::of((0u32..=60, 5u32..=30)),
         interrupted in prop::option::weighted(0.5, (1u32..=29, 1u32..=20)),
         walled in prop::option::weighted(0.5, (1u32..=20, 1u32..=29)),
+        placed in (1u32..=10, 1u32..=10, 2u32..=13, 1u32..=12),
     ) {
         /// `[cases, logged-break days held to one reading, of them with a timer mark from the block's
         /// start on (P84), of them whose break an interruption ended (D90), of them with a
-        /// clock-starting mark inside the break (gap 4501), logged-break days drawn]`.
-        static ONE_READING: Mutex<[u64; 6]> = Mutex::new([0; 6]);
+        /// clock-starting mark inside the break (gap 4501), logged-break days drawn, clock-starting
+        /// days PLACED on every case and held to one reading (gap 4509)]`.
+        static ONE_READING: Mutex<[u64; 7]> = Mutex::new([0; 7]);
         let mut w = build(&case);
         let draw = log_a_break_into_the_running_block(&mut w, logged, interrupted, walled);
         let host = w36_host_worked(&w, &w.state);
@@ -1851,6 +1876,28 @@ proptest! {
         if held {
             prop_assert_eq!(host, replay_worked(&w, &w.state), "D87: a break logged inside the running block left the host's reading and the log's apart (P81); now {}, the log:\n{}", w.now, w.log);
         }
+        // **The clock-starting world on EVERY case** (README gap 4509, W-44 track C).  The draw above
+        // reaches D61's wall unpause inside a break only where the case's own log leaves the block's
+        // timer untouched and a stretch of it quiet — 2, 0, 3, 2, 2 and 3 days over six runs of the
+        // W-43 repair, so a floor on that count would fail a run in six.  So the world is also PLACED,
+        // through the same builder, on a case built to admit it (`clock_starting_case`): the wall's
+        // pause `b` minutes before a break begun `b + into` minutes into the block, the break `len`
+        // minutes long, its unpause inside it — 1 ≤ b ≤ 10, 2 ≤ b + into ≤ 20, 2 ≤ len ≤ 13, which
+        // fits the shortest such block (34 minutes) — and held to the one reading.  THIS IS THE FLOOR,
+        // and it is per case: a case the world is not placed on fails here by name (and shrinks), so
+        // the count is the case count and a run cannot hold the claim on no day.  A count-floor at the
+        // end beside it could fail on no input — a disguised gap (AGENTS §9.2) — so there is none.
+        let (b, into, len, i) = placed;
+        let mut w2 = build(&clock_starting_case(&case));
+        let placed_draw = log_a_break_into_the_running_block(&mut w2, Some((b + into, len)), None, Some((b, i)));
+        prop_assert!(
+            placed_draw.drew && placed_draw.one_reading && placed_draw.starting_inside,
+            "gap 4509: the clock-starting world was not drawn on a case built to admit it ({:?}); now {}, the log:\n{}",
+            placed_draw, w2.now, w2.log
+        );
+        let host2 = w36_host_worked(&w2, &w2.state);
+        prop_assert!(host2.is_some(), "gap 4509: the host reads no running block on the placed world; the log:\n{}", w2.log);
+        prop_assert_eq!(host2, replay_worked(&w2, &w2.state), "D61's unpause inside a running break: the host's reading and the log's apart; now {}, the log:\n{}", w2.now, w2.log);
         let r = {
             let mut r = ONE_READING.lock().expect("census");
             r[0] += 1;
@@ -1859,6 +1906,7 @@ proptest! {
             r[3] += u64::from(held && draw.d90);
             r[4] += u64::from(held && draw.starting_inside);
             r[5] += u64::from(draw.drew);
+            r[6] += 1;
             *r
         };
         let generated: u64 = std::env::var("TM_PROPTEST_CASES")
@@ -1876,8 +1924,8 @@ proptest! {
         eprintln!(
             "planner_invariants one-reading census (D87): {} cases, {} logged-break days drawn, {} held to one reading \
              ({} with a timer mark, P84; {} whose break an interruption ended, D90; {} with a clock-starting mark inside \
-             the break, gap 4501)",
-            r[0], r[5], r[1], r[2], r[3], r[4]
+             the break, gap 4501); {} clock-starting days placed and held (gap 4509)",
+            r[0], r[5], r[1], r[2], r[3], r[4], r[6]
         );
     }
 }

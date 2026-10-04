@@ -335,8 +335,10 @@ fn the_frozen_lines_are_the_forks_oracle_answer_today() {
         n - stale.len().min(n),
         oracle.asked.lock().expect("census")
     );
-    assert!(p81_lines > 0, "no frozen line's D87 day was asked of the oracle, so P81 was asked nothing");
+    // The lines first (W-44 track C): an oracle that answers no line — a stale one, refused by name in
+    // `stale` — must fail with that name, not with the P81 floor its silence also empties.
     assert!(stale.is_empty(), "the fork oracle does not answer the frozen lines as frozen:\n  {}", stale.join("\n  "));
+    assert!(p81_lines > 0, "no frozen line's D87 day was asked of the oracle, so P81 was asked nothing");
 }
 
 /// **The kernel plans every driven day as the fork planned it** (W-39, README gap 3390) —
@@ -2225,6 +2227,47 @@ fn the_frozen_fork_classes_are_reblessed() {
     );
     assert!(refused.is_empty(), "the re-bless is refused by the owner's D64 and wrote nothing:\n  {}", refused.join("\n  "));
     std::fs::write(&out_path, out).expect("the frozen classes are written");
+}
+
+/// **The oracle's `worked` op reads fork 4748911's OWN lines** (W-44 track C, README gap 4507).
+/// The comparand moves the running estimate by what the fork reads as the block's worked minutes
+/// (P55, P46), and the oracle answered that with a selection it RE-TYPED out of fork `active_run`,
+/// where the reading is a local of a private method — so every frozen line asked through the op
+/// was partly computed by code this repository owns.  `worked-seam.patch` MOVES those lines into a
+/// method `active_run` itself calls, and the op calls an entry that reaches it.  This holds the
+/// graft to being a move — every line it removes is a line it adds, in order, as one run, and those
+/// lines are the reading (the log's open block, the clock since `started`) — the build script to
+/// applying it, and the oracle's own code to reading no open block, no `worked_min_at` and no
+/// `local_dt` itself, and to naming the entry the harness asks for: the selection cannot be typed
+/// back in without this failing.  Files read; no oracle and no fork, so it outlives R3.
+#[test]
+fn the_oracles_worked_op_reads_the_forks_own_lines() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../kernel/tm-kernel-ffi/examples/oracle");
+    let read = |f: &str| std::fs::read_to_string(dir.join(f)).unwrap_or_else(|e| panic!("{f}: {e}"));
+    let patch = read("worked-seam.patch");
+    let diff = &patch[patch.find("\n--- a/tm-core/src/planner.rs\n").expect("the graft diffs the fork's planner")..];
+    assert_eq!(diff.matches("\n--- a/").count(), 1, "the graft touches another file of the fork than its planner");
+    let removed: Vec<&str> = diff.lines().filter(|l| l.starts_with('-') && !l.starts_with("---")).map(|l| &l[1..]).collect();
+    let added: Vec<&str> = diff.lines().filter(|l| l.starts_with('+') && !l.starts_with("+++")).map(|l| &l[1..]).collect();
+    assert!(!removed.is_empty(), "the graft removes nothing, so it moves nothing");
+    assert!(
+        added.windows(removed.len()).any(|w| w == removed.as_slice()),
+        "the graft does not add back, in order and as one run, every line it removes — it is not a move:\n{}",
+        removed.join("\n")
+    );
+    for word in ["open_block", "worked_min_at", "local_dt"] {
+        assert!(removed.iter().any(|l| l.contains(word)), "the moved lines are not fork `active_run`'s reading: no `{word}`");
+    }
+    let build = read("build-oracle.sh");
+    assert!(build.contains("worked=\"$here/worked-seam.patch\"") && build.contains("git apply \"$worked\""), "build-oracle.sh does not apply the worked seam");
+    let main = read("src/main.rs");
+    let code: Vec<&str> = main.lines().filter(|l| !l.trim_start().starts_with("//")).collect();
+    for word in ["open_block", "worked_min_at", "local_dt"] {
+        let hits: Vec<&&str> = code.iter().filter(|l| l.contains(word)).collect();
+        assert!(hits.is_empty(), "the oracle's own code reads `{word}` — the fork's reading is re-typed again: {hits:?}");
+    }
+    assert!(code.iter().any(|l| l.contains("planner::active_worked(")), "the oracle's `worked` op does not call the graft's entry");
+    assert!(main.contains(&format!("{:?}", forkplan::WORKED_READ_BY)), "the oracle's answer does not name the entry the harness refuses an answer without");
 }
 
 // BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gaps 2722, 2925)

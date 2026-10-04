@@ -87012,3 +87012,326 @@ holding none for long.
 
 **Gap 4510 — AGENTS §10.1's figures were track G's tree** (the critic's): re-measured at this step (§8) and the table
 and its paragraph corrected; CLOSED.
+
+<!-- =====================================================================
+     APPENDED 2026-10-03: stage 6 (the planner), run **W-44**, **TRACK C**
+     — D98's P55 clause restated to its measurement, the oracle's `worked`
+     op reading fork 4748911's own lines, one FNV-1a in the test harness, a
+     floor under the clock-starting census, and R3 simulated over every
+     frozen file.  Rust, the oracle and fixtures only; no `.lean` file.
+     Worktree `.claude/worktrees/w44-c`, branch `w44-c` off `ed72e36`.  Gap
+     range **4580-4599**.  Parity: none issued (track C issues none).
+     ===================================================================== -->
+
+## Stage 6 — W-44 track C: P55's reservation clause restated to its measurement, the oracle's `worked` op reading the fork's own lines, and R3 simulated over every frozen file
+
+**Status (kept current as the step runs; a cut at any point is recoverable from this note and
+`scratchpad/w44-c/`).**
+
+* 20:53 — worktree `w44-c` off `ed72e36`, clean; Lean build cache copied from the main checkout (`lake build` a
+  no-op), the workspace's test binaries built (1 min 23 s, no warning); the HEAD oracle built into
+  `scratchpad/w44-c/oracle-old` (the comparison's old side).
+* 21:01-21:04 — §1's measurement: three runs of the W-36 worked census.
+* 21:05-21:18 — §2's graft and oracle op written; every planner and grid oracle arm run over the HEAD oracle,
+  recorded, and the 12,138 requests replayed through both oracles: byte-identical.
+* 21:18-21:35 — §3's one FNV body and §4's placed world written; the arms over the new oracle; §5's plants.
+* 21:35-22:04 — §6's R3 simulation in its clone, both configurations and one corrupted answer per frozen file.
+* 22:05-22:41 — the FNV gate (§3) added and planted; three workspace runs on the final code; `check.sh` 17/17.
+
+### 0. The brief, measured before it was acted on
+
+* **HEAD is `ed72e36`** (docs only since `f5d7a16`), tree clean; the brief's figures are the orchestrator's.
+* **"The three copied FNV-1a test helpers the W-43 critic named: one definition" was DONE at HEAD** — the W-43 repair
+  (gap 4504) made `cli_sealed_month_digest.rs`', `cli_break_into_block.rs`' and `cli_replay_cache_kernel.rs`' copies
+  one function, `cli_common::fnv1a64_hex`.  **The class was not**: the test harness still computed FNV-1a-64 in THREE
+  places — `cli_common::fnv1a64_hex`, `loggen::fnv1a64` (design §9.8's `prefixFnv`) and the fold inside
+  `forkplan::day_hash` (the fork's `DayPlan::hash` over a serialised day).  §3 makes the class one definition.
+* **Gap 4465's figure re-measured** (§1): 0 of 30, 0 of 29 and 0 of 32 — the brief's "0 of 30" is one of three runs.
+
+### 1. P55's reservation clause, restated to its measurement (the campaign's D98 call, gap 4465 — CLOSED)
+
+**Measured** — `planner_invariants`' `the_kernel_reads_the_hosts_worked_minutes`, three runs of 287 cases with
+`--nocapture` (`scratchpad/w44-c/p55-run1..3.log`; porcelain equal before and after; load 12-23, other tracks building):
+
+| run | cases | running block | host ≠ log | open rows (on a differing day) | reservations (on a differing day) | reservations on a logged-break day |
+|---|---|---|---|---|---|---|
+| 1 | 287 | 140 | 28 | 63 (26) | 30 (**0**) | 10 |
+| 2 | 287 | 135 | 22 | 57 (20) | 29 (**0**) | 5 |
+| 3 | 287 | 153 | 33 | 66 (28) | 32 (**0**) | 9 |
+
+So P55's open-row clause bites on every run (74 open rows compared on a day the two readings differ, each of them on a
+RUNNING break's day — W-42's census counts the same 26, 20 and 28), and its reservation clause bites on none: 0 of 91.
+A block whose break is still running is paused and reserves nothing, and on a day whose log holds the break the
+kernel's replay has netted it as the host does since the owner's D87 (parity P81) — 24 reservations compared there,
+one reading.  The world the clause was written for (a break inside the block counted worked by the log's open block)
+is P81's now.  Under D54's rule (the register has no withdrawal; a number whose stated reason is measured empty keeps
+its number and states the measurement) the clause STANDS and its row says so:
+
+| parity | what diverges | this branch, restated at W-44 track C | fork 4748911 | decided by |
+|---|---|---|---|---|
+| **P55 (refined)** | the planner's worked minutes of the running block | RESTATED (issued at W-36 track T at README.md:69588, its `taken` line standing; the campaign's D98 call on README gap 4465, D54's rule): the open row's `so far` and the reservation's `left` are the host's reading whenever the request carries it (the wall clock net of the day's pauses, interruptions and breaks, the running break included — `Replay::running_worked_min`, the host's entrance since D75's P65, whose rule is `Replay::active_worked_min`'s); the `so far` clause bites on every generated run (26, 20 and 28 open rows compared on a day the two readings differ, each a running break's, W-44 track C); the reservation clause STANDS and is MEASURED EMPTY — 0 of 30, 0 of 29 and 0 of 32 reservations compared on a day the two readings differ, because a block on a running break reserves nothing and a break the log holds is netted by the kernel's replay itself since the owner's D87: subsumed by P81 | `active_run` and `open_block_segment` read the log's open block, which counts a break inside the block as worked, and `day::worked_min` let another block's open pause swallow the running one | D98, D54 |
+
+### 2. The oracle's `worked` op reads fork 4748911's OWN lines (gap 4507 — CLOSED)
+
+**What it was.**  `tm-oracle plan`'s `worked` op answers the running block's worked minutes as fork 4748911 reads
+them — what P55 and P46 move the comparand's estimate by (gap 4247).  The reading lives in fork `active_run` as a
+local of a private method of the private `Planner`, so W-43 track C's `worked_one` RE-TYPED its selection (the log's
+open block when it is the state's running item, else the clock since `started` on the planned date): the fork's two
+statements and the planned date, typed again in this repository.  Every frozen line whose comparand asks the op —
+every comparand line, since `comparand_with` asks it before it plans — was partly computed by code this repository
+owns: lesson 5's shape.
+
+**The fix: a third graft that MOVES the lines, and an op that calls them.**  `kernel/tm-kernel-ffi/examples/oracle/
+worked-seam.patch`, applied by `build-oracle.sh` after `plan-seam.patch` and `p64-runs.patch` (its hash in the
+stamp, a patch that does not apply failing the build), moves the two statements `active_run` reads the reading with
+— character for character — into a method of `Planner` that `active_run` itself now calls, and adds one public entry
+that builds the fork's own `Planner` for a `PlanInput` and asks it.  Nothing else of the fork is touched: the body the
+planner runs and the body the oracle runs are one.  The oracle's `worked_one` now reads the request's world through
+the same reader `plan_one` does (`ForkWorld::read` and `ForkWorld::log_with`, which `plan_one` was split into), builds
+the `PlanInput` `plan` builds less the ranking the reading never reads, and answers `{"worked": n|null, "read_by":
+"planner::active_worked"}`.  The harness (`forkplan::Oracle::worked`) refuses an answer that does not name that entry
+— an oracle built before W-44 is STALE by name (gap 196's rule: provenance is not freshness).  And
+`planner_classes.rs`' `the_oracles_worked_op_reads_the_forks_own_lines` (outside every region, no oracle needed)
+holds the graft to being a MOVE — every line it removes is a line it adds, in order, as one run, and those lines are
+the reading (`open_block`, `worked_min_at`, `local_dt`) — the build script to applying it, and the oracle's own code to
+reading none of the three itself: the selection cannot be typed back in without that test failing.
+
+**Re-asked, and byte-identical.**  Every planner and grid `TM_ORACLE` arm was run on this tree over the HEAD oracle
+(`scratchpad/w44-c/oracle-old`, built from `ed72e36`'s sources) through a wrapper that recorded every request line
+(`tee-old/tm-oracle`), and every recorded request was then answered by both the HEAD oracle and the worked-seam oracle
+(`oracle-new`) and the answers compared (scratch script replay_compare.py, its log replay-compare.log): **12,138 requests over 12
+oracle processes — 7,658 `plan`, 2,676 `diff`, 1,742 `worked` (966 with minutes, 776 `null`), 62 `week` — every
+`plan`, `diff` and `week` answer byte for byte, every `worked` answer equal by value and naming its entry; 0 error
+answers, 0 findings.**  The classes arm's 3,078 requests (the 229 class, batch and driven lines, 8 carrying P81's
+answer) are among them, so every frozen line the op was asked for is re-asked and unchanged; no frozen file is
+touched.
+
+**And every arm, asked again over the worked-seam oracle with this tree's harness** (`oracle-arms-new.log`, 16 GB
+cap, one arm at a time, load 4-21), each `test result: ok`: the frozen class, batch and driven lines **229 of 229** (8
+carrying P81's answer, 3,078 requests); the separator days (40 requests), the start days (20), the TUI days (234), the
+P85 days (20); the P56 days **24 of 24** (432), the seeded P56 cross-check and 16 fresh P56 days; the fresh draws **287
+of 287** (3,406 requests: what-ifs 135; P45 16, P46 6, P47 8, P51 187, P52 1, P55 0, P56 2) and the in-tree/oracle
+cross-check equal on all 287; the week grids **46 of 46** frozen and 16 fresh.  **The provenance check bites**: the
+HEAD oracle under this tree's harness fails the classes arm on all 229 lines by name — "the oracle's `worked` answer is
+not read by fork 4748911's own lines (read_by null, not "planner::active_worked") — an oracle built before W-44
+re-types `active_run`'s selection: it is STALE, rebuild it" (`stale-a-full.log`; the arm's assertions were reordered
+so the lines' own refusal is what a silent oracle reports, not the P81 floor its silence also empties) — and with the
+check planted away it passes 229 of 229 (§5's P11), so the check is the only thing that refuses it.
+
+### 3. The test harness's FNV-1a-64 is one definition — the class, not the critic's list (gap 4581 — CLOSED)
+
+The W-43 repair (gap 4504) made the three copies the critic named one function, `cli_common::fnv1a64_hex`.  The
+CLASS — the harness computing FNV-1a-64 — still had three members, each a body of its own: that function,
+`loggen::fnv1a64` (design §9.8's `prefixFnv`, the oldest, which `kernel/tm-kernel-ffi/examples/logbench.rs` and
+`tm/examples/windowbench.rs` include from other crates) and the fold inside `forkplan::day_hash` (fork 4748911's
+`DayPlan::hash` over a serialised day).  Searched by body shape (the offset basis and the prime) over every `.rs`
+file: the harness's three, and four outside it that are not the harness's and stay — the binary's
+`kernel_log::fnv1a64` (the code under test; the harness must not borrow it), `tm-core`'s `dayplan.rs` and `ics.rs`,
+and `tm-kernel-ffi/build.rs`'s archive hash.  Now `tm/tests/support/fnv.rs` holds the one body (`fnv1a64`,
+`fnv1a64_hex`); `loggen.rs` includes it by a `#[path]` relative to itself (so every crate that includes `loggen.rs`
+reaches it — read off the three crates' dep-info: `logbench.d`, `windowbench-*.d` and the test crates all name
+`tm/tests/support/fnv.rs`) and re-exports `fnv1a64` under its old name; `cli_common` re-exports `fnv1a64_hex` under
+its old name (so a test another track adds this run keeps compiling); `day_hash` calls it.  Both re-exports carry
+`#[allow(unused_imports)]`, which the first build asked for (an unused `pub use` in a binary crate warns): no new
+warning across the workspace's binaries and the two examples.
+
+**And a gate that remembers it** — `tm/tests/harness_one_fnv.rs`, a new file of this track's: over every `.rs` file
+under a `tests` directory of the workspace (`srcwalk::every_rust_file`, the walk with a prune rule), the files that
+spell FNV-1a-64's offset basis — hex with or without separators, either case, or decimal — are exactly
+`tm/tests/support/fnv.rs` (the equality, not a subset, so the one body must be SEEN and the guard cannot pass on an
+empty walk); its bite test holds each spelling seen, FNV-1a-32 not taken for it, and a file outside every `tests`
+directory not the harness.  What it cannot see: a basis computed rather than spelled, or one a macro assembles.
+
+### 4. The clock-starting census has a floor no run can miss (gap 4509 — CLOSED)
+
+**Which of the brief's two, and why: the generator is WIDENED so 0 cannot occur, and the floor is per case.**  The
+W-43 repair's one-reading arm reached D61's wall unpause inside a running break only where the case's own log left the
+block's timer untouched and a stretch of it quiet: 2, 0, 3, 2, 2, 3 days over six of its runs, so a count-floor would
+fail a run in six (D46: a red floor is a finding about the draw, not a revert — and a floor that is red one run in six
+is a flake, not a gate).  So the world is now also PLACED on every case: `clock_starting_case` takes the drawn case
+and removes what would stamp over the running block — its meetings (the late day's 15:00 evening wall with them, which
+would pause the block), its interruption, its energy report — plans it 90, 180 or 300 minutes after the arrival with
+one block done, and starts the running block a minute after that block (the arrival plus 56 minutes, so it has run 34,
+124 or 244 minutes at `now`); the same builder as the draw (`log_a_break_into_the_running_block`) then logs a break
+`b + into` minutes into the block for `len` minutes and D61's wall pause `b` minutes before it with its unpause inside
+it, from a new strategy parameter (1 ≤ b ≤ 10, 1 ≤ into ≤ 10, 2 ≤ len ≤ 13: fits the shortest such block).  A case
+the world is not placed on fails by name and shrinks; the host's reading and the replay's are held to one number on
+every placed day.  **The floor is that per-case assertion**: a count-floor at the end beside it could fail on no
+input, which is a disguised gap (§9.2), so there is none; the census prints the placed count beside the drawn one.
+
+Measured, three runs of the arm alone (`scratchpad/w44-c/onereading-run1..3.log`; load 3-26): **287 of 287 placed
+and held** each run; the random draw's own count beside it 2, 4 and 3 (13, 15, 15 days held to one reading of 24, 32,
+30 logged-break days drawn); the arm took 59, 60 and 87 s (the third at load 26) — one more kernel replay a case.
+
+### 5. Plants — every new or changed definition bent, one at a time, in a scratch clone (`scratchpad/w44-c/clone`, a clone of `ed72e36` carrying this step's files; `plants.py`, `oplants.py`; `git status --porcelain` and `git diff` hashed before and after each plant, equal every time)
+
+| plant | where | caught by, and the name it gave |
+|---|---|---|
+| P1 the graft re-types a moved line (its added copy `.max(1)`) | `worked-seam.patch` | `the_oracles_worked_op_reads_the_forks_own_lines`: "the graft does not add back, in order and as one run, every line it removes — it is not a move" |
+| P2 the oracle reads the open block itself again | oracle `worked_one` | the same test: "the oracle's own code reads `open_block` — the fork's reading is re-typed again" |
+| P3 the build script stops applying the graft | `build-oracle.sh` | the same test: "build-oracle.sh does not apply the worked seam" |
+| P4 the op calls no graft entry | oracle `worked_one` | the same test: "the oracle's `worked` op does not call the graft's entry" |
+| P5 the one FNV body's offset basis one higher | `support/fnv.rs` `fnv1a64` | `loggen.rs`' `the_generator_reproduces_the_design_passs_eight_logs_byte_for_byte` ("log-1mo.jsonl"), `cli_sealed_month_digest` 3 tests ("2026-08: the digest is the file's FNV-1a-64"), `the_hash_of_every_frozen_day_is_its_digest` |
+| P6 the hex spelling a digit short | `support/fnv.rs` `fnv1a64_hex` | `cli_sealed_month_digest` 3, `cli_break_into_block` 1, `cli_replay_cache_kernel` 1, and `the_hash_of_every_frozen_day_is_its_digest` ("511 day(s): a frozen day digests to d8a51456c9b82a2, its line says d8a51456c9b82a27") |
+| P7 `day_hash` digests nothing | `forkplan::day_hash` | `the_hash_of_every_frozen_day_is_its_digest`: "511 day(s): a frozen day digests to cbf29ce484222325" |
+| P8 `clock_starting_case` the case as drawn | `planner_invariants` | the one-reading arm, on its first case: "gap 4509: the clock-starting world was not drawn on a case built to admit it (BreakDraw { drew: false, … })" |
+| P9 the placed world without its wall | the arm's placement | the same arm: "… (BreakDraw { drew: true, one_reading: true, …, starting_inside: false })" |
+| P10 the placed break 20 minutes later (past the shortest block) | the arm's placement | the same arm, on its sixth case: "… was not drawn on a case built to admit it" |
+| G1 a fourth FNV body back in the harness (`loggen`'s old fold) | `support/loggen.rs` | `the_harness_computes_fnv_1a_64_in_one_place`: "the test harness carries an FNV-1a-64 body outside support/fnv.rs" |
+| G2 the guard's harness is no file | `harness_one_fnv.rs` `in_the_harness` | its bite test ("in_the_harness(\"tm/tests/support/fnv.rs\")"), and the guard itself (the one body is no longer seen) |
+| G3 the guard reads `_` separators as they are | `harness_one_fnv.rs` `spells_the_basis` | its bite test, and the guard itself (`fnv.rs`' `0xcbf2_9ce4_…` no longer seen) |
+| P11 the harness trusts an answer naming no reader | `forkplan::Oracle::worked` | with the HEAD oracle: the classes arm PASSES 229 of 229 planted, and FAILS on all 229 lines unplanted ("… it is STALE, rebuild it") — the check is the only thing that refuses a re-typing oracle |
+| O1 the world's log asked without the line a request appends | oracle `ForkWorld::log_with` | the classes oracle arm: 216 of 229 — "break/late: p67: null against {…}" (P45's and P67's comparands log the break they plan after) |
+| O2 the world's budget ratio ignored | oracle `ForkWorld::read` | **NOT CAUGHT — 229 of 229.**  The fork plans with `state.json`'s stored budget whenever `tm arrive` stored one (fork `Planner::window_and_budget`), and every frozen world whose `ratio` is set (16 class worlds, 4 batch) stores one, so no frozen line reads the ratio.  Pre-existing (`plan_one` read it the same way, and so does `forkclass::Built::of` in-tree); gap 4582 |
+| O3 the world's duration multiplier ignored | oracle `ForkWorld::read` | the classes oracle arm: 129 of 229 — "idle/lounge: day.day.diagnostics.plan_honesty: 0.5 against 0.5638888888888889" |
+| O4 the graft's entry answers no block | graft `active_worked` | the classes oracle arm: 146 of 229 — "overtime/lounge: d57.p46: false against true" |
+| O5 the moved reading a minute more (the fork's planner and the op alike) | graft `Planner::active_worked` | the classes oracle arm: 77 of 229 — "running/lounge: p55: {"p55":true} against null" |
+| O6 the op asks at the world's instant less seven minutes, not the request's | oracle `worked_one` | the classes oracle arm: 96 of 229 — "running/lounge: day.day.segments[3].flags.note: "running · 109m left" against "running · 116m left"" |
+
+Every plant but O2 was caught by name; O2 is a finding about the frozen worlds, not about this step's code, and is
+recorded rather than papered over (gap 4582).  The oracle plants ran in a COPY of the built oracle tree
+(`scratchpad/w44-c/oracle-plant`), each rebuilt and asked through the classes arm from the clone.
+
+### 6. R3, simulated in a clone — every fork planner and review entry unreachable, every comparand compares, one kernel answer corrupted per frozen file (`scratchpad/w44-c/r3clone`; `r3sim.py`, `r3run.sh`, `r3run-exact.sh`, `r3bends.py`; never the worktree committed from)
+
+**The deletion table** — every `BEGIN THE FORK PLANNER` region under `tm/tests` deleted: **22 regions, 6,002 lines**
+(W-43 track C's 21 and 6,086, less the one-reading arm the W-43 repair lifted out of `planner_invariants.rs`' region,
+plus `planner_p85_days.rs`' region): `planner_invariants.rs` 3,648, `planner_classes.rs` 679, `planner_w40_runs.rs`
+248, `planner_dynamics.rs` 213, `planner_p56_cut.rs` 192, `planner_w38_order.rs` 155, `support/forkplan.rs` 133,
+`planner_regressions.rs` 107, `planner_w37_rows.rs` 101, `planner_fixtures.rs` 94, `tui_kernel_answers.rs` 80,
+`planner_w39_conference.rs` 65, `kernel_unplaced_banner.rs` 42, `planner_w39_arrival.rs` 41, `planner_w41_starts.rs`
+38, `planner_separator_days.rs` 34, `kernel_separator_worlds.rs` 32, `planner_common/mod.rs` 32, `emit_planner.rs` 30,
+`planner_p85_days.rs` 13, `priority_plan_basic.rs` 13, `support/forkclass.rs` 12.  The clone builds with ONE new
+warning, R3's to remove: `planner_w39_conference.rs`' `wednesday` is called only inside the region (gap 4583).
+
+| configuration | the workspace (`--no-fail-fast`, 141 result lines) | what failed, by name |
+|---|---|---|
+| R3 exactly: the five fork PLANNER entries panic from any process but `tm` | 2,453 passed, **27 failed**, 26 ignored | **25** reaching `planner::plan` in-process through the TUI's `App` — the body swap's class: the binary's nine `tui::tests` (`d84_a_reload_past_midnight_…`, `d84_a_tui_left_open_past_midnight_…`, `d91_a_reorder_on_a_held_file_…`, `d91_a_torn_last_log_line_…`, `d91_a_tui_open_across_two_midnights_…`, `d91_on_a_day_with_unfinished_work_…`, `d91_the_editor_opens_an_item_…`, `d91_the_held_closes_stamp_…`, `the_meeting_pause_is_said_on_the_status_line`), `p77_a_tui_past_midnight_…`, `tui_today_ghost` 3, `tui_today_prompts` 11, `worked_midnight_timer` 1; **2** the region gates R3's deletion commit rewrites (`every_bless_holds_its_lines_against_the_committed_history`, `every_test_that_reaches_the_fork_keeps_it_in_one_region`).  Every comparand suite passed |
+| and the three REVIEW entries too (`day_review`, `week_review`, `month_review`) | 2,401 passed, **79 failed**, 26 ignored | the 27 above, and **52** reaching the shipped binary's OWN review code in-process — `review_day` 18, `review_edges` 9, `review_month` 7, `review_week` 12, and the TUI's Review screen 6 (`tui_kernel_answers`' two grid tests, whose KERNEL side is that screen, `tui_screen_router` 1, `tui_today_keys` 2, `tui_today_render` 1).  No comparand computes its FORK side through either entry: the fork's planner and its grid are reached only out of the tree |
+
+**One kernel answer corrupted per frozen file** — each file's comparison run alone (`--exact`), the bend bending the
+FIRST answer of its kind the process reads (or the n-th, where the first is read for another assertion), at the one
+reader each kind goes through: `plan` (`planreq::kernel_day_of`: the first Block row neither running nor open a minute
+longer, else the first Wall row), `replay` (`fork::compare_replay_with_fork`: the kernel's fork-shaped replay, its
+first whole-number leaf one more), `lines`/`verdict` (`kernel_log_grammar`'s `kernel_read`: the first entry's tag, or
+the entry read as a warning), `fit` (T12: a digit of the `model.json` the binary wrote) and `grid` (`forkgrid::review_in`:
+the binary's heat, its first whole-number leaf one more).  The planner-and-review configuration; `r3bends.out`:
+
+| frozen file | comparison | bend | the name it failed with |
+|---|---|---|---|
+| `corpus-replay` | T5 `t5_the_corpus_logs_replay_as_the_frozen_fork_point_does` | replay | "logs/energy-14d.jsonl: `days` differs at 1 leaf — days.2026-08-25.block_min: kernel 261 fork 260" |
+| `corpus-replay` | door `the_door_is_the_reader_it_replaces` | replay | "logs/energy-14d.jsonl (genesis): … days.2026-08-25.block_min: kernel 261 fork 260" |
+| `classes-replay` | T5 `t5_the_frozen_generated_month_replays_as_the_fork_point_does` | replay | "generated 1mo (40 a day): … days.2026-01-01.block_min: kernel 472 fork 471" |
+| `classes-replay` | T5 `t5_the_frozen_zone_cases_replay_as_the_fork_point_does` | replay | "fall-back 01:30 twice: … days.2026-10-31.block_min: kernel 1 fork 0" |
+| `log-lines` | T1 `kernel_reads_the_corpus_logs_as_the_fork_point_did` | lines | "corpus:logs/energy-14d.jsonl:1 — left "bent", right "wake"" |
+| `log-lines` | T3 `kernel_reads_every_timestamp_spelling_chrono_reads` | verdict | ""2026-09-07T06:05:00-05:00": the fork reads 2026-09-07T06:05:00-05:00, the kernel warns bent" (the `lines` bend passes T3: its lines are all one tag, and T3 compares the reading of the stamp, not the tag — T1 compares the tag) |
+| `energy-14d-model` | T12 `model_fit_is_the_fork_points_on_the_corpus` | fit | "`tm model --fit` no longer writes fork point 4748911's model.json" |
+| `planner-basic-days` | `the_kernel_plans_plan_basic_every_ten_minutes_as_the_fork_planned` | plan | "plan-basic early 07:00: the rows differ at 1" |
+| `planner-batch` | `the_kernel_plans_every_frozen_batch_day_the_fork_planned` | plan | "batch draw 0 (interrupted-block/late): the rows differ at 1" |
+| `planner-classes` | `the_kernel_plans_every_generated_class_the_fork_planned` | plan | "idle/lounge: the rows differ at 6" |
+| `planner-conference` | `the_kernel_plans_the_forks_conference_wednesday` | plan, the 2nd answer | "wednesday 08:00: the rows differ at 0" (the 1st answer feeds the window and no-work assertions, which read no wall's end, and passed) |
+| `planner-days` | `the_kernel_plans_the_fixture_days_the_fork_planned` | plan | "plan-basic early 07:00: the rows differ at 1" |
+| `planner-driven` | `the_kernel_plans_every_driven_day_the_fork_planned` | plan | "arrive then wake (gap 3390) (idle/late): the rows differ at 3" |
+| `planner-p56` | `the_kernel_plans_every_frozen_p56_day_the_fork_planned` | plan | "p56 draw 0 (overtime/home): the rows differ at 0" |
+| `planner-p85` | `the_kernel_plans_every_frozen_p85_day_as_the_fork_asked_the_d92_day` | plan | "p85 a start inside a logged break: the rows differ at 5" |
+| `planner-separators` | `the_kernel_plans_every_frozen_separator_day_as_the_fork_did` | plan | "unedited: the rows differ at 2" |
+| `planner-starts` | `the_kernel_departs_from_every_frozen_start_day_by_its_number_alone` | plan | "p68 a block started after now: the rows differ at 6" |
+| `planner-tui` | `the_kernel_plans_every_frozen_tui_world_as_fork_4748911_planned_it` | plan, the 2nd answer | "tui At(12, 51) (wall-on-now/lounge): the rows differ at 0" (the 1st answer feeds the verdicts) |
+| `week-grid` | `the_binary_draws_every_frozen_week_as_the_fork_drew_it` | grid | "cli/meeting 2026-09-07: blocks_done/block_min 0/1 against the fork's 0/0" |
+
+All sixteen `fork-4748911-*` files are compared after R3, each by a test that fails by name on one corrupted kernel
+answer; every one of those tests passed unbent in both configurations above.
+
+### 7. Acceptance, capped (`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`; 16 GB for the oracle and its arms)
+
+`git status --porcelain` and `git diff` hashed at every start and end below and equal each time; other tracks were
+building and testing on the same machine throughout, and the load is quoted where a number could feel it.
+
+* **`check.sh`, seventeen lines, all ok, exit 0**, in `scratchpad/w44-c/clone` re-synced to this commit's tree (check
+  9's gate never runs in the tree committed from), `check4.log` on the final tree (the commit's), 28.9 s warm (load 5.7): the build; totality; **the axiom
+  audit 6,298** (Classical.choice 3,310, Quot.sound 4,837, propext 5,888; 406 on none — no Lean changed);
+  `Negative.lean` rejected; FFI **95**; the corpus **29/37 files and 4/5 plans**; **stage goals 1, all stage 6**
+  (unchanged); prose citations **58,363** (55,938 resolved, 2,425 allowed, 0 allow entries unused); check 9 **709**
+  rostered, **0 owed**; parity **P1-P91, next free P92** (P55's row re-anchored, §1); check 11 **3,385 bodies, 14
+  groups (3 compiled, 11 value), 0 UNANSWERED**; check 12 **1,507** reachable, **1,099** exempt, 0 UNANSWERED; check
+  13 fields 17/17, inputs 33 of 37, sent 169, written 220, 0 UNANSWERED; check 14 94 modules.  The first run on the
+  clone (`check1.log`) failed check 8 alone, on the plants table's two citations of the graft's names, counted since;
+  the second and third (`check2.log` before this section and P55's re-anchoring, `check3.log` before its last
+  wording edits) were 17/17 with the same figures but check 8's count.  `kernel/parity.txt`'s P55 anchor
+  moved after the workspace runs (this block's status note grew above the row): the line number only, which no test
+  reads (`forkclass` reads the register's numbers, P1-P91, unchanged).
+* **`cargo test --workspace --no-fail-fast`, THREE runs on the final code (D46)** in the worktree (`ws1..3.log`,
+  `ws-runs.log`; porcelain `08884266bbd5` and diff `4115b3fbeb41` equal at every start and end): **each 142 result
+  lines, 2,567 passed, 0 failed, 36 ignored, 0 warnings** (9 min 48 s, 10 min 29 s, 9 min 28 s; 22:10-22:40, load 8.2-17.4).  The count, by arithmetic: the W-43 repair's
+  2,564 + `harness_one_fnv` 2 (a new binary) + `planner_classes` 1 = 2,567; 141 + 1 = 142 result lines; 36 ignored
+  unchanged.  No `.proptest-regressions` file moved.
+* **The named suites, in run 1**: T5 `kernel_replay_parity` 44 (4 ignored), the door `kernel_log_door` 36,
+  `cli_switch_acceptance` 16, `cli_latency` 6 (1 ignored), `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 32,
+  `kernel_row_cells` 33, `kernel_item_grammar` 6, `kernel_planner_wire` 27, `planner_classes` 67 (6 ignored),
+  `planner_invariants` 45 (2 ignored), `cli_conformance` 6, `cli_json_matrix` 8; and this step's readers:
+  `harness_one_fnv` 2, `loggen` 3, `cli_sealed_month_digest` 4, `cli_break_into_block` 2, `cli_replay_cache_kernel` 1,
+  `tui_kernel_answers` 47 (2 ignored), `planner_separator_days` 18 (2 ignored), `planner_p85_days` 17 (2 ignored),
+  `planner_p56_cut` 17 (4 ignored), `planner_w41_starts` 22 (2 ignored), `fork_week_grid` 19 (3 ignored),
+  `fork_rebless_history` 9, `fork_frozen_refile` 5.  FFI: check 5's 95, check 6's corpus.
+* **The FFI crate's `logbench` example** (which includes `loggen.rs` from another crate) builds with no warning, its
+  dep-info naming `tm/tests/support/fnv.rs`.
+* **Every planner and grid `TM_ORACLE` arm**, twice: over the HEAD oracle recorded (`oracle-arms-old.log`) and over the
+  worked-seam oracle with this tree's harness (`oracle-arms-new.log`), all `ok` (§2).  Not run here, by name: T5's,
+  the grammar's and `cli_end_at`'s oracle arms (the `replay`, `parse-entry` and `fit` modes, which the graft and the
+  `ForkWorld` split do not touch; track K's files).
+* **The one-reading arm alone**, three runs (`onereading-run1..3.log`, §4), and the W-36 worked census, three runs
+  (`p55-run1..3.log`, §1).
+
+### 8. Gaps 4580-4599
+
+**Gap 4465 — CLOSED** (§1): P55's reservation clause stands, its row restated to the measurement (the campaign's
+D98 call).  **Gap 4507 — CLOSED** (§2): the oracle's `worked` op is fork 4748911's own lines.  **Gap 4509 — CLOSED**
+(§4): the clock-starting world is placed on every case, and a case it is not placed on fails by name.
+
+**Gap 4581 — the test harness computed FNV-1a-64 in three places: CLOSED here** (§3).  1. *What.*  The W-43 repair
+made the critic's three copies one, and `loggen::fnv1a64` and `forkplan::day_hash`'s fold stayed bodies of their own.
+2. *Done.*  `tm/tests/support/fnv.rs`, the one body, reached by `#[path]` from `loggen.rs`, `cli_common` and
+`forkplan.rs`.  3. *Residue.*  The binary's own `kernel_log::fnv1a64`, `tm-core`'s two and `tm-kernel-ffi/build.rs`'s
+are the code under test or the build's, not the harness's, and stay apart on purpose.  4. *Nothing owed.*
+
+**Gap 4582 — the comparand's budget ratio reaches no frozen line.**  1. *What.*  The oracle (`ForkWorld::read`) and
+the in-tree comparand (`forkclass::Built::of`) both set the configuration's `budget_ratio` from a world's `ratio`, and
+§5's plant O2 — the oracle ignoring it — leaves the classes arm at 229 of 229: fork 4748911 plans with `state.json`'s
+stored budget whenever `tm arrive` stored one (fork `Planner::window_and_budget`), and every frozen world that sets a
+ratio (16 class worlds, 4 batch worlds) stores one.  2. *Why not changed.*  Pre-existing (`plan_one` read the ratio the
+same way before this step), and a world that exercises it — a budget computed from the configuration with no stored
+window, at a ratio that is not the default — is a frozen line of its own (D70's introduction), out of this track's
+scope.  3. *Cost.*  A mis-read ratio on either comparand side moves no comparison today; a future world without a
+stored budget would be the first to read it.  4. *Clears it.*  Such a world frozen with fork 4748911's answer, or the
+ratio taken out of the world's reading as inert by construction, with the reason.
+
+**Gap 4583 — R3 leaves `planner_w39_conference.rs`' `wednesday` dead.**  1. *What.*  §6's clone builds with one new
+warning: the function is called only inside the file's fork region.  2. *Why not changed.*  It is live until R3, and
+R3's deletion commit rewrites the regions.  3. *Cost.*  "No new compiler warning" fails at R3 unless that commit
+removes it or moves its caller out.  4. *Clears it.*  R3's deletion commit.
+
+**Gap 4584 — the body swap's class is 25 tests at `ed72e36`, not 23.**  1. *What.*  §6's R3-exact run fails 25 tests
+through `planner::plan` in-process — the binary's nine `tui::tests` (four of them D91's added at W-43's land and repair:
+`d91_a_torn_last_log_line_…`, `d91_a_tui_open_across_two_midnights_…`, `d91_the_editor_opens_an_item_…`, and two the
+repair named), `p77_…`, `tui_today_ghost` 3, `tui_today_prompts` 11 and `worked_midnight_timer` 1, every one named in
+§6's table — where the W-43 repair's §7 and this run's brief count 23.  2. *Why not changed.*  It is R3's class
+(gaps 3476, 4327, 4347, 4397), and none of it is this track's to change.  3. *Cost.*  A swap that turns 23 green leaves
+two red.  4. *Clears it.*  R3 (W-45), against §6's list by name.
+
+### 9. For the Land
+
+* **Branch `w44-c`**, one commit (§7).  **Files this track holds, and the ones it touched beside them**: the oracle
+  (`examples/oracle/`: `worked-seam.patch` new, `build-oracle.sh`, `src/main.rs`), `tm/tests/support/forkplan.rs`,
+  `tm/tests/planner_classes.rs`, `tm/tests/planner_invariants.rs`, `kernel/parity.txt`'s P55 row; and beside them, by
+  the brief's FNV item and named: `tm/tests/support/fnv.rs` (new), `tm/tests/support/loggen.rs` (its body for one
+  re-export; the API is unchanged, and T5 includes it — track K's), `tm/tests/cli_common/mod.rs` (a re-export of the
+  same name; track H's new CLI tests keep compiling against `cli_common::fnv1a64_hex`), `kernel/citations-allow.txt`
+  (two counted names the graft declares, under this track's banner).  **No frozen line touched; no fixture file
+  changed.**
+* **P55's anchor is `README.md:87072`** (this block's restated row): the merge moves the line when another track's
+  block lands above it, and check 10 then names the row to re-anchor.
+* **Track K's D94 (`P92`, its pre-allocated number) and `planner_invariants.rs`**: the one-reading arm this step widened holds the host's reading
+  and the replay's to one number on every logged-break day; if D94's replay moves a reading there, the arm will say
+  which day — the merge keeps both changes.
+* **The oracle**: every `TM_ORACLE` arm needs an oracle built at or after this step; an older one is refused by name
+  ("… it is STALE, rebuild it").  Rebuild with `build-oracle.sh` before the land's oracle arms.

@@ -50,12 +50,14 @@
 //!   {"op":"diff", "old":[segment..], "new":[segment..]}
 //!     -> {"diff":<planner::diff>}
 //!   {"op":"worked", "world":{..}, "state":{..}, "now":"..", "log_line":null|".."}
-//!     -> {"worked": n|null}
+//!     -> {"worked": n|null, "read_by": "planner::active_worked"}
 //!   ```
 //!
 //!   `worked` (W-43 track C, README gap 4460) is the running block's worked minutes as the
 //!   fork reads them — `active_run`'s reading over its own replay — which the comparand
-//!   needs before it plans (P55 and P46 move the estimate by the FORK's reading).
+//!   needs before it plans (P55 and P46 move the estimate by the FORK's reading). Since W-44
+//!   track C (README gap 4507) it is read by the fork's own lines, which `worked-seam.patch`
+//!   moves out of `active_run` into a method both call; until then this file re-typed them.
 //!
 //!   The world is read as the FORK reads it — its own parser, its own
 //!   `log::replay` over the same bytes (and `log_line` appended for the day
@@ -333,42 +335,75 @@ fn instant(v: &Value, tz: chrono_tz::Tz, what: &str) -> Result<chrono::DateTime<
     chrono::DateTime::parse_from_rfc3339(t).map(|d| d.with_timezone(&tz)).map_err(|e| format!("`{what}` {t:?}: {e}"))
 }
 
+/// **A world as the FORK reads it** — its own parser over the documents
+/// (`Tree::from_texts`), the default configuration with the world's budget ratio, the
+/// duration model the world names, its stored state and instant, and the log's bytes, which
+/// [`ForkWorld::log_with`] hands the fork's own `log::replay`. The ONE reading of a request's
+/// `world`, shared by the `plan` and `worked` ops (W-44 track C, README gap 4507), so the two
+/// ops read one world one way.
+struct ForkWorld {
+    cfg: tm_core::config::Config,
+    tree: tm_core::tree::Tree,
+    log_text: String,
+    model: tm_core::energy::Model,
+    state: tm_core::store::RuntimeState,
+    now: chrono::DateTime<chrono_tz::Tz>,
+}
+
+impl ForkWorld {
+    /// The request's `world`, read as the fork reads it — or why not, by name.
+    fn read(world: &Value) -> Result<ForkWorld, String> {
+        let mut cfg = tm_core::config::Config::default();
+        if let Some(r) = world["ratio"].as_str() {
+            cfg.day.budget_ratio = r.parse().map_err(|e| format!("world.ratio {r:?}: {e}"))?;
+        }
+        let docs: Vec<(String, String)> = world["docs"]
+            .as_array()
+            .ok_or("world.docs is not an array")?
+            .iter()
+            .map(|d| match (d[0].as_str(), d[1].as_str()) {
+                (Some(p), Some(t)) => Ok((p.to_string(), t.to_string())),
+                _ => Err(format!("world.docs holds {d}")),
+            })
+            .collect::<Result<_, _>>()?;
+        let files: Vec<(&str, &str)> = docs.iter().map(|(p, t)| (p.as_str(), t.as_str())).collect();
+        let tree = tm_core::tree::Tree::from_texts(&files, &cfg);
+        let log_text = world["log"].as_str().ok_or("world.log is not a string")?.to_string();
+        let mut model = tm_core::energy::Model::default();
+        if let Some(m) = world["mult"].as_str() {
+            let m: f64 = m.parse().map_err(|e| format!("world.mult {m:?}: {e}"))?;
+            model.duration.insert(tm_core::energy::DEFAULT_TAG.to_string(), m);
+        }
+        let state: tm_core::store::RuntimeState =
+            serde_json::from_value(world["state"].clone()).map_err(|e| format!("world.state: {e}"))?;
+        let now = instant(&world["now"], cfg.tz, "world.now")?;
+        Ok(ForkWorld { cfg, tree, log_text, model, state, now })
+    }
+
+    /// The fork's own log and replay of the world's bytes, with `line` appended when the
+    /// request carries one (the day a comparand plans after a line it logs).
+    fn log_with(&self, line: Option<&str>) -> (Log, tm_core::log::Replay) {
+        let log = match line {
+            Some(l) => Log::parse(&format!("{}{l}", self.log_text)),
+            None => Log::parse(&self.log_text),
+        };
+        let replay = log.replay(None, self.cfg.tz);
+        (log, replay)
+    }
+}
+
 /// **One `plan` op**: the world read as the fork reads it, its candidates collected at the
 /// world's `now` and ranked by the request's grants, the day planned at the request's own
 /// `now` and state (a comparand's), over the log with `log_line` appended when there is one.
 fn plan_one(req: &Value) -> Result<Value, String> {
     use tm_core::planner::{self, PlanInput, PlanOverrides};
     use tm_core::priority;
-    let world = &req["world"];
-    let mut cfg = tm_core::config::Config::default();
-    if let Some(r) = world["ratio"].as_str() {
-        cfg.day.budget_ratio = r.parse().map_err(|e| format!("world.ratio {r:?}: {e}"))?;
-    }
+    let world = ForkWorld::read(&req["world"])?;
+    let (cfg, tree, model) = (&world.cfg, &world.tree, &world.model);
     let tz = cfg.tz;
-    let docs: Vec<(String, String)> = world["docs"]
-        .as_array()
-        .ok_or("world.docs is not an array")?
-        .iter()
-        .map(|d| match (d[0].as_str(), d[1].as_str()) {
-            (Some(p), Some(t)) => Ok((p.to_string(), t.to_string())),
-            _ => Err(format!("world.docs holds {d}")),
-        })
-        .collect::<Result<_, _>>()?;
-    let files: Vec<(&str, &str)> = docs.iter().map(|(p, t)| (p.as_str(), t.as_str())).collect();
-    let tree = tm_core::tree::Tree::from_texts(&files, &cfg);
-    let log_text = world["log"].as_str().ok_or("world.log is not a string")?;
-    let world_log = Log::parse(log_text);
-    let world_replay = world_log.replay(None, tz);
-    let mut model = tm_core::energy::Model::default();
-    if let Some(m) = world["mult"].as_str() {
-        let m: f64 = m.parse().map_err(|e| format!("world.mult {m:?}: {e}"))?;
-        model.duration.insert(tm_core::energy::DEFAULT_TAG.to_string(), m);
-    }
-    let world_state: tm_core::store::RuntimeState =
-        serde_json::from_value(world["state"].clone()).map_err(|e| format!("world.state: {e}"))?;
-    let world_now = instant(&world["now"], tz, "world.now")?;
-    let date = world_state.date.unwrap_or_else(|| world_now.date_naive());
-    let mut cands = priority::collect_candidates(&tree, &world_replay, &cfg, &model, date, world_now);
+    let (world_log, world_replay) = world.log_with(None);
+    let date = world.state.date.unwrap_or_else(|| world.now.date_naive());
+    let mut cands = priority::collect_candidates(tree, &world_replay, cfg, model, date, world.now);
     if let Some(order) = req["order"].as_object() {
         for c in cands.iter_mut() {
             if let Some(o) = order.get(c.id.as_str()) {
@@ -396,11 +431,7 @@ fn plan_one(req: &Value) -> Result<Value, String> {
         serde_json::from_value(req["state"].clone()).map_err(|e| format!("state: {e}"))?;
     let now = instant(&req["now"], tz, "now")?;
     let (log, replay) = match req["log_line"].as_str() {
-        Some(l) => {
-            let log = Log::parse(&format!("{log_text}{l}"));
-            let replay = log.replay(None, tz);
-            (log, replay)
-        }
+        Some(l) => world.log_with(Some(l)),
         None => (world_log, world_replay),
     };
     let ov = match req["extend"].as_array() {
@@ -414,7 +445,7 @@ fn plan_one(req: &Value) -> Result<Value, String> {
     // `runs`: D74's split into runs (parity P64, `p64-runs.patch`), the comparand's.
     let runs = req["runs"].as_bool().unwrap_or(false);
     let mut input =
-        PlanInput::new(&tree, &log, &replay, &cfg, &model, &state, now).with_ranking(&cands, &prios).with_runs(runs);
+        PlanInput::new(tree, &log, &replay, cfg, model, &state, now).with_ranking(&cands, &prios).with_runs(runs);
     if let Some(ov) = ov.as_ref() {
         input = input.with_overrides(ov);
     }
@@ -545,10 +576,20 @@ fn observe_review(req: &Value) -> Value {
 }
 
 /// **One `worked` op** (stage 6 W-43 track C, README gap 4460): the running block's worked
-/// minutes as fork 4748911 READS them at the request's `now` — fork `active_run`'s own reading,
-/// over the fork's own replay of the world's log (with `log_line` appended, as `plan` reads it):
-/// the log's open block when it is the state's running item (`OpenBlock::worked_min_at`), the
-/// clock since `started` on the planned date otherwise; `null` when the state runs no block.
+/// minutes as fork 4748911 READS them at the request's `now` — over the fork's own replay of
+/// the world's log (with `log_line` appended, as `plan` reads it): the log's open block when it
+/// is the state's running item (`OpenBlock::worked_min_at`), the clock since `started` on the
+/// planned date otherwise; `null` when the state runs no block.
+///
+/// **Since W-44 track C (README gap 4507) it is the fork's OWN lines that read it.** Until then
+/// this function RE-TYPED fork `active_run`'s selection, because the reading is a local of that
+/// private method, so a frozen comparand was partly computed by code this repository owns.
+/// `worked-seam.patch` (applied by `build-oracle.sh` after the two grafts) MOVES those lines,
+/// unchanged, into a method `active_run` itself calls, and adds one public entry that builds
+/// the fork's own `Planner` for a `PlanInput`; this op builds the `PlanInput` `plan` builds for
+/// the same request, less the ranking (which the reading does not read), and asks it. The
+/// answer names the entry that read it, `read_by`, and the harness refuses an answer without
+/// it — an oracle built before W-44 is STALE (README gap 196's rule: provenance is not freshness).
 ///
 /// The comparand needs it BEFORE it plans — P55 moves the running estimate by the difference
 /// between the host's reading and the FORK's, and P46 asks whether the FORK's reading is past
@@ -559,30 +600,17 @@ fn observe_review(req: &Value) -> Value {
 ///
 /// ```text
 /// {"op":"worked", "world":{docs,log,state,now,mult,ratio}, "state":{..}, "now":"..",
-///  "log_line":null|".."}  ->  {"worked": n|null}
+///  "log_line":null|".."}  ->  {"worked": n|null, "read_by": "planner::active_worked"}
 /// ```
 fn worked_one(req: &Value) -> Result<Value, String> {
-    let tz = tm_core::config::Config::default().tz;
-    let log_text = req["world"]["log"].as_str().ok_or("world.log is not a string")?;
-    let text = match req["log_line"].as_str() {
-        Some(l) => format!("{log_text}{l}"),
-        None => log_text.to_string(),
-    };
-    let replay = Log::parse(&text).replay(None, tz);
+    use tm_core::planner::{self, PlanInput};
+    let world = ForkWorld::read(&req["world"])?;
+    let (log, replay) = world.log_with(req["log_line"].as_str());
     let state: tm_core::store::RuntimeState =
         serde_json::from_value(req["state"].clone()).map_err(|e| format!("state: {e}"))?;
-    let now = instant(&req["now"], tz, "now")?;
-    let Some(active) = state.active.as_ref() else { return Ok(json!({ "worked": null })) };
-    // Fork `PlanInput::date` and `active_run`, verbatim in what they read.
-    let date = state.date.unwrap_or_else(|| now.date_naive());
-    let started = tm_core::capacity::local_dt(tz, date, active.started);
-    let worked = replay
-        .open_block
-        .as_ref()
-        .filter(|b| b.id == active.id.as_str())
-        .map(|b| b.worked_min_at(now.fixed_offset()))
-        .unwrap_or_else(|| (now - started).num_minutes().max(0) as u32);
-    Ok(json!({ "worked": worked }))
+    let now = instant(&req["now"], world.cfg.tz, "now")?;
+    let input = PlanInput::new(&world.tree, &log, &replay, &world.cfg, &world.model, &state, now);
+    Ok(json!({ "worked": planner::active_worked(&input), "read_by": "planner::active_worked" }))
 }
 
 /// A request, answered — or refused `{"error": …}` by name, so the caller sees why.

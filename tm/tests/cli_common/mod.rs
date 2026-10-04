@@ -21,15 +21,14 @@ pub const NOW: &str = "2026-09-07T09:00:00-05:00";
 /// **FNV-1a-64, as hex** — the digest the replay cache's manifest records for each sealed month
 /// file (`kernel_log::month_digest`, the owner's D93), computed in the test harness and never
 /// borrowed from the binary, so a test's reading of the rule is independent of the code under test.
-/// One copy for every test binary (README gap 4504, the W-43 repair: three files carried it).
-pub fn fnv1a64_hex(bytes: &[u8]) -> String {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for &b in bytes {
-        h ^= u64::from(b);
-        h = h.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    format!("{h:016x}")
-}
+/// One copy for every CLI test binary since the W-43 repair (README gap 4504: three files carried
+/// it), and since W-44 track C the harness's one body for every reader (`support/fnv.rs`, README
+/// gap 4581: this function, `loggen`'s and `forkplan::day_hash`'s fold were three).
+#[path = "../support/fnv.rs"]
+mod fnv;
+// A re-export under the name its callers know: unused in a CLI test that asks no digest.
+#[allow(unused_imports)]
+pub use fnv::fnv1a64_hex;
 
 /// One temporary plan directory and the binary under test.
 pub struct Tm {
