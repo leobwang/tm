@@ -88784,7 +88784,10 @@ admits the re-draw on a non-empty reason, and the bless now refuses one that doe
 * 10:52 — `check.sh` on the final tree in `scratchpad/w45-c/vclone`: seventeen ok, 40.7 s (§8).
 * 10:55-11:28 — the workspace three times on the final tree, green (§8); beside them, in `scratchpad/w45-c/pclone`, gap
   4321's re-draw measured and built for this step's second commit (§12 there).
-* Then this block's §8, `check.sh` again on the tree committed, and the commit.
+* 11:31 — the first commit, `f2f5e84`; then §12's change applied in the worktree (the TUI re-bless dry-run there
+  reproduces the line byte for byte), its suites and the TUI oracle arm green, `check.sh` in the clone (`runs/check3.log`).
+* 11:33-12:04 — the workspace three times on the second commit's tree, green (§12); then this paragraph and the second
+  commit.
 
 ### 0. The brief, measured before it was acted on
 
@@ -88997,6 +89000,9 @@ deletes from — the oracle extracts fork 4748911 from git history (`build-oracl
 
 ### 6. Gap 4321 — the `tui Midnight` line can move only with the swap: what the switch must do
 
+*Superseded by §12, this step's second commit: the brief's test — the re-aimed test green against the unswitched
+binary — was measured, it holds, and the line is re-drawn; what follows is the first commit's reading, kept.*
+
 **Not re-drawn here, and why.** The line's world is `tui_kernel_answers.rs`' `app_of(TuiWorld::Midnight)`, which is by
 construction the world `tui_today_prompts::a_block_started_before_midnight_still_goes_overtime` builds for itself:
 `tui_common::app_with_log_text(00:30 Tuesday, state, "")`, `.tm/state.json` dated Monday, `^t3` running from 23:30 in the
@@ -89195,7 +89201,8 @@ headers — a planner that cuts its slots by hand; a day built through another f
 a glob import of a re-export; the library imported under another crate name; `tm-core/tests` and the FFI crate's
 tests.
 
-**Gap 4684 — gap 4321 moves with the swap, not before it.**  1. *What.*  §6.  2. *Why not changed.*  The line is the
+**Gap 4684 — gap 4321 moves with the swap, not before it: CLOSED by §12** (the second commit re-draws it; gap 4321
+closed with it).  As the first commit recorded it:  1. *What.*  §6.  2. *Why not changed.*  The line is the
 world a swap-class test builds for itself; re-drawing it alone would make the frozen comparison and `TUI_TESTS` describe
 a world no test plans over.  3. *Cost.*  None before R3: the line describes the test's world as the test builds it.
 4. *Clears it.*  The switch, by §6's four steps.
@@ -89249,19 +89256,78 @@ name; `citations.py` itself gives each name's count).
 
 ### 11. For the Land and the switch
 
-* **Branch `w45-c`**, one commit. **Files this track holds and touched**: the fork regions' files and their surviving
+* **Branch `w45-c`**, two commits (§12 is the second). **Files this track holds and touched**: the fork regions' files and their surviving
   halves (`emit_planner.rs`, `planner_classes.rs`, `planner_fixtures.rs`, `planner_invariants.rs`, `planner_p56_cut.rs`,
   `planner_separator_days.rs`, `planner_w38_order.rs`, `planner_w39_conference.rs`, `planner_w40_runs.rs`,
   `planner_w41_starts.rs`), the region gates (`fork_rebless_history.rs`, `planner_classes.rs`), `support/fork*.rs` and
   `support/frozenhist.rs`, and one new file, `tm/tests/no_second_planner.rs`; `kernel/README.md` and
   `kernel/citations-allow.txt` appended. **No fixture file, no snapshot, no `.lean` file, nothing under `tm/src` or
-  `tm-core/src`, no oracle file.** No parity number; no `PARITY-PENDING`.
+  `tm-core/src`, no oracle file** in the first commit; the second (§12) touches `tui_common/mod.rs`,
+  `tui_today_prompts.rs`, `tui_kernel_answers.rs` and ONE frozen line, `fork-4748911-planner-tui.jsonl`'s
+  `tui Midnight`, under D64(b). No parity number; no `PARITY-PENDING`.
 * **Every `TM_ORACLE` arm needs an oracle built at or after W-44** (the `worked` op's `read_by`); this step built one fresh.
 * **The switch's deletion is §7's list**, and it has nothing to rewrite in the gates: the regions and
   `tm-core/src/planner.rs` go, the twelve region-only snapshots go, the body swap removes the two shipped call sites —
   after which `no_second_planner.rs` is green (it is red, by design, on a deletion without the swap: §5's simulation B).
   Check 8 then names 132 cited names that resolve to nothing (§7, gap 4691), in README history, test docs and
   eleven Lean files.
-* **Gap 4321** is the switch's, by §6's four steps.
+* **Gap 4321** is closed (§12): the switch swaps `a_block_started_before_midnight_still_goes_overtime`'s planner call
+  with the other twenty-nine and does nothing else for it.
 * **If track D's or Q's tests add a bless or a region**, the gates of §4 judge them by property: a bless in a region, or
   a region test that reaches no fork, fails by name.
+
+### 12. Gap 4321 after all — the `tui Midnight` line re-drawn under D64(b), in this step's second commit (gaps 4321 and 4684 — CLOSED)
+
+§6 left the line to the switch on an argument, and the brief's test is a measurement: re-draw it "if its test stays green
+against the unswitched binary".  Measured in `scratchpad/w45-c/pclone`, then landed:
+
+* **The test, re-aimed — green against the unswitched binary.**  `tui_today_prompts::a_block_started_before_midnight_still_goes_overtime`
+  plans over `tui_common::before_midnight_app` (new): the §4.3 fixture's log with `^t3` stopped at 22:30 an hour short
+  and started again at 23:30, the state rolled to the new day with `active.started` `23:30` and `est_min` 60 — the world
+  the TUI holds since D84 (it re-collects at the date change and writes nothing) under D42 (the running block is the
+  log's).  Its two assertions stand unchanged: 60 worked at 00:30, overtime due.  It is still one of the swap class (it
+  reaches the planner in-process through `App`): on the simulated deletion it fails "R3-SIM …" as before, and the class
+  is still 30.
+* **`app_of(TuiWorld::Midnight)` builds the same world**, and the line was re-blessed through the fresh oracle with its
+  reason — `TM_TUI_BLESS_REDRAW="2026-10-04 D64(b): the Midnight test's world was a state dated the day before over an
+  empty log, which D42's reconcile ends on every load and D84's roll never plans over; re-drawn as the TUI holds it since
+  D84 (README gap 4321)"`, dry run first (`TM_TUI_BLESS_OUT`): **"0 line(s) added, 1 changed (tui Midnight re-drawn), 0
+  refused"**, the other twelve lines byte-identical, the written file the dry run's bytes.  **The frozen line touched, by
+  name: `fork-4748911-planner-tui.jsonl`'s `tui Midnight`** — its world, class (`idle/lounge` → `overtime/lounge`), day
+  (dated 2026-09-08, `now`'s, where the stale line's was the state's 2026-09-07), what-if, the shipped fork's day now held
+  by value beside the comparand, `p69` and `d64b`.  The history gate licenses it as a D64(b) re-draw
+  (`frozenhist::redrawn`).
+* **Its verdict is measured, not assumed: `Live::Departs(69)`** — the start is the log's and the cache's clock falls on
+  the plan's date, the sixteenth test's world's shape.  The region's live comparison holds it (the shipped in-tree fork
+  departs from the kernel by P69's property, and the comparand finds nothing), and so does the frozen comparison.  It is
+  pinned: a Midnight line without its `p69` flag is refused (`the_frozen_tui_comparison_bites_a_bent_line`), which is
+  what makes the verdict bite — with `Live::Equal` in its place the whole suite otherwise stays green, because the
+  comparand applies P69 (D89) and `Equal` is true of the world too, only weaker (plant P24).
+* **Gap 3860's kernel half keeps a witness.**  The Midnight world was the only world on which the kernel's reading — on
+  a state dated the day before `now`, plan `now`'s date — fired, and the only finding verdict (`Live`'s Finding variant) the file pinned.  The
+  variant goes (nothing constructs it), and `the_kernel_plans_nows_date_on_a_stale_state` (new, kernel alone, outlives
+  R3) holds the reading on the old world and its absence on the same world with the state rolled; the reading still
+  bites every TUI world in `the_kernel_answers_every_fork_planned_tui_world`.
+* **One kernel answer bent, on the simulated deletion with this commit**: the Midnight line's compared answer (the 14th
+  the comparison reads; each line's odd answer feeds only its grants) fails "tui Midnight (overtime/lounge): the rows
+  differ at 4".  The suites on the deletion: `tui_kernel_answers` 51 passed (its region's test gone),
+  `tui_today_prompts` 33 passed and the swap class's 11, `worked_midnight_timer` 27 and its 1, the gates green.
+* **Plants** (in `pclone`, this commit's tree committed there): P22 the world's estimate 90 — the test fails "an hour into
+  a one-hour block" and `every_frozen_tui_world_is_the_one_its_tests_build` "the test builds another world now"; P23 the
+  stale-state reading never fires — `the_kernel_plans_nows_date_on_a_stale_state` "gap 3860's reading does not fire on a
+  stale state"; P24 the verdict `Live::Equal` — the bite test "the midnight line without its P69 flag passed".
+
+**So the switch has nothing to do for gap 4321** but swap that test's planner call with the other twenty-nine; §6's four
+steps are done — the world built by hand, as `tui_common::after_midnight_app` builds the sixteenth test's, rather than by
+the binary's verbs as §6's step 1 proposed; the frozen line holds whichever world the test builds
+(`every_frozen_tui_world_is_the_one_its_tests_build`).
+
+**Acceptance of the second commit, capped.**  `check.sh` in `vclone` synced to its tree: seventeen lines ok, 30.5 s warm
+-- the axiom audit 6,344, FFI 95, corpus 29/37 files and 4/5 plans, stage goals 1, citations 59,880 (57,446 resolved,
+2,434 allowed, 0 unused), check 9 734 rostered and 0 owed, parity P1-P99, check 11 0 UNANSWERED, check 12 1,518
+reachable and 1,099 exempt, check 13 17/17, 33 of 37, 169, 220, check 14 94 modules (`runs/check3.log`; 59,883 citations
+once this paragraph was written, check 8 and check 10 re-run on it in the worktree).
+`cargo test --workspace --no-fail-fast`, THREE runs (D46): **each 149 result lines, 2,822 passed, 0 failed, 42 ignored,
+0 compiler warnings** (600 s, 657 s, 640 s; 11:33-12:04); the first commit's 2,821 +
+`the_kernel_plans_nows_date_on_a_stale_state` = 2,822.  Porcelain and diff equal at every start and end.  No
+`.proptest-regressions` file moved.  The TUI oracle arm green over the fresh oracle (234 requests).

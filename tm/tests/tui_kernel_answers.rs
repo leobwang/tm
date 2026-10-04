@@ -129,9 +129,6 @@ enum Live {
     /// which applies that number and no other on the world, answers the kernel's day and
     /// what-if.
     Registered(u32),
-    /// A finding, by its README gap: the fork and the kernel plan different days, and no
-    /// registered number says so.
-    Finding(u32),
     /// **The kernel departs by a registered number the shipped fork's inputs do not carry** (W-41
     /// track H, README gap 4090): the world's frozen line carries the number's flag, and the kernel
     /// is held to the number's PROPERTY against fork 4748911's day by value — today P69, a start
@@ -155,9 +152,12 @@ enum TuiWorld {
     /// `the_elapsed_minutes_are_worked_minutes_not_wall_clock`'s: a pause 11:00–11:20 logged,
     /// at `h:m`.
     Paused(u32, u32),
-    /// `a_block_started_before_midnight_still_goes_overtime`'s: `^t3` started 23:30 with
-    /// `est_min` 60, an empty log, 00:30 the next day — `.tm/state.json` still dated the day
-    /// before, as the TUI holds it from midnight until its next reload (README gap 3860).
+    /// `a_block_started_before_midnight_still_goes_overtime`'s, as the TUI holds it since D84
+    /// (`tui_common::before_midnight_app` at 00:30 the next day): `^t3` stopped at 22:30 an hour
+    /// short and started again at 23:30 in the log, the state rolled to the new day with
+    /// `active.started` `23:30` and `est_min` 60. Until W-45 (README gap 4321) it was `.tm/state.json`
+    /// still dated the day before over an empty log — gap 3860's stale state, which the binary no
+    /// longer holds and `the_kernel_plans_nows_date_on_a_stale_state` now pins on its own.
     Midnight,
     /// `the_two_prompts_keep_their_own_clocks`' last world: `idle_app(9, 50)` with `^t3`
     /// running again from 09:32, `est_min` 10.
@@ -264,7 +264,10 @@ const TUI_TESTS: [TuiTest; 16] = [
         asks: &[ask(TuiWorld::Midnight, true)],
         asserted: Asserted::Nothing,
         verdict: Verdict::Equal,
-        live: Live::Finding(3860),
+        // `Finding(3860)` until W-45: the world was a state dated the day before. Re-drawn as the
+        // TUI holds it since D84 (README gap 4321), the start is the log's and the cache's clock
+        // falls on the plan's date: P69, as the sixteenth test's world.
+        live: Live::Departs(69),
     },
     TuiTest {
         name: "tui_today_prompts::the_two_prompts_keep_their_own_clocks",
@@ -365,17 +368,13 @@ fn app_of(w: TuiWorld) -> (App, String, Vec<(String, String)>) {
             (tui_common::app_with_log_text(tui_common::at(&cfg, h, m), tui_common::state(), &log), log, texts)
         }
         TuiWorld::Midnight => {
-            let mut state = tui_common::state();
-            if let Some(a) = state.active.as_mut() {
-                a.started = chrono::NaiveTime::from_hms_opt(23, 30, 0).expect("time");
-                a.est_min = 60;
-            }
             let midnight = tm_core::capacity::local_dt(
                 cfg.tz,
                 tui_common::date().succ_opt().expect("tomorrow"),
                 chrono::NaiveTime::from_hms_opt(0, 30, 0).expect("time"),
             );
-            (tui_common::app_with_log_text(midnight, state, ""), String::new(), texts)
+            let (app, log) = tui_common::before_midnight_app(midnight);
+            (app, log, texts)
         }
         TuiWorld::IdleThenRunning => {
             let mut app = tui_common::idle_app(9, 50);
@@ -479,9 +478,38 @@ fn drops_of(app: &App, k: &KernelDay) -> Vec<String> {
 
 /// README gap 3860's kernel half, which outlives R3: on a state dated the day before `now`, the
 /// kernel plans `now`'s date — the state's window, budget and arrival are not today's
-/// (`Look.Today.forToday`) — where fork `planwire::plan_date` plans the state's.
+/// (`Look.Today.forToday`) — where fork `planwire::plan_date` plans the state's. Since W-45 no TUI
+/// world holds such a state (README gap 4321), and `the_kernel_plans_nows_date_on_a_stale_state`
+/// holds the kernel to it on the one that did.
 fn plans_nows_date_on_a_stale_state(state: &RuntimeState, now: chrono::DateTime<chrono_tz::Tz>, k: &KernelDay) -> bool {
     k.day.date == now.date_naive() && state.date.is_some_and(|d| d != k.day.date)
+}
+
+/// **Gap 3860's kernel half, on the world the Midnight test built until W-45** (README gaps 3860
+/// and 4321): `.tm/state.json` dated the fixture's day, `^t3` running from 23:30 with 60 minutes
+/// estimated, an empty log, at 00:30 the next day — a world the binary no longer holds (D42 ends the
+/// block on load; D84 rolls the TUI's state at the date change), kept here because it is the one
+/// world that shows the reading. The kernel plans `now`'s date on it, and on the same world with the
+/// state dated today the reading does not fire. The kernel alone; no fork, so it outlives R3.
+#[test]
+fn the_kernel_plans_nows_date_on_a_stale_state() {
+    let cfg = tui_common::config();
+    let tomorrow = tui_common::date().succ_opt().expect("tomorrow");
+    let midnight = tm_core::capacity::local_dt(cfg.tz, tomorrow, chrono::NaiveTime::from_hms_opt(0, 30, 0).expect("time"));
+    let mut state = tui_common::state();
+    if let Some(a) = state.active.as_mut() {
+        a.started = chrono::NaiveTime::from_hms_opt(23, 30, 0).expect("time");
+        a.est_min = 60;
+    }
+    let texts = tui_common::tree_texts();
+    let stale = tui_common::app_with_log_text(midnight, state.clone(), "");
+    let (_, k) = kernel_answer(&stale, "", &texts).expect("the kernel plans the stale world");
+    assert_eq!(k.day.date, tomorrow, "the kernel plans now's date");
+    assert!(plans_nows_date_on_a_stale_state(&stale.state, stale.now, &k), "gap 3860's reading does not fire on a stale state");
+    state.date = Some(tomorrow);
+    let rolled = tui_common::app_with_log_text(midnight, state, "");
+    let (_, k) = kernel_answer(&rolled, "", &texts).expect("the kernel plans the rolled world");
+    assert!(!plans_nows_date_on_a_stale_state(&rolled.state, rolled.now, &k), "gap 3860's reading fires on a state dated today");
 }
 
 /// **The kernel answers every fork-planned TUI world, and each verdict holds** — README gap
@@ -594,10 +622,9 @@ fn the_kernel_answers_every_fork_planned_tui_world() {
             if !consistent {
                 findings.push(format!("{}: the verdict {:?} and the live answer {:?} disagree", t.name, t.verdict, t.live));
             }
-            // Gap 3860's reading bites nowhere else: every other world's state is today's. (The two
-            // findings' own statements are held by the `Nothing` verdict arm above, through
-            // `verdict_unmet` against the frozen day — one definition since W-41.)
-            if t.live != Live::Finding(3860) && plans_nows_date_on_a_stale_state(&app.state, app.now, k) {
+            // Gap 3860's reading bites every world: since W-45 (README gap 4321) none holds a stale
+            // state, and the reading itself is pinned by `the_kernel_plans_nows_date_on_a_stale_state`.
+            if plans_nows_date_on_a_stale_state(&app.state, app.now, k) {
                 findings.push(format!("{}: read as gap 3860's stale state, and its state is today's", t.name));
             }
             if a.world == TuiWorld::MeetingNow {
@@ -936,30 +963,15 @@ fn tui_line(w: TuiWorld, b: &Built, answers: &Value) -> Value {
     line
 }
 
-/// **A finding world's stated difference, held against a line's answers** — README gap 3860
-/// as its paragraph states it (gap 3861's finding, held here until W-41's land step, is closed
-/// by P76: its world's verdict is `Live::Equal`), over the kernel's day `k` and the frozen lines' one
-/// comparison's `findings`; every other verdict is that there are no findings. Empty when the
-/// verdict holds. One definition for the frozen comparison and, while the fork is here, the
-/// region's live one.
+/// **A departing world's stated difference, held against a line's answers** — P69's property
+/// over the kernel's day `k` and the frozen lines' one comparison's `findings`; every other verdict
+/// is that there are no findings. (Gap 3861's finding was closed by P76 at W-41's land step, and gap
+/// 3860's — the last finding this file pinned — lost its world at W-45, README gap 4321: its
+/// kernel half is `the_kernel_plans_nows_date_on_a_stale_state`.) Empty when the verdict holds.
+/// One definition for the frozen comparison and, while the fork is here, the region's live one.
 fn verdict_unmet(w: TuiWorld, live: Live, b: &Built, k: &KernelDay, line: &Value, findings: &[String]) -> Vec<String> {
     let mut out = Vec::new();
     match live {
-        Live::Finding(3860) => {
-            // A state dated YESTERDAY, which the binary's housekeeping rolls at the first verb
-            // after midnight and the TUI does not until its next reload: the kernel plans `now`'s
-            // date with none of the state's facts (`Look.Today.forToday`), the fork the state's.
-            if !plans_nows_date_on_a_stale_state(&b.world.state, b.world.now, k) {
-                out.push(format!("{w:?}: the kernel no longer plans now's date on a state dated yesterday (gap 3860)"));
-            }
-            if line["day"]["day"]["date"] != "2026-09-07" {
-                out.push(format!("{w:?}: the fork's day is dated {}, not the state's date (gap 3860)", line["day"]["day"]["date"]));
-            }
-            if !findings.iter().any(|f| f.contains("date")) {
-                out.push(format!("{w:?}: gap 3860 says the two plan different dates, and the comparison found {findings:?}"));
-            }
-        }
-        Live::Finding(g) => out.push(format!("{w:?}: gap {g} names no finding this file pins")),
         Live::Departs(69) => {
             // P69 (README gap 4090): the kernel reads the running block's start off the log, where
             // fork 4748911 puts the cache's clock on the plan's date — held to P69's property against
@@ -1205,13 +1217,14 @@ fn the_frozen_tui_comparison_bites_a_bent_line() {
     let mut stale = plain.clone();
     stale["name"] = json!("tui NoSuchWorld");
     assert!(held(&stale).iter().any(|f| f.contains("STALE")), "a stale line passed");
-    // A finding world's verdict bites too: gap 3860's line whose fork day is dated `now`'s day —
+    // A departing world's verdict bites too: since W-45 the Midnight line is P69's (README gap
+    // 4321), and without its flag it is refused —
     let midnight = lines.iter().find(|l| l["name"] == tui_name(TuiWorld::Midnight)).expect("the midnight world").clone();
-    assert!(held(&midnight).is_empty(), "the midnight line holds as gap 3860 states it");
-    let mut today = midnight.clone();
-    today["day"]["day"]["date"] = json!("2026-09-08");
-    assert!(held(&today).iter().any(|f| f.contains("not the state's date (gap 3860)")), "a bent 3860 line passed");
-    // — gap 4090's line, P69's, without its flag or with the kernel's running row in the fork's day —
+    assert!(held(&midnight).is_empty(), "the midnight line holds P69's property: {:?}", held(&midnight));
+    let mut bare = midnight.clone();
+    bare.as_object_mut().expect("a line").remove("p69");
+    assert!(held(&bare).iter().any(|f| f.contains("carries no `p69` flag")), "the midnight line without its P69 flag passed");
+    // — and gap 4090's line, P69's, without its flag or with the kernel's running row in the fork's day —
     let after = lines.iter().find(|l| l["name"] == tui_name(TuiWorld::AfterMidnight(1, 0))).expect("the after-midnight world").clone();
     assert!(held(&after).is_empty(), "the after-midnight line holds P69's property");
     let mut unflagged = after.clone();
@@ -1271,8 +1284,8 @@ fn first_world(t: &TuiTest) -> TuiWorld {
 /// each world the sixteen plan over (each once, every planner call of every test): the comparand
 /// (the in-tree fork with every registered departure applied by its property,
 /// `forkplan::comparand_answers`) and the kernel agree on the whole day and the what-if
-/// (`forkclass::compare_line`, the frozen lines' one comparison) — except on a `Live::Finding`
-/// world, where the finding holds as its gap states it ([`verdict_unmet`]); the comparand's
+/// (`forkclass::compare_line`, the frozen lines' one comparison) — and on a `Live::Departs`
+/// world the number's property holds as well ([`verdict_unmet`]); the comparand's
 /// answers are the frozen TUI line's, key for key (README gap 3963: the oracle froze them, and
 /// the in-tree fork the binary ships answers the same); `overtime_due`'s drops (the fork's what-if
 /// through the TUI's own `extend_drops`) are what each test on the world asserts; they are the
@@ -1318,7 +1331,7 @@ fn the_fork_and_the_kernel_answer_every_tui_world_as_the_verdicts_say() {
                     assert_ne!(fork, kernel, "{w:?}: a registered P{n} difference on drops the kernel shares");
                     assert_eq!(flags, vec![n], "{w:?}: the comparand departs from the shipped fork by P{n} and by no other number");
                 }
-                Live::Finding(_) | Live::Departs(_) => {}
+                Live::Departs(_) => {}
             }
         }
         if matches!(w, TuiWorld::Replanned { .. }) {
