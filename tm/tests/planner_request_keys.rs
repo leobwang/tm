@@ -41,8 +41,13 @@
 //!
 //! # What it cannot see
 //!
-//! Values: a key both requests send with different values is not a finding here
-//! (that is what the classes and the batch compare, against the fork). The
+//! Values, in [`the_binarys_planner_request_and_the_harnesss_differ_only_by_name`]:
+//! a key both requests send with different values is not a finding THERE. Until
+//! the W-45 repair this paragraph said it was "what the classes and the batch
+//! compare, against the fork", and they do not — they plan the harness's request
+//! only, so a bent value in the binary's encoder reached no comparison with the
+//! fork (README gap 4741). [`the_binarys_planner_request_and_the_harnesss_agree_in_value`]
+//! is the value comparison: every scalar, and the kernel's day from each. The
 //! learned model's tables are seen on one world only ([`model_world`]); a world
 //! that sends a section neither request here builds — the `plan` rows, the
 //! `emit` walls — is check 13's (`kernel/fields.py`), not this file's.
@@ -218,6 +223,11 @@ fn binary_request(stderr: &str, world: &str) -> String {
 struct World {
     name: &'static str,
     dir: std::path::PathBuf,
+    /// **The plan directory as the traced `tm plan` read it** — a copy taken the instant
+    /// before that run, which then writes the day file, `.tm/last_plan.json` and a `plan`
+    /// event (README gap 4741, the W-45 repair): [`read`] of `dir` is the directory AFTER
+    /// the binary's own writes, which is not what its request was built from.
+    seen: tempfile::TempDir,
     now: &'static str,
     request: String,
     _tm: Tm,
@@ -229,10 +239,18 @@ fn drive(name: &'static str, tm: Tm, verbs: &[(&str, &[&str])], now: &'static st
     for (at, args) in verbs {
         tm.ok_at(at, args);
     }
+    // The housekeeping `tm plan` does first — the roll of `.tm/state.json`, the automatic
+    // close, the waiting timeouts, the wall marks — written by an untraced run at the same
+    // instant, so the directory [`World::seen`] copies is one the traced run's housekeeping
+    // leaves as it is: the harness reads files and keeps no house (README gap 4741).
+    let first = tm.run_at(now, &["plan"]);
+    assert_eq!(first.code, 0, "{name}: the first `tm plan` failed:\n{}{}", first.stdout, first.stderr);
+    let seen = tempfile::TempDir::new().expect("temp dir");
+    copy_dir(&tm.plan, seen.path());
     let out = tm.run_env_at(now, &[(TRACE_REQUEST_ENV, "1")], &["plan"]);
     assert_eq!(out.code, 0, "{name}: `tm plan` failed:\n{}{}", out.stdout, out.stderr);
     let request = binary_request(&out.stderr, name);
-    World { name, dir: tm.plan.clone(), now, request, _tm: tm }
+    World { name, dir: tm.plan.clone(), seen, now, request, _tm: tm }
 }
 
 /// A fixture tree other than `plan-basic`, copied into a temp directory.
@@ -329,13 +347,22 @@ struct Read {
 }
 
 fn read(w: &World) -> Read {
-    let store = MemStore::from_dir(&w.dir).expect("the tree reads");
+    read_dir(w, &w.dir)
+}
+
+/// [`read`] of the directory the traced `tm plan` read ([`World::seen`]).
+fn read_seen(w: &World) -> Read {
+    read_dir(w, w.seen.path())
+}
+
+fn read_dir(w: &World, dir: &Path) -> Read {
+    let store = MemStore::from_dir(dir).expect("the tree reads");
     let plan = store.read_tree().expect("the tree parses");
     let tree = Tree::build(&plan.files, &plan.config);
-    let log = std::fs::read_to_string(w.dir.join(".tm/log.jsonl")).unwrap_or_default();
+    let log = std::fs::read_to_string(dir.join(".tm/log.jsonl")).unwrap_or_default();
     let replay = planner_common::chokepoint::replay_of_text(&log, plan.config.tz);
     let state = store.load_state().expect("state.json parses");
-    let docs = planreq::docs_of_dir(&w.dir);
+    let docs = planreq::docs_of_dir(dir);
     let now = DateTime::parse_from_rfc3339(w.now).expect("an instant").with_timezone(&plan.config.tz);
     Read { tree, cfg: plan.config, replay, state, docs, log, now }
 }
@@ -442,6 +469,205 @@ fn the_binarys_planner_request_and_the_harnesss_differ_only_by_name() {
         "STALE: no world shows these named differences any more — delete them (the list only \
          shrinks), or say which world stopped reaching them:\n  {}",
         stale.join("\n  ")
+    );
+}
+
+/// **Every scalar of a JSON value, by its path WITH array indices** — `a.b[3].c` — the
+/// value comparison's unit (README gap 4741). [`paths`] is the key comparison's, and an
+/// array's length is not a key; here it is, so a request that sends one candidate more is
+/// a difference.
+fn leaves(v: &Value) -> BTreeMap<String, Value> {
+    fn walk(v: &Value, at: &str, out: &mut BTreeMap<String, Value>) {
+        match v {
+            Value::Object(m) => {
+                for (k, x) in m {
+                    walk(x, &if at.is_empty() { k.clone() } else { format!("{at}.{k}") }, out);
+                }
+            }
+            Value::Array(xs) => {
+                for (i, x) in xs.iter().enumerate() {
+                    walk(x, &format!("{at}[{i}]"), out);
+                }
+                if xs.is_empty() {
+                    out.insert(format!("{at}[]"), Value::Null);
+                }
+            }
+            _ => {
+                out.insert(at.to_string(), v.clone());
+            }
+        }
+    }
+    let mut out = BTreeMap::new();
+    walk(v, "", &mut out);
+    out
+}
+
+/// **One VALUE difference the worlds show, named** (README gap 4741): a key path both
+/// requests send with different values, on the worlds whose name starts with `world`.
+/// `path` is matched with its array indices erased (`items[].plan.multiplier.num`), or as
+/// a prefix when it ends in `.`.
+struct NamedValue {
+    world: &'static str,
+    path: &'static str,
+    gap: u32,
+    why: &'static str,
+}
+
+/// **Every value difference allowed** — the list only shrinks, and an entry no world shows
+/// fails as STALE ([`NAMED`]'s shape).
+const NAMED_VALUES: &[NamedValue] = &[NamedValue {
+    world: "plan-basic with a learned model",
+    path: "capacity.candidates.items[].plan.",
+    gap: 3901,
+    why: "the binary sizes each candidate's blocks with the learned multipliers of its \
+          `.tm/model.json`; `planreq` collects its candidates with `Model::default()`",
+}];
+
+/// A path with its array indices erased.
+fn erased(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    let mut in_ix = false;
+    for c in path.chars() {
+        match c {
+            '[' => {
+                in_ix = true;
+                out.push('[');
+            }
+            ']' => {
+                in_ix = false;
+                out.push(']');
+            }
+            _ if in_ix => {}
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// **The worlds on which the kernel's DAY from the two requests may differ**, each with
+/// the gap that answers it. Only shrinks; STALE fails.
+const NAMED_DAYS: &[(&str, u32, &str)] = &[(
+    "plan-basic with a learned model",
+    3901,
+    "the binary's request carries the learned model's curves, weights and multipliers \
+     (NAMED, NAMED_VALUES); the harness's plans with the defaults, so their days differ",
+)];
+
+/// **Gap 4741 (the W-45 repair): the binary's planner request and the harness's agree IN
+/// VALUE, and the kernel plans the same day from both.**
+///
+/// [`the_binarys_planner_request_and_the_harnesss_differ_only_by_name`] compares KEYS,
+/// and its header says a key both requests send with different values "is not a finding
+/// here (that is what the classes and the batch compare, against the fork)" — but the
+/// classes, the batch, the driven worlds and the oracle arms all plan the HARNESS's
+/// request (`support/planreq.rs`), so a bent value in the binary's encoder reached no fork
+/// comparison at all: driven by W-45's critic, the switch with `worked + 10` in its
+/// planner request builder (kernel_capacity's planner_ask_from, in the switch's archived
+/// commit, README gap 4753) failed ten tests and no fork comparison. Three
+/// assertions, on every world, against the directory the binary read ([`World::seen`]):
+///
+/// 1. **Every scalar both requests send is equal** ([`leaves`]), outside the `log`
+///    section (the binary's run resumes from its checkpoint and the harness's replays from
+///    line 1 — [`NAMED`]'s gap 3583; assertion 3 is what holds the two runs to one answer)
+///    and but for [`NAMED_VALUES`].
+/// 2. **The `planner` section the binary sends is the one the swap's encoder builds over
+///    the same files** ([`swap_planner`], whose worked minutes the harness's request does
+///    not carry), value for value — vacuous while the binary sends none (the section is
+///    then [`swap_planner`]'s own) and the check of record once R3 sends it.
+/// 3. **The kernel's day and lookahead from the binary's request equal those from the
+///    harness's** (with [`SWAP`]'s additions, so both carry the worked minutes), but for
+///    [`NAMED_DAYS`]: what every fork comparison proves of the harness's request, it then
+///    proves of the binary's.
+#[test]
+fn the_binarys_planner_request_and_the_harnesss_agree_in_value() {
+    let mut seen_values: BTreeMap<usize, usize> = BTreeMap::new();
+    let mut seen_days: BTreeMap<usize, usize> = BTreeMap::new();
+    let mut unnamed = Vec::new();
+    let mut compared = (0usize, 0usize);
+    for w in worlds() {
+        let r = read_seen(&w);
+        let mut binary: Value = serde_json::from_str(&w.request).expect("the binary's request is JSON");
+        let swap = swap_planner(&r);
+        let sends_planner = binary.get("planner").is_some();
+        if !sends_planner {
+            binary["planner"] = swap.clone();
+        }
+        // 2. The binary's own `planner` section, value for value.
+        let (bp, sp) = (leaves(&binary["planner"]), leaves(&swap));
+        for path in bp.keys().chain(sp.keys()).collect::<std::collections::BTreeSet<_>>() {
+            let (b, s) = (bp.get(path), sp.get(path));
+            if b != s {
+                unnamed.push(format!("{}: planner.{path}: the binary sends {b:?}, the swap's encoder builds {s:?}", w.name));
+            }
+        }
+        // 1. Every scalar both send.
+        let mut harness = harness_request(&r);
+        let (b, h) = (leaves(&binary), leaves(&harness));
+        for (path, x) in &b {
+            if path.starts_with("log.") {
+                continue;
+            }
+            let Some(y) = h.get(path) else { continue };
+            compared.0 += 1;
+            if x == y {
+                continue;
+            }
+            let shape = erased(path);
+            match NAMED_VALUES.iter().position(|e| {
+                w.name.starts_with(e.world)
+                    && if e.path.ends_with('.') { shape.starts_with(e.path) } else { shape == e.path }
+            }) {
+                Some(i) => *seen_values.entry(i).or_default() += 1,
+                None => unnamed.push(format!("{}: `{path}`: the binary sends {x}, the harness {y}", w.name)),
+            }
+        }
+        // 3. The day.
+        if let Some(worked) = binary["planner"]["state"]["active"].get("workedMin") {
+            harness["planner"]["state"]["active"]["workedMin"] = worked.clone();
+        }
+        let ask = |req: &str| -> Value {
+            let raw = tm_kernel_ffi::call(req).expect("the kernel call returns");
+            serde_json::from_str(&raw).expect("the response is JSON")
+        };
+        // The binary's own bytes when it sends a `planner` section (R3), else with the swap's.
+        let sent = if sends_planner { w.request.clone() } else { with_planner(&w.request, &binary["planner"]) };
+        let from_binary = ask(&sent);
+        let from_harness = ask(&harness.to_string());
+        let day = |v: &Value| (v["ok"]["plan"].clone(), v["ok"]["lookahead"].clone(), v["err"].clone());
+        compared.1 += 1;
+        if day(&from_binary) != day(&from_harness) {
+            match NAMED_DAYS.iter().position(|(world, _, _)| w.name.starts_with(world)) {
+                Some(i) => *seen_days.entry(i).or_default() += 1,
+                None => unnamed.push(format!(
+                    "{}: the kernel plans a different day from the binary's request than from the harness's:\n    binary  {}\n    harness {}",
+                    w.name,
+                    &from_binary["ok"]["plan"].to_string()[..from_binary["ok"]["plan"].to_string().len().min(600)],
+                    &from_harness["ok"]["plan"].to_string()[..from_harness["ok"]["plan"].to_string().len().min(600)]
+                )),
+            }
+        }
+        assert!(from_binary["ok"]["plan"]["day"].is_string(), "{}: the binary's request is planned: {}", w.name, from_binary["err"]);
+    }
+    assert!(
+        unnamed.is_empty(),
+        "UNNAMED VALUE differences between the binary's planner request and the harness's (README gap \
+         4741) — make the two agree, or name the difference with its gap:\n  {}",
+        unnamed.join("\n  ")
+    );
+    let stale: Vec<String> = NAMED_VALUES
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !seen_values.contains_key(i))
+        .map(|(_, e)| format!("value `{}` on `{}` (gap {}): {}", e.path, e.world, e.gap, e.why))
+        .chain(NAMED_DAYS.iter().enumerate().filter(|(i, _)| !seen_days.contains_key(i)).map(|(_, (w, g, why))| format!("day on `{w}` (gap {g}): {why}")))
+        .collect();
+    assert!(stale.is_empty(), "STALE: no world shows these named differences any more — delete them:\n  {}", stale.join("\n  "));
+    eprintln!(
+        "values: {} scalars compared over the worlds, {} named differences; days: {} compared, {} named",
+        compared.0,
+        seen_values.values().sum::<usize>(),
+        compared.1,
+        seen_days.values().sum::<usize>()
     );
 }
 

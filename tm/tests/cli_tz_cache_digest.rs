@@ -84,3 +84,36 @@ fn only_the_digest_stands_between_a_changed_offset_and_the_days_minutes() {
     fs::write(zone_file(&tm), planted(&tm)).expect("planted again");
     assert_eq!(reviewed(&tm, "2026-09-07T00:10:00-05:00"), ("2026-09-07".to_string(), 0));
 }
+
+/// **`tm check` meets the day the planning verbs meet** (README gaps 4711 and 4742, the W-45
+/// repair) — an instrument landed BEFORE the change it watches (D21). On the tree above — the
+/// planted offset with its digest recomputed — `tm check` and `tm plan` must agree on whether the
+/// day reads: both answer, or neither does. Before R3 both answer (fork 4748911's planner plans
+/// `tm plan`'s day, and `tm check` asks the kernel for the day it will plan, P78). With R3 built as
+/// the W-45 switch first built it, `tm plan`, `tm now` and `tm review day` faulted on this tree
+/// (README gap 4621, the R3 BLOCKER) while `tm check` sent the request, never decoded the answer,
+/// and printed `no problems` at exit 0 (gap 4711) — the switch's archived commit reads the answer
+/// with the one decoder `tm plan` reads it with (`kernel_capacity::read_day`, gap 4742). The owner's
+/// ruling on gap 4621 decides WHICH agreement holds after R3; this test holds under either.
+#[test]
+fn tm_check_reads_the_day_with_the_decoder_tm_plan_reads_it_with() {
+    let tm = evening();
+    fs::write(zone_file(&tm), ckpt_redigested(&planted(&tm))).expect("a table a binary could have written");
+    let now = "2026-09-07T00:10:00-05:00";
+    let check = tm.run_at(now, &["check"]);
+    let plan = tm.run_at(now, &["--json", "plan"]);
+    assert_eq!(
+        check.code == 0,
+        plan.code == 0,
+        "`tm check` and `tm plan` disagree about whether the day reads:\n  check {}: {}{}\n  plan  {}: {}{}",
+        check.code,
+        check.stdout,
+        check.stderr,
+        plan.code,
+        &plan.stdout[..plan.stdout.len().min(300)],
+        plan.stderr
+    );
+    if plan.code != 0 {
+        assert!(!check.stdout.contains("no problems"), "`tm check` says no problems on a tree `tm plan` cannot plan: {}", check.stdout);
+    }
+}

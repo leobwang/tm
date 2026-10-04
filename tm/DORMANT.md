@@ -1,5 +1,15 @@
 # `tm/` was dormant on this branch; the workspace is restored
 
+> **Superseded — read as history** (the W-45 repair, README gap 4747). This file was
+> written before the kernel-backed wiring landed, and two of its sentences are false
+> now: the rewiring is not "underway" — `move`, `drop`, `demote`, `readopt`, `rank`,
+> `add` and the keyed `edit` run through the Lean kernel since `d8e8d4d`/`bd61f11`,
+> the log is read and written only by the kernel since stage 5 (`2b26be3`, `47a0443`),
+> and the close since stage 4 — so A6 is closed in the shipped binary (`tm move ^m2
+> month` on a fresh `tm init --example` tree is refused `occupied`). The record of what
+> the binary runs is `kernel/README.md` (AGENTS §2.2); whether its DAY is the kernel's
+> or fork 4748911's planner's is R3's, and README's W-45 blocks say where that stands.
+
 This directory holds the frontend of the Rust `tm`: the CLI verbs (§13), the
 ratatui TUI (§12), and `tm init`'s generated content (§14). It was dormant
 while `tm-core` was absent from the branch. That is over: the workspace —

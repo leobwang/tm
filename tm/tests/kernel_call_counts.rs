@@ -112,6 +112,9 @@ fn expected_log_calls(verb: &str) -> u32 {
         // now asks (`lifecycle::planner_problems`) carries the capacity section's
         // `log` replay, as every capacity call does (gap 275).
         "check" => 3,
+        // `interrupt` and `resume` since the W-45 repair (README gap 4745): `resume` replans.
+        "interrupt" => 4,
+        "resume" => 5,
         other => panic!("`tm {other}` is not in the measured table"),
     }
 }
@@ -162,6 +165,9 @@ fn expected_apply_calls(verb: &str) -> u32 {
         "review day" => 0,
         "log" => 0,
         "check" => 1,
+        // `interrupt` and `resume` since the W-45 repair (README gap 4745): `resume` replans.
+        "interrupt" => 1,
+        "resume" => 1,
         other => panic!("`tm {other}` is not in the measured table"),
     }
 }
@@ -182,6 +188,9 @@ fn expected_capacity_calls(verb: &str) -> u32 {
         // `check` since the W-41 repair: the day R3's `tm plan` asks for (gap 4142).
         "arrive" | "energy" | "review day" | "check" => 1,
         "wake" | "start" | "pause" | "done" | "break" | "drop" | "undo" | "log" => 0,
+        // `interrupt` and `resume` since the W-45 repair (README gap 4745): `resume` replans.
+        "interrupt" => 0,
+        "resume" => 1,
         other => panic!("`tm {other}` is not in the measured table"),
     }
 }
@@ -214,6 +223,9 @@ fn expected_emit_calls(verb: &str) -> u32 {
         "review day" => 0,
         "log" => 0,
         "check" => 0,
+        // `interrupt` and `resume` since the W-45 repair (README gap 4745): `resume` replans.
+        "interrupt" => 1,
+        "resume" => 2,
         other => panic!("`tm {other}` is not in the measured table"),
     }
 }
@@ -232,6 +244,9 @@ fn expected_walls_calls(verb: &str) -> u32 {
         "pause" | "done" => 1,
         "wake" | "arrive" | "start" | "energy" | "break" | "drop" | "undo" | "review day" | "log"
         | "check" => 0,
+        // `interrupt` and `resume` since the W-45 repair (README gap 4745): `resume` replans.
+        "interrupt" => 1,
+        "resume" => 1,
         other => panic!("`tm {other}` is not in the measured table"),
     }
 }
@@ -248,6 +263,9 @@ fn expected_planner_calls(verb: &str) -> u32 {
         "check" => 1,
         "wake" | "arrive" | "start" | "pause" | "done" | "energy" | "break" | "drop" | "undo"
         | "review day" | "log" => 0,
+        // `interrupt` and `resume` since the W-45 repair (README gap 4745): `resume` replans, on fork 4748911's planner until R3 (its row reads 1 there).
+        "interrupt" => 0,
+        "resume" => 0,
         other => panic!("`tm {other}` is not in the measured table"),
     }
 }
@@ -353,6 +371,8 @@ const VERBS: &[(&str, &[&str])] = &[
     ("wake", &["wake", "06:05", "--slept", "8h10m"]),
     ("arrive", &["arrive", "lounge"]),
     ("start", &["start", "^t4", "--energy", "4"]),
+    ("interrupt", &["interrupt"]),
+    ("resume", &["resume"]),
     ("pause", &["pause"]),
     ("done", &["done", "--went", "1"]),
     ("energy", &["energy", "3"]),
@@ -655,4 +675,106 @@ fn every_capacity_verb_replays_the_log_a_second_time_inside_its_capacity_call() 
             c.lines
         );
     }
+}
+
+/// **The entries that ask the kernel for the day, or rank it** — the functions of `tm/src/cli`
+/// a verb reaches when it plans: `planning::build`/`build_ranked` (every verb that replans),
+/// `kernel_capacity::plan_day`/`plan_day_from`/`read_day` (the day itself, R3) and
+/// `kernel_capacity::planner_request`/`planner_ask` (the day `tm check` asks for). A function
+/// that calls one of these and is not one of them is a VERB's.
+const DAY_ENTRIES: &[&str] = &["build", "build_ranked", "plan_day", "plan_day_from", "read_day", "planner_request", "planner_ask"];
+
+/// **Every function of `tm/src/cli` that reaches a [`DAY_ENTRIES`] entry, and the measured row
+/// that counts it** (`file`, `fn`, the verb in [`VERBS`] or [`CAPACITY_VERBS`]).
+const DAY_ASKERS: &[(&str, &str, &str)] = &[
+    ("planning.rs", "plan", "plan"),
+    ("planning.rs", "now", "now"),
+    ("day.rs", "arrive", "arrive"),
+    ("day.rs", "resume", "resume"),
+    ("day.rs", "energy", "energy"),
+    ("lifecycle.rs", "day_extras", "review day"),
+    ("lifecycle.rs", "planner_problems", "check"),
+];
+
+/// The calls to a [`DAY_ENTRIES`] entry in `text`, outside comments and `#[cfg(test)]` blocks,
+/// each as the name of the top-level function it sits in.
+fn day_entry_callers(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut current: Option<String> = None;
+    for line in text.lines() {
+        if line.starts_with("#[cfg(test)]") {
+            break;
+        }
+        let code = line.split("//").next().unwrap_or("");
+        let top = code.strip_prefix("pub fn ").or_else(|| code.strip_prefix("fn ")).or_else(|| code.strip_prefix("pub(crate) fn "));
+        if let Some(rest) = top {
+            current = Some(rest.split(|c: char| c == '(' || c == '<').next().unwrap_or("").to_string());
+            continue;
+        }
+        for name in DAY_ENTRIES {
+            let pat = format!("{name}(");
+            let mut from = 0;
+            while let Some(i) = code[from..].find(&pat) {
+                let at = from + i;
+                from = at + pat.len();
+                let mut before = &code[..at];
+                for prefix in ["super::kernel_capacity::", "kernel_capacity::", "planning::"] {
+                    if let Some(b) = before.strip_suffix(prefix) {
+                        before = b;
+                        break;
+                    }
+                }
+                let joined = before.chars().last().is_some_and(|c| c == ':' || c == '_' || c.is_alphanumeric());
+                if joined || before.trim_end().ends_with("fn") {
+                    continue;
+                }
+                if let Some(f) = &current {
+                    out.push(f.clone());
+                }
+            }
+        }
+    }
+    out
+}
+
+/// **Every verb that asks the kernel for the day is a row of the measured tables** — a PROPERTY
+/// over the source, not a list of verbs someone remembered (README gap 4745, the W-45 repair).
+/// The planner column was pinned for `arrive`, `energy`, `review day` and `check`, and `tm resume`
+/// — which replans (`day::resume`) — was in no table, so a verb that started or stopped sending
+/// the day there would have moved nothing here. Every function of `tm/src/cli` that calls a
+/// [`DAY_ENTRIES`] entry and is not itself one must be in [`DAY_ASKERS`], with a verb this file
+/// measures; an entry the scan no longer finds is STALE. The TUI (`tm/src/tui`) is outside it: it
+/// is no verb, and the pty drive and its own `tui::tests` measure it.
+#[test]
+fn every_function_that_asks_for_the_day_is_a_measured_verb() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cli");
+    let mut found: Vec<(String, String)> = Vec::new();
+    let mut files: Vec<_> = std::fs::read_dir(&dir).expect("tm/src/cli").map(|e| e.expect("entry").path()).collect();
+    files.sort();
+    for path in files.into_iter().filter(|p| p.extension().is_some_and(|e| e == "rs")) {
+        let file = path.file_name().expect("a name").to_string_lossy().to_string();
+        let text = std::fs::read_to_string(&path).expect("source");
+        for f in day_entry_callers(&text) {
+            if !DAY_ENTRIES.contains(&f.as_str()) && !found.contains(&(file.clone(), f.clone())) {
+                found.push((file.clone(), f));
+            }
+        }
+    }
+    let measured: Vec<&str> = VERBS.iter().chain(CAPACITY_VERBS).map(|(n, _)| *n).collect();
+    let unmeasured: Vec<String> = found
+        .iter()
+        .filter(|(file, f)| !DAY_ASKERS.iter().any(|(af, ag, _)| af == file && ag == f))
+        .map(|(file, f)| format!("{file}: `{f}`"))
+        .collect();
+    assert!(unmeasured.is_empty(), "functions that ask the kernel for the day with no measured verb (add the verb to VERBS and its rows, and the function to DAY_ASKERS): {unmeasured:?}");
+    let stale: Vec<String> = DAY_ASKERS
+        .iter()
+        .filter(|(af, ag, _)| !found.iter().any(|(file, f)| file == af && f == ag))
+        .map(|(af, ag, v)| format!("{af}: `{ag}` ({v})"))
+        .collect();
+    assert!(stale.is_empty(), "STALE: these no longer ask for the day — delete them: {stale:?}");
+    for (_, _, verb) in DAY_ASKERS {
+        assert!(measured.contains(verb), "`tm {verb}` asks for the day and is in no measured table");
+    }
+    eprintln!("{} functions of tm/src/cli ask for the day, every one a measured verb: {found:?}", found.len());
 }

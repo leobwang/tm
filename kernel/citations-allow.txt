@@ -1372,3 +1372,15 @@ with_minute
 # call `because_of` now -- is DELETED.  The citation counted here names it as it stood, in the append-only README block
 # of W-39 track H.
 1 bless_because
+
+# W-45 REPAIR (README gaps 4753 and 4757).  The W-45 switch's README block is committed verbatim as the record of a
+# refused step, and it cites names that exist only in the switch's ARCHIVED commit (`refs/archive/w45/r3-switch`, never
+# on a branch): the TUI's kernel planner, the tests it added and the request builder's half.  Each is counted at its
+# measured number; the commit that lands R3 deletes this banner's entries, because the names resolve there.
+1 planner_ask_from
+1 tui::kernel_planner
+1 tui::tests::d103_the_minute_tick_replans_through_the_kernel_from_the_loads_read
+1 tui::tests::r3_a_kernel_fault_at_the_minute_tick_ends_the_tui_loudly
+1 tui::tests::r3_a_refused_tick_keeps_the_last_day_and_a_fault_is_held_for_the_driver
+1 tui::tests::r3_the_tui_refuses_to_open_on_a_day_the_kernel_refuses
+1 tui::tests::the_overtime_box_names_what_the_kernels_what_if_drops
