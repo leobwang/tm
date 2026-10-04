@@ -403,3 +403,21 @@ fn section_13_and_the_help_agree_that_tm_interrupt_ends_a_running_break_first() 
         "§13 says D90's rule"
     );
 }
+
+/// **§13 and the runtime agree that every verb that ends a running break says so** — the owner's
+/// D97 (W-44 track H, README gap 4391, parity P95): the spec names the six verbs and the journal
+/// line, and the runtime does it for each (`cli_break_ended_journal.rs`, whose class test reads the
+/// six off the code). No `--help` says it: the rule is six verbs', and a second paragraph on any one
+/// of them would move that verb's whole `--help` into clap's long layout (`cli_break_place.rs` reads
+/// `tm break --help`'s `--where` line in the short one).
+#[test]
+fn section_13_says_every_verb_that_ends_a_break_says_so() {
+    let spec = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tm-spec-v1.md"),
+    )
+    .expect("the spec");
+    let section = spec.split("## 13. CLI").nth(1).and_then(|s| s.split("\n## 14.").next()).expect("§13");
+    let rule = "A running break is ended by `tm break`, `tm start`, `tm stop`, `tm done`, `tm interrupt` or `tm resume`";
+    assert!(section.contains(rule), "§13 says D97's rule");
+    assert!(section.contains("writes the day file's journal line `break ended 10m/20m` at the break's end"), "§13 names the line");
+}

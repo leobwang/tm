@@ -806,6 +806,15 @@ impl BreakRecord {
     pub fn actual_or_planned(&self) -> u32 {
         self.actual_min.unwrap_or(self.planned_min)
     }
+
+    /// **The span the break took**, `[t, t + actual_or_planned)` — the kernel's reading (`Replay.brkEnd`: the
+    /// `actual_min`, else the planned minutes), and since the owner's **D95** (README gap 4360, parity **P93**) the
+    /// host's worked minutes' too ([`idle_spans`]): one reading of a break's span, through
+    /// [`BreakRecord::actual_or_planned`], where the host's pairing read a break logged without `actual_min` as no
+    /// span at all.
+    pub fn span(&self) -> (DateTime<FixedOffset>, DateTime<FixedOffset>) {
+        (self.t, self.t + chrono::Duration::minutes(i64::from(self.actual_or_planned())))
+    }
 }
 
 /// An answered idle prompt.
@@ -1254,9 +1263,23 @@ pub enum IdleMark {
 /// a block's — one still running when a block starts holds it until the
 /// resume, as the machine does (`since` stays `none`) — so it still opens.
 /// A `break` entry is written when the break ends, stamped at its start, so
-/// the pair is one entry; one logged without `actual_min` is no span.
+/// the pair is one entry.
+///
+/// **A break's span is its RECORD's** (the owner's **D95**, README gap 4360,
+/// parity **P93**): `breaks`, the [`BreakRecord`]s of the same days as `marks`
+/// — the kernel files a `break` entry's record and its seam mark under one day,
+/// each in file order — each `[t, t + actual_or_planned)` ([`BreakRecord::span`]),
+/// the kernel's reading (`Replay.brkEnd`). A break mark carries only the
+/// `actual_min` it was logged with, and this pairing read one logged without it
+/// as NO span: a hand-edited `break` line with no `actual_min` inside a block,
+/// or run into its start, was netted by the replay (`tm review day`) and not by
+/// `tm stop` — driven, 60 minutes beside 40. Its mark is passed over here, its
+/// record read. A break's span does not touch the pause and interruption
+/// pairing (it opens and closes nothing), so reading it from the record moves
+/// no other span.
 pub fn idle_spans(
     marks: &[IdleMark],
+    breaks: &[&BreakRecord],
     started: DateTime<FixedOffset>,
     running_break: Option<DateTime<FixedOffset>>,
 ) -> Vec<(DateTime<FixedOffset>, Option<DateTime<FixedOffset>>)> {
@@ -1275,12 +1298,13 @@ pub fn idle_spans(
                     out.push((a, Some(t)));
                 }
             }
-            IdleMark::Break {
-                t,
-                actual_min: Some(m),
-            } => out.push((t, Some(t + chrono::Duration::minutes(i64::from(m))))),
-            IdleMark::Break { actual_min: None, .. } => {}
+            // Its span is its record's, below (D95).
+            IdleMark::Break { .. } => {}
         }
+    }
+    for b in breaks {
+        let (from, until) = b.span();
+        out.push((from, Some(until)));
     }
     if let Some(a) = open {
         out.push((a, None));
@@ -1814,6 +1838,12 @@ impl Replay {
             .range(from..=day)
             .flat_map(|(_, s)| s.idle_marks.iter().copied())
             .collect();
+        // The same days' break RECORDS (D95): a break's span is read from them.
+        let breaks: Vec<&BreakRecord> = self
+            .days
+            .range(from..=day)
+            .flat_map(|(_, d)| d.breaks.iter())
+            .collect();
         // **The UNION of the spans, not their sum** (the owner's D87, README
         // gaps 4243 and 4332, the W-42 repair): a block's clock is stopped once
         // however many reasons it has, so a break taken while a `tm pause`
@@ -1824,7 +1854,7 @@ impl Replay {
         // 09:20, a twenty-minute break at 09:30, `stop` 10:10 printed "after
         // 0m" while `tm review day` credited the twenty minutes worked.
         let mut spans: Vec<(DateTime<FixedOffset>, DateTime<FixedOffset>)> =
-            idle_spans(&marks, started, running_break)
+            idle_spans(&marks, &breaks, started, running_break)
                 .into_iter()
                 .map(|(a, b)| (a.max(started), b.unwrap_or(now).min(now)))
                 .filter(|(a, b)| b > a)

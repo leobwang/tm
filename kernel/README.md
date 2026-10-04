@@ -87012,3 +87012,208 @@ holding none for long.
 
 **Gap 4510 — AGENTS §10.1's figures were track G's tree** (the critic's): re-measured at this step (§8) and the table
 and its paragraph corrected; CLOSED.
+
+<!-- =====================================================================
+     APPENDED 2026-10-03: stage 6 (the planner), run **W-44**, **TRACK H**
+     — the owner's D95 (the host reads a break's span as the kernel does),
+     D96 (a TUI past midnight holds every housekeeping write in memory),
+     D97 (every verb that ends a running break writes `tm break`'s journal
+     line) and the campaign's D98 (a) (`ckpt.json` carries a digest of its
+     own text).
+     Built in the worktree `.claude/worktrees/w44-h` (branch `w44-h`, off
+     `ed72e36`); plants and drives in clones and scratch trees under
+     `scratchpad/w44-h/`, never in the shared tree; the main checkout on
+     `rebuild-on-lean` throughout.  Gap range **4550-4579**.  Parity
+     **P93-P95** pre-allocated to this track; P92 is track K's, a declared
+     hole in `parity.txt` on this branch until the land.  No Lean file is
+     touched.
+     ===================================================================== -->
+
+## Stage 6 — W-44 track H: a planned-only break read one way, the TUI's housekeeping held whole, one journal rule for an ended break, and a checkpoint that checks itself
+
+### 0. The brief, measured before it was acted on
+
+* **D95's defect reproduces as gap 4360 says, and in both of its shapes** — on the base binary (`ed72e36`,
+  `scratchpad/w44-h/base-tm`; `drive/d95.sh` → `d95-base.out`): a hand-edited `break` line with no `actual_min`,
+  planned 20, inside `^m1`'s block (09:00-10:00, the break at 09:20): `tm now` at 09:50 **50**, `tm stop` **60**,
+  `tm review day` **40**; run into the start (the break at 08:50, `^m1` started at 09:00): **50**, **60**, **50**.
+* **D97's class is three verbs, not one, and `tm wake` is not in it.**  Read off the code by body shape (every caller
+  of `end_break`/`end_break_at`, the one function that takes `.tm/state.json`'s break and logs its line): `tm break`'s
+  ending arm, `tm interrupt` and `tm resume` wrote the journal line; **`tm start`, `tm stop` and `tm done`** end a
+  running break the same way (`tm stop` and `tm done` through `end_break_at`, at the block's end) and wrote none — the
+  fork's own shape for all three (`git show 4748911:tm/src/cli/day.rs`: `start`, `done` and `stop` call `end_break`, and
+  `take_break` alone writes `break ended`).  `tm wake` ends no break: it refuses over a running one (D76, D81).  The
+  TUI's keys (`d`, `s`, `b`, `i`, `r`, a queue start) run those verbs through `cli::run`, so they are not a separate
+  member.  Driven on the base binary (`drive/d97.sh` → `d97-base.out`): no `break ended` line for `tm start`, `tm
+  stop` or `tm done`.
+* **D98 (a)'s "the FNV-1a D93 reuses"** is `kernel_log::month_digest` (FNV-1a-64 of a text, `fnv1a64`), reused here as
+  the one digest of every file of the cache.  On the base binary a checkpoint edited by hand and left consistent with
+  its manifest is SERVED (`drive/d98.sh` → `d98-base.out`: the August record poisoned 4 → 3 and its manifest digest
+  recomputed, `tm review day --date 2026-08-25` answered `blocks_done 3`, twice, silently).
+
+### 1. D95 — the host reads a break's span as the kernel does (gap 4360 CLOSED; P93)
+
+**One definition.**  `BreakRecord::actual_or_planned` (`actual_min`, else the planned minutes) was already the host's
+spelling of the kernel's `Replay.brkEnd` (the replay's break segment, `DayReplay::break_min`); `BreakRecord::span` is
+`[t, t + actual_or_planned)`, and `log::idle_spans` now reads every break's span from the break RECORDS of the same
+days as the idle marks (`Replay::idle_min_since` passes `days.range(from..=day)`'s `breaks`), passing the break mark
+over: a mark carries only the `actual_min` it was logged with, which is why a line logged without one was no span.  The
+kernel files a `break` entry's record and its seam mark under one day (`Replay.effectsWith`: `dy e.t.val` for both),
+each in file order, so the records are exactly the marks' breaks.  A break's span opens and closes nothing in the
+pause/interruption pairing, so reading it from the record moves no other span.  Every host reading of a running
+block's worked minutes goes through `idle_min_since` — `tm now`'s header and `--json`, `tm stop`/`tm done`'s logged
+minutes, the TUI's timer and overtime prompt, the planner request's `workedMin` — so the class is one function.
+
+**Driven** (`drive/d95.sh`, both binaries, unabridged in `d95-*.out`):
+
+| world (hand-edited `break`, planned 20, no `actual_min`) | `ed72e36`: now / stop / review | this step |
+|---|---|---|
+| inside `^m1`'s block, break at 09:20 | 50 / **60** / 40 | 30 / 40 / 40 |
+| run into the start, break at 08:50 | 50 / **60** / 50 | 40 / 50 / 50 |
+| the binary's own shape (`actual_min` 20), inside | 30 / 40 / 40 | 30 / 40 / 40 |
+
+Tests: `tests/cli_planned_break.rs` (5): both worlds read one way by `tm now`, `tm stop` and `tm review day`; `tm done
+--partial` logs the review's minutes; a break logged with its minutes (and one SHORTER than its plan) as before; a
+planned-only break that ended before the block takes nothing.
+
+**Not reached, by name (gap 4550):** two readings of a planned-only break stay in the KERNEL, whose files are not this
+track's — `WallTimer.spanStep` (D61's "was the timer stopped at the wall's start", ported arm for arm from the
+pairing this step changed) reads one as no span, and the seam's `sinceBreak` (`Replay.SeamOp.apply`, `am.getD 0`,
+§10.1's `start{since_break_min}`) as ending at its start (driven: world B's `start` logs `since_break_min: 10`, its
+break ending ten minutes AFTER the start).
+
+### 3. D97 — every verb that ends a running break writes `tm break`'s journal line (gap 4391 CLOSED; P95)
+
+`day::end_break_first` (the W-43 repair's shared body for `tm interrupt` and `tm resume`) is extended, never copied:
+`end_break_first_at` ends the break at a stated end (D79's `--at`), both build `tm break`'s report through
+`ended_report`, and **`note_break_ended` is the one writer of the journal line** — `break ended 10m/20m`
+(`break_ended_note`, the one spelling) at the instant the break ended, in that day's file, AFTER the verb's own writes
+and reload and BEFORE its own journal line.  `tm break`'s ending arm, `tm interrupt`, `tm resume` and now **`tm start`,
+`tm stop` and `tm done`** all end a break through those two bodies and write the line through that one writer; the
+human lines and `--json` of the three are unchanged (gap 4551).  §13 says the rule
+(`cli_conformance.rs`' `section_13_says_every_verb_that_ends_a_break_says_so`); no `--help` does — a second paragraph
+on one verb's doc moves that verb's whole `--help` into clap's long layout, which the first workspace run showed by
+failing `cli_break_place.rs`' `the_help_lists_the_tables_words` (it reads `tm break --help`'s `--where` line in the
+short one), and the rule is six verbs', not `tm break`'s.
+
+**The class is held as a property** (`tests/cli_break_ended_journal.rs`'
+`the_class_of_verbs_that_end_a_break_is_read_off_the_code`): over every source file of `tm/src` and `tm-core/src`, a
+running break is TAKEN out of the state (`.break_.take()`) in `end_break_at` alone and set to nothing only in `tm wake`
+(after its refusal); `end_break_at` is called by `end_break` and `end_break_first_at` alone, `end_break` by
+`end_break_first` alone; and every function that calls either `end_break_first` writes the line through
+`note_break_ended` — the six members read off the code (`done`, `interrupt`, `resume`, `start`, `stop`,
+`take_break`), so a seventh verb that ends a break silently fails it by name.
+
+**Driven** (`drive/d97.sh`, both binaries; every other line of the six transcripts byte-identical):
+
+| verb (a break running) | `ed72e36`'s journal | this step's |
+|---|---|---|
+| `tm start ^m1` 09:10 (break 20m from 09:00) | `09:10 start ^m1 pred=5 rep=4` | `09:10 break ended 10m/20m`, then the start |
+| `tm stop` 09:35 (break 30m from 09:20) | `09:35 stop ^m1 20m · 340m left` | `09:35 break ended 15m/30m`, then the stop |
+| `tm done` 09:35 | `09:35 done ^m1 20m/360m` | `09:35 break ended 15m/30m`, then the done |
+| `tm interrupt`, `tm resume`, `tm break` | `break ended …` once | unchanged |
+
+Tests (`tests/cli_break_ended_journal.rs`, 8): `tm start`, `tm stop`, `tm done`, each saying it once and before its own
+line; `tm stop --at 09:30` and `tm done --at 09:30` at 09:35 saying it at 09:30 (the break's ten minutes); the three
+that already said it saying it once; no line with no break running; `tm undo` taking the line back with the start; the
+class test.
+
+### 4. D98 (a) — `ckpt.json` carries a digest of its own text (gap 4394 CLOSED)
+
+`ckpt.json` is **format 5**: it opens `{"digest":"<16 hex>",` and the digest is `kernel_log::month_digest` — D93's
+FNV-1a-64, the one digest of every file of the cache — of the rest of its own text, through its last newline
+(`Snapshot::to_text`).  `Snapshot::from_text` checks it FIRST: a text whose digest does not match is
+`CKPT_CORRUPT` and is never read further; a checkpoint of another format — every one written before this change, which
+carries no digest — is "another format", rebuilt once and not named, as D93's format bump was.  `ReplayCache::read_ckpt`
+says why a checkpoint that is there was not read, and `replay_once` rebuilds from the log and says so ONCE
+(`corrupt_ckpt_notice`: `replay cache .tm/cache/replay: ckpt.json does not match its digest; rebuilt from the log`);
+the rebuild writes a checkpoint that matches, so the verb after it resumes silently.  **Why the digest catches every
+one-byte edit**: D93's argument (`a_digest_moves_with_every_single_byte_edit`) over the body, and an edit of the digest
+itself is an edit of what the body must match — held exhaustively over a checkpoint's every byte
+(`a_checkpoint_one_byte_edited_is_never_read`).
+
+**Driven** (`drive/d98.sh`, both binaries):
+
+| `ckpt.json` edited by hand (plan-basic + `energy-14d`, warmed at 09-10 09:00) | `ed72e36` | this step |
+|---|---|---|
+| the August record's `blocksDone` 4 → 3 and the manifest's digest of it recomputed | `blocks_done 3`, twice, silent | `blocks_done 4`; stderr once `… ckpt.json does not match its digest; rebuilt from the log`; then silent |
+| one digit of `ledgerDay` moved down by one | `blocks_done 4`, the edited checkpoint resumed | `blocks_done 4`, rebuilt and said once |
+
+Tests: `tests/cli_ckpt_digest.rs` (4) — the checkpoint opens with the digest of the rest of its text; **the bite** (a
+poisoned month with BOTH digests recomputed IS served, and with only the checkpoint's own left as written is not, so it
+is the checkpoint's digest and nothing else that refuses it); one byte of the ledger day → a cache-less run's answer,
+said once, a new generation, the next run silent; a format-4 checkpoint rebuilt once, silently.  Unit tests in
+`kernel_log` (compiled into every crate that includes it): `a_checkpoint_one_byte_edited_is_never_read`,
+`a_corrupted_checkpoint_is_rebuilt_and_said_once`.  **The tests that edit a checkpoint into one a kernel could have
+written now re-digest it** (`cli_common::ckpt_redigested`, computed in the harness): `cli_replay_cache_kernel.rs`,
+`cli_sealed_month_digest.rs` and `cli_break_into_block.rs` — without it each would have been refused for the
+checkpoint's own digest and not for the rule it means to bite (a month file's digest, a kernel id), passing for the
+wrong reason.  T9's `deleting_the_replay_cache_changes_nothing` green.
+
+### 5. Parity
+
+**Parity P93 taken**: the host's worked minutes read a `break` line's span as the kernel's replay does -- `[t, t + actual_min)`, else `[t, t + planned_min)` for a line logged without `actual_min` (`BreakRecord::span`, `Replay.brkEnd`) -- so `tm now`, `tm stop`, `tm done`, the TUI's timer and the planner request's `workedMin` read a block one way with `tm review day` on a hand-edited log; fork 4748911's `idle_spans` read a break logged without `actual_min` as no span, so on such a log `tm stop` said 60 minutes beside `tm review day`'s 40 (the owner's D95, W-44 track H, README gap 4360)
+
+**Parity P95 taken**: every verb that ends a running break writes `tm break`'s journal line `break ended Xm/Ym` at the instant the break ended, before its own -- `tm start`, `tm stop` and `tm done` beside `tm break`, `tm interrupt` and `tm resume` (`day::end_break_first_at`, `day::note_break_ended`, one writer); fork 4748911's `tm start`, `tm stop` and `tm done` ended a running break and wrote only their own line (the owner's D97, W-44 track H, README gap 4391)
+
+P92 is track K's (D94) and P94 this track's for D96 (§2): both are declared holes in `parity.txt` on this branch until
+the land, which deletes each hole line when its row lands or renumbers down into it.
+
+### 7. Gaps 4550-4579
+
+**Closed here**: **4360** (D95, §1), **4391** (D97, §3), **4394** (D98 (a), §4).
+
+**Gap 4550 — the kernel still reads a planned-only break two more ways.**  1. *What.*  The kernel's seam mark
+`Replay.IdleMark.brk` carries the `actual_min` a `break` line was logged with and not its planned minutes, so two
+kernel readers of a line logged without `actual_min` do not read `Replay.brkEnd`'s span: `WallTimer.spanStep` (D61's
+"was the timer stopped at the wall's start", a port of the host pairing D95 changed) reads it as NO span, so a wall
+beginning inside such a break would log a pause inside it; and `Replay.SeamOp.apply` sets `sinceBreak` to `t +
+actual.getD 0`, so §10.1's `start{since_break_min}` reads the break as ending at its start (driven, §1's world B: a
+`start` at 09:00 logs `since_break_min: 10`, its break ending at 09:10).  2. *Why not changed.*  `Replay.lean`,
+`WallTimer.lean` and the seam's codec are not this track's files (track K holds `Replay.lean` and `Seal*.lean` this
+run), and no verb writes such a line.  3. *Cost.*  On a hand-edited log only: a meeting pause logged inside a
+planned-only break, and a `since_break_min` feature (§8.5) ten minutes high on such a day.  4. *Clears it.*  The step
+that holds `Replay.lean`: `IdleMark.brk` carrying the break's span as `brkEnd` reads it, `WallTimer.spanStep` and
+`SeamOp.apply` reading that, the codec and its laws re-proved (D5).
+
+**Gap 4551 — D97 rules the journal; the three verbs' human lines and `--json` say nothing of the break.**  1. *What.*
+`tm interrupt` and `tm resume` print `break ended · 10m of 20m · …` and carry `--json`'s `break_ended` (P86, P90); `tm
+start`, `tm stop` and `tm done` now write the journal line and print and carry nothing of it.  2. *Why not changed.*
+D97 names the journal line; a new human clause and a new JSON key are output changes no decision takes.  3. *Cost.*
+A user who ends a break by starting, stopping or finishing a block learns from the day file, not the terminal, how long
+the break was.  4. *Clears it.*  The owner, if the one rule should reach the human line and `--json` too.
+
+**Gap 4552 — files outside the brief's list.**  `tm/tests/cli_common/mod.rs` (`ckpt_redigested`, beside the harness's
+`fnv1a64_hex`), `tm/tests/cli_replay_cache_kernel.rs`, `tm/tests/cli_sealed_month_digest.rs` and
+`tm/tests/cli_break_into_block.rs` (each re-digests the checkpoint it edits, §4 — the last is W-43 track K's D92 test,
+named for the land step in case track K edits it this run) and `tm-spec-v1.md` §13 (a new paragraph, §3).  Recorded for
+the land step.
+
+### 9. Status note (kept current as the step runs; the sections above it are written as each part lands)
+
+* 20:53 — HEAD `ed72e36`, tree clean; worktree `w44-h` made; the Lean build copied from the main checkout and
+  `lake build TmKernel:static` a no-op (192 jobs); `cargo test --workspace --no-run` 1m17s; the base binary saved
+  as `scratchpad/w44-h/base-tm` for the before/after drives.
+* 21:40 — **D97 written and green alone** (`day::end_break_first_at`, `day::note_break_ended`, `day::ended_report`;
+  `tm start`, `tm stop`, `tm done` through the one body; `tests/cli_break_ended_journal.rs` 8 and the §13/`--help`
+  conformance test); driven on both binaries (`scratchpad/w44-h/drive/d97.sh` → `d97-base.out`, `d97-new.out`).
+* 22:05 — **D98 (a) written and green alone** (`kernel_log::FORMAT` 5, `Snapshot::to_text`/`from_text`,
+  `ReplayCache::read_ckpt`, `corrupt_ckpt_notice`; `tests/cli_ckpt_digest.rs` 4, two unit tests; the three test files
+  that edit `ckpt.json` re-digest it through `cli_common::ckpt_redigested`); driven on both binaries
+  (`drive/d98.sh` → `d98-base.out`, `d98-new.out`).  Next: D95, then D96.
+* 22:20 — **D95 written and green alone** (`BreakRecord::span`, `log::idle_spans` over the break records;
+  `tests/cli_planned_break.rs` 5); driven on both binaries (`drive/d95.sh` → `d95-base.out`, `d95-new.out`).
+* 21:20-21:33 — in `scratchpad/w44-h/clone` (D95, D97, D98 (a) only): `check.sh` 17 ok (`check1.log`); workspace run 1
+  **2,725 passed / 1 failed / 36 ignored over 144** (`ws1.log`): `cli_break_place.rs`' `the_help_lists_the_tables_words`
+  — a `tm break --help` paragraph moved its `--where` line into clap's long layout; the paragraph is removed (§3).
+* 21:35 — D96 being written in the worktree beside the clone, and not in the clone's commit: the hold made to
+  accumulate every housekeeping write, the timeouts and wall marks shared by every verb's load and the TUI, a replay
+  that writes nothing; the D91 and D84 tests green with it.
+* 21:35-22:10 — **part 1 (D95, D97, D98 (a)) measured in `scratchpad/w44-h/clone`, its tree this commit's** (porcelain
+  and diff hashed equal at each run's start and end): `check.sh` 17 ok (`check2.log`, 29 s, and `check3.log` after this
+  note); workspace runs 2, 3 and 4
+  (`ws2..4.log`, `ws2..4.uptime`, load 3-11 from the other tracks) each **2,726 passed / 0 failed / 36 ignored over 144
+  result lines, 0 warnings**.  By arithmetic: 2,564 (`f5d7a16`) + `cli_break_ended_journal` 8 + `cli_ckpt_digest` 4 +
+  `cli_planned_break` 5 + `cli_conformance` 1 + `kernel_log`'s two new unit tests in each of the 72 crates that compile it
+  (144, counted in the log) = 2,726; 141 + 3 new binaries = 144.  Plants are run once, over the whole step (§6).
+  Committed as part 1; D96 continues in the worktree.

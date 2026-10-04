@@ -17,7 +17,7 @@ mod cli_common;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use cli_common::{fnv1a64_hex, Tm};
+use cli_common::{ckpt_redigested, fnv1a64_hex, Tm};
 use serde_json::Value;
 
 /// Three days after `energy-14d.jsonl`'s last line, so the log's August days are sealed.
@@ -118,7 +118,7 @@ fn reviewed(tm: &Tm) -> Value {
 fn every_month_file_the_manifest_names_carries_its_digest() {
     let tm = warmed();
     let head = ckpt(&tm);
-    assert_eq!(head["format"], 4, "{head}");
+    assert_eq!(head["format"], 5, "{head}");
     let manifest = head["manifest"].as_object().expect("a manifest");
     let digests = head["digests"].as_object().expect("digests");
     assert!(!manifest.is_empty(), "the fortnight seals a month");
@@ -143,7 +143,8 @@ fn a_one_byte_edit_whose_digest_is_kept_is_served() {
     let text = fs::read_to_string(&path).expect("ckpt.json");
     let (old, new) = (fnv1a64_hex(&before), fnv1a64_hex(after.as_bytes()));
     assert_eq!(text.matches(&format!("\"{old}\"")).count(), 1, "{text}");
-    fs::write(&path, text.replace(&format!("\"{old}\""), &format!("\"{new}\""))).expect("write ckpt.json");
+    // And the checkpoint's own digest (D98): the file is one a kernel could have written.
+    fs::write(&path, ckpt_redigested(&text.replace(&format!("\"{old}\""), &format!("\"{new}\"")))).expect("write ckpt.json");
     assert_eq!(reviewed(&tm)["review"]["blocks_done"], 3, "a consistent month file is trusted (D13)");
 }
 
@@ -181,7 +182,7 @@ fn a_month_file_one_byte_corrupted_is_rebuilt_and_answers_as_a_cache_less_run() 
 }
 
 /// **A cache written before D93 is rebuilt once** — a format-3 `ckpt.json` with no digests, as the
-/// binary before this change wrote it: the next verb answers as before and writes format 4; the
+/// binary before this change wrote it: the next verb answers as before and writes this binary's format (5 since D98); the
 /// verb after it resumes that generation.
 #[test]
 fn a_cache_written_before_d93_is_rebuilt_once() {
@@ -191,11 +192,13 @@ fn a_cache_written_before_d93_is_rebuilt_once() {
     let text = fs::read_to_string(&path).expect("ckpt.json");
     let digests = format!("\"digests\":{},", serde_json::to_string(&ckpt(&tm)["digests"]).expect("a map"));
     assert_eq!(text.matches(&digests).count(), 1, "{text}");
-    fs::write(&path, text.replace(&digests, "").replace("\"format\":4", "\"format\":3")).expect("a format-3 checkpoint");
+    // As the binary before D93 wrote it: no digests, and (before D98) no digest of its own text.
+    let body = text.strip_prefix("{\"digest\":\"").and_then(|r| r.get(16..)).and_then(|r| r.strip_prefix("\",")).expect("a digested checkpoint");
+    fs::write(&path, format!("{{{body}").replace(&digests, "").replace("\"format\":5", "\"format\":3")).expect("a format-3 checkpoint");
     let old_gen = ckpt(&tm)["gen"].clone();
     assert_eq!(reviewed(&tm), truth, "the answer across the rebuild");
     let head = ckpt(&tm);
-    assert_eq!(head["format"], 4);
+    assert_eq!(head["format"], 5);
     assert_ne!(head["gen"], old_gen, "the format-3 checkpoint was resumed");
     assert_eq!(head["digests"].as_object().map(|d| d.len()), head["manifest"].as_object().map(|m| m.len()));
     assert_eq!(reviewed(&tm), truth);

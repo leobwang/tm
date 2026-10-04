@@ -75,8 +75,10 @@ use std::time::{Duration, SystemTime};
 
 /// The format `ckpt.json` carries; any other goes to genesis. **4 since the owner's D93** (W-43 track H,
 /// README gap 4246): the manifest's month files each carry a digest, so a cache written before it — format 3,
-/// with none — is rebuilt once rather than trusted.
-pub const FORMAT: u64 = 4;
+/// with none — is rebuilt once rather than trusted. **5 since the campaign's D98** (W-44 track H, README gap
+/// 4394): the checkpoint carries a digest of its own text ([`Snapshot::to_text`]), so a checkpoint written before
+/// it — format 4, with none — is rebuilt once, as D93's format 3 was.
+pub const FORMAT: u64 = 5;
 /// The cache directory, relative to the plan root (D13; `tm init` excludes `.tm/cache/` from sync).
 pub const CACHE_DIR: &str = ".tm/cache/replay";
 /// The checkpoint's file inside the cache directory.
@@ -622,7 +624,12 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    /// The text of `ckpt.json`, the checkpoint spliced in verbatim.
+    /// The text of `ckpt.json`, the checkpoint spliced in verbatim — **opening with the digest of the rest of
+    /// itself** (the campaign's D98, README gap 4394): `{"digest":"<16 hex>",` and then the text a format-4 file
+    /// held after its `{`, through its last newline, which is exactly the bytes the digest is taken over
+    /// ([`month_digest`], D93's rule for a month file, applied to the checkpoint that names them). A byte of it
+    /// changed by a disk or a hand is then caught as surely as a month file's is: [`Snapshot::from_text`] refuses
+    /// it ([`CKPT_CORRUPT`]), and the cache is rebuilt from the log rather than resumed from it.
     pub fn to_text(&self) -> String {
         let head = serde_json::json!({
             "format": FORMAT, "kernel": self.kernel, "tzKey": self.tz_key, "prefixLines": self.prefix_lines, "logLines": self.log_lines,
@@ -630,11 +637,23 @@ impl Snapshot {
             "manifest": self.manifest, "digests": self.digests, "meta": self.meta.to_json(),
         })
         .to_string();
-        format!("{},\"ckpt\":{}}}\n", &head[..head.len() - 1], self.ckpt)
+        let body = format!("{},\"ckpt\":{}}}\n", &head[1..head.len() - 1], self.ckpt);
+        format!("{CKPT_DIGEST_HEAD}{}\",{body}", month_digest(&body))
     }
 
-    /// Read `ckpt.json`; `Err` names what is wrong (corrupt, another format).
+    /// Read `ckpt.json`; `Err` names what is wrong (corrupt, another format). **The digest first** (D98): a text
+    /// whose digest does not match the rest of it is [`CKPT_CORRUPT`] and is never read further; a checkpoint of
+    /// another format — every one written before D98 carries no digest — is "another format", rebuilt once and
+    /// not named, as D93's format bump was.
     pub fn from_text(text: &str) -> Result<Snapshot, String> {
+        let digested = text.strip_prefix(CKPT_DIGEST_HEAD).and_then(|rest| {
+            let (hex, body) = (rest.get(..16)?, rest.get(16..)?.strip_prefix("\",")?);
+            (month_digest(body) == hex).then_some(())
+        });
+        if digested.is_none() {
+            let format = raw_map(text).ok().and_then(|m| m.get("format").and_then(|f| f.get().parse::<u64>().ok()));
+            return Err(if format.is_some_and(|f| f != FORMAT) { "another format" } else { CKPT_CORRUPT }.into());
+        }
         let m = raw_map(text)?;
         let val = |k: &str| -> Result<Value, String> {
             serde_json::from_str(m.get(k).ok_or_else(|| format!("no {k}"))?.get()).map_err(|e| e.to_string())
@@ -740,8 +759,17 @@ static UNWRITABLE_NOTICE: AtomicBool = AtomicBool::new(false);
 /// (D93, README gaps 4246 and 4395), and the cache is rebuilt from the log instead.
 const MONTH_CORRUPT: &str = "a month file the manifest names is missing or does not match its digest";
 
+/// Why `ckpt.json` was not read: its text does not match the digest it carries (the campaign's D98, README gap 4394).
+/// The cache is rebuilt from the log and the rebuild says so once ([`corrupt_ckpt_notice`]).
+const CKPT_CORRUPT: &str = "the checkpoint does not match its digest";
+
+/// What `ckpt.json` opens with since D98: the digest of the rest of its text, then the rest.
+const CKPT_DIGEST_HEAD: &str = "{\"digest\":\"";
+
 /// **A sealed month file's digest** (the owner's D93, README gap 4246): FNV-1a-64 of its bytes, the hash §9.8's
-/// prefix digest already is ([`fnv1a64`]) — no second hash and no new dependency.
+/// prefix digest already is ([`fnv1a64`]) — no second hash and no new dependency. **Since the campaign's D98**
+/// (README gap 4394) it is the checkpoint's own digest too ([`Snapshot::to_text`]): one rule for every file of the
+/// cache, and one function for it.
 ///
 /// **Why it is enough here.** The threat is accidental corruption and a hand edit, never an adversary (whoever can
 /// edit `.tm/cache/` can edit `.tm/log.jsonl` itself). Every step of FNV-1a — XOR a byte, multiply by an odd prime
@@ -821,14 +849,21 @@ impl ReplayCache {
     }
 
     /// **Read the snapshot once** (CRIT 7): `ckpt.json`, or the in-memory checkpoint; `None` when there is none or it is
-    /// unreadable.
+    /// unreadable — a checkpoint that does not match its own digest among them (the campaign's D98, README gap 4394).
     pub fn read_snapshot(&self) -> Option<Snapshot> {
+        self.read_ckpt().ok().flatten()
+    }
+
+    /// [`ReplayCache::read_snapshot`], saying why a `ckpt.json` that is there was not read: `Err` with
+    /// [`Snapshot::from_text`]'s reason ([`CKPT_CORRUPT`] for a digest that does not match), `Ok(None)` when there is
+    /// neither a file nor a checkpoint in memory.
+    fn read_ckpt(&self) -> Result<Option<Snapshot>, String> {
         if let Some(p) = self.ckpt_path() {
             if let Ok(text) = std::fs::read_to_string(p) {
-                return Snapshot::from_text(&text).ok();
+                return Snapshot::from_text(&text).map(Some);
             }
         }
-        self.memory.as_ref().map(|m| m.0.clone())
+        Ok(self.memory.as_ref().map(|m| m.0.clone()))
     }
 
     /// **The records of a snapshot's months** (by its manifest only), `None` when a named file is missing — **or
@@ -985,8 +1020,14 @@ impl ReplayCache {
         let now = date_of(now_day);
         let tz_key = tz.get("key").and_then(Value::as_str).unwrap_or_default().to_string();
         let s = split(bytes);
-        let snap = self.read_snapshot();
+        // A checkpoint that does not match its own digest (D98) is not resumed from: the cache is rebuilt from the
+        // log below, and the rebuild says so once.
+        let (snap, corrupt) = match self.read_ckpt() {
+            Ok(snap) => (snap, false),
+            Err(why) => (None, why == CKPT_CORRUPT),
+        };
         let why = match &snap {
+            None if corrupt => Some(CKPT_CORRUPT.to_string()),
             None => Some("no checkpoint".to_string()),
             Some(sn) => sn.valid_for(bytes, &tz_key).err().map(str::to_string),
         };
@@ -1055,7 +1096,11 @@ impl ReplayCache {
             }
             return self.rebuild(&now, tz, &s, max_line, want, bytes, Some("a tail past the resend cap".into()), false);
         }
-        self.rebuild(&now, tz, &s, max_line, want, bytes, why, false)
+        let mut r = self.rebuild(&now, tz, &s, max_line, want, bytes, why, false)?;
+        if corrupt {
+            r.notices.push(corrupt_ckpt_notice());
+        }
+        Ok(r)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1487,16 +1532,98 @@ mod tests {
         let text = std::fs::read_to_string(&ckpt).expect("ckpt.json");
         let digests = format!("\"digests\":{},", serde_json::to_string(&first.snapshot.digests).expect("a map"));
         assert_eq!(text.matches(&digests).count(), 1, "{text}");
-        let old = text.replace(&digests, "").replace("\"format\":4", "\"format\":3");
+        // A format-3 file as the binary before D93 wrote it: no digests, and (before D98) no digest of its own.
+        let body = text.strip_prefix(CKPT_DIGEST_HEAD).and_then(|r| r.get(16..)).and_then(|r| r.strip_prefix("\",")).expect("a digested checkpoint");
+        let old = format!("{{{body}").replace(&digests, "").replace(&format!("\"format\":{FORMAT}"), "\"format\":3");
         std::fs::write(&ckpt, &old).expect("a format-3 checkpoint");
         assert!(Snapshot::from_text(&old).is_err(), "a format-3 checkpoint is read");
         let mut process = ReplayCache::new(Some(cdir.clone()));
         let r = process.replay(log.as_bytes(), today, &tz_wire, None, &want).expect("rebuilt");
         assert_eq!((r.outcome, r.rebuilt_because.as_deref()), (Outcome::Genesis, Some("no checkpoint")));
-        let snap = Snapshot::from_text(&std::fs::read_to_string(&ckpt).expect("ckpt.json")).expect("format 4 again");
+        let snap = Snapshot::from_text(&std::fs::read_to_string(&ckpt).expect("ckpt.json")).expect("this format again");
         assert!(!snap.digests.is_empty() && snap.digests.keys().eq(snap.manifest.keys()));
         let again = process.replay(log.as_bytes(), today, &tz_wire, None, &want).expect("a resume");
         assert_eq!((again.outcome, again.snapshot.gen.as_str()), (Outcome::Hot, snap.gen.as_str()), "rebuilt once, not twice");
+    }
+
+    /// **The checkpoint carries a digest of its own text, and no one-byte edit of it is ever read** (the campaign's
+    /// D98, README gap 4394): over every byte of a checkpoint's text, the byte replaced by another printable one — a
+    /// digit of the digest, a byte of its head, of the manifest, of the checkpoint itself — and `from_text` refuses
+    /// the result. The digest's own argument is D93's (`a_digest_moves_with_every_single_byte_edit`): FNV-1a moves
+    /// with every single-byte edit of a text of one length, and an edit of the digest is an edit of what the rest
+    /// must match.
+    #[test]
+    fn a_checkpoint_one_byte_edited_is_never_read() {
+        let s = Snapshot {
+            kernel: kernel_id().into(),
+            tz_key: "UTC".into(),
+            prefix_lines: 2,
+            log_lines: 3,
+            prefix_bytes: 4,
+            prefix_fnv: format!("{:016x}", fnv1a64(b"a\nb\n")),
+            gen: "0123456789abcdef".into(),
+            prev_gen: String::new(),
+            manifest: BTreeMap::from([("2026-09".to_string(), "sealed/2026-09.g0123456789abcdef.json".to_string())]),
+            digests: BTreeMap::from([("2026-09".to_string(), month_digest("{\"v\":1,\"days\":{},\"window\":{}}\n"))]),
+            meta: Meta { cut: 2, ledger_day: 739870, horizon: 739855, reseal_day: 739872, max_t: Some((1, 0)), future_floor: None },
+            ckpt: r#"{"v":1,"tzKey":"UTC","cut":2}"#.into(),
+        };
+        let text = s.to_text();
+        assert!(text.starts_with(CKPT_DIGEST_HEAD), "{text}");
+        assert_eq!(Snapshot::from_text(&text), Ok(s.clone()));
+        let mut edits = 0;
+        for i in 0..text.len() {
+            let was = text.as_bytes()[i];
+            let to = if was == b'7' { b'8' } else { b'7' };
+            let mut bytes = text.clone().into_bytes();
+            bytes[i] = to;
+            let edited = String::from_utf8(bytes).expect("ASCII");
+            assert!(Snapshot::from_text(&edited).is_err(), "byte {i} ({:?} -> {:?}) read back: {edited}", was as char, to as char);
+            edits += 1;
+        }
+        assert_eq!(edits, text.len());
+        // A checkpoint written before D98 — format 4, no digest of its own — is "another format": rebuilt, not named.
+        let body = text.strip_prefix(CKPT_DIGEST_HEAD).and_then(|r| r.get(16..)).and_then(|r| r.strip_prefix("\",")).expect("a body");
+        let before = format!("{{{body}").replace(&format!("\"format\":{FORMAT}"), "\"format\":4");
+        assert_eq!(Snapshot::from_text(&before), Err("another format".to_string()));
+        // The same text with a digest that does not match is named.
+        let wrong = format!("{CKPT_DIGEST_HEAD}{}\",{body}", "0".repeat(16));
+        assert_eq!(Snapshot::from_text(&wrong), Err(CKPT_CORRUPT.to_string()));
+    }
+
+    /// **A corrupted checkpoint is rebuilt, said once, and answers as a cache-less run** (D98, README gap 4394): the
+    /// one-byte edit is not resumed from — genesis runs, says so once, and writes a checkpoint that matches; the
+    /// replay after it resumes that and says nothing; and the facts are those of a run with no cache at all.
+    #[test]
+    fn a_corrupted_checkpoint_is_rebuilt_and_said_once() {
+        let dir = tempfile::tempdir().expect("a scratch directory");
+        let cdir = dir.path().join(CACHE_DIR);
+        let tz: Tz = "America/Chicago".parse().expect("a zone");
+        let tz_wire = super::super::tz_table::wire_for(Some(&cdir), tz);
+        let want = Want { facts: true, headers_from: None, render: vec![] };
+        let today = day_of(chrono::NaiveDate::from_ymd_opt(2026, 9, 15).expect("a date"));
+        let log = wakes(45);
+        let first = ReplayCache::new(Some(cdir.clone())).replay(log.as_bytes(), today, &tz_wire, None, &want).expect("genesis");
+        assert!(!first.snapshot.manifest.is_empty(), "the log seals a month");
+        let ckpt = cdir.join(CKPT_FILE);
+        let text = std::fs::read_to_string(&ckpt).expect("ckpt.json");
+        // One digit of `ledgerDay` moved by one: the checkpoint still parses, and is the wrong one to resume from.
+        let at = text.find("\"ledgerDay\":").expect("a ledger day") + "\"ledgerDay\":".len();
+        let mut bytes = text.clone().into_bytes();
+        bytes[at + 3] = if bytes[at + 3] == b'9' { b'8' } else { bytes[at + 3] + 1 };
+        let edited = String::from_utf8(bytes).expect("ASCII");
+        assert_eq!(text.bytes().zip(edited.bytes()).filter(|(a, b)| a != b).count(), 1, "one byte");
+        std::fs::write(&ckpt, &edited).expect("the edited checkpoint");
+
+        let mut process = ReplayCache::new(Some(cdir.clone()));
+        let r = process.replay(log.as_bytes(), today, &tz_wire, None, &want).expect("rebuilt");
+        assert_eq!((r.outcome, r.rebuilt_because.as_deref()), (Outcome::Genesis, Some(CKPT_CORRUPT)));
+        assert_eq!(r.notices, vec![corrupt_ckpt_notice()]);
+        assert_eq!(r.answer.facts, first.answer.facts, "the facts are a cache-less run's");
+        let healed = Snapshot::from_text(&std::fs::read_to_string(&ckpt).expect("ckpt.json")).expect("a checkpoint that matches");
+        assert_eq!(healed.meta, first.snapshot.meta);
+        let again = process.replay(log.as_bytes(), today, &tz_wire, None, &want).expect("a resume");
+        assert_eq!((again.outcome, again.notices.len()), (Outcome::Hot, 0), "said once, rebuilt once");
     }
 
     /// **D18's named fault, raised before any call** (OWNER Q9 (iii), §17 P31, gap 120): a hand-edited first line longer
@@ -2509,6 +2636,12 @@ fn missing_month_notice() -> String {
 /// cache was rebuilt from the log instead (the owner's D93, README gaps 4246 and 4395).
 fn corrupt_month_notice(month: &str) -> String {
     format!("replay cache {CACHE_DIR}: the sealed month file of {month} is missing or does not match its digest; rebuilt from the log")
+}
+
+/// The notice a replay raises when `ckpt.json` did not match its own digest and the cache was rebuilt from the log
+/// (the campaign's D98, README gap 4394) — once: the rebuild writes a checkpoint that matches.
+fn corrupt_ckpt_notice() -> String {
+    format!("replay cache {CACHE_DIR}: {CKPT_FILE} does not match its digest; rebuilt from the log")
 }
 
 /// The sealed records a scope merges (§11.1, §9.8) — `None` when a month file the snapshot names is

@@ -31,7 +31,7 @@ mod cli_common;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use cli_common::{fnv1a64_hex, Tm};
+use cli_common::{ckpt_redigested, fnv1a64_hex, Tm};
 use serde_json::Value;
 
 /// Three days after `energy-14d.jsonl`'s last line, so the log's August days are sealed (below
@@ -132,7 +132,8 @@ fn poison(tm: &Tm, path: &Path, blocks_done: u64) {
     let ckpt = fs::read_to_string(&ckpt_path).expect("read ckpt.json");
     let (old, new) = (fnv1a64_hex(&before), fnv1a64_hex(text.as_bytes()));
     assert_eq!(ckpt.matches(&format!("\"{old}\"")).count(), 1, "ckpt.json records the month file's digest once: {ckpt}");
-    fs::write(&ckpt_path, ckpt.replace(&format!("\"{old}\""), &format!("\"{new}\""))).expect("write ckpt.json");
+    // And the checkpoint's own digest (D98): the file is one a kernel could have written.
+    fs::write(&ckpt_path, ckpt_redigested(&ckpt.replace(&format!("\"{old}\""), &format!("\"{new}\"")))).expect("write ckpt.json");
 }
 
 /// What `tm review day --date` says about the sealed day.
@@ -178,7 +179,8 @@ fn a_replay_cache_another_kernel_wrote_is_rebuilt_and_never_served() {
     let text = fs::read_to_string(&ckpt_path).expect("read ckpt.json");
     let needle = format!("\"kernel\":\"{this_kernel}\"");
     assert_eq!(text.matches(&needle).count(), 1, "ckpt.json names its kernel once: {text}");
-    fs::write(&ckpt_path, text.replace(&needle, &format!("\"kernel\":\"{other}\""))).expect("write ckpt.json");
+    // Re-digested (D98), so it is refused for its kernel and not for its own digest.
+    fs::write(&ckpt_path, ckpt_redigested(&text.replace(&needle, &format!("\"kernel\":\"{other}\"")))).expect("write ckpt.json");
     assert_eq!(ckpt_str(&tm, "kernel"), other);
 
     assert_eq!(

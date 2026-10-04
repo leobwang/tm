@@ -31,6 +31,22 @@ pub fn fnv1a64_hex(bytes: &[u8]) -> String {
     format!("{h:016x}")
 }
 
+/// **`ckpt.json` with its own digest recomputed** (the campaign's D98, README gap 4394): the text after
+/// the digest field — from the byte after `{"digest":"<16 hex>",` through the last newline — digested by
+/// [`fnv1a64_hex`] and put back in front, as the binary writes it. What a test that edits a checkpoint
+/// into one a kernel could have WRITTEN must write after its edit, so the rule it means to bite (a month
+/// file's digest, a kernel id) is what refuses it and not the checkpoint's own digest. Computed here,
+/// never borrowed from the binary.
+pub fn ckpt_redigested(text: &str) -> String {
+    let head = "{\"digest\":\"";
+    let body = text
+        .strip_prefix(head)
+        .and_then(|rest| rest.get(16..))
+        .and_then(|rest| rest.strip_prefix("\","))
+        .unwrap_or_else(|| panic!("a checkpoint that opens with its digest: {}", &text[..text.len().min(80)]));
+    format!("{head}{}\",{body}", fnv1a64_hex(body.as_bytes()))
+}
+
 /// One temporary plan directory and the binary under test.
 pub struct Tm {
     /// The temporary root (kept alive for the test's lifetime).
