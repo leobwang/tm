@@ -470,11 +470,14 @@ def cItemAcc : Codec ItemAcc :=
     (fun p => ⟨p.1, p.2.1, p.2.2.1, p.2.2.2.1, p.2.2.2.2.1, p.2.2.2.2.2.1⟩) (fun _ => rfl)
 theorem cItemAcc_nonnull : cItemAcc.NonNull := fun _ => nofun
 
+/-- The open block (fork `Block`), and since the owner's D94 its `start`'s ledger day (`Replay.Block.day`), whose
+breaks its clock nets. -/
 def cBlock : Codec Block :=
   cIso (cTuple <| tCons cStr <| tCons cAt <| tCons cOptAt <| tCons cBool <| tCons cOptAt <| tCons cNat
-      <| tCons (cOpt cEnergyObs cEnergyObs_nonnull) <| tNil)
-    (fun b => (b.id, b.started, b.since, b.paused, b.pausedAt, b.workedMin, b.obs, ()))
-    (fun p => ⟨p.1, p.2.1, p.2.2.1, p.2.2.2.1, p.2.2.2.2.1, p.2.2.2.2.2.1, p.2.2.2.2.2.2.1⟩) (fun _ => rfl)
+      <| tCons (cOpt cEnergyObs cEnergyObs_nonnull) <| tCons cNat <| tNil)
+    (fun b => (b.id, b.started, b.since, b.paused, b.pausedAt, b.workedMin, b.obs, b.day, ()))
+    (fun p => ⟨p.1, p.2.1, p.2.2.1, p.2.2.2.1, p.2.2.2.2.1, p.2.2.2.2.2.1, p.2.2.2.2.2.2.1, p.2.2.2.2.2.2.2.1⟩)
+    (fun _ => rfl)
 theorem cBlock_nonnull : cBlock.NonNull := fun _ => nofun
 
 def cCut : Codec Cut :=
@@ -489,13 +492,17 @@ def cOpenInt : Codec (At × Nat × Option Log.Id) :=
 theorem cOpenInt_nonnull : cOpenInt.NonNull := fun _ => nofun
 
 /-- The machine (fork `Machine`): the open block, **the last cut** (carried note 2: no Rust field reads it, so the
-view omits it, and only the checkpoint carries it), the open interruption, and — since the owner's D92 (README gap
-4241) — the span of the last `break` it stepped, `[start, end]`, which a later step's clock reads (`Replay.restartAt`),
-so a resumed fold restarts a clock where a whole replay does. -/
+view omits it, and only the checkpoint carries it), the open interruption, and — since the owner's D94 (README gaps
+4361 and 4506; D92's last span before it) — every break it holds (`Replay.Machine.brks`, at most `maxKeepDays + 1`
+ledger days of them, each `[start, end, ledger day]`), which a later step's clock reads (`Replay.restartAt`,
+`Replay.closeSub`), so a resumed fold nets a break where a whole replay does. -/
 def cMachine : Codec Machine :=
   cIso (cTuple <| tCons (cOpt cBlock cBlock_nonnull) <| tCons (cOpt cCut cCut_nonnull)
-      <| tCons (cOpt cOpenInt cOpenInt_nonnull) <| tCons (cOpt (cPair cAt cAt) (cPair_nonnull cAt cAt)) <| tNil)
-    (fun m => (m.block, m.lastCut, m.interrupt, m.brk, ())) (fun p => ⟨p.1, p.2.1, p.2.2.1, p.2.2.2.1⟩) (fun _ => rfl)
+      <| tCons (cOpt cOpenInt cOpenInt_nonnull)
+      <| tCons (cList maxList (cIso (cTuple <| tCons cAt <| tCons cAt <| tCons cNat <| tNil)
+          (fun (k : Replay.HeldBrk) => (k.s, k.e, k.day, ())) (fun p => ⟨p.1, p.2.1, p.2.2.1⟩) (fun _ => rfl)))
+      <| tNil)
+    (fun m => (m.block, m.lastCut, m.interrupt, m.brks, ())) (fun p => ⟨p.1, p.2.1, p.2.2.1, p.2.2.2.1⟩) (fun _ => rfl)
 
 def cHeaderRec : Codec HeaderRec :=
   cIso (cTuple <| tCons cNat <| tCons cStr <| tCons cOptStr <| tCons cBool <| tCons cVInstant <| tCons cVOffset <| tNil)
@@ -1514,7 +1521,7 @@ finishes them. -/
 def answer (k : Ckpt) : Seal.Answer :=
   ⟨k.ledgerDay, horizonOf k.ledgerDay, k.items.map ItemAgg.finish, k.window, k.instOther, k.named,
    k.openDays.map (OpenDay.finish k.machine),
-   k.machine.block.map (fun b => ⟨b.id, b.started, b.workedMin, b.since, b.paused⟩),
+   Replay.openOf k.machine,
    k.machine.interrupt.map (fun i => ⟨0, some i.1, none, i.2.1, i.2.2, 0, []⟩),
    k.lastDay, k.lastEff, k.entryCount, k.unknown, k.longestLeak, k.rwarns, k.warnings, k.warnOverflow⟩
 
@@ -1625,7 +1632,7 @@ def sealable (z : Cal.Tz) (T₀ L : Nat) (ls r : List Log.Line) : Bool :=
 
 /-- **The empty checkpoint** (§9.2): nothing folded, cut 0, ledger day 0. -/
 def Ckpt.empty (z : Cal.Tz) : Ckpt :=
-  ⟨ckptVersion, z.val.key, 0, 0, 0, none, none, [], [], [], false, [], ⟨none, none, none, none⟩, [], [], [], [], [], none,
+  ⟨ckptVersion, z.val.key, 0, 0, 0, none, none, [], [], [], false, [], ⟨none, none, none, []⟩, [], [], [], [], [], none,
    none, 0, 0, none, [], [], 0⟩
 
 /-- The meta the host reads beside a checkpoint. -/
@@ -1633,6 +1640,11 @@ def Ckpt.meta (k : Ckpt) : Meta := ⟨k.cut, k.ledgerDay, horizonOf k.ledgerDay,
 
 /-- The most days a reseal leaves unfolded (§10.4). -/
 def maxKeepDays : Nat := 31
+
+/-- **D94's bound is this one** (README gap 4506): `Replay.pruneBrks` keeps the held breaks within `maxKeepDays` ledger
+days of the newest — written there as the literal, because `Replay` cannot name `Seal`, and held to it here. -/
+theorem pruneBrks_is_bounded_by_maxKeepDays (l : List Replay.HeldBrk) :
+    Replay.pruneBrks l = l.filter (fun k => decide (l.foldl (fun a x => max a x.day) 0 ≤ k.day + maxKeepDays)) := rfl
 
 def Policy.wf (p : Policy) : Bool := decide (p.keepDays ≤ maxKeepDays) && p.maxLine.all (fun n => decide (n < 1099511627776))
 

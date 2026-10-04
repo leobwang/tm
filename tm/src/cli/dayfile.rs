@@ -19,7 +19,10 @@
 //!
 //! All three go through [`tm_core::store::Store::modify_file`], so a
 //! concurrent save by one of the other two writers (§1.3) is merged rather
-//! than clobbered.
+//! than clobbered — and through [`Ctx::writes`], so a TUI past midnight that
+//! holds `tm plan`'s housekeeping in memory (the owner's D96) holds the
+//! journal lines D61's wall marks write, and the day file on disk is not
+//! touched.
 
 use chrono::{NaiveDate, NaiveTime};
 use tm_core::grammar::ParsedFile;
@@ -40,7 +43,7 @@ pub fn ensure(ctx: &Ctx, date: NaiveDate) -> Result<String, CliError> {
     let initial = format!(
         "---\ndate: {date}\n---\n![day]({date}.svg)\n\n# Pinned\n\n## Log\n\n## Notes\n"
     );
-    ctx.store.ensure_file(&rel, &initial)?;
+    ctx.writes().ensure_file(&rel, &initial)?;
     Ok(rel)
 }
 
@@ -48,7 +51,7 @@ pub fn ensure(ctx: &Ctx, date: NaiveDate) -> Result<String, CliError> {
 /// section — and the file — are created when they are missing.
 pub fn note(ctx: &Ctx, date: NaiveDate, at: NaiveTime, text: &str) -> Result<(), CliError> {
     let rel = ensure(ctx, date)?;
-    ctx.store.append_to_section(&rel, "## Log", &journal_line(at, text))?;
+    ctx.writes().append_to_section(&rel, "## Log", &journal_line(at, text))?;
     Ok(())
 }
 
@@ -61,7 +64,9 @@ fn journal_line(at: NaiveTime, text: &str) -> String {
 /// D61's meeting pause, which runs before any undo recorder — and therefore
 /// rebased UNDER the undo stack, so a later `tm undo` neither trips over the
 /// line nor drops it (`undo::rebase_underneath`, README gap 3330). `active` is
-/// the running block and the timer state the same write left it in.
+/// the running block and the timer state the same write left it in. HELD in
+/// memory (the owner's D96) the line goes to the hold and there is nothing to
+/// rebase: no file moved under the stack.
 pub fn note_underneath(
     ctx: &Ctx,
     date: NaiveDate,
@@ -69,6 +74,9 @@ pub fn note_underneath(
     text: &str,
     active: Option<(&tm_core::model::Id, bool)>,
 ) -> Result<(), CliError> {
+    if ctx.holding() {
+        return note(ctx, date, at, text);
+    }
     let rel = path(date);
     let was = if ctx.store.exists(&rel) { Some(ctx.store.read_text(&rel)?) } else { None };
     note(ctx, date, at, text)?;
@@ -91,7 +99,7 @@ pub fn front(ctx: &Ctx, date: NaiveDate, entries: &[(&str, String)]) -> Result<(
         return Ok(());
     }
     let rel = ensure(ctx, date)?;
-    ctx.store
+    ctx.writes()
         .modify_file(&rel, &mut |parsed: &ParsedFile| Ok(set_front(parsed, entries)))?;
     Ok(())
 }

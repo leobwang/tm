@@ -795,7 +795,7 @@ theorem others_read_state (st : State) (hs : List (Nat × HeaderRec)) (n : Nat) 
 
 /-- **Every scalar all-time reading** of an answer holding a state's scalars is the finished state's. -/
 theorem scalars_read_state (st : State) (hs : List (Nat × HeaderRec)) (n : Nat) (v : Seal.Answer)
-    (h1 : v.openBlock = st.machine.block.map (fun b => ⟨b.id, b.started, b.workedMin, b.since, b.paused⟩))
+    (h1 : v.openBlock = Replay.openOf st.machine)
     (h2 : v.openInterrupt = st.machine.interrupt.map (fun i => ⟨0, some i.1, none, i.2.1, i.2.2, 0, []⟩))
     (h3 : v.lastDay = Replay.maxDay? (st.days.pairs.map Prod.fst)) (h4 : v.lastEffective = st.global.lastEffective)
     (h5 : v.unknown = st.unknown) (h6 : v.longestLeak = st.longestLeak) (h7 : v.rwarns = st.rwarns.reverse)
@@ -855,7 +855,7 @@ theorem answer_instOther : (answer (ckptOfEntries z T₀ L cut es er ws)).instOt
 theorem answer_named : (answer (ckptOfEntries z T₀ L cut es er ws)).named = namedOf (foldedState z es er) := by
   simp only [answer, ckptOfEntries]
 theorem answer_openBlock : (answer (ckptOfEntries z T₀ L cut es er ws)).openBlock
-    = (foldedState z es er).machine.block.map (fun b => ⟨b.id, b.started, b.workedMin, b.since, b.paused⟩) := by
+    = Replay.openOf (foldedState z es er).machine := by
   simp only [answer, ckptOfEntries]
 theorem answer_openInterrupt : (answer (ckptOfEntries z T₀ L cut es er ws)).openInterrupt
     = (foldedState z es er).machine.interrupt.map (fun i => ⟨0, some i.1, none, i.2.1, i.2.2, 0, []⟩) := by
@@ -1076,7 +1076,7 @@ theorem arm_durations_nil (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (
   case extend id by_ => rfl
   case brk planned actual where_ =>
     rw [List.filterMap_append, (Replay.dayArm_obs dy sl e t d).2.1, List.append_nil]
-    exact (Replay.brkFx_obs dy m t _).2
+    exact (Replay.brkFx_obs dy m t _ d).2
   all_goals exact (Replay.dayArm_obs dy sl e t d).2.1
 
 /-- **Each machine arm adds at most one observation on its own line**, energy or duration, not both. -/

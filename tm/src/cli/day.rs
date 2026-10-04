@@ -1224,7 +1224,10 @@ pub fn start(g: &Globals, args: &super::StartArgs) -> Result<i32, CliError> {
     }
     super::kernel_bridge::gate(&ctx, "start")?;
     let rec = Recorder::start(&ctx, "start")?;
-    let ended_break = end_break(&mut ctx)?;
+    // **A running break ends first, and says so** — `tm break`'s line and its journal line
+    // (the owner's D97, README gap 4391, parity P95): the one body every verb that ends a
+    // break runs. Fork 4748911 ended it here too and wrote no journal line.
+    let ended_break = end_break_first(&mut ctx)?;
 
     let mut f = features(&ctx, ctx.now_tz);
     if ended_break.is_some() {
@@ -1276,6 +1279,9 @@ pub fn start(g: &Globals, args: &super::StartArgs) -> Result<i32, CliError> {
         since_break_min: f.since_break_min,
     })?;
     ctx.reload()?;
+    if let Some(b) = &ended_break {
+        note_break_ended(&ctx, b, ctx.now_tz)?;
+    }
     day_note(
         &ctx,
         format!(
@@ -1431,7 +1437,9 @@ pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
         written = Some(write_estimate(&ctx, "done", &id, u64::from(left))?);
         remaining_min = Some(left);
     }
-    end_break_at(&mut ctx, end)?;
+    // A running break ends at the block's end, through the one body every verb that ends a
+    // break runs, and says so in the journal below (the owner's D97, parity P95).
+    let ended_break = end_break_first_at(&mut ctx, end)?;
 
     if let Some(item) = item.as_ref().filter(|_| !stateless) {
         let mut line = match written {
@@ -1480,6 +1488,9 @@ pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
     };
     log_the_end(&ctx, stated, event)?;
     ctx.reload()?;
+    if let Some(b) = &ended_break {
+        note_break_ended(&ctx, b, end)?;
+    }
     note_the_end(
         &ctx,
         stated,
@@ -1681,8 +1692,9 @@ pub fn stop(g: &Globals, args: &super::StopArgs) -> Result<i32, CliError> {
     };
     // §11's break integrity: a break still running when the block stops is
     // over too, and its `break` event has to reach the log — at the stop's
-    // instant, which D79's `--at` states.
-    end_break_at(&mut ctx, end)?;
+    // instant, which D79's `--at` states — through the one body every verb that
+    // ends a break runs, with its journal line below (the owner's D97, P95).
+    let ended_break = end_break_first_at(&mut ctx, end)?;
     if let Some(mut line) = written {
         line.set_state(State::Todo)?;
         ctx.write_line(&id, &line)?;
@@ -1699,6 +1711,9 @@ pub fn stop(g: &Globals, args: &super::StopArgs) -> Result<i32, CliError> {
         },
     )?;
     ctx.reload()?;
+    if let Some(b) = &ended_break {
+        note_break_ended(&ctx, b, end)?;
+    }
     note_the_end(&ctx, stated, format!("stop {} {worked}m · {remaining}m left", id.token()))?;
     rec.finish(&ctx, format!("stop {}", id.token()))?;
 
@@ -1777,16 +1792,12 @@ pub fn take_break(g: &Globals, args: &super::BreakArgs) -> Result<i32, CliError>
     };
     super::kernel_bridge::gate(&ctx, "break")?;
     let rec = Recorder::start(&ctx, "break")?;
-    let running = ctx.state.break_.clone();
-    let out = if let Some(br) = running {
-        let actual = end_break(&mut ctx)?;
+    // The ending arm is the one body every verb that ends a break runs (the owner's D97):
+    // `end_break_first`, then `note_break_ended` below.
+    let ended = end_break_first(&mut ctx)?;
+    let out = if let Some(ended) = ended {
         ctx.save_state()?;
-        BreakOut {
-            action: "ended".to_string(),
-            planned_min: br.planned_min,
-            actual_min: actual,
-            place: br.place,
-        }
+        ended
     } else {
         let planned = asked.unwrap_or(ctx.cfg.day.break_min);
         ctx.state.break_ = Some(BreakState {
@@ -1806,11 +1817,11 @@ pub fn take_break(g: &Globals, args: &super::BreakArgs) -> Result<i32, CliError>
         }
     };
     ctx.reload()?;
-    day_note(
-        &ctx,
-        match out.actual_min {
-            Some(a) => break_ended_note(a, out.planned_min),
-            None => format!(
+    match out.actual_min {
+        Some(_) => note_break_ended(&ctx, &out, ctx.now_tz)?,
+        None => day_note(
+            &ctx,
+            format!(
                 "break {}m{}",
                 out.planned_min,
                 out.place
@@ -1818,8 +1829,8 @@ pub fn take_break(g: &Globals, args: &super::BreakArgs) -> Result<i32, CliError>
                     .map(|p| format!(" where={p}"))
                     .unwrap_or_default()
             ),
-        },
-    )?;
+        )?,
+    }
     rec.finish(&ctx, format!("break {}", out.action))?;
     emit(
         ctx.json,
@@ -1839,9 +1850,9 @@ pub fn take_break(g: &Globals, args: &super::BreakArgs) -> Result<i32, CliError>
     Ok(0)
 }
 
-/// **The day file's journal line for an ended break** — the ONE spelling, written by `tm
-/// break`'s ending arm and by `tm interrupt` when it ends a running break first (the owner's
-/// D90): `break ended 10m/20m`.
+/// **The day file's journal line for an ended break** — the ONE spelling, written by
+/// [`note_break_ended`] for every verb that ends a running break (the owner's D90 and D97):
+/// `break ended 10m/20m`.
 fn break_ended_note(actual: u32, planned: u32) -> String {
     format!("break ended {actual}m/{planned}m")
 }
@@ -1874,9 +1885,28 @@ pub struct InterruptOut {
 /// `tm interrupt` (the owner's D90, P86) and `tm resume` (README gap 4501, P90) call before the
 /// mark they log, so neither logs it inside a running break: [`end_break`]'s line and state, and
 /// `tm break`'s own report of its ending (`action` `ended`); `None` when no break was running.
+/// At `now` ([`end_break`]); [`end_break_first_at`] at a stated end.
 fn end_break_first(ctx: &mut Ctx) -> Result<Option<BreakOut>, CliError> {
     let running = ctx.state.break_.clone();
-    Ok(match (running, end_break(ctx)?) {
+    Ok(ended_report(running, end_break(ctx)?))
+}
+
+/// [`end_break_first`] at `end` — `now`, or the end a `tm stop --at`/`tm done --at` states (the
+/// owner's D79: a break running then is over then too). **Every verb that ends a running break
+/// ends it here** (the owner's **D97**, README gap 4391, parity **P95**): `tm break`'s ending arm,
+/// `tm start`, `tm stop`, `tm done`, `tm interrupt` and `tm resume` — and, through them, the TUI's
+/// keys, which run those verbs — and each writes the break's journal line through the one writer,
+/// [`note_break_ended`], at the instant this returns it ended. `tm wake` ends none: it refuses
+/// over a running break (D76, D81).
+fn end_break_first_at(ctx: &mut Ctx, end: DateTime<chrono_tz::Tz>) -> Result<Option<BreakOut>, CliError> {
+    let running = ctx.state.break_.clone();
+    Ok(ended_report(running, end_break_at(ctx, end)?))
+}
+
+/// `tm break`'s report of the break `running` was, ended after `actual` minutes; `None` when none
+/// was running.
+fn ended_report(running: Option<BreakState>, actual: Option<u32>) -> Option<BreakOut> {
+    match (running, actual) {
         (Some(br), Some(actual)) => Some(BreakOut {
             action: "ended".to_string(),
             planned_min: br.planned_min,
@@ -1884,7 +1914,24 @@ fn end_break_first(ctx: &mut Ctx) -> Result<Option<BreakOut>, CliError> {
             place: br.place,
         }),
         _ => None,
-    })
+    }
+}
+
+/// **The day file's journal line of a break a verb ended** — `tm break`'s own
+/// ([`break_ended_note`], `break ended 10m/20m`), at `at`, the instant the break ended, in that
+/// day's file: the ONE writer of it (the owner's **D97**, README gap 4391, parity **P95**). Fork
+/// 4748911 wrote it from `tm break` alone, so the journal said when a break ended for one verb
+/// of the six that end one; D90 and the W-43 repair gave it to `tm interrupt` and `tm resume`
+/// as a second and third call of the spelling, and `tm start`, `tm stop` and `tm done` still
+/// wrote none. Every caller writes it AFTER its own writes and its reload and BEFORE its own
+/// journal line, so the day file reads the break's end, then the verb.
+fn note_break_ended(ctx: &Ctx, ended: &BreakOut, at: DateTime<chrono_tz::Tz>) -> Result<(), CliError> {
+    super::dayfile::note(
+        ctx,
+        at.date_naive(),
+        at.time(),
+        &break_ended_note(ended.actual_min.unwrap_or(0), ended.planned_min),
+    )
 }
 
 /// `tm interrupt`.
@@ -1919,7 +1966,7 @@ pub fn interrupt(g: &Globals) -> Result<i32, CliError> {
     ctx.append_event(Event::Interrupt { id: id.clone() })?;
     ctx.reload()?;
     if let Some(b) = &ended {
-        day_note(&ctx, break_ended_note(b.actual_min.unwrap_or(0), b.planned_min))?;
+        note_break_ended(&ctx, b, ctx.now_tz)?;
     }
     day_note(
         &ctx,
@@ -2026,7 +2073,7 @@ pub fn resume(g: &Globals) -> Result<i32, CliError> {
     planning::write_plan(&mut ctx, &plan, &prios)?;
     ctx.reload()?;
     if let Some(b) = &ended {
-        day_note(&ctx, break_ended_note(b.actual_min.unwrap_or(0), b.planned_min))?;
+        note_break_ended(&ctx, b, ctx.now_tz)?;
     }
     day_note(
         &ctx,

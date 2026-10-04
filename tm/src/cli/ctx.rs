@@ -694,21 +694,31 @@ pub(super) fn genesis_error(e: kernel_log::GenesisError) -> CliError {
     }
 }
 
-/// **What an automatic close computed IN MEMORY and did not write** — the owner's **D91** (W-43
-/// track H, README gap 4342). A TUI left open past local midnight asks the kernel for the documents
-/// §6.3's automatic close would leave and plans from them, writing nothing (D84: nothing writes on a
-/// timer); this is what it holds ([`super::closing::close_in_memory`]). No CLI verb holds one: its
-/// close is written.
+/// **What `tm plan`'s housekeeping computed IN MEMORY and did not write** — the owner's **D91**
+/// (W-43 track H, README gap 4342) for §6.3's automatic close, and since the owner's **D96** (W-44
+/// track H, README gap 4393) for EVERY housekeeping write: §5.1's waiting timeouts and D61's wall
+/// marks too. A TUI left open past local midnight reads its plan directory as `tm plan` reads it at
+/// that instant, writing nothing (D84: nothing writes on a timer); this is what it holds. The
+/// housekeeping writes it through the same code `tm plan`'s does — every write a housekeeping step
+/// makes goes through [`Ctx::writes`], [`Ctx::append_line`] and [`Ctx::save_state`], and while a
+/// context holds, those three answer into this and not the disk. No CLI verb holds: its housekeeping
+/// is written.
 #[derive(Clone, Debug)]
 pub struct Held {
-    /// Every plan document the close changed or created, by path, as the kernel answered it.
+    /// Every plan document a held write changed or created, by path, as held.
     pub docs: BTreeMap<String, String>,
-    /// The log lines the close would have appended, each with its newline, in order — the bytes
-    /// [`Ctx::append_line`] appends.
+    /// The log lines held, each with its newline, in order — the bytes [`Ctx::append_line`] would
+    /// have appended.
     pub log: String,
-    /// What the context had read before the close was held: `.tm/state.json`'s stamps, the files
-    /// and the tree, which [`Ctx::release`] puts back.
-    before: (store::Closed, PlanFiles, Tree),
+    /// The plan directory as held: `config.toml` and every plan file, every held write laid over the
+    /// disk's, and the held lines under [`LOG_PATH`] (the held lines alone). What a held write goes
+    /// to; `docs` and `log` are read off it ([`Ctx::settle`]).
+    mirror: store::MemStore,
+    /// The plan files as the mirror began, which `docs` is the difference from.
+    base: BTreeMap<String, String>,
+    /// What the context had read before anything was held: `.tm/state.json`, the files, the tree
+    /// and the replay, which [`Ctx::release`] puts back.
+    before: (RuntimeState, PlanFiles, Tree, Replay),
 }
 
 /// **The plan directory as a request reads it** ([`Ctx::reading`]): the store itself, or — while an
@@ -942,26 +952,38 @@ impl Ctx {
             refused = super::closing::auto_close(&mut cx)? == super::closing::AutoClosed::Refused;
         }
         if housekeeping {
-            cx.timed_out = cx.resolve_timeouts(refused)?;
-            if !cx.timed_out.is_empty() {
-                cx.reload()?;
-            }
-            // **The owner's D61 (W-36 track T)**: a calendar wall that began while a
-            // block runs has stopped the block's timer. Its pause — and, once the wall
-            // has ended, its unpause — is logged here, the way §6.3's automatic close
-            // catches up: by the first verb that runs after the wall began
-            // ([`super::day::stop_the_timer_at_walls`]). It writes the log,
-            // `state.json` and — since the owner's D65 (W-37 track T) — the day
-            // file's journal line for each mark it logs. It does not wait on the
-            // gate because it needs none: the kernel decides it (README gap 3139)
-            // over the tree it loads, and a tree the kernel refuses gets no mark
-            // and no journal line.
-            let now = cx.now_tz;
-            if walls && super::day::stop_the_timer_at_walls(&mut cx, now)? {
-                cx.reload()?;
-            }
+            cx.after_the_close(refused, walls)?;
         }
         Ok(cx)
+    }
+
+    /// **§5.1's waiting timeouts, then D61's wall marks** — the housekeeping
+    /// every verb runs after §6.3's automatic close ([`Ctx::load`]), and the ONE
+    /// body a TUI past midnight runs to hold them in memory (the owner's D96,
+    /// README gap 4393: `tui::read_as_tm_plan`, holding, so every write below
+    /// answers into the hold and none reaches the disk). `refused` says the
+    /// close ahead of it was refused (the timeouts then write nothing); `walls`
+    /// is false for the verbs that run the wall marks at an end they state.
+    ///
+    /// **The owner's D61 (W-36 track T)**: a calendar wall that began while a
+    /// block runs has stopped the block's timer. Its pause — and, once the wall
+    /// has ended, its unpause — is logged here, the way §6.3's automatic close
+    /// catches up: by the first verb that runs after the wall began
+    /// ([`super::day::stop_the_timer_at_walls`]). It writes the log,
+    /// `state.json` and — since the owner's D65 (W-37 track T) — the day file's
+    /// journal line for each mark it logs. It does not wait on the gate because
+    /// it needs none: the kernel decides it (README gap 3139) over the tree it
+    /// loads, and a tree the kernel refuses gets no mark and no journal line.
+    pub(crate) fn after_the_close(&mut self, refused: bool, walls: bool) -> Result<(), CliError> {
+        self.timed_out = self.resolve_timeouts(refused)?;
+        if !self.timed_out.is_empty() {
+            self.reload()?;
+        }
+        let now = self.now_tz;
+        if walls && super::day::stop_the_timer_at_walls(self, now)? {
+            self.reload()?;
+        }
+        Ok(())
     }
 
     /// **Reconcile `.tm/state.json` with the log it is a cache of** — the
@@ -1285,8 +1307,13 @@ impl Ctx {
         (energy::planned_minutes(remaining, multiplier), multiplier)
     }
 
-    /// Re-read files, tree, log and replay after a write, in the same scope.
+    /// Re-read files, tree, log and replay after a write, in the same scope — or, while this context
+    /// holds its housekeeping in memory (the owner's D96), read them as the hold leaves them
+    /// ([`Ctx::settle`]): a housekeeping step reloads after it writes, and held, its writes are there.
     pub fn reload(&mut self) -> Result<(), CliError> {
+        if self.holding() {
+            return self.settle();
+        }
         self.files = self.store.read_tree()?;
         self.tree = self.files.tree();
         let read = Ctx::replay_with(&self.store, &self.cfg, self.now, self.today, self.scope)?;
@@ -1361,87 +1388,160 @@ impl Ctx {
         }
     }
 
-    /// **The log as a request reads it** — the file's bytes, and the lines an automatic close
-    /// holds in memory (the owner's D91) appended as [`Ctx::append_line`] appends them, a torn last
-    /// line ended first (`Store::append_text`'s rule, P19). With nothing held, the file's bytes.
+    /// **The log as a request reads it** — the file's bytes, and the lines held in memory (the owner's
+    /// D91 and D96) appended as [`Ctx::append_line`] appends them, a torn last line ended first
+    /// (`Store::append_text`'s rule, P19). With nothing held, the file's bytes.
     pub fn log_now(&self) -> Result<Vec<u8>, CliError> {
         let mut bytes = Ctx::log_bytes(&self.store)?;
-        if let Some(held) = self.held.as_ref().filter(|h| !h.log.is_empty()) {
+        if let Some(lines) = self.held.as_ref().and_then(|h| h.mirror.text(LOG_PATH)).filter(|l| !l.is_empty()) {
             if !bytes.is_empty() && !bytes.ends_with(b"\n") {
                 bytes.push(b'\n');
             }
-            bytes.extend_from_slice(held.log.as_bytes());
+            bytes.extend_from_slice(lines.as_bytes());
         }
         Ok(bytes)
     }
 
-    /// **The plan directory as a request reads it** (the owner's D91): the store, or with an
-    /// automatic close held in memory a mirror of `config.toml` and every plan file with the held
-    /// documents laid over them — the documents `tm plan` reads after its own close, which created
-    /// a file it filed into and rewrote the ones it took from. One reader for every request built
-    /// from this context: the capacity and planner request, the walls request, and the in-memory
-    /// close's own.
+    /// **The plan directory as a request reads it** (the owner's D91 and D96): the store, or while
+    /// housekeeping is held in memory the plan directory as it would then stand — `config.toml` and
+    /// every plan file with every held write laid over the disk's, the documents `tm plan` reads after
+    /// its own housekeeping. One reader for every request built from this context: the capacity and
+    /// planner request, the walls request, the whole-tree question, and the in-memory close's own.
     pub fn reading(&self) -> Result<Reading<'_>, CliError> {
-        let Some(held) = &self.held else {
-            return Ok(Reading::Disk(&self.store));
-        };
+        match &self.held {
+            None => Ok(Reading::Disk(&self.store)),
+            Some(held) => Ok(Reading::Held(held.mirror.clone())),
+        }
+    }
+
+    /// **Where a housekeeping write goes** (the owner's D96): the plan directory, or — while this
+    /// context holds — the mirror of it the hold keeps. §5.1's timeouts write their lines and D61's
+    /// wall marks their journal lines through it ([`super::dayfile`]), so the TUI holding them runs
+    /// the one body `tm plan`'s housekeeping runs, and nothing reaches the disk.
+    pub fn writes(&self) -> &dyn Store {
+        match &self.held {
+            None => &self.store,
+            Some(held) => &held.mirror,
+        }
+    }
+
+    /// Whether this context holds its housekeeping in memory (the owner's D91 and D96).
+    pub fn holding(&self) -> bool {
+        self.held.is_some()
+    }
+
+    /// **Begin holding** (the owner's D96): every housekeeping write from here goes to memory —
+    /// [`Ctx::writes`], [`Ctx::append_line`] and [`Ctx::save_state`] answer into the hold — until
+    /// [`Ctx::release`]. The mirror begins as the plan directory on disk; what the context read is
+    /// kept, to be put back. Holding already, nothing changes.
+    pub fn hold_begin(&mut self) -> Result<(), CliError> {
+        if self.held.is_some() {
+            return Ok(());
+        }
         let mirror = store::MemStore::new();
         if self.store.exists(store::CONFIG_PATH) {
             mirror.insert(store::CONFIG_PATH, &self.store.read_text(store::CONFIG_PATH)?);
         }
+        let mut base = BTreeMap::new();
         for rel in self.store.list_files()? {
-            if !held.docs.contains_key(&rel) {
-                mirror.insert(&rel, &self.store.read_text(&rel)?);
-            }
+            let text = self.store.read_text(&rel)?;
+            mirror.insert(&rel, &text);
+            base.insert(rel, text);
         }
-        for (rel, text) in &held.docs {
-            mirror.insert(rel, text);
-        }
-        Ok(Reading::Held(mirror))
-    }
-
-    /// **Hold an automatic close in memory** (the owner's D91): its changed and created documents,
-    /// its log lines and its stamps (`closed`), in place of any close held before ([`Ctx::release`]
-    /// first); the files and the tree are read again from the plan directory as it would then stand
-    /// ([`Ctx::reading`], parsed by the one `read_tree`). The replay is the one this context read:
-    /// the lines a close logs — `demote`, `move`, `close` — feed none of the facts a candidate or the
-    /// planner's day reads, and replaying the held lines here could reseal `.tm/cache/replay`, a
-    /// write on a timer (README gap 4392).
-    pub fn hold(&mut self, docs: BTreeMap<String, String>, lines: &[String], closed: store::Closed) -> Result<(), CliError> {
-        self.release();
-        let log = lines.iter().map(|l| format!("{l}\n")).collect();
-        let stamps = std::mem::replace(&mut self.state.closed, closed);
-        self.held = Some(Held { docs, log, before: (stamps, self.files.clone(), self.tree.clone()) });
-        // A tree that cannot be read as held is not held: the context is put back as it was read.
-        let files = match self.reading().and_then(|r| Ok(r.store().read_tree()?)) {
-            Ok(files) => files,
-            Err(e) => {
-                self.release();
-                return Err(e);
-            }
-        };
-        self.tree = files.tree();
-        self.files = files;
+        self.held = Some(Held {
+            docs: BTreeMap::new(),
+            log: String::new(),
+            mirror,
+            base,
+            before: (self.state.clone(), self.files.clone(), self.tree.clone(), self.replay.clone()),
+        });
         Ok(())
     }
 
-    /// **The tree as this context read it from disk** while a close is held in memory (the owner's
+    /// **Hold an automatic close in memory** (the owner's D91): its changed and created documents, its
+    /// log lines and its stamps (`closed`), laid over what this context holds ([`Ctx::hold_begin`]);
+    /// then the files, the tree and the replay are read as the plan directory would then stand
+    /// ([`Ctx::settle`]). A tree that cannot be read as held is not held: the context is put back as
+    /// it was read.
+    pub fn hold(&mut self, docs: BTreeMap<String, String>, lines: &[String], closed: store::Closed) -> Result<(), CliError> {
+        self.hold_begin()?;
+        if let Some(held) = &self.held {
+            for (rel, text) in &docs {
+                held.mirror.insert(rel, text);
+            }
+            for l in lines {
+                held.mirror.append_text(LOG_PATH, &format!("{l}\n"))?;
+            }
+        }
+        self.state.closed = closed;
+        if let Err(e) = self.settle() {
+            self.release();
+            return Err(e);
+        }
+        Ok(())
+    }
+
+    /// **Read the context as the hold leaves it** (the owner's D96): `docs` and `log` off the mirror,
+    /// the files and the tree parsed from it by the one `read_tree`, and the replay of the log as
+    /// `tm plan` reads it after writing the held lines — **through a replay that writes nothing**
+    /// (`kernel_log::replay_unsealed`: the process's checkpoint, no reseal, the sealed records read and
+    /// never rebuilt), so the worked minutes, the candidates and the planner request read the held
+    /// lines (a wall's pause among them) as `tm plan`'s reload reads the written ones. This is
+    /// [`Ctx::reload`] while a context holds. Nothing held, nothing to do.
+    pub fn settle(&mut self) -> Result<(), CliError> {
+        let Some(held) = self.held.as_mut() else {
+            return Ok(());
+        };
+        let mut docs = BTreeMap::new();
+        for rel in held.mirror.list_files()? {
+            let text = held.mirror.read_text(&rel)?;
+            if held.base.get(&rel) != Some(&text) {
+                docs.insert(rel, text);
+            }
+        }
+        held.docs = docs;
+        held.log = held.mirror.text(LOG_PATH).unwrap_or_default();
+        let files = held.mirror.read_tree()?;
+        let bytes = self.log_now()?;
+        let tz = Ctx::tz_wire(&self.store, &self.cfg);
+        let read = kernel_log::replay_unsealed(self.store.root(), &bytes, self.cfg.tz, &tz, self.today, self.scope.to_kernel())
+            .map_err(genesis_error)?
+            .ok_or_else(|| {
+                CliError::msg(
+                    "the replay cache names a sealed month file that is missing or does not match its digest, and reading \
+                     the log as held would rebuild it — a write; the next verb rebuilds it",
+                )
+            })?;
+        self.tree = files.tree();
+        self.files = files;
+        self.replay = read.replay;
+        Ok(())
+    }
+
+    /// **The tree as this context read it from disk** while housekeeping is held in memory (the owner's
     /// D91) — `None` when nothing is held, when [`Ctx::tree`] is that tree. The TUI's editor opens an
-    /// item where it IS, and a file the held close changed is not that file on disk.
+    /// item where it IS, and a file a held write changed is not that file on disk.
     pub fn tree_as_read(&self) -> Option<&Tree> {
         self.held.as_ref().map(|h| &h.before.2)
     }
 
-    /// **Let go of a held close** (the owner's D91): the stamps, files and tree this context read
-    /// before it, and nothing held. A close the TUI holds is asked again from the plan directory as
-    /// it stands at every date change — ONE close, as `tm plan` runs one from the files it reads,
-    /// never a second stacked on the first, whose lines would carry the first midnight's stamps and
-    /// keys where `tm plan`'s one catch-up carries this one's.
+    /// **The files as this context read them from disk** while housekeeping is held in memory (the
+    /// owner's D96) — `None` when nothing is held, when [`Ctx::files`] are those files.
+    pub fn files_as_read(&self) -> Option<&PlanFiles> {
+        self.held.as_ref().map(|h| &h.before.1)
+    }
+
+    /// **Let go of everything held** (the owner's D91 and D96): the state, files, tree and replay this
+    /// context read before it, and nothing held. The TUI asks its housekeeping again from the plan
+    /// directory as it stands at every date change and reload — ONE catch-up, as `tm plan` runs one
+    /// from the files it reads, never a second stacked on the first, whose lines would carry the first
+    /// midnight's stamps and keys where `tm plan`'s one catch-up carries this one's.
     pub fn release(&mut self) {
-        if let Some(Held { before: (closed, files, tree), .. }) = self.held.take() {
-            self.state.closed = closed;
+        if let Some(Held { before: (state, files, tree, replay), .. }) = self.held.take() {
+            self.state = state;
             self.files = files;
             self.tree = tree;
+            self.replay = replay;
         }
     }
 
@@ -1611,15 +1711,22 @@ impl Ctx {
     /// rendered them, and a newline. The one appender of `.tm/log.jsonl`:
     /// [`Ctx::append_entry`] renders through it, and so do the lines the
     /// kernel decides itself (the walls' timer marks, README gap 3139).
+    /// While this context holds its housekeeping in memory (the owner's D96)
+    /// the line is held ([`Ctx::writes`]' mirror) and the log is not touched.
     pub fn append_line(&self, line: &str) -> Result<(), CliError> {
         let mut line = line.to_string();
         line.push('\n');
-        self.store.append_text(LOG_PATH, &line)?;
+        self.writes().append_text(LOG_PATH, &line)?;
         Ok(())
     }
 
-    /// Write `.tm/state.json` (§10.2).
+    /// Write `.tm/state.json` (§10.2). While this context holds its
+    /// housekeeping in memory (the owner's D96) nothing is written: the state
+    /// in memory IS the held one, and [`Ctx::release`] puts back the one read.
     pub fn save_state(&self) -> Result<(), CliError> {
+        if self.holding() {
+            return Ok(());
+        }
         self.store.save_state(&self.state)?;
         Ok(())
     }
@@ -1948,7 +2055,8 @@ impl Ctx {
             };
             let mut line = item.line().clone();
             recur::on_event_arrived(item).apply(&mut line)?;
-            self.store.write_line(&id, &line.to_string())?;
+            // Through `writes`: the plan directory, or held in memory past midnight (D96).
+            self.writes().write_line(&id, &line.to_string())?;
             self.append_event(Event::Edit {
                 id: id.to_string(),
                 field: "state".to_string(),

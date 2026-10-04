@@ -2065,10 +2065,10 @@ gives the day a Break row *inside* a Block row — neither of them the planner's
 took that clause for E1, W-17 took it for the wall law, and this is the third and last of the
 three block-side comparisons it reaches.
 
-Its refutation, PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted,
-stood on a break logged before `m1`'s start and lasting into it; the owner's D92 nets that
-break (P85), so the refutation FELL and was deleted at W-43, and the goal is BACK in
-`Goals.lean` (README gaps 4362 and 4366).  This law, over the Block rows from `now`, stands.
+Its refutation, `PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted`, fell
+at W-43 with the log it stood on (D92 netted it, P85) and stands again since W-44 on a world with one
+reading, a break logged after `m1`'s `done` (D94, P92; README gap 4362), the goal out of `Goals.lean`.
+This law, over the Block rows from `now`, stands beside it.
 
 **The restriction is E1's own** — Block rows that start at or after `now`, the fork's
 `assigned_set(day, w.now)` (`planner_invariants.rs:470`) — and `hnowcal` is the R10 hypothesis

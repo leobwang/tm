@@ -352,7 +352,7 @@ def resumedAnswerFast (K : Ckpt) (st : State) (hs : List (Nat × HeaderRec)) (en
    (mergedItemsFast K st).map ItemAgg.finish,
    windowsFrom st (horizonOf K.ledgerDay), instOtherOf st, namedOf st,
    (daysFrom st hs K.ledgerDay).map (OpenDay.finish st.machine),
-   st.machine.block.map (fun b => ⟨b.id, b.started, b.workedMin, b.since, b.paused⟩),
+   Replay.openOf st.machine,
    st.machine.interrupt.map (fun i => ⟨0, some i.1, none, i.2.1, i.2.2, 0, []⟩),
    maxOpt K.lastDay (Replay.maxDay? (st.days.pairs.map Prod.fst)),
    st.global.lastEffective, K.entryCount + entries, st.unknown, st.longestLeak, st.rwarns.reverse,
@@ -364,6 +364,14 @@ def resumedAnswerFast (K : Ckpt) (st : State) (hs : List (Nat × HeaderRec)) (en
   rw [← mergedItems_eq_mergedItemsFast]
   simp only [mergedItems, List.map_map]
   rfl
+
+/-- **The compiled resume reads its open block through `Replay.openOf`** (D94, README gap 4361): the twin the binary
+runs hands the planner the block the machine holds read past every break held ahead of its clock, as `Seal.answer` and
+`Replay.finish` do — stated of the twin itself, so the twin is told from a constant by more than the `@[csimp]` lemma's
+one proof (D40; the W-44 track K mutation of `resumedAnswerFast` read ALONE without it). -/
+theorem the_compiled_resume_reads_its_open_block_through_openOf (K : Ckpt) (st : State) (hs : List (Nat × HeaderRec))
+    (entries : Nat) (ws : List (Nat × Log.LWarn)) :
+    (resumedAnswerFast K st hs entries ws).openBlock = Replay.openOf st.machine := rfl
 
 /-! ## The day index, by bisection -/
 

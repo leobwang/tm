@@ -47,7 +47,11 @@ stamp="$out/.oracle-ref"
 seam="$here/plan-seam.patch"
 # D74's runs (parity P64, W-40 land): applied after the seam, behind an opt-in.
 runs="$here/p64-runs.patch"
-want="$(git -C "$repo" rev-parse "$fork") $(git hash-object "$seam") $(git hash-object "$runs")"
+# The worked seam (W-44 track C, README gap 4507): fork `active_run`'s own reading of the
+# running block's worked minutes, MOVED into a method the oracle's `worked` op calls --
+# the oracle used to re-type it.  Applied last; its header says what it moves.
+worked="$here/worked-seam.patch"
+want="$(git -C "$repo" rev-parse "$fork") $(git hash-object "$seam") $(git hash-object "$runs") $(git hash-object "$worked")"
 if [ ! -d "$out/tm-core" ] || [ ! -f "$stamp" ] || [ "$(cat "$stamp")" != "$want" ]; then
   echo "extracting $fork (${want%% *}) into $out" >&2
   rm -rf "$out/tm-core" "$out/tm" "$out/Cargo.toml" "$out/Cargo.lock"
@@ -57,8 +61,9 @@ if [ ! -d "$out/tm-core" ] || [ ! -f "$stamp" ] || [ "$(cat "$stamp")" != "$want
   # tree, where it would read the patch's paths from that repository's root.
   ( cd "$out" && export GIT_CEILING_DIRECTORIES="$(dirname "$out")" \
       && git apply --check "$seam" && git apply "$seam" \
-      && git apply --check "$runs" && git apply "$runs" ) || {
-    echo "build-oracle.sh: $seam or $runs does not apply to $fork -- the oracle's planner would not be the one it describes" >&2
+      && git apply --check "$runs" && git apply "$runs" \
+      && git apply --check "$worked" && git apply "$worked" ) || {
+    echo "build-oracle.sh: $seam, $runs or $worked does not apply to $fork -- the oracle's planner would not be the one it describes" >&2
     exit 1
   }
   printf '%s\n' "$want" > "$stamp"

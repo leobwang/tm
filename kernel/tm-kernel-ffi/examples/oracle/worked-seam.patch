@@ -1,0 +1,84 @@
+The worked seam `tm-oracle plan` applies AFTER `plan-seam.patch` and `p64-runs.patch`
+(stage 6 W-44 track C, README gap 4507).  `build-oracle.sh` applies it with `git apply`
+and FAILS the build when it does not apply, and the stamp carries its hash.
+
+The comparand moves the running estimate by what FORK 4748911 reads as the running
+block's worked minutes (parity P55 and P46 read that reading; README gap 4247), so the
+oracle answers it as the `worked` op.  Fork `active_run` reads it in its own body -- a
+private method of the private `Planner`, the reading held in a local -- so until W-44 the
+oracle's `worked_one` RE-TYPED its selection (the log's open block when it is the
+state's running item, else the clock since `started` on the planned date): a frozen
+comparand partly computed by code this repository owns, which is the shape the campaign
+names "a comparison that compares the kernel with itself" (README gap 4507).
+
+This graft makes the fork's OWN lines reachable, and changes none of them: the two
+statements `active_run` read the reading with are MOVED, character for character, into
+a method of `Planner` that `active_run` now calls, so the planner and the oracle run one
+body; and one public entry builds the fork's own `Planner` for a `PlanInput` and asks it.
+Nothing else in the fork is touched.  `planner_classes.rs`' check of this file holds
+the move to that property: every line the graft removes is a line it adds, in order.
+
+--- a/tm-core/src/planner.rs
++++ b/tm-core/src/planner.rs
+@@ -701,6 +701,14 @@
+     week_from_run(input, &run)
+ }
+ 
++/// GRAFT (tm-oracle `plan`'s `worked` op, stage 6 W-44 track C, README gap 4507): the
++/// running block's worked minutes as [`plan`] reads them for `input` — `Planner::active_worked`,
++/// the lines `active_run` runs — `None` when `input`'s state runs no block.
++pub fn active_worked(input: &PlanInput) -> Option<u32> {
++    let active = input.runtime.active.as_ref()?;
++    Some(Planner::new(input).active_worked(active).1)
++}
++
+ /// §9.1: the items the "x extend +1 block" option would drop.
+ ///
+ /// Runs [`plan`] twice — once as it stands, once with `blocks` extra blocks on
+@@ -1517,17 +1525,10 @@
+         {
+             return None;
+         }
+-        let started = capacity::local_dt(self.tz, self.date, active.started);
+-        // The log knows the worked minutes exactly (pauses excluded); the
+-        // clock is the fallback when it holds no open block.
+-        let worked = self
+-            .input
+-            .replay
+-            .open_block
+-            .as_ref()
+-            .filter(|b| b.id == active.id.as_str())
+-            .map(|b| b.worked_min_at(self.now.fixed_offset()))
+-            .unwrap_or_else(|| (self.now - started).num_minutes().max(0) as u32);
++        // GRAFT (tm-oracle `plan`'s `worked` op, stage 6 W-44 track C, README gap 4507): these
++        // lines are `Planner::active_worked` now, moved and not changed, so the oracle reads the
++        // running block's worked minutes through the code this function runs.
++        let (started, worked) = self.active_worked(active);
+         let left = active.est_min.saturating_sub(worked);
+         if left == 0 {
+             return None; // overtime: §9.1's prompt owns the day from here
+@@ -1566,6 +1567,24 @@
+         })
+     }
+ 
++    /// GRAFT (tm-oracle `plan`'s `worked` op, stage 6 W-44 track C, README gap 4507):
++    /// `active_run`'s reading of the running block's start and worked minutes — its own lines,
++    /// moved here unchanged, so [`active_worked`] reaches the reading `active_run` plans with.
++    fn active_worked(&self, active: &crate::store::ActiveBlock) -> (DateTime<Tz>, u32) {
++        let started = capacity::local_dt(self.tz, self.date, active.started);
++        // The log knows the worked minutes exactly (pauses excluded); the
++        // clock is the fallback when it holds no open block.
++        let worked = self
++            .input
++            .replay
++            .open_block
++            .as_ref()
++            .filter(|b| b.id == active.id.as_str())
++            .map(|b| b.worked_min_at(self.now.fixed_offset()))
++            .unwrap_or_else(|| (self.now - started).num_minutes().max(0) as u32);
++        (started, worked)
++    }
++
+     /// The end of the `block_min` block that started at `started` and is
+     /// still running at `now` — always strictly after `now`.
+     ///

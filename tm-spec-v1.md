@@ -859,6 +859,8 @@ tm tui
 
 `tm interrupt` while a break is running ends the break first — its `break` line logged as `tm break` logs its end, at the interruption's instant — and then begins the interruption, as `tm start` ends a running break before its block starts; no clock-stopping mark is logged inside a running break.
 
+A running break is ended by `tm break`, `tm start`, `tm stop`, `tm done`, `tm interrupt` or `tm resume`, and each writes the day file's journal line `break ended 10m/20m` at the break's end, before its own.
+
 ---
 
 ## 14. Claude Code integration

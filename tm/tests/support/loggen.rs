@@ -462,12 +462,12 @@ pub fn text(lines: &[String]) -> String {
     s
 }
 
-/// FNV-1a-64, the digest design §9.8 names for `prefixFnv`.
-pub fn fnv1a64(bytes: &[u8]) -> u64 {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for &b in bytes {
-        h ^= b as u64;
-        h = h.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    h
-}
+/// FNV-1a-64, the digest design §9.8 names for `prefixFnv` — the test harness's one definition,
+/// `support/fnv.rs` (README gap 4581, W-44 track C: until then this file held one of three copies).
+/// The `#[path]` is relative to THIS file, so every crate that includes `loggen.rs` reaches it.
+#[allow(dead_code)]
+#[path = "fnv.rs"]
+mod fnv;
+// A re-export under the name its callers know: unused in an includer that asks no digest.
+#[allow(unused_imports)]
+pub use fnv::fnv1a64;
