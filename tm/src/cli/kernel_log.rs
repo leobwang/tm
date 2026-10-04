@@ -834,12 +834,42 @@ pub struct ReplayCache {
     /// in the same process and for the same bytes, needs a checkpoint to derive day 0 from.
     /// This is it ([`capacity_log_section`]).
     pub last: Option<Snapshot>,
+    /// **The tail the kernel is known to resume a snapshot over** (W-45 track Q, README gap 4660): set by every
+    /// replay this process ran ([`ReplayCache::replay`]) and every tail [`capacity_log_section`] asked the kernel
+    /// about ([`resume_section_from`]), so a request section over the SAME bytes is never asked twice, and one over
+    /// bytes that grew since — a TUI reading a log another process appended to — is asked once before it is sent.
+    pub accepted: Option<Accepted>,
+    /// **The checkpoint a request section's refused tail was rebuilt to, in memory** (W-45 track Q, README gap
+    /// 4660) — [`capacity_log_section`]'s ONLY. It holds no sealed record (an unpersisted rebuild writes none), so a
+    /// section that reads sealed records ([`week_log_section`], [`replay_unsealed`]) never resumes it, and it is not
+    /// [`ReplayCache::last`], which they do; the next replay of this process supersedes it.
+    pub asked: Option<Snapshot>,
+}
+
+/// **A snapshot, the bytes after its prefix, and the request day the kernel resumed it over them at** (W-45 track
+/// Q, README gap 4660) — see [`ReplayCache::accepted`]. The prefix itself needs no digest here: a section is built
+/// only from a snapshot [`Snapshot::valid_for`] these bytes, which checks it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Accepted {
+    snapshot: (String, String, Meta, usize),
+    tail: u64,
+    day: u64,
+}
+
+/// The [`Accepted`] of `sn` over `bytes` at `day`.
+fn accepted_key(sn: &Snapshot, bytes: &[u8], day: u64) -> Accepted {
+    let from = (sn.prefix_bytes as usize).min(bytes.len());
+    Accepted {
+        snapshot: (sn.gen.clone(), sn.prefix_fnv.clone(), sn.meta.clone(), sn.ckpt.len()),
+        tail: fnv1a64(&bytes[from..]),
+        day,
+    }
 }
 
 impl ReplayCache {
     /// A cache in `dir` (`<root>/.tm/cache/replay`), or in memory only.
     pub fn new(dir: Option<PathBuf>) -> ReplayCache {
-        ReplayCache { writable: dir.is_some(), dir, memory: None, last: None }
+        ReplayCache { writable: dir.is_some(), dir, memory: None, last: None, accepted: None, asked: None }
     }
 
     fn ckpt_path(&self) -> Option<PathBuf> {
@@ -1003,6 +1033,11 @@ impl ReplayCache {
     ) -> Result<Replayed, GenesisError> {
         let r = self.replay_once(bytes, now_day, tz, max_line, want)?;
         self.last = Some(r.snapshot.clone());
+        // The snapshot this replay ended on resumes its own suffix of these bytes at this day: the kernel just did
+        // (a hot resume), or it sealed it over them, and a resealed checkpoint accepts its own unfolded suffix at
+        // every later day (`Seal.a_resealed_checkpoint_accepts_its_own_suffix`, law 7; genesis reseals every chunk).
+        self.accepted = (!r.snapshot.ckpt.is_empty()).then(|| accepted_key(&r.snapshot, bytes, now_day));
+        self.asked = None;
         Ok(r)
     }
 
@@ -1173,6 +1208,8 @@ impl ReplayCache {
         let s = split(bytes);
         let r = self.rebuild(&date_of(now_day), tz, &s, max_line, want, bytes, Some("a sealed month file is missing or does not match its digest".into()), false)?;
         self.last = Some(r.snapshot.clone());
+        self.accepted = (!r.snapshot.ckpt.is_empty()).then(|| accepted_key(&r.snapshot, bytes, now_day));
+        self.asked = None;
         Ok(r)
     }
 
@@ -2332,7 +2369,7 @@ pub fn replay_unsealed(
     scope: Scope,
 ) -> Result<Option<Read>, GenesisError> {
     let now_day = day_of(today);
-    let (section, snapshot) = resume_section_from(root, bytes, tz_wire, now_day, None)?;
+    let (section, snapshot) = resume_section_from(root, bytes, tz_wire, now_day, None, false)?;
     let answer = match log_call(&wrap_log(&date_of(now_day), tz_wire, &section)).map_err(GenesisError::Fault)? {
         Ok(a) => a,
         Err(r) => return Err(GenesisError::Refused(r)),
@@ -2741,8 +2778,11 @@ fn records_for(cache: &ReplayCache, r: &Replayed, scope: Scope) -> Option<(BTree
 /// cap — a log of more than [`RESEND_LINES`] lines, none of them older than [`KEEP_DAYS`], so
 /// that genesis sealed nothing to resume from. It is named, not guessed at (D18: the cap is never
 /// raised).
+///
+/// **It is never a section the kernel refuses** (W-45 track Q, README gap 4660): a tail the process has not seen
+/// the kernel resume is asked once, and a refused one is rebuilt in memory ([`resume_section_from`]).
 pub fn capacity_log_section(root: &Path, bytes: &[u8], tz: &Value, now_day: u64) -> Result<String, GenesisError> {
-    resume_log_section(root, bytes, tz, now_day, None)
+    resume_log_section(root, bytes, tz, now_day, None, true)
 }
 
 /// **The `log` section the week grid's cut asks with** (README gaps 3432 and 3528, W-39
@@ -2761,27 +2801,36 @@ pub fn week_log_section(
     from: u64,
     to: u64,
 ) -> Result<String, GenesisError> {
-    resume_log_section(root, bytes, tz, now_day, Some((from, to)))
+    resume_log_section(root, bytes, tz, now_day, Some((from, to)), false)
 }
 
-/// The two above: a resume (or genesis) section, with the sealed day records of `sealed`'s days.
+/// The two above: a resume (or genesis) section, with the sealed day records of `sealed`'s days; `ask` for
+/// [`capacity_log_section`]'s ask-once ([`resume_section_from`]).
 fn resume_log_section(
     root: &Path,
     bytes: &[u8],
     tz: &Value,
     now_day: u64,
     sealed: Option<(u64, u64)>,
+    ask: bool,
 ) -> Result<String, GenesisError> {
-    resume_section_from(root, bytes, tz, now_day, sealed).map(|(section, _)| section)
+    resume_section_from(root, bytes, tz, now_day, sealed, ask).map(|(section, _)| section)
 }
 
 /// [`resume_log_section`], and the snapshot it resumed from (`None` for genesis in one call).
+///
+/// **`ask`** (W-45 track Q, README gap 4660) — [`capacity_log_section`]'s, which reads no sealed record: a tail the
+/// process has not seen the kernel resume is asked once, and a refused one rebuilt in memory, kept in
+/// [`ReplayCache::asked`]. A section that reads sealed records is built as before, a refusal staying loud: the
+/// in-memory rebuild writes no month file, so it could serve such a section only without the records below its
+/// ledger day — a silent wrong answer where the refusal is a named one.
 fn resume_section_from(
     root: &Path,
     bytes: &[u8],
     tz: &Value,
     now_day: u64,
     sealed: Option<(u64, u64)>,
+    ask: bool,
 ) -> Result<(String, Option<Snapshot>), GenesisError> {
     let want = Want { facts: true, headers_from: None, render: vec![] };
     let s = split(bytes);
@@ -2793,9 +2842,10 @@ fn resume_section_from(
     // again (README gap 3711, the W-39 repair): D13's cache is derived and rebuildable, and a
     // missing month is not a bug in tm. Only a rebuild that still leaves one missing is a fault.
     let mut rebuilt = false;
-    while let Some(sn) = cache.last.clone().or_else(|| cache.read_snapshot()) {
+    let mut rebuilt_in_memory = false;
+    let usable = |sn: &Snapshot| {
         let cut = sn.meta.cut as usize;
-        if !sn.ckpt.is_empty()
+        !sn.ckpt.is_empty()
             && sn.valid_for(bytes, &tz_key).is_ok()
             // G4 refuses a resume whose `now` is below the checkpoint's ledger day (§9.3), which is
             // the very case §9.7 answers from an unpersisted genesis: do not resume into a refusal.
@@ -2803,7 +2853,47 @@ fn resume_section_from(
             && cut <= s.lines.len()
             && s.lines.len() - cut <= RESEND_LINES
             && s.bytes_between(cut, s.lines.len()) <= RESEND_BYTES
-        {
+    };
+    // A request's own in-memory rebuild first, while it is usable; then the process's last replay's, or the disk's.
+    while let Some(sn) = ask
+        .then(|| cache.asked.clone().filter(|sn| usable(sn)))
+        .flatten()
+        .or_else(|| cache.last.clone().or_else(|| cache.read_snapshot()))
+    {
+        let cut = sn.meta.cut as usize;
+        if usable(&sn) {
+            // **Never send a tail the kernel refuses** (W-45 track Q, README gap 4660). A snapshot resumes the
+            // tail it was last resumed over at that day, and — when it was resealed — its own unfolded suffix at
+            // every later day (law 7); a tail that GREW since is neither: a line that closes the stretch of a block
+            // begun on a day the snapshot sealed names a sealed day (G3, `sealedDay`), and the request would be
+            // refused whole, where the verb's own replay rebuilds (`ReplayCache::replay_once`). So a tail this
+            // process has not seen the kernel resume is asked once, without facts and without a reseal; a refusal
+            // is answered as the replay answers one — by genesis — but IN MEMORY (an unpersisted rebuild, §9.7's
+            // shape), because the callers here are requests, a TUI's on a timer among them, and nothing writes on a
+            // timer (D81).
+            let key = ask.then(|| accepted_key(&sn, bytes, now_day));
+            if let Some(key) = key.filter(|k| cache.accepted.as_ref() != Some(k)) {
+                let probe = Want { facts: false, headers_from: None, render: vec![] };
+                let section = log_section(Some(&sn.ckpt), cut as u64 + 1, &s.lines[cut..], s.terminated, None, &probe, None);
+                match log_call(&wrap_log(&date_of(now_day), tz, &section)).map_err(GenesisError::Fault)? {
+                    Ok(_) => cache.accepted = Some(key),
+                    Err(r @ Refusal::Fault(_)) => return Err(GenesisError::Refused(r)),
+                    Err(r) if rebuilt_in_memory => return Err(GenesisError::Refused(r)),
+                    Err(r) => {
+                        let (line, kind) = r.line_and_kind();
+                        let why = Some(format!("{kind} at line {line}, asked for a request"));
+                        let g = cache.rebuild(&date_of(now_day), tz, &s, None, &want, bytes, why, true)?;
+                        if g.snapshot.ckpt.is_empty() {
+                            // Nothing sealed: genesis in one call, below, answers every day of the log.
+                            break;
+                        }
+                        cache.accepted = Some(accepted_key(&g.snapshot, bytes, now_day));
+                        cache.asked = Some(g.snapshot);
+                        rebuilt_in_memory = true;
+                        continue;
+                    }
+                }
+            }
             let days: Vec<String> = match sealed {
                 Some((from, to)) if from < sn.meta.ledger_day => match cache.load_months(&sn, &months_between(from, to)) {
                     Some((d, _)) => d.into_iter().filter(|(k, _)| *k >= from && *k <= to).map(|(_, r)| r).collect(),

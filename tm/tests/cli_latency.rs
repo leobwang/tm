@@ -927,3 +927,124 @@ fn t18_the_planner_call_on_the_example_three_year_and_far_deadline_trees() {
         t18_row(&t14, AT, &format!("T14 tree, a due {years} years out ({days} lookahead days)"));
     }
 }
+
+// ---------------------------------------------------------------------------
+// T19 (stage 6 W-45 track Q; the owner's D103, README gap 4662): THE TICK.
+//
+// After R3 the TUI's minute tick replans through the kernel (D103, which
+// revises D38's reload-only fallback): one planner request, built from the
+// context the TUI's last reload read, and one call. T18 times the call `tm
+// check` makes; it never timed the BUILD, and it times one call in a fresh
+// process. This row times both halves of `kernel_capacity::planner_request`
+// INSIDE the binary — `TM_TRACE_PLANNER_BUILD=k` (`kernel_capacity::TRACE_BUILD_ENV`)
+// makes the request's one read (`kernel_capacity::tick_inputs`: the documents,
+// the log, `config.toml`, `.tm/model.json`, `tz.json`, `.tm/last_plan.json`)
+// be timed once and its build from that read (`kernel_capacity::planner_request_from`,
+// which reads nothing from disk) be timed `k` times, warm — and then asks the
+// kernel the request `k` times in-process, on a thread with the binary's
+// main-thread stack, as T18's what-if does. A tick that holds its reload's
+// read pays build + call; one that re-reads pays read + build + call.
+//
+// These are MEASUREMENTS: no band is set here and none is moved. The machine's
+// load average is printed beside each row (README gap 1333).
+
+/// `/proc/loadavg`'s first three fields, or `?` off Linux.
+fn load_average() -> String {
+    fs::read_to_string("/proc/loadavg")
+        .map(|s| s.split_whitespace().take(3).collect::<Vec<_>>().join(" "))
+        .unwrap_or_else(|_| "?".to_string())
+}
+
+/// `(best, median)` of some durations.
+fn best_median(xs: &[Duration]) -> (Duration, Duration) {
+    let mut v = xs.to_vec();
+    v.sort();
+    (v[0], v[v.len() / 2])
+}
+
+/// The builds `T19` asks for, and the in-process calls.
+const T19_K: usize = 7;
+
+/// One tree's T19 figures, printed under `label`.
+fn t19_row(tm: &Tm, now: &str, label: &str) {
+    let load_before = load_average();
+    let out = Command::new(env!("CARGO_BIN_EXE_tm"))
+        .arg("--dir")
+        .arg(&tm.plan)
+        .arg("--now")
+        .arg(now)
+        .arg("check")
+        .env("TM_TRACE_PLANNER_BUILD", T19_K.to_string())
+        .env(tm_kernel_ffi::TRACE_CALLS_ENV, "1")
+        .env(tm_kernel_ffi::TRACE_REQUESTS_ENV, "1")
+        .output()
+        .expect("spawn tm");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{label}: `tm check`: {err:.400}");
+    let traced: Vec<&str> = err.lines().filter_map(|l| l.strip_prefix("planner request: ")).collect();
+    assert_eq!(traced.len(), 1, "{label}: one planner request built, traced once: {traced:?}");
+    // `read <ns> ns; built <ns>,<ns>,… ns; <n> bytes`
+    let fields: Vec<&str> = traced[0].split("; ").collect();
+    let ns = |s: &str| Duration::from_nanos(s.trim_end_matches(" ns").parse().unwrap_or_else(|_| panic!("{label}: {s}")));
+    let read = ns(fields[0].strip_prefix("read ").expect("read"));
+    let builds: Vec<Duration> = fields[1].strip_prefix("built ").expect("built").trim_end_matches(" ns").split(',').map(ns).collect();
+    assert_eq!(builds.len(), T19_K, "{label}: {traced:?}");
+    let mut planners = err.lines().filter_map(|l| l.strip_prefix("kernel request: ")).filter(|r| r.contains("\"planner\":{"));
+    let request = planners.next().unwrap_or_else(|| panic!("{label}: `tm check` traced no planner request")).to_string();
+    assert!(planners.next().is_none(), "{label}: `tm check` traced two planner requests");
+    let bytes = request.len();
+    let calls: Vec<Duration> = std::thread::Builder::new()
+        .stack_size(8 << 20)
+        .spawn(move || {
+            (0..T19_K)
+                .map(|_| {
+                    let t = Instant::now();
+                    let resp = tm_kernel_ffi::call(&request).expect("the kernel answers");
+                    let took = t.elapsed();
+                    let v: serde_json::Value = serde_json::from_str(&resp).expect("the response parses");
+                    assert!(v["ok"]["plan"]["day"].is_string(), "the tick's day: {resp:.300}");
+                    took
+                })
+                .collect()
+        })
+        .expect("a thread")
+        .join()
+        .expect("the in-process kernel calls");
+    let (bb, bm) = best_median(&builds);
+    let (cb, cm) = best_median(&calls);
+    let ticks: Vec<Duration> = builds.iter().zip(&calls).map(|(b, c)| *b + *c).collect();
+    let (tb, tmed) = best_median(&ticks);
+    eprintln!(
+        "T19 {label}: the request {bytes} bytes; its read {read:?}; built best {bb:?} median {bm:?}; called best {cb:?} \
+         median {cm:?}; a tick from its reload's read (build + call) best {tb:?} median {tmed:?}; one that re-reads adds \
+         {read:?}; load {load_before} -> {}",
+        load_average()
+    );
+}
+
+/// **T19: the TUI's minute tick through the kernel** (the owner's D103, README gap 4662), on §4.3's example tree,
+/// T11's three-year tree and T14's two far-deadline trees — T18's trees, built the same way.
+#[test]
+fn t19_the_minute_tick_through_the_kernel_on_the_example_three_year_and_far_deadline_trees() {
+    let _serial = SERIAL.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    let ex = Tm::empty();
+    let out = ex.run_at(cli_common::NOW, &["init", "--example"]);
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    t19_row(&ex, cli_common::NOW, "example tree");
+
+    let t11 = history_tree();
+    let (lines, bytes) = write_log(&t11, 1_095);
+    let (code, out, _) = timed(&t11, &["drop", "^a1"], FIRST_VERB);
+    assert_eq!(code, 0, "{out}");
+    t19_row(&t11, AT, &format!("T11 tree (3y log: {lines} lines, {bytes} bytes)"));
+
+    let t14 = history_tree();
+    let (code, out, _) = timed(&t14, &["drop", "^a1"], FIRST_VERB);
+    assert_eq!(code, 0, "{out}");
+    let backlog = fs::read_to_string(t14.plan.join("backlog.md")).expect("backlog");
+    for (years, due, days) in [(3, "2029-09-14", 1097), (10, "2036-09-12", 3652)] {
+        write(&t14, "backlog.md", &format!("{backlog}- [ ] 3 2h A deadline {years} years out due:{due} ^far{years}\n"));
+        t19_row(&t14, AT, &format!("T14 tree, a due {years} years out ({days} lookahead days)"));
+    }
+}

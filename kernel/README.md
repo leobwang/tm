@@ -88749,3 +88749,377 @@ admits the re-draw on a non-empty reason, and the bless now refuses one that doe
   re-blessed with a dated reason (`bless2.log`), plant P8 (04:52).
 * 04:53-05:21 — the workspace, three runs, green (§9).
 * Then this block, `check.sh` on the final tree in the clone, the latency run, and the commit.
+
+<!-- =====================================================================
+     APPENDED 2026-10-04: stage 6 (the planner), run **W-45**, **TRACK Q**
+     — the request R3's switch sends (README gaps 3583 and 4046) and the
+     cost of the TUI's minute tick through the kernel under the owner's
+     D103.  Built in the worktree `.claude/worktrees/w45-q` (branch `w45-q`,
+     off `3d13f1e`); measurements, plants and clones in
+     `scratchpad/w45-q/`, never the shared tree; the main checkout on
+     `rebuild-on-lean` throughout.  Gaps 4660-4679.  The parity numbers
+     pre-allocated to this track (`P104`, `P105`) are NOT taken: no
+     divergence this step makes is one a standing decision licenses.
+     ===================================================================== -->
+
+## Stage 6 — W-45 track Q: the request the switch sends holds today whole, `tm resume`'s replan measured, and the tick's cost
+
+### 0. The brief, measured first
+
+* **HEAD `3d13f1e`, tree clean**, the main checkout on `rebuild-on-lean`; worktrees `stage5-lookahead` and, as the
+  run went on, this run's `w45-c`, `w45-d` and `w45-q`.  `check.sh` on this step's tree (a scratch clone, §7):
+  seventeen lines with the figures the brief gave — the axiom audit **6,344**, stage goals **1**, parity **P1-P99**,
+  check 12 **1,518 reachable, 1,099 exempt** — this step changing no Lean.
+* **Corrections, each measured:**
+  1. *Gap 3583's cost* — "a scoped tail that starts after today's first `arrive` plans from `now`" — never happens
+     on the section the binary sends: over 768 drawn tails (three runs of 256) today's record, the open block and
+     the open interruption are the whole log's, by value, on every tail the kernel ANSWERED (§1).  The one way the
+     section failed is one the brief did not name: the kernel REFUSED it (README gap 4660, §2).
+  2. *"…or carries the sealed day record"* — today's record is never SEALED in a section the binary sends: the host
+     resumes only a checkpoint whose ledger day is at or below today (`resume_section_from`), and the kernel's G4
+     refuses any other (`Seal.an_accepted_resume_covers_now`).  What a checkpoint carries of today is an OPEN day
+     (`Seal.Ckpt.openDays`) — drawn on 16 tails in each of the three runs, today's own lines folded into the checkpoint
+     (§1).
+  3. *Gap 4046's cost* — "NOT MEASURED: whether the kernel's past half … draws the resumed interruption differently
+     from the fork's on that one replan" — it does not: equal on 189 of 189 generated interrupted days (§3).
+  4. *"T17 and T18 exist"* — and T19 is free: no `T19` appears in the README, AGENTS.md or any test before this step.
+  5. *"The App already holds the tree and the replay"* — and the planner request R3 swaps in re-read every document,
+     the log, `config.toml`, `.tm/model.json`, `.tm/last_plan.json` and `tz.json` each time it was built (§4).
+
+### 1. Gap 3583 — CLOSED: the request the switch sends holds today's record whole, by a property of the scope
+
+**What the planner reads off the log.**  The planner request (`kernel_capacity::planner_request`, which R3 sends
+from `tm plan`, `tm now` and the TUI) carries ONE `log` section, `kernel_log::capacity_log_section`, and the kernel
+reads the log only through that section's run (D24's seam).  On the planner's path it reads exactly two things
+off it: **today's day record** — `Planner.PlanReq.todayRecord` (the logged arrival `PlanReq.loggedArrival`, the
+replayed past half `pastRows`, `PlanReq.blocksDone`, the starts and breaks `PlanReq.sinceBreak` and
+`dayRestDebtMin` read) and, for day 0's capacity, `Boundary`'s `dayRecordOn` (the wake `WakeSrc.resolve` reads, the
+night's minutes and the energy reports `todayFromLog` reads) — and **the open block**, `Seal.Answer.openBlock`
+(`PlanReq.activeWorked`, `openBlockRows`).  `Seal.Answer.openInterrupt` is read by no planner definition (a running
+interruption is `.tm/state.json`'s, `interruptRows`).
+
+**The property, and it is not a special case for `arrive`.**  The section is either genesis from line 1, or the
+process checkpoint and the tail since its cut, sent only when `now_day >= ledger_day` (`resume_section_from`); a
+checkpoint keeps every day at or above its ledger day as an OPEN day and its machine whole (`Seal.Ckpt.openDays`,
+`Seal.Ckpt.machine`); and an accepted resume answers as the whole log's replay on every query at or above its
+horizons — `Seal.resume_is_replay` (law 2 through the disk), `Seal.an_accepted_resume_covers_now` (`L ≤ T`),
+`Seal.the_answer_reads_the_replay` and `Seal.the_answer_reads_the_replays_scalar_facts` (law 1, the open block and
+interruption among them).  No line of the property names an event.  What a tail could cut, each drawn and counted
+(§1's census): the wake and the arrival (today's record), the day's breaks and starts (its segments), a block begun
+before the cut (the machine's), an interruption open across the cut (the machine's), and today's own lines written
+early by a clock ahead of the log (a folded open day).
+
+**The arm** — `tm/tests/kernel_request_today_whole.rs`,
+`the_planners_log_section_holds_today_whole_for_every_tail`: a log drawn over 3-11 days (wakes, one or two
+arrivals, blocks done or stopped, pauses, breaks with and without `actual_min`, energy reports, `plan` events, a block
+left open, an interruption left open or resumed later, today's arrival and energy logged early by a clock ahead), a
+history of loads that reseal the cache as verbs on those days would (`kernel_log::replay_scoped` at each load's own
+date, in the hot, the week's or the whole scope), then the binary's own section at today — after the planning
+verb's own load, or (the TUI's shape) from the checkpoint an earlier load left in the process — asked of the kernel
+beside the whole log from line 1.  Asserted by VALUE: today's 9-tuple of `facts.days`, `facts.open.block` and
+`facts.open.interrupt`; a resumed section's ledger day at or below today; a section with no checkpoint from line 1.
+**Census, three runs of 256 on the final code** (`arm-final1..3.log`, each green):
+
+| class | run 1 | run 2 | run 3 |
+|---|---:|---:|---:|
+| sections that resumed a checkpoint (of them, from an earlier load's — the TUI's shape) | 256 (135) | 255 (136) | 256 (128) |
+| today with a record — an arrival, a wake, a break, segments | 254 — 226, 208, 113, 170 | 256 — 232, 207, 130, 186 | 255 — 235, 214, 109, 167 |
+| an open block begun before the cut | 67 | 62 | 63 |
+| a pause and unpause of that block before the cut (a D61 wall mark's shape) | 32 | 23 | 27 |
+| an interruption open across the cut | 15 | 14 | 13 |
+| today's own lines folded INTO the checkpoint (today's wake among them) | 16 (15) | 16 (16) | 16 (14) |
+| sections the rule before §2 would have sent REFUSED | 15 | 16 | 15 |
+
+Value disagreements: **0** on every tail of the three runs.  Floors (each asserted at the run's last case): more
+than half the sections resumed, more than half the days held an arrival, and at least one tail of every class in
+the table.  The draw puts two shapes on purpose, a quarter and a fifth of the time — a stall a TUI holds across
+(§2's shape) and a block left open with a mark on its own day — because random draws reached them on 2-9 tails a
+run, and a floor met that rarely is a coin.
+
+### 2. Gap 4660 — FOUND AND CLOSED: a section the kernel refused
+
+The arm's first run (64 cases) failed after 18 by name: **the kernel REFUSED the section the binary's request
+carried** — `sealedDay` (G3).  Shrunk to five lines: `^b1x0` started on the 2nd with no energy report and never
+ended, energy reports on the 3rd and 4th, a load on the 5th after the wake (its genesis seals the 2nd: ledger day
+the 3rd), then `tm interrupt` at 15:00 — a line that closes the stretch begun on the sealed 2nd.  The checkpoint the
+load left, resumed over the log as it grew, names a sealed day; the verb's own replay answers that refusal by a
+rebuild (`ReplayCache::replay_once`), and `capacity_log_section` had no such path — so the WHOLE capacity request
+was refused.  Measured before the fix: 1 refused of the 513 tails of the arm's first draw; on its final draw the old rule's
+section is refused on 15, 16 and 15 tails of 256 (§1's census).
+
+**Who reaches it in the binary.**  Not a CLI verb's own request, by construction: a verb's request carries the
+bytes its own load just replayed — the replay resumed that tail or rebuilt on the refusal — and the verbs that ask
+for capacity after writing reload first (`Ctx::after_the_close`, `day::arrive`, `day::energy`; `tm resume` plans
+before its append).  The census draws the old rule's refusals on the TUI's shape only.  The TUI reaches it, by the
+same mechanism (NOT driven here): its re-collection at a date change or a wall's minute asks for capacity from the
+context its last reload read (`tui::recollect`), over the log as it then stands — a log another process grew before
+the watcher's reload is the shape — and after R3 so does a minute tick that re-reads the log (§4).
+
+**The fix** (`kernel_log::resume_section_from`, for `kernel_log::capacity_log_section` only): a snapshot is sent
+over a tail the process has seen the kernel resume — `ReplayCache::accepted`, set by every replay (a hot resume is
+that; a reseal accepts its own unfolded suffix at every later day, `Seal.a_resealed_checkpoint_accepts_its_own_suffix`,
+law 7; genesis reseals every chunk) — or the kernel is asked once, without facts and without a reseal; a refusal is
+answered as the replay answers one, by genesis, but IN MEMORY (`ReplayCache::rebuild`'s unpersisted path, §9.7's
+shape), kept in its own slot, `ReplayCache::asked`, because these callers are requests, a TUI's on a timer among
+them, and nothing writes on a timer (D81).  The witness:
+`a_tail_that_names_a_day_the_process_checkpoint_sealed_is_rebuilt_not_refused`.  Cost: one `log` call when the
+bytes grew since the process's last replay (P4 in §6: with no tail recorded, every capacity verb makes one call
+more — so as built, a CLI verb makes none), and a genesis on a refusal, as the verb's own replay pays.
+
+**Why only that section.**  The in-memory rebuild writes no month file, so it holds no sealed record.  The capacity
+and planner request's section reads none (`sealed: null`; the planner reads today and the open block, day 0 reads
+today), but the week grid's section (`kernel_log::week_log_section`) and the held replay of a TUI past midnight
+(`kernel_log::replay_unsealed`, D96) read the records below the ledger day — served from such a checkpoint they would
+answer without them, a SILENT wrong answer where the refusal is a named one.  So those two build exactly as before
+and a refused tail stays loud there ("week grid not refreshed", "the housekeeping could not be held") — README gap
+4666.  The first build of this fix kept the rebuild in `ReplayCache::last`, which those two also resume; that is the
+reason for the separate slot, and the reason it is written down.
+
+### 3. Gap 4046 — MEASURED: the swap moves nothing; what `tm resume`'s replan leaves undrawn is the owner's
+
+`tm resume` clears the interruption, plans, and only then appends its `resume` line, because that line records
+`dropped` and needs the plan first (fork 4748911's order).  Measured on every interrupted day `support/plangen.rs`
+draws (`probe4046.log`, 400 cases, 189 interrupted; the fork asked in-process, so the probe is not committed):
+
+| reading | equal |
+|---|---|
+| the kernel's rows over the interruption's span vs the fork's, BEFORE the append (`tm resume`'s replan) | 189 of 189 |
+| the same AFTER the append (every later replan) | 189 of 189 |
+| the future half (rows from `now`) before vs after the append — kernel; fork | 189 of 189; 189 of 189 |
+| the past half before vs after — kernel | 52 of 189: on all 137 days whose interruption began before `now`, after the append it holds exactly one row more — `lost` from the interruption's start to `now`, noted `interruption`, carrying what it interrupted |
+
+So **R3's swap of this replan moves nothing** (the kernel plans it as the fork does), and the plan `tm resume`
+WRITES — the day file's `tm:plan` block and its SVG, `.tm/last_plan.json`, the `plan` event's hash — holds a hole where the
+interruption was, until the next planning verb draws it lost, as fork 4748911's did.  Planning after the append
+would close the hole and move `tm resume`'s written bytes away from the fork's: a divergence no standing decision
+covers, so it is NOT taken — README gap 4661, the owner's.  Not an R3 blocker: R3 keeps the fork's order and the
+fork's day.  Pinned, so the switch's `tm resume` stays what it is (D21's instrument before the change):
+`tm/tests/cli_resume_replan.rs` — `the_plan_tm_resume_writes_leaves_the_interruption_it_resumes_undrawn` on the
+binary (the example tree, `^m1` from 09:00, interrupted 09:20, resumed 09:50: the written plan draws nothing over
+09:20-09:50; `tm plan` at the same instant draws `09:20-09:50 lost m1` and the same future), and
+`the_append_adds_exactly_the_interruptions_lost_row_to_the_past_half` over the generator's class, kernel only
+(`r4046-gen1.log`: 128 interrupted days, 100 whose interruption began before `now`, 95 of them with other rows in the
+past half beside it; floors: more than half began before `now`, one with rows beside it).
+
+### 4. D103's tick: T19, what the tick re-reads, and what the switch must call
+
+**The request's read and its build are two halves now** (`tm/src/cli/kernel_capacity.rs`): `kernel_capacity::tick_inputs`
+reads, once, every byte the planner request carries that a context does not hold in memory — `config.toml`'s and
+`.tm/model.json`'s literals, every document as `Ctx::reading` gives it, `tz.json` (`tz_table::wire_for`), the log as
+`Ctx::log_now` gives it, and the hysteresis input (`Ctx::hysteresis_input`, `.tm/last_plan.json` before the day's
+first plan) — and `kernel_capacity::planner_request_from` builds the request from them and the context alone;
+`planner_request` is the two in one call (byte for byte the request it built before: every test of the request is
+unchanged and green, and the scratch test asserted the halves equal the whole).  The capacity request's own read
+(`request_on`) is the same `Reads` (one reader of the directory for both).
+
+**What a tick re-reads, measured** (a scratch unit test over the example tree with `^m1` running, each file deleted
+in turn after the read — kept as `scratchpad/w45-q/zz-rereads-scratch.rs`, not committed because a unit test outside
+`tui::tests` that runs the kernel races `TM_KERNEL_FAULT_PROBE`, which only `tui::tests` serialises):
+
+| deleted after the read | `planner_request` (re-reads) | `planner_request_from` (the read held) |
+|---|---|---|
+| each of the eight documents | the request differs | the same, byte for byte |
+| `.tm/log.jsonl` | differs | the same |
+| `config.toml`, `.tm/last_plan.json`, `tz.json` | the same on this tree (read by code: `written_of`, `hysteresis_input`, `wire_for` — which WRITES `tz.json` back when it is absent) | the same |
+| `.tm/state.json`, `ckpt.json` | the same (not read: the context's state; the process checkpoint) | the same |
+| the whole plan root, renamed away | fails (`No such file or directory`) | the same, byte for byte |
+
+**So a tick need not re-read anything, and must not**: not for its cost (the read is 0.3 ms on the example tree and
+2-3 ms on the three-year trees, T19) but for one reading of one instant — a re-read mixes newer bytes with the
+reload's tree, replay and candidates (an item's `ci` edited before the watcher's reload would be D80's
+`ciDisagrees` refusal, P72 — by that rule, not driven here), and a log grown past the process checkpoint is gap
+4660's (answered by an in-memory genesis since §2, which a tick would then pay).  Fork 4748911's tick replanned from the App's own data and read no file.
+
+**T19** (`tm/tests/cli_latency.rs`, `t19_the_minute_tick_through_the_kernel_on_the_example_three_year_and_far_deadline_trees`;
+T18's trees built the same way): `tm check` with `TM_TRACE_PLANNER_BUILD=7` (`kernel_capacity::TRACE_BUILD_ENV`)
+times the request's one read and seven builds from it, in the binary, warm; the traced request is then asked of the
+kernel seven times in-process.  The debug binary, as every row of the file.  No band is set or moved.
+
+Two runs alone (`t19-1.log`, `t19-2.log`, load 8.7-9.0), best and median of seven:
+
+| tree | the request | its read | the build from it | the call | **a tick (build + call)** |
+|---|---:|---:|---:|---:|---:|
+| §4.3's example tree | 29,704 B | 0.27 / 0.26 ms | 0.47 / 0.48 ms (median 0.47 / 0.49) | 7.2 / 7.6 ms (median 7.4 / 7.7) | **7.7 / 8.1 ms** (median 7.9 / 8.2) |
+| T11's tree, three years of log (66,169 lines) | 507,076 B | 2.3 / 2.6 ms | 18.4 / 19.7 ms (median 18.6 / 20.6) | 67 / 69 ms (median 80 / 76) | **86 / 89 ms** (median 98 / 97) |
+| T14's tree, a due three years out | 266,490 B | 1.7 / 1.9 ms | 4.2 / 4.1 ms (median 4.4 / 4.1) | 92 / 95 ms (median 96 / 101) | **96 / 99 ms** (median 101 / 105) |
+| T14's tree, a due ten years out | 266,493 B | 1.7 / 1.9 ms | 4.1 / 4.1 ms (median 4.1 / 4.1) | 207 / 206 ms (median 213 / 220) | **211 / 211 ms** (median 217 / 224) |
+
+The call is T18's at these loads (T18 at the W-44 repair: 9.7 ms, 95.7 and 206.5 ms); the build adds half a
+millisecond on the example tree and 18-20 ms on the three-year log, most of it the log section's split and the
+prefix digest of 6.9 MB (gap 4664).  A tick once a minute at ~0.2 s worst on the ten-year deadline is D103's
+premise measured, not a band: the switch decides.
+
+**What the switch must call**: at every reload and re-collection (`tui::reload`, `tui::recollect`), after the read,
+`kernel_capacity::tick_inputs(&read)`, kept beside the context; at every minute tick, with the context's clock moved
+to the tick (`now`, `now_tz`, `today`, as `tui::advance` moves them, without its re-collection),
+`kernel_capacity::planner_request_from(&read, &inputs, false)`, then `kernel_bridge::call_text` and
+`planwire::read_plan`; at a date change or a wall's minute, re-collect (D84, D96) and read the inputs again.  `tm
+plan` and `tm now` keep `planner_request`.
+
+### 5. Gaps 4660-4668
+
+**Gap 4660 — CLOSED here for the request's section: a `log` section the kernel refuses (§2).**  1. *What.*
+`capacity_log_section` resumed the process checkpoint over the log as it stood, whatever had been appended since
+that checkpoint was last resumed, and the kernel's guards may refuse such a tail (G3, `sealedDay`, on a line closing
+a stretch the checkpoint sealed).  2. *Why it was open.*  The request path never had the replay's rebuild.  3.
+*Cost, until here.*  The whole capacity request refused (the TUI's "priorities not refreshed"); after R3, a planner
+request refused.  4. *Cleared* by `resume_section_from`'s ask-once and in-memory rebuild for that section; the arm
+and its witness fail without it (§6).  The two sections that read sealed records keep refusing, loudly: gap 4666.
+
+**Gap 4661 — `tm resume`'s written plan leaves the interruption it resumes undrawn (the owner's).**  1. *What.*  The
+replan `tm resume` writes (day file, `.tm/last_plan.json`, the `plan` event's hash) has no row over the interruption;
+every later replan draws it `lost` (§3).  2. *Why not changed.*  Planning after the append moves `tm resume`'s
+written bytes away from fork 4748911's — a divergence no standing decision licenses; the circularity (`dropped` needs
+the plan) is answerable by holding the line in memory while planning (D96's hold), at a cost of one more replay.
+3. *Cost.*  Until the next planning verb, the day file shows a hole where the interruption was, and that verb's
+`plan` event carries a changed hash.  4. *Clears it.*  The owner's word; the instrument flips when it is taken.
+
+**Gap 4662 — the switch wires the tick to the read it holds (the switch's).**  1. *What.*  §4's calls are not made:
+the TUI does not plan through the kernel until R3, and its tick should build from the reload's `TickInputs`.
+2. *Why not here.*  The swap is the switch's (`tm/src/tui/` is not this track's).  3. *Cost.*  A tick built with
+`planner_request` re-reads every document and the log each minute, mixing them with the reload's candidates (§4).
+4. *Clears it.*  The switch, with a test beside the tick in `tui::tests` (under its `kernel_env`) that a tick's
+request is `planner_request`'s at that instant and reads nothing from disk — the test this track could not commit.
+
+**Gap 4663 — an open block whose `start` carries no energy report does not hold the ledger day.**  1. *What.*
+`Seal.machineDays` reads an open block's pending observation (a `start` with `rep`), its last cut and an open
+interruption, not the block's own day: with `rep` a load three days on keeps the ledger day at the block's day (739860,
+2026-09-02); without it, the ledger day passes it (739861) — measured on the binary's code (`stall_*.jsonl`).  The
+first line that then closes the block's stretch names a sealed day.  2. *Why not changed.*  It is `Seal`'s ledger
+rule and every window law reads it (D5: a re-proof); nothing answers wrong — the kernel refuses (G3) and every
+reader rebuilds.  3. *Cost.*  A genesis on the first closing mark after such a stall (2.4 s on a three-year log, T11's first
+verb).  4. *Clears it.*  `machineDays` holding
+an open block's day (its `since`'s), with the window laws re-proved; or the owner's word that a start without a
+report is not a stall.
+
+**Gap 4664 — every section hashes the log's whole prefix.**  1. *What.*  `Snapshot::valid_for` digests the bytes up to
+the checkpoint's cut on every section, so the three-year tree's tick builds in 17 ms where the example tree's builds
+in 0.45 ms (T19), most of it the split and the digest of 6.9 MB.  2. *Why not changed.*  It is the cache's integrity
+check (G9), and a measurement, not a defect.  3. *Cost.*  Tens of milliseconds a tick on a long log.  4. *Clears it.*
+Skipping the digest for bytes the process already digested (`ReplayCache::accepted` holds the snapshot and the tail),
+if the switch's measurements ask for it.
+
+**Gap 4665 — the kernel-against-fork equality on `tm resume`'s replan is measured once and frozen nowhere.**  1.
+*What.*  §3's 189 of 189 is a scratch probe: a committed test naming the fork outside a `BEGIN THE FORK PLANNER`
+region would be one more thing R3's deletion must find, and the regions and the frozen fixtures are track C's.  No
+frozen comparand holds the state `tm resume` plans from (the interruption cleared in `.tm/state.json`, still open in
+the log).  2. *Why not here.*  Ownership (track C's files), and D72's frozen batches are drawn by the shared
+generator, which writes no resumed state.  3. *Cost.*  After R3 what holds this replan is the binary pin and the
+kernel arm of §3; a change that drew something else over that state where neither looks is unseen.  4. *Clears
+it.*  A frozen class of resumed days (D72's shape, the fork's answer by value), or the owner's word that the binary
+pin is enough.
+
+**Gap 4666 — the week grid's section and a held replay still refuse a grown tail, loudly.**  1. *What.*
+`kernel_log::week_log_section` and `kernel_log::replay_unsealed` resume the process checkpoint over the log as it
+stands without asking first (§2), so a tail grown past it by a line closing a stretch it sealed is refused: the TUI
+says "week grid not refreshed" or "the housekeeping could not be held" and plans from the files as they stand.
+2. *Why not changed.*  Both read sealed records, which an in-memory rebuild does not hold; serving them from one
+would drop the days below its ledger day silently.  3. *Cost.*  On that shape — the TUI only — D96's hold is dropped
+for the re-collection, and the week grid keeps its last cut; both say so.  4. *Clears it.*  An in-memory rebuild
+that keeps its records (`ReplayCache::memory`'s shape, with the generation rule it needs), or a rebuild the owner
+allows to write at a re-collection.
+
+**Gap 4667 — a process checkpoint from an unpersisted genesis carries no sealed record to the week section (found
+by reading, NOT driven).**  1. *What.*  When a load's `now` is below the stored checkpoint's ledger day (a clock
+behind the log), `ReplayCache::replay` answers from an unpersisted genesis and keeps its snapshot as
+`ReplayCache::last` with no generation and no manifest; `week_log_section` then reads that snapshot's months
+(`ReplayCache::load_months`, nothing named, nothing read) and `replay_unsealed` its records (`records_for`, empty
+for a snapshot with no generation), so either would answer the days below that ledger day with no record.
+2. *Why not changed.*  Pre-existing, outside this track's section, and not driven: the code reads so, and nothing
+here built the world.  3. *Cost.*  On a clock behind the log, possibly a week grid or a held replay missing its
+older days, silently.  4. *Clears it.*  A drive, then the unpersisted genesis's records kept beside its snapshot.
+
+**Gap 4668 — the three-year stall rows sit at the edge of `LATER_VERB` on a loaded machine (a measurement).**  1.
+*What.*  `a_verb_on_a_tree_with_three_years_of_log_takes_well_under_a_second`'s ten stalled days (each a `tm drop`,
+killed at `LATER_VERB`, one second) took 995 and 724 ms at worst with the BASELINE binary (`3d13f1e`'s, the main
+checkout's build) and 754 and 728 ms with this step's, run alternately at load 13-16 (`lat-3y-compare.log`); every
+other row of the test was the same on both within the noise.  At the 25-31 load of this run's four tracks one
+stalled day crossed the second — the first counted workspace run's one failure (`ws-aborted/wsF1.log`: "`tm drop
+^z15` was still running after 1s"), so that run was discarded and the three were run again.  2. *Why not changed.*
+A target this step cannot meet on a loaded machine is a measurement, never a band to raise (D18).  3. *Cost.*  A
+red workspace run that measures the machine, not the change in it.  4. *Clears it.*  The latency rows run with the
+machine to themselves, or the owner's word on the band.
+
+### 6. D40 and the plants — every changed definition broken in a clone, and what fails
+
+In `scratchpad/w45-q/clone2` (a `git clone --local` of this worktree with this step's diff committed there as a
+scratch base, never pushed), `plants.py`; each plant applied, the named suites run under a 16 GB cap, the edit
+reverted; `git status --porcelain` read before and after each (`plants.log`, `plants-p6.log`, `plants-p9-10.log`, and
+`plants-restructured.log`: P1-P4 and P11 again on the final shape of the fix, after §2's rebuild moved to its own
+slot).  A failing proptest leaves a `.proptest-regressions` file in the clone, which the next plants' porcelain lines
+show and which was deleted between sets (porcelain empty before and after P6's re-run, P9 and P10).
+
+| plant | what fails |
+|---|---|
+| P1 `resume_section_from`'s ask deleted — the rule before gap 4660 | the arm and its witness: "the request's section is REFUSED" |
+| P2 `accepted_key` constant (every tail taken as accepted) | the arm and the witness, the same way |
+| P3 a refused ask returned instead of rebuilt | the arm and the witness |
+| P4 `ReplayCache::replay` records no accepted tail | `kernel_call_counts`, 2 of 2: every capacity verb makes one more kernel call — so a CLI verb asks nothing extra |
+| P11 `capacity_log_section` built without the ask (as the two sections of gap 4666 are) | the arm and the witness |
+| P5 `request_with` sends no documents | `cli_check_planner` |
+| P6 `tick_inputs` reads no hysteresis input | GREEN on `planner_request_keys`, `planner_w41_request`, `priority_rules`, `cli_plan` — pinned by nothing; `tm/tests/cli_tick_request.rs` written, and it FAILS |
+| P7 the T19 instrument builds once | T19 |
+| P8 `tm resume` plans after its own line | `the_plan_tm_resume_writes_leaves_the_interruption_it_resumes_undrawn` (the generated kernel arm and `cli_resume_keeps_a_pause` stay green, as they should: neither reads the verb's order) |
+| P9 `reads` constant-folded (nothing read) | `cli_check_planner`, 2 of 2 |
+| P10 `planner_request_from` constant-folded | `cli_check_planner`, 2 of 2 |
+
+No Lean definition changed, so check 9 owes nothing (§7).
+
+### 7. Acceptance, capped (`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`; 16 GB for the arms, the plants and the latency runs)
+
+* **`check.sh`, seventeen lines, all ok, exit 0**, in `scratchpad/w45-q/clone` synced to this commit's tree
+  (`check4.log`, on this README; `check3.log` before its last figures; 31 s each): the build; totality; the axiom
+  audit **6,344** (Classical.choice 3,337, Quot.sound 4,875, propext 5,929; 412 on none); `Negative.lean` rejected;
+  FFI **95**; the corpus **29/37 files and 4/5 plans**; stage goals **1**; prose citations **59,646** (57,214
+  resolved, 2,432 allowed, 0 allow entries unused); check 9 **734 rostered, 0 owed** (no Lean changed); parity **P1-P99, next free P100**;
+  check 11 **3,402 bodies, 0 UNANSWERED**; check 12 **1,518 reachable, 1,099 exempt, 0 UNANSWERED**; check 13 fields
+  17/17, inputs 33 of 37, sent 169, written 220, 0 UNANSWERED; check 14 **94 modules**.  The first two runs on this
+  block's drafts failed check 8 and check 10 on its own spellings (a scratch file's name, the unused parity numbers,
+  a module of the next commit named early) and were re-spelled (`check1.log`, `check2.log`).
+* **`cargo test --workspace --no-fail-fast`, THREE runs on the code of this commit** (`wsF1..3.log`; the porcelain,
+  the untracked files' digests and the code's diff recorded at each start and end — equal in all three, the README
+  excepted in the first, whose edits this block made during it and which no test reads; loads 8.2-19.7): **each 151
+  result lines, 2,800 passed, 0 failed, 36 ignored**, no compiler warning, no `.proptest-regressions` file left.
+  Against the W-44 repair's 2,768 over 148: `kernel_request_today_whole` 15 (the 13 unit tests `kernel_log.rs`
+  carries in through `#[path]`, the arm and its witness), `cli_resume_replan` 15 (13 through `support/replay.rs`, the
+  binary pin and the kernel arm), `cli_tick_request` 1, `cli_latency` +1 (T19) = 2,800.  Two earlier sets were
+  discarded, by name: the first ran the first shape of §2's fix (§8), and the second's first run failed one latency
+  row on a loaded machine (gap 4668).
+* **The named suites** (run 1; runs 2 and 3 the same): T5 `kernel_replay_parity` 48 (4 ignored), the door
+  `kernel_log_door` 42, `cli_switch_acceptance` 16, `cli_latency` 7 (1 ignored), `kernel_call_counts` 2, `one_padder`
+  9, `one_renderer` 34, `kernel_row_cells` 35, `kernel_item_grammar` 6, `kernel_planner_wire` 27, `planner_classes` 71
+  (6 ignored), `planner_invariants` 47 (2 ignored), `cli_conformance` 7, `cli_json_matrix` 8; this step's
+  `kernel_request_today_whole` 15, `cli_resume_replan` 15, `cli_tick_request` 1; FFI 95 and the corpus in `check.sh`.
+* **The arm**, three more runs with `--nocapture` on the final code (`arm-final1..3.log`, §1's table), and the
+  gap-4046 arm once (`r4046-gen1.log`, §3).
+* **T19**, two runs alone after the workspace runs (`t19-1.log`, `t19-2.log`, load 8.7-9.0, §4).
+
+### 8. Status note (kept current while the step ran)
+
+* 09:28 — HEAD `3d13f1e`, tree clean; worktree `w45-q` made; `.lake` copied from the main checkout (built at
+  `6afdb1b`, whose Lean `3d13f1e` keeps) — `lake build TmKernel:static` a no-op.  09:41 the workspace's test build
+  started in the worktree (`build0.log`).
+* 10:05 — the gap-3583 arm (`tm/tests/kernel_request_today_whole.rs`) drawn: on its first run the kernel REFUSED the
+  section the binary's request carries (`sealedDay`, G3), shrunk to five lines — README gap 4660, a stale process
+  checkpoint and a log grown past it by a line closing a stretch the checkpoint sealed.  Fixed in
+  `kernel_log::resume_section_from` (a tail the process has not seen resumed is asked once, refused → rebuilt in
+  memory); the arm green three runs, its census floors reached (`arm*.log`).
+* 10:10-10:20 — gap 4046 measured in a scratch probe (`probe4046.log`, the fork in-process, kept as `scratchpad/w45-q/zz-probe-4046.rs`, not committed) and pinned
+  kernel-only and on the binary (`tm/tests/cli_resume_replan.rs`); the planner request split into its read and its
+  build (`kernel_capacity::tick_inputs`, `planner_request_from`), what the build re-reads measured
+  (a scratch test, kept as `scratchpad/w45-q/zz-rereads-scratch.rs` and removed from the tree), T19 written (`cli_latency.rs`); the stall shape behind gap 4660 measured
+  (`stall_*.jsonl`: an open block's day holds the ledger day only with a pending observation — gap 4663).
+* 10:21-10:45 — `check.sh` in `scratchpad/w45-q/clone` (`check1.log`: sixteen ok, check 8 and check 10 failed on this
+  block's own first spellings — a scratch file's name and the unused parity numbers — both re-spelled); the plants
+  in `clone2` (`plants*.log`); a smoke workspace run (`ws1.log`: 2,799 passed, 0 failed, 36 ignored over 150); the
+  arm's draw widened to every class the brief names, its floors set.
+* 10:50 — the in-memory rebuild found to be unsafe for the two sections that read sealed records (it holds none):
+  confined to `capacity_log_section` and moved to `ReplayCache::asked` (§2, gaps 4666 and 4667); the counted
+  workspace runs stopped and restarted on that code; P1-P4 and P11 re-planted on it (`plants-restructured.log`).
+* 11:02-11:05 — the first counted run failed one latency row under load 25-31 (gap 4668); the baseline binary and
+  this step's measured side by side on that row (`lat-3y-compare.log`): the same; the three counted runs restarted.
+  The theorem form of §1's property built and audited in a third clone (`clone3`: a new module of two theorems,
+  both on `propext`, `Classical.choice` and `Quot.sound` only), to land in a commit of its own after this one.
+* 11:05-11:39 — the three counted workspace runs green (§7); 11:40 the arm's census ×3 and T19 ×2 on the final code;
+  11:42-11:45 `check.sh` on the final tree (`check3.log` seventeen ok after the module mention was re-spelled).
+* Then this block's figures, `check.sh` once more on the final README (`check4.log`), and the commit.
