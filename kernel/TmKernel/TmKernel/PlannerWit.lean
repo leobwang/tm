@@ -12950,5 +12950,39 @@ theorem the_open_row_is_read_past_a_break_held_ahead_of_its_clock :
     PlanCheck.noBlockOverAWall theOpenBreakRequest (dayPlan theOpenBreakRequest) = false := by
   decide
 
+/-! ### W-45 track D (README gap 4623): a block running past bed ties its Sleep row, in the fork's order -/
+
+/-- §9's `state.active` of `m1` started at 22:00 with a three-hour estimate, timer running. -/
+def theLateRunningBlock : ActiveBlock :=
+  ⟨['m','1'], ⟨(Cal.instantOf Cal.chicago 739867 1320).sec, 0⟩, 180, false⟩
+
+/-- **The §4.3 Wednesday planned at 23:30 with that block running**: its reservation runs to midnight — the end of the
+`block_min` block it is in, and of the day — and so does the Sleep row, from `max bed now` to the day's end. -/
+def theLateRunningRequest : PlanReq :=
+  { theRunningRequest with
+    look := { theRunningRequest.look with
+      today0 := { theRunningRequest.look.today0 with now := ⟨(Cal.instantOf Cal.chicago 739867 1410).sec, 0⟩ } }
+    state := { RuntimeIn.empty with active := some theLateRunningBlock } }
+
+set_option maxRecDepth 400000 in
+/-- **The reservation precedes the Sleep row it ties with** — fork `emit_segments` pushes the running block's reservation
+before the evening, and the stable sort keeps two rows of one start and one end in push order (`Planner.dayRows`,
+`Planner.the_reservation_precedes_the_evening_in_the_list`).  Until W-45 the kernel drew the Sleep row first, so `tm plan`,
+`tm now` and the TUI would have shown `23:30 · sleep` above `23:30 ▶` the running block, the fork's day the other way
+round, and the day's hash with them (README gap 4623, found by driving the swapped binary's TUI across midnight). -/
+theorem the_running_block_precedes_the_sleep_it_ties_with :
+    (dayPlan theLateRunningRequest).segments.map (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.item))
+      = [((Cal.instantOf Cal.chicago 739867 425).sec, (Cal.instantOf Cal.chicago 739867 485).sec,
+          SegKind.block, some (['m','1'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 545).sec, (Cal.instantOf Cal.chicago 739867 605).sec,
+          SegKind.block, some (['m','2'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 770).sec, (Cal.instantOf Cal.chicago 739867 830).sec,
+          SegKind.wall, some (['g','1'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 1410).sec, (Cal.instantOf Cal.chicago 739868 0).sec,
+          SegKind.block, some (['m','1'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 1410).sec, (Cal.instantOf Cal.chicago 739868 0).sec,
+          SegKind.sleep, none)] := by
+  decide
+
 end PlannerWit
 end Tm

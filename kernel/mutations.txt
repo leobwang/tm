@@ -206,7 +206,7 @@ d6f25f44caff TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.witOptionalCands de
 4a09f29f70af TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theOptionalRequest unfoldable no Inhabited PlanReq
 e579eb40790c TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theHighRestRequest unfoldable no Inhabited PlanReq
 d98fc77be0ed TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theSpentBudgetRequest unfoldable no Inhabited PlanReq
-431838100143 TmKernel/TmKernel/Planner.lean Tm.Planner.dayRows default,[] Planner.lean:6549 mem_dayRows also Planner.lean:6557 mem_dayRows_of_mem; Planner.lean:6549 mem_dayRows also Planner.lean:6557 mem_dayRows_of_mem
+a7191a74d691 TmKernel/TmKernel/Planner.lean Tm.Planner.dayRows default,[] Planner.lean:6549 mem_dayRows also Planner.lean:6557 mem_dayRows_of_mem; Planner.lean:6549 mem_dayRows also Planner.lean:6557 mem_dayRows_of_mem
 6aa13f6e86ed TmKernel/TmKernel/Planner.lean Tm.Planner.dayDiagnostics unfoldable,Tm.Planner.Diagnostics.empty no Inhabited Diagnostics; Planner.lean:7203 dayDiagnostics_impossible also Planner.lean:7206 dayDiagnostics_hot
 daaa2458af08 TmKernel/TmKernel/Planner.lean Tm.Planner.dayAssigned default Planner.lean:5911
 4a9c27a3e4bb TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.rePlaceWalk unfoldable,funa0_=>a0 no Inhabited (Assign → List ((Fin 6 × Look.Slot) × Nat) → Assign); Planner.lean:5214
@@ -795,7 +795,7 @@ e12e806d2284 TmKernel/TmKernel/PlanOnce.lean Tm.Planner.walkDefer unfoldable,fun
 c23507944508 TmKernel/TmKernel/PlanOnce.lean Tm.Planner.assignStepAt unfoldable,a,⟨[],[],0⟩ no Inhabited Assign; PlanOnce.lean:143 assignStepAt_eq also PlanOnce.lean:213 Memo.of_eq; PlanOnce.lean:143 assignStepAt_eq also PlanOnce.lean:213 Memo.of_eq
 40d219a54a32 TmKernel/TmKernel/PlanOnce.lean Tm.Planner.Memo.of unfoldable no Inhabited Memo
 19c13f8f3ddc TmKernel/TmKernel/PlanOnce.lean Tm.Planner.deferOneAt unfoldable,(q,a),(⟨⟨[],none,0,0,0,true⟩,(0,0),none,true⟩,⟨[],[],0⟩) no Inhabited (Placed × Assign); PlanOnce.lean:278 deferOneAt_eq also PlanOnce.lean:294 deferOneAt_takes_the_lowest_free; PlanOnce.lean:278 deferOneAt_eq also PlanOnce.lean:294 deferOneAt_takes_the_lowest_free
-0e93c7c21099 TmKernel/TmKernel/PlanOnce.lean Tm.Planner.dayPlanFrom unfoldable no Inhabited DayPlan
+5abf99218e02 TmKernel/TmKernel/PlanOnce.lean Tm.Planner.dayPlanFrom unfoldable no Inhabited DayPlan
 8974dcc2507f TmKernel/TmKernel/PlanOnce.lean Tm.Planner.dayPlanOnce unfoldable no Inhabited DayPlan
 981bb45c3008 TmKernel/TmKernel/Replay.lean Tm.Replay.brkEnd unfoldable,(⟨0,0⟩,⟨true,0⟩) no Inhabited At; Replay.lean:7981 a_break_lasts_its_actual_minutes_else_its_planned (its statement, decided false)
 15c9fc649ce5 TmKernel/TmKernel/Replay.lean Tm.Replay.brkFx default,[] Replay.lean:3148 brkFx_cases also Replay.lean:3170 brkFx_cases_on_the_blocks_days; Replay.lean:3148 brkFx_cases also Replay.lean:3170 brkFx_cases_on_the_blocks_days
@@ -878,3 +878,5 @@ c17a4cde2d60 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.aheadBreakLines def
 e271ada29a2f TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theAheadBreakRequest unfoldable no Inhabited PlanReq
 c9ace3597133 TmKernel/TmKernel/Replay.lean Tm.Replay.SeamOp.apply unfoldable,a,Tm.Replay.SeamAcc.empty no Inhabited SeamAcc; Replay.lean:6844 seamOp_lastT also Replay.lean:8080 a_days_seam_holds_its_break_its_marks_and_its_latest_stamp; Replay.lean:6844 seamOp_lastT also Replay.lean:8080 a_days_seam_holds_its_break_its_marks_and_its_latest_stamp
 f9e0a10877f6 TmKernel/TmKernel/Replay.lean Tm.Replay.seamKindOf unfoldable no Inhabited (Event → SeamKind)
+1375d3668c69 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theLateRunningBlock unfoldable,⟨[],⟨0,0⟩,0,true⟩ no Inhabited ActiveBlock; PlannerWit.lean:12985 the_running_block_precedes_the_sleep_it_ties_with (its statement, decided false)
+caecd2d8afe5 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theLateRunningRequest unfoldable no Inhabited PlanReq
