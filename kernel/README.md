@@ -88749,3 +88749,519 @@ admits the re-draw on a non-empty reason, and the bless now refuses one that doe
   re-blessed with a dated reason (`bless2.log`), plant P8 (04:52).
 * 04:53-05:21 — the workspace, three runs, green (§9).
 * Then this block, `check.sh` on the final tree in the clone, the latency run, and the commit.
+
+<!-- =====================================================================
+     APPENDED 2026-10-04: stage 6 (the planner), run **W-45** (R3), **TRACK C**
+     — the fork regions hold nothing that must outlive R3, every frozen
+     comparand stays re-blessable through `tm-oracle plan` after the
+     deletion, the region gates green on both sides of it, and the switch's
+     checklist.  Rust tests, the oracle and fixtures only; no `.lean` file,
+     nothing under `tm/src` or `tm-core/src`.  Worktree
+     `.claude/worktrees/w45-c`, branch `w45-c` off `3d13f1e`.  Gap range
+     **4680-4699**.  Parity: none issued (track C issues none).
+     ===================================================================== -->
+
+## Stage 6 — W-45 track C: nothing in a fork region outlives R3, every frozen comparand re-blessable through the oracle, the region gates on both sides of the deletion
+
+**Status (kept current as the step runs; a cut at any point is recoverable from this note and
+`scratchpad/w45-c/`).**
+
+* 09:29 — worktree `w45-c` off `3d13f1e`, clean; `.lake` copied from the main checkout (`lake build` a no-op).
+* 09:30-09:50 — the inventory: 22 regions, 6,002 lines (`scratchpad/w45-c/regions.py`, `reach.py`, `asserts.py`,
+  `blesses.py`); 09:39 the oracle built fresh into `scratchpad/w45-c/oracle` (17 s; stamp `4748911555… 2fa866bb…
+  41561bf9… 037dc302…`).
+* 09:40-09:59 — every bless out of its region and onto `tm-oracle plan`, and a new one for `emit_planner.rs`' three
+  renderings; each dry-run through the fresh oracle into `scratchpad/w45-c/bless/` and `cmp`-ed with its committed
+  file: **byte-identical, all eight files and three snapshots** (§2).
+* 09:59-10:12 — the kernel-only halves out of the regions (§3); the two gates restated and `no_second_planner.rs`
+  (§4); the changed suites green one at a time (`scratchpad/w45-c/runs/`).
+* 10:14-10:30 — every planner, grid and rendering `TM_ORACLE` arm over the fresh oracle, one at a time, green
+  (`scratchpad/w45-c/oracle-arms/`, §8); the gates in the clone before and after the simulated deletion.
+* 10:32-10:42 — the whole workspace on the simulated deletion (§5, configuration A): only the swap class fails.
+* 10:36-10:43 — a grouped or renamed import named the fork by no needle: the `use` rule, in both scans and the guard
+  (§4), green in the worktree.
+* 10:43-10:46 — the simulations on the final patch (§5: A′, the 22 bends, C, B); 10:44-10:52 the 21 plants (§9).
+* 10:52 — `check.sh` on the final tree in `scratchpad/w45-c/vclone`: seventeen ok, 40.7 s (§8).
+* 10:55-11:28 — the workspace three times on the final tree, green (§8); beside them, in `scratchpad/w45-c/pclone`, gap
+  4321's re-draw measured and built for this step's second commit (§12 there).
+* Then this block's §8, `check.sh` again on the tree committed, and the commit.
+
+### 0. The brief, measured before it was acted on
+
+* **HEAD `3d13f1e`**, tree clean; worktrees `stage5-lookahead` and (from 09:29) this run's three tracks.
+* **22 regions, 6,002 lines** — the brief's figure, re-measured (`regions.py`): 95 `#[test]` functions inside them.
+* **"Gap 4491's one-reading assertion in `planner_invariants`" is not in a region any more**: the W-43 repair closed gap
+  4491 (README "W-43 repair" §6) — `the_host_and_the_replay_read_a_logged_break_one_way` holds the host's reading and
+  the replay's to one number OUTSIDE every region. Read assertion by assertion (`asserts.py`, every assert and prop_assert
+  of every region, 164 in `planner_invariants`' alone), the D87 arm left in the region compares the comparand and
+  nothing else but the kernel's acceptance of its world (§3 takes that half).
+* **"Gap 4463's six in-region blesses" are SEVEN by the gate's own shape, and the class is EIGHT writers** (`blesses.py`):
+  the six gap 4463 names, the class worlds' re-draw (`the_frozen_class_worlds_are_redrawn`, which reaches no fork at
+  all), and `emit_planner.rs`' three region `insta` assertions, the only writers of three snapshots the surviving kernel
+  arm reads as "the fork's frozen rendering" — a LIST where the rule is a CLASS (lesson 2).
+* **The swap class (30, gap 4618) is the switch's** and is not re-measured here beyond the simulation of §5.
+
+### 1. The inventory — what each region held, and what it holds now
+
+Every top-level item and every `#[test]` of every region read for whether it reaches the fork's planner, directly or
+through an item of its region or another file's (`reach.py`; the property `forkday::region_tests_unreached` states it
+since §4). Before: 22 regions, 6,002 lines, 95 tests. **After: 21 regions, 4,982 lines, 86 tests, every one of them
+fork code.**
+
+| region | before → after (lines; tests) | what it held that was not fork code, and where it went |
+|---|---|---|
+| `planner_classes.rs` | 679 → 142; 9 → 5 | four blesses (plan-basic, batch, driven, the class re-draw) → outside, on `tm-oracle plan` (§2); `basic_instants`, bless_because (a second name of `forkclass::because_of`, deleted); P45's witness split, its oracle twin outside |
+| `planner_fixtures.rs` | 94 → 53; 5 → 4 | the fixture days' bless → outside, on the oracle (§2) |
+| `planner_w39_conference.rs` | 65 → 31; 2 → 1 | the conference bless → outside, on the oracle (§2) |
+| `planner_p56_cut.rs` | 192 → 115; 4 → 3 | the P56 bless → outside, on the oracle, `cut` carried by value (§2); `grants`, `shipped_ask` with it |
+| `planner_w40_runs.rs` | 248 → 78; 5 → 3 | P64's precondition (`a_key_reappears`, `p64_precondition`), its bite test and the census → outside, the census on the oracle (§3) |
+| `planner_w38_order.rs` | 155 → 130; 3 → 3 | the kernel's rows and windows on the three tests' 22 days → three kernel-only tests outside (§3); `rows_at` |
+| `planner_invariants.rs` | 3,648 → 3,524; 19 → 19 | `kernel_prios` (a decoder of the kernel's grants) → outside, with the reversed day's two preconditions (§3) |
+| `support/forkclass.rs` | 12 → none | `is_p51` (the kernel's grants' order, no fork) → outside; the region held nothing else and is gone |
+| the other 14 | unchanged | fork code only: `emit_planner` 30/4, `kernel_separator_worlds` 32/1, `kernel_unplaced_banner` 42/2, `planner_common` 32/0, `planner_dynamics` 213/11, `planner_p85_days` 13/1, `planner_regressions` 107/20, `planner_separator_days` 34/2, `planner_w37_rows` 101/1, `planner_w39_arrival` 41/1, `planner_w41_starts` 38/2, `priority_plan_basic` 13/2, `support/forkplan` 133/0 (the in-tree backend, InTree), `tui_kernel_answers` 80/1 |
+
+**What every region holds now, by class** (each test reaches the fork; the gate of §4 says so on every run): the
+in-tree cross-checks of a frozen file (classes, plan-basic, batch, driven, P56, P85, separators, starts, the TUI —
+each has an oracle twin outside since W-39..W-45); the fork comparisons on fresh draws (`planner_invariants`' arms —
+their oracle twin is `the_kernel_plans_every_fresh_draw_as_the_forks_oracle_plans_it`); fork comparisons on worlds no
+frozen file holds (gap 4685); the fork's own §7 day's properties (`planner_regressions`, `planner_dynamics`,
+`priority_plan_basic`, the fixture snapshots — D53: no shipped path plans it); the in-tree backend and its helpers.
+Two bite tests stay too, as fork code beside their fork-free twins (§3).
+
+### 2. Every frozen comparand re-blessable after R3 — the blesses out of the regions and onto `tm-oracle plan` (gap 4680 — CLOSED; gap 4463 — CLOSED by it)
+
+Each bless that sat in a region now sits outside it and asks fork 4748911 out of the tree (`forkplan::Oracle`, D72),
+with the rule it had — D64 by its gate (`forkclass::d64_allows`, the committed history through `frozenhist::held`) —
+unchanged. Where a bless had no dry-run variable it gained one (`…_OUT`), so a re-bless can be compared before it
+writes. A fixture's world is asked through `forkclass::Built::of_fixture`, which refuses a fixture whose configuration
+is not the default the oracle reads (each fixture's `config.toml` is the default, field for field). One writer per line
+shape: `forkday::basic_line_of` and `forkday::frozen_line_of` write a day as JSON, and the in-tree versions call them.
+
+Every bless was run as a dry run through the fresh oracle and its output `cmp`-ed with the committed file
+(`scratchpad/w45-c/bless/`; porcelain hashed before and after each, equal; on the tree before §4's `use` rule, which
+touched no bless):
+
+| frozen file | its bless (outside every region) | through the fresh oracle |
+|---|---|---|
+| `fork-4748911-planner-basic-days.jsonl`, 147 lines | `planner_classes.rs`' `the_frozen_plan_basic_days_are_blessed` | **byte-identical**: 147 held, 0 added, 0 refused |
+| `fork-4748911-planner-batch.jsonl`, 128 | `the_frozen_batch_is_blessed` | **byte-identical**: 128 held, 0 changed, 0 refused |
+| `fork-4748911-planner-driven.jsonl`, 1 | `the_frozen_driven_days_are_blessed` | **byte-identical** |
+| `fork-4748911-planner-classes.jsonl`, 100 | `the_frozen_class_worlds_are_redrawn` (moved) and `the_frozen_fork_classes_are_reblessed` (outside since W-43) | **byte-identical** both: 0 lines re-drawn; 0 changed |
+| `fork-4748911-planner-days.jsonl`, 4 | `planner_fixtures.rs`' `the_frozen_fork_days_are_reblessed` | **byte-identical** |
+| `fork-4748911-planner-conference.jsonl`, 3 | `planner_w39_conference.rs`' `the_frozen_conference_days_are_blessed` | **byte-identical** |
+| `fork-4748911-planner-p56.jsonl`, 24 | `planner_p56_cut.rs`' `the_seeded_p56_days_are_blessed` | **byte-identical**: 24 held, 0 changed, 0 refused |
+| `tests/snapshots/emit_planner__{plan_basic_early,plan_basic_late,plan_home_day}_emit.snap` | `emit_planner.rs`' `the_frozen_fork_renderings_are_blessed` (new) | **byte-identical**, all three |
+
+**The P56 bless carries `cut` by value and never recomputes it.** `cut` is the in-tree fork's own drawing of the day,
+and `p56_cut_is_the_in_tree_cut_on_every_frozen_p56_day` holds `forkplan::p56_cut` to it: a `cut` rewritten by `p56_cut`
+would hold the rule to itself (lesson 5). So the bless re-blesses every answer out of the tree, takes `cut` from the
+committed line, and refuses by name a draw no committed version holds (gap 4690).
+
+**The renderings' bless renders a day held by value.** The three snapshots are what the surviving kernel arm reads as
+"the fork's frozen rendering"; their only writers were the region's three `insta` assertions, which render the fork's
+OWN §7 day (a configuration no shipped path builds, D53). The new bless asks the oracle for the shipped day (kernel-ranked,
+D53), requires it to be the frozen fixture day of the same world BY VALUE (the day comparand of `planner_fixtures.rs`,
+re-blessed through the oracle above), and renders it over the kernel's day where the kernel's day IS that day — every
+field `forkday::compare_day_with_fork` compares, no under-used note, `Diagnostics::unplaced` (printed, never serialised)
+set to the fork's, which names none. So a body that moves under this bless moves because the RENDERER moved, and a
+kernel that drifts from the fork refuses the bless rather than entering the snapshot. It reproduces the committed
+bytes because the two §7 passes rank these three days alike (gap 4688). The history it is held to is the snapshot's
+committed text (`frozenhist::held_text`, new: gap 4151's rule for a whole file).
+
+**And each has an oracle twin of the check the region made in-tree**, so after R3 "the frozen file is the fork's
+answer today" is still asked: `the_frozen_plan_basic_days_are_the_forks_oracle_answer_today`,
+`the_frozen_fork_days_are_the_forks_oracle_answer_today`, `the_frozen_conference_days_are_the_forks_oracle_answer_today`,
+`the_frozen_fork_renderings_are_the_forks_oracle_answer_today` (new), beside the ones that stood (classes, batch, driven,
+P56, P85, separators, starts, the TUI, the week grid).
+
+### 3. What else a region held that was not fork code (gap 4682 — CLOSED)
+
+Read assertion by assertion, not test by test (`asserts.py`): a region test that compares the fork can also assert
+something of the kernel alone, and R3 deletes it with the comparison. Each such half now stands outside, beside its
+twin where one stood already:
+
+* **The reversed day's two preconditions** (`planner_invariants`): both answers `p = 0` impossible ties
+  (`forkclass::is_impossible_tie`) and D60's key moving the order (`forkclass::is_p51`) were asserted only in the
+  region's twin; `the_reversed_day_is_served_by_due_date` asserts them now, with `kernel_prios` (a decoder of the
+  kernel's grants, never the fork) out of the region and `forkclass::is_p51` out of `forkclass.rs`' region, which held
+  nothing else and is gone.
+* **The kernel's acceptance of every world the generated arms draw**: each region arm asserts the kernel plans its
+  world (`the kernel refused a day the fork planned`), answers `overtime` on a request that asked one and on no other,
+  and assigns nothing from a request with no candidate. `the_kernel_plans_every_fresh_class_draw` (new, plain, 64 cases)
+  asks those of the kernel alone on draw 0 of the class draw from a fresh seed — every arm's widening — and
+  `the_kernel_plans_every_fresh_p56_day` (new, plain, 16 cases) asks the meeting arm's: the kernel plans a fresh P56 day
+  and draws no paused row over a wall. Census (one run): 95 draws, 95 planned (base 28, hash 21, w35 25, step-8 21),
+  36 what-ifs asked and answered; 16 P56 days, 10 with a typed pause.
+* **README gap 3201's filter fired** (`planner_w37_rows`): the closed-window instances the encoder leaves unsent were
+  counted only in the region; the surviving `plan-basic` arm counts them and asserts more than none.
+* **P64's precondition** (`planner_w40_runs`): `a_key_reappears` and its bite test read the kernel's ranking and
+  `tm_core::priority`'s batches, never the fork; out, with `p64_precondition` and the census that reads it — the census
+  asking `tm-oracle plan` now, inert without `TM_ORACLE`.
+* **The kernel's rows and windows on `planner_w38_order`'s 22 days**: three kernel-only tests outside
+  (`the_kernel_draws_the_interruption_and_the_meeting_in_the_forks_order`, 6 days;
+  `gap_320s_inputs_are_planned_by_the_kernel_from_the_states_window`, 12;
+  `the_kernel_plans_the_woken_day_from_the_logged_arrival`, 4); the region keeps the fork's half.
+* **Two bite tests of harness checks the oracle arms keep calling** — `no_departure` (separator days) and
+  `comparand_is_the_frozen_one` (start days) — were witnessed only in the regions, the in-tree fork computing the
+  answers. Each check is split from its backend (`departure`, `comparand_unmet`) and bitten on FROZEN answers, with no
+  fork: `a_departing_comparand_is_refused`, `a_comparand_that_is_not_the_frozen_one_is_caught`.
+* **P45's witness** (`planner_classes`): `overrun_witnesses` over a backend; the region asks the in-tree fork, and
+  `the_overrun_lines_witness_p45s_reset_out_of_the_tree` asks the oracle.
+
+### 4. The gates on both sides of the deletion, and a guard against a second planner (gaps 4681 and 4683 — CLOSED)
+
+* **`every_bless_holds_its_lines_against_the_committed_history`, restated as three properties** (`fork_rebless_history.rs`).
+  Until W-45 its third clause was a LIST — twelve blesses by name, seven of them inside regions — so R3's deletion turned
+  it red (W-44 track C §6). Now: (1) every bless holds its committed history (`frozenhist::held`, or `held_text` for a
+  whole file); (2) **no bless sits inside a fork region**; (3) **every frozen comparand file** `frozenhist::frozen_files`
+  finds is named — by its literal name or a `const` whose value it is — by a bless outside every region, and every test
+  file that reads a committed snapshot as a frozen answer holds one. Its bite test `the_region_and_naming_clauses_bite`.
+* **`every_test_that_reaches_the_fork_keeps_it_in_one_region`, two changes** (`planner_classes.rs`). It gains the
+  converse of its escape check — **a region holds nothing but the fork**: every `#[test]` of a region reaches the fork's
+  planner, directly, through an item of its region or through another file's region name
+  (`forkday::region_tests_unreached`; its bite test `a_region_test_that_reaches_no_fork_is_seen`). And its floor of
+  "seven regions while `tm-core/src/planner.rs` exists" is gone: it is what turned it red at W-44's simulated deletion
+  (the regions deleted, the fork's file kept for the binary), and the escape check already bites a scan that reads no
+  banner (every needle a region holds would read as an escape). "Once the fork's file is gone, no region remains" stays.
+  **And both scans read a `use` statement**: a grouped or renamed import (`use tm_core::{config, planner as fp};`, on one
+  line or several) names the fork's module by none of the six needles, so every later `fp::diff(…)` reached the fork
+  unseen — an escape no scan could find outside a region, and a reach `region_tests_unreached` would have misread
+  inside one. `forkday::use_names_the_fork` (a `use` rooted at the library naming the word `planner`) is an escape at
+  the line the statement begins on, and a reach; its bite test `a_grouped_or_renamed_import_of_the_fork_is_a_reach`.
+  None is in the tree today (every import of the module spells `tm_core::planner`), so nothing moved.
+* **`tm/tests/no_second_planner.rs` (new): no planner but the fork's until R3, and none after it** — `one_padder.rs`' shape,
+  a property over body shapes over the shipped crates' sources (`srcwalk::sources`). A planner is a file that BUILDS a
+  day (`DayPlan::empty(` or a `DayPlan {` literal) and CUTS a day into slots (a call of `cut_slots`, `cut_slots_from` or
+  `cut_slots_around`) — measured at W-45: one, `tm-core/src/planner.rs` (the decoder, the ghost row and the TUI's
+  placeholder build a day and cut nothing; `capacity.rs` cuts and builds no day). There is at most one; it is the fork's
+  file while that exists; there is none once it is gone. And the fork's planner is NAMED (its module path, in code) by
+  its own file and the binary's crate only while it exists (`tm/src`: `cli/planning.rs` and `tui/app.rs`, the call sites
+  the body swap replaces), never by another `tm-core` module or the FFI crate, and by nothing after — "named" being its
+  path in code (`tm_core::planner`, `crate::planner`, a `planner::` path) or the word in a `use` statement rooted at
+  the library (`use crate::{planner as p};`, `pub use super::planner as p;`). Its bite test, `the_planner_shapes_bite`,
+  holds both sides on sources written in the test. What it cannot see is in its header (a slot cut written by hand; a
+  day built through another file's helper; a macro; a glob import of a re-export; `tm-core/tests` and the FFI crate's
+  tests).
+
+### 5. R3, simulated in a clone — every gate on both sides of the deletion, and one kernel answer corrupted per frozen comparand (`scratchpad/w45-c/r3clone`; `resim.sh`, `r3sim-planner-only.py`, `r3after.py`, `r3moved.py`, `r3bends.sh`, `simruns.sh`; never the worktree committed from)
+
+The clone is `3d13f1e` with this step's patch applied (`resim.sh`), then `r3sim-planner-only.py`: W-44 track C's
+`r3sim.py` with its three REVIEW-entry panics left out — R3 deletes the planner, and the review is the binary's own
+code (W-44's second configuration measured that class: 52 tests, none a comparand). Every region is deleted (21,
+4,982 lines; §1's table), the fork's five planner entries panic by name from any process but the shipped `tm`, and the
+bends of W-44's §6 are compiled in, inert unless asked. The worktree's porcelain and diff were hashed before and after
+every simulation and are unchanged (`9c95f016…`, `6ed6d5b1…`); the clone's own porcelain is recorded in
+`runs/sim2.out` (`5557029b…` before C, `8522415b…` in it, `5557029b…` after it and at the end).
+
+| configuration | what ran | result |
+|---|---|---|
+| **A** — the regions deleted, the fork's file kept and panicking outside `tm` (the switch's deletion WITHOUT its body swap) | the whole workspace, `--no-fail-fast` (10:32-10:42, load 8.4-15.7), on the tree before §4's `use` rule | **149 result lines, 2,706 passed, 30 failed, 40 ignored, no compiler warning.** The 30 are gap 4618's swap class exactly, every one panicking "R3-SIM: the fork's planner::plan reached from a test process" through the TUI's `App` in-process: the binary's fourteen `tui::tests` (`d84_…` 2, `d91_…` 6, `d96_…` 3, `the_meeting_pause_is_said_on_the_status_line`, `w44_land_…`, `w44_repair_…`), `planner_w41_request`'s `p77_…` 1, `tui_today_ghost` 3, `tui_today_prompts` 11, `worked_midnight_timer` 1. **No gate is among them** — W-44 track C's simulation failed both region gates (2 of its 27), the W-44 land's too (2 of its 31) — every comparand suite passed, and gap 4583's warning is gone |
+| **A′** — A on the final tree | the nine gate and bite tests, then the 22 bends below | the nine **ok**: `every_test_that_reaches_the_fork_keeps_it_in_one_region` ("files with one fork region: 0"), `a_region_test_that_reaches_no_fork_is_seen`, `a_grouped_or_renamed_import_of_the_fork_is_a_reach`, `the_oracles_worked_op_reads_the_forks_own_lines`, `every_bless_holds_its_lines_against_the_committed_history`, `the_region_and_naming_clauses_bite`, and `no_second_planner`'s three; the bends: **22 of 22 fail by name** |
+| **C** — the tree as R3 LEAVES it, to every gate that reads files: on A′, the fork's file deleted, `lib.rs`' `pub mod planner;` with it, and the two call sites' names gone (`r3after.py`: a TEXT-ONLY stand-in for the body swap — `planning.rs`' one `use` and two `planner::` paths, `app.rs`' one `use` and eight) | the nine tests' binaries, built in A′, run directly (nothing compiled after the deletion) | **9 of 9 ok** — no region and no fork file; one planner by the shape and it is gone; nothing names it; every frozen file still named by a bless outside every region; the oracle's needles read from the oracle's own files |
+| **B** — the fork's file MOVED under another name and compiled (`r3moved.py`: `tm-core/src/r3sim_moved_planner.rs`, reached by `#[path]`): a deletion that keeps a copy, or one without the swap | the guard's two tests and the two test-tree gates, compiled | the guard **fails by name, twice**: "tm-core/src/r3sim_moved_planner.rs plans a day by the planner's shape, and the fork's planner is gone — the kernel is the binary's one planner (R3)"; "tm/src/cli/planning.rs names the fork's planner, and tm-core/src/planner.rs is gone" (and `tm/src/tui/app.rs`). The region gate and the bless gate pass — they hold the test tree, which B does not touch |
+
+**One kernel answer corrupted per frozen comparand**, in A′, each comparison run alone (`--exact`, its `TM_ORACLE`-free
+arm), the bend bending the first answer of its kind the process reads (the second where the first feeds another
+assertion) at the one reader that kind goes through (W-44 track C §6's bends, widened to the three renderings):
+
+| frozen comparand | comparison | bend | the name it failed with |
+|---|---|---|---|
+| `fork-4748911-corpus-replay.jsonl` | T5 `t5_the_corpus_logs_replay_as_the_frozen_fork_point_does` | replay | "logs/energy-14d.jsonl: `days` differs at 1 leaf — days.2026-08-25.block_min: kernel 261 fork 260" |
+| the same | the door `the_door_is_the_reader_it_replaces` | replay | "logs/energy-14d.jsonl (genesis): `days` differs at 1 leaf" |
+| `fork-4748911-classes-replay.jsonl` | T5 `t5_the_frozen_generated_month_replays_as_the_fork_point_does` | replay | "generated 1mo (40 a day): … days.2026-01-01.block_min: kernel 472 fork 471" |
+| the same | T5 `t5_the_frozen_zone_cases_replay_as_the_fork_point_does` | replay | "fall-back 01:30 twice: … days.2026-10-31.block_min: kernel 1 fork 0" |
+| `fork-4748911-log-lines.jsonl` | T1 `kernel_reads_the_corpus_logs_as_the_fork_point_did` | lines | "corpus:logs/energy-14d.jsonl:1 — left "bent"" |
+| the same | T3 `kernel_reads_every_timestamp_spelling_chrono_reads` | verdict | ""2026-09-07T06:05:00-05:00": the fork reads 2026-09-07T06:05:00-05:00, the kernel warns bent" |
+| `fork-4748911-energy-14d-model.json` | T12 `model_fit_is_the_fork_points_on_the_corpus` | fit | "`tm model --fit` no longer writes fork point 4748911's model.json" |
+| `fork-4748911-planner-basic-days.jsonl` | `the_kernel_plans_plan_basic_every_ten_minutes_as_the_fork_planned` | plan | "plan-basic early 07:00: the rows differ at 1" |
+| `fork-4748911-planner-batch.jsonl` | `the_kernel_plans_every_frozen_batch_day_the_fork_planned` | plan | "batch draw 0 (interrupted-block/late): the rows differ at 1" |
+| `fork-4748911-planner-classes.jsonl` | `the_kernel_plans_every_generated_class_the_fork_planned` | plan | "idle/lounge: the rows differ at 6" |
+| `fork-4748911-planner-conference.jsonl` | `the_kernel_plans_the_forks_conference_wednesday` | plan, the 2nd | "wednesday 13:00: the rows differ at 0" |
+| `fork-4748911-planner-days.jsonl` | `the_kernel_plans_the_fixture_days_the_fork_planned` | plan | "plan-basic early 07:00: the rows differ at 1" |
+| `fork-4748911-planner-driven.jsonl` | `the_kernel_plans_every_driven_day_the_fork_planned` | plan | "arrive then wake (gap 3390) (idle/late): the rows differ at 3" |
+| `fork-4748911-planner-p56.jsonl` | `the_kernel_plans_every_frozen_p56_day_the_fork_planned` | plan | "p56 draw 0 (overtime/home): the rows differ at 0" |
+| `fork-4748911-planner-p85.jsonl` | `the_kernel_plans_every_frozen_p85_day_as_the_fork_asked_the_d92_day` | plan | "p85 a start inside a logged break: the rows differ at 5" |
+| `fork-4748911-planner-separators.jsonl` | `the_kernel_plans_every_frozen_separator_day_as_the_fork_did` | plan | "unedited: the rows differ at 2" |
+| `fork-4748911-planner-starts.jsonl` | `the_kernel_departs_from_every_frozen_start_day_by_its_number_alone` | plan | "p68 a block started after now: the rows differ at 6" |
+| `fork-4748911-planner-tui.jsonl` | `the_kernel_plans_every_frozen_tui_world_as_fork_4748911_planned_it` | plan, the 2nd | "tui At(12, 51) (wall-on-now/lounge): the rows differ at 0" |
+| `fork-4748911-week-grid.jsonl` | `the_binary_draws_every_frozen_week_as_the_fork_drew_it` | grid | "cli/meeting 2026-09-07: blocks_done/block_min 0/1 against the fork's 0/0" |
+| `emit_planner__plan_basic_early_emit.snap` | `plan_basic_early_start_section_and_svg` | plan | "fork line 30 `  Exercises 5.3–5.5 · 1h · ci4 · p3 · @O1` against kernel line 30 `… 1h1m …`" |
+| `emit_planner__plan_basic_late_emit.snap` | `plan_basic_late_start_section_and_svg` | plan | "fork line 29 `  Finish ch.5 exercises · 40m · ci5 · p3 · @O1` against kernel line 29 `… 41m …`" |
+| `emit_planner__plan_home_day_emit.snap` | `plan_home_day_section_and_svg` | plan | "fork line 29 `  Claude Code drafts tests · 1h · ci3 · p3 · @O2` against kernel line 29 `… 1h1m …`" |
+
+So every frozen comparand — W-44's sixteen `fork-4748911-*` files and the three renderings — is still compared after
+the deletion by a test that fails by name on one corrupted kernel answer, and none of those comparisons is
+kernel-against-kernel (lesson 5): their fork side is a committed file or `tm-oracle plan`, both outside the tree R3
+deletes from — the oracle extracts fork 4748911 from git history (`build-oracle.sh`'s `git archive`), and
+`the_oracles_worked_op_reads_the_forks_own_lines` reads only the oracle's own files, which is why it passes in C.
+
+### 6. Gap 4321 — the `tui Midnight` line can move only with the swap: what the switch must do
+
+**Not re-drawn here, and why.** The line's world is `tui_kernel_answers.rs`' `app_of(TuiWorld::Midnight)`, which is by
+construction the world `tui_today_prompts::a_block_started_before_midnight_still_goes_overtime` builds for itself:
+`tui_common::app_with_log_text(00:30 Tuesday, state, "")`, `.tm/state.json` dated Monday, `^t3` running from 23:30 in the
+state and an EMPTY log ("the state is all there is to go on", the test's own comment). `TUI_TESTS` holds that test's
+planner call to be over that world, so the line cannot be re-drawn while the test still builds the old one — the
+frozen comparison would then compare a world no test plans over, and the verdict table would misstate the test. The
+test is one of the in-process swap class (gap 4618's thirty) that the switch re-aims; it is not this track's file.
+Re-drawing the line alone would turn `the_kernel_answers_every_fork_planned_tui_world` from a statement about the
+test into a statement about nothing.
+
+**What the switch must do, in order** (one commit, D19):
+
+1. Re-aim `a_block_started_before_midnight_still_goes_overtime` at the world the TUI holds since D84: at its first tick
+   past midnight the TUI re-collects as `tm plan` reads the tree then (`tui/mod.rs`' `advance_clock` → `recollect`), so
+   `.tm/state.json` is rolled to Tuesday by the housekeeping, and — D42 — a running block exists only where the LOG holds
+   its `start` (an empty log ends it on load). So the world is the one the binary's verbs leave: `tm start ^t3` at Monday
+   23:30 over `tui_common`'s tree, read at 00:30 Tuesday — built as `TuiWorld::MeetingNow` is, by
+   `forkgrid::run_steps` over the shipped binary, not by hand. Its assertions stand: worked 60 at 00:30, overtime due.
+2. Give `app_of(TuiWorld::Midnight)` the same world, and its doc comment the same words.
+3. Re-bless the line through the oracle under D64(b) with its reason recorded:
+   `TM_ORACLE=<oracle> TM_TUI_BLESS=1 TM_TUI_BLESS_REDRAW="2026-10-… D64(b): … (README gap 4321)" cargo test -p tm --test tui_kernel_answers -- --ignored the_frozen_tui_days_are_blessed`
+   (outside every region since W-41; it writes `d64b` on the line, which the history gate licenses).
+4. Re-derive the Midnight entry's `live` verdict: `Live::Finding(3860)` is a stale-state finding (the kernel plans
+   `now`'s date where fork `planwire::plan_date` plans the state's), and a rolled state is today's, so it cannot hold;
+   expect `Live::Departs(69)`, as the AfterMidnight world's (the start read from the log, parity P69), and hold it by
+   the comparison rather than by this expectation.
+
+### 7. The switch's checklist — every fork reference R3 removes, found by grep over the whole tree
+
+`grep -rln 'planner::\|tm_core::planner\|crate::planner\|PlanInput\|PlanOverrides\|with_ranking\|with_runs\|overtime_drops\|week_plan'`
+over every `.rs` file (33 files), every region read, the snapshot directory read, and check 8 run on the simulated
+deletion. **Code the switch removes or swaps:**
+
+1. `tm-core/src/planner.rs` (2,485 lines) — deleted; `tm-core/src/lib.rs`'s `pub mod planner;` with it.
+2. `tm/src/cli/planning.rs` — `use tm_core::planner::{self, PlanInput}` and `build_ranked`'s `PlanInput::new(..)…with_ranking`
+   and `planner::plan(&input)` — the body swap.
+3. `tm/src/tui/app.rs` — `use tm_core::planner::{self, PlanInput, PlanOverrides}`, `App::input`, `App::replan`'s
+   `planner::plan`, and the overtime what-if's planner::overtime_drops, two `planner::plan` and `planner::diff` — the
+   body swap (D103: the minute tick replans through the kernel).
+4. The 21 fork regions under `tm/tests` (4,982 lines; table in §1) — deleted whole. Nothing outside them names the fork
+   in code (`every_test_that_reaches_the_fork_keeps_it_in_one_region`), and nothing in them is anything but the fork
+   (§4).
+5. **Twelve snapshot files only the regions assert** — `tm/tests/snapshots/planner_fixtures__{plan_basic_early,plan_basic_late,plan_home_day,plan_travel_day}_{timeline,diagnostics}.snap`
+   and `planner_dynamics__{explain_t3_planned,explain_p1_dropped,week_plan_grid,week_plan_days}.snap`: orphaned by the
+   deletion (insta does not fail on an unreferenced snapshot), to be deleted with it. The three
+   `emit_planner__*_emit.snap` are NOT: the kernel arm reads them and the new bless writes them (§2).
+
+**Prose that names the fork's planner, in files that survive** (comment lines outside every region naming
+`tm_core::planner`, a `planner::` path, `PlanInput`, `PlanOverrides` or `planner.rs`: 128 lines in 40 files, none of
+them code). Most name FORK 4748911's planner — `fork planner::plan`, `fork PlanOverrides::apply` — which the oracle still
+runs after R3, and stay true. **The ones that describe the in-tree planner as the binary's present one, or link to it,
+are the switch's to re-word** (an intra-doc link to a deleted item is a rustdoc warning): `tm/src/tui/prompts.rs:12`,
+`tm/src/tui/app.rs:37` and `:1212-1216`, `tm/src/cli/planning.rs:7`, `:18`, `:155` and `:170`, `tm/src/cli/ctx.rs:1823`,
+`tm-core/src/dayplan.rs:6-27`, `tm-core/src/planwire.rs:26`, `tm-core/src/capacity.rs:40`, `tm-core/src/model.rs:1495`,
+`tm-core/src/priority.rs:1276`, `tm-core/tests/emit_fixture/mod.rs:11-13`; in `tm/tests`, `cli_plan.rs:368`,
+`cli_switch_acceptance.rs:501`, `kernel_lookahead_parity.rs:543-544`, `one_renderer.rs:489-564`,
+`tui_common/mod.rs:599`, `tui_today_prompts.rs:159`, and the module docs of `support/forkclass.rs`,
+`support/forkday.rs` and `support/forkplan.rs` (each says what is in the region until R3). `tm/src/tui/mod.rs:303`
+names fork `PlanInput::date` as the fork's and stays.
+
+**Check 8 on the deletion: 132 cited names dangle** (`citations.py` in the simulated tree on the final patch,
+`runs/sim2-citations-A.log` and `-C.log`; it prints each name once, at its first site).  **With the regions deleted
+and the fork's file kept (A′): 69** — names only a region declares: 60 first cited in append-only README blocks, 8 in
+surviving test doc comments (support/forkplan.rs:19 InTree, :235 w35_p46_row, :248 w35_p47_day;
+fork_rebless_history.rs:362 fork_conference_day; planner_w38_order.rs:12 and :20, the region's two tests;
+planner_invariants.rs:751 grant_fields; support/forkclass.rs:319 w35_fork_worked) and ONE IN A LEAN FILE,
+TmKernel/TmKernel/PlanWire.lean:2057 (the_kernel_writes_the_rest_of_step_8_as_the_fork_does).  **With the fork's file
+gone as well (C, removed from the index too): 134** — those 69, 63 names only `tm-core/src/planner.rs` declares (fork
+4748911's own functions and types — Planner::active_run, WallSeg, PlanInput::with_runs, week_plan, … — first cited in
+Planner.lean 22, README 15, Check.lean 9, Lookahead.lean 4, Negative.lean 3, PlanCheck.lean 2, Goals.lean 2, and one
+each in EmitWire, PlannerWit, Recur, PlanDiff, `tm-core/src/planwire.rs` and the oracle's `p64-runs.patch`), and two
+that are the text-only stand-in's own renames in `tui/app.rs`' doc comments.  Each cites fork 4748911's code, which the
+oracle still builds after R3, so the natural home is `kernel/citations-allow.txt` under the switch's banner, counted
+(the README blocks are append-only history); the prose in files that survive may be re-worded instead (gap 4691).  This
+step's own prose — the test files' doc comments outside the regions and this block — cites none of the 134 in
+backticks (checked against that set; three such citations it wrote sit inside regions and go with them), so the
+deletion adds none: the names above are written here without backticks for that reason.
+
+**What the switch must NOT delete**: `support/forkplan.rs` outside its region (the oracle backend and the comparand),
+`forkclass`/`forkday`/`frozenhist` (the comparison and the blesses), every bless (all outside since §2),
+`planner_w39_conference.rs`' `wednesday` (gap 4583 dissolved: the conference bless reads it now), the frozen files and
+the three emit snapshots, `kernel/tm-kernel-ffi/examples/oracle/` (it extracts fork 4748911 from git history, not from
+the tree), and `kernel_prios`, `rows_at`, `a_key_reappears`, `p64_precondition`, `grants`, `shipped_ask`,
+`basic_instants`, `overrun_witnesses` (out of the regions since §3, read by surviving code).
+
+### 8. Acceptance
+
+Everything capped (`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`; 16 GB for the oracle, its arms, the
+bends and the plants); other tracks were building and testing on the machine throughout, and the load is quoted.
+
+* **`check.sh`, seventeen lines, all ok, exit 0**, in `scratchpad/w45-c/vclone` synced to this commit's tree (check 9's
+  gate never runs in the tree committed from; `runs/check1.log`, then `runs/check2.log` on the tree committed, this
+  block filled), 40.7 s and 29.9 s warm (load ~11): the build; totality; **the
+  axiom audit 6,344** (Classical.choice 3,337, Quot.sound 4,875, propext 5,929; 412 on none — no Lean changed);
+  `Negative.lean` rejected; FFI **95**; the corpus **29/37 files and 4/5 plans**; **stage goals 1, all stage 6**
+  (unchanged); prose citations **59,858** (57,424 resolved, 2,434 allowed — 206 vocabulary, 514 counted — 0 allow
+  entries unused, 369 files swept); check 9 **734** rostered since `86c4dc6`, **0 owed**; parity **P1-P99** (99
+  anchors re-resolved); check 11 **3,402 bodies, 14 groups (3 compiled, 11 value), 0 UNANSWERED**; check 12 **1,518**
+  reachable, **1,099** exempt; check 13 fields 17/17, inputs 33 of 37 (4 exempt), sent 169 (168 decoded), written 220
+  (168 written), 0 UNANSWERED; check 14 **94 modules**.
+* **`cargo test --workspace --no-fail-fast`, THREE runs on the final code (D46)** in the worktree (`runs/ws1..3.log`,
+  `runs/ws-runs.log`): **each 149 result lines, 2,821 passed, 0 failed, 42 ignored, 0 compiler
+  warnings** (706 s, 627 s, 623 s; 10:55-11:28, load 11-16).  The count, by arithmetic: the base's
+  **2,768 passed / 36 ignored / 148 result lines** (`6afdb1b`, its own three runs) + **14** new tests that run
+  (`no_second_planner` 3, `planner_w38_order` 3, `planner_classes` 2, and one each in `fork_rebless_history`,
+  `planner_fixtures`, `planner_invariants`, `planner_p56_cut`, `planner_separator_days`, `planner_w41_starts`) + **39** —
+  the 13 `kernel_log::tests` that `support/replay.rs` pulls into each of `emit_planner`, `planner_fixtures` and
+  `planner_w39_conference` now that they include it for the oracle (the door suite's pattern, AGENTS §8.3) — = 2,821;
+  36 + 6 new `#[ignore]`d oracle arms and blesses = 42; 148 + `no_second_planner` = 149.  Porcelain `9c95f016…` at every
+  start and end; the diff hash moved during run 1 alone (`de1b363e…` → `951dc1e1…`) because this block's region count was
+  corrected ("the other 13" → "14") while it ran — `kernel/README.md`, which no test reads — and held `951dc1e1…` through
+  runs 2 and 3.  No `.proptest-regressions` file moved, and no snapshot.
+* **The named suites, in run 1**: T5 `kernel_replay_parity` 48 (4 ignored), the door `kernel_log_door` 42, `cli_switch_acceptance` 16, `cli_latency` 6
+  (1 ignored), `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 34, `kernel_row_cells` 35, `kernel_item_grammar` 6,
+  `kernel_planner_wire` 27, `planner_classes` 73 (8 ignored), `planner_invariants` 48 (2 ignored), `cli_conformance` 7,
+  `cli_json_matrix` 8; and this step's files: `no_second_planner` 3 (new), `fork_rebless_history` 10, `emit_planner` 35
+  (2 ignored), `planner_fixtures` 34 (2 ignored), `planner_w39_conference` 28 (2 ignored), `planner_p56_cut` 20 (4
+  ignored), `planner_w38_order` 33, `planner_w40_runs` 32 (1 ignored), `planner_separator_days` 21 (2 ignored),
+  `planner_w41_starts` 25 (2 ignored); beside them `tui_kernel_answers` 51 (2 ignored), `planner_p85_days` 19 (2
+  ignored), `fork_week_grid` 21 (3 ignored), `fork_frozen_refile` 5, `tui_today_prompts` 44, `worked_midnight_timer` 28.
+  FFI: check 5's 95, check 6's corpus.
+* **Every planner, grid and rendering `TM_ORACLE` arm** over the fresh oracle, one at a time, alone (`oracle-arms/`,
+  10:17-10:31, load 6-7; 16 GB each): **18 of 18 ok** — `the_frozen_lines_are_the_forks_oracle_answer_today` (classes,
+  batch, driven: 229 of 229, 8 P81, 3,078 requests), `the_frozen_plan_basic_days_are_the_forks_oracle_answer_today`
+  (147 of 147), `the_overrun_lines_witness_p45s_reset_out_of_the_tree` (5 of 6), the fixture days (4 of 4), the
+  conference (3 of 3), the renderings (3 of 3), P56 (24 of 24, 432 requests; 16 fresh; 64 against the in-tree fork),
+  P85 (20 requests), the separators (40), the starts (20), the TUI (234), the fresh draws (287 draws, 3,390 requests, 133 what-ifs;
+  P45 18, P46 9, P47 7, P51 197, P52 1, P55 0, P56 6) and the oracle against the in-tree fork on them (287 equal, 131 what-ifs), P64's
+  census (128 held, precondition 2, runs moving 1, kernel unlike 0), and the week grids (46 of 46, 16 fresh).  They ran
+  on the tree before §4's `use` rule, which touched only the scans, none of which an arm calls; and the worktree's
+  porcelain moved during them (`4efc4d01…` → `9c95f016…`) because `kernel/citations-allow.txt` joined the diff then —
+  no test reads it.
+
+### 9. Every new or changed definition bent, one at a time — each with the test that must fail (`plants.py`, in `scratchpad/w45-c/pclone`: `3d13f1e` with this step's tree committed locally; never the worktree)
+
+D40's rule for the harness: each plant one edit, the named test run alone, the file restored from the clone's HEAD
+after it, the clone's porcelain hashed before and after each (`d41d8cd9…`, empty, both sides of every plant but two:
+P15 and P16 are proptests, and the planted failure appended its seed to the clone's `.proptest-regressions` — a
+seed of the PLANT, removed before P7 was re-run; never the worktree's). Each log is `runs/plants/`.
+
+| # | what is bent | the test | fails with |
+|---|---|---|---|
+| P1 | `forkday::region_tests_unreached` answers nothing | `a_region_test_that_reaches_no_fork_is_seen` | "the reader saw []" |
+| P2 | a kernel-only `#[test]` planted inside `planner_w39_arrival.rs`' region | `every_test_that_reaches_the_fork_keeps_it_in_one_region` | "tm/tests/planner_w39_arrival.rs: the fork region holds test(s) that reach no fork planner, which R3 would delete for nothing: ["w45_plant_kernel_alone"]" |
+| P3 | the history gate's `split_at_region` reads every file as outside | `the_region_and_naming_clauses_bite` | "a bless inside the region was not seen there" |
+| P4 | a bless (a `TM_…BLESS` variable, `frozenhist::held`, a write) planted inside `planner_classes.rs`' region | `every_bless_holds_its_lines_against_the_committed_history` | "tm/tests/planner_classes.rs::w45_plant_bless sits inside the fork region: R3 deletes it, and its file is final after R3 (README gap 4680)" |
+| P5 | `names_file` answers no | the same, and `the_region_and_naming_clauses_bite` | "12 bless finding(s): fork-4748911-planner-basic-days.jsonl: no bless outside a fork region names it, so R3 would leave it final"; "a module::NAME spelling was not read" |
+| P6 | the gate stops reading `frozenhist::held_text` as holding history | `every_bless_holds_its_lines_against_the_committed_history` | "tm/tests/emit_planner.rs::the_frozen_fork_renderings_are_blessed holds its lines against the working copy, or against nothing (README gap 4151)" |
+| P7 | the batch bless names its file nowhere (`forkclass::FROZEN_BATCH` spelled out of its body) | the same | "fork-4748911-planner-batch.jsonl: no bless outside a fork region names it, so R3 would leave it final" — the first P7 (renaming one bless variable) PASSED, rightly: the body reads three other `TM_…BLESS…` variables and stays a bless, so it was replaced by this one |
+| P8 | `no_second_planner`'s `planners` finds nothing | `there_is_one_planner_and_it_is_the_forks_until_r3_deletes_it` | "the fork's planner is not seen by its shape — the guard is reading nothing" |
+| P9 | the fork's planner COPIED to `tm-core/src/w45_plant_planner.rs` | the same | "2 files plan a day by the planner's shape — a second planner: ["tm-core/src/planner.rs", "tm-core/src/w45_plant_planner.rs"]" |
+| P10 | `use crate::planner::plan as _w45_plant;` planted in `tm-core/src/review.rs` | `the_forks_planner_is_named_only_where_r3_removes_it` | "tm-core/src/review.rs names the fork's planner: only the binary's call sites may, which R3's body swap replaces" |
+| P11 | `planner_separator_days.rs`' `departure` answers nothing | `a_departing_comparand_is_refused` | "a comparand that departs from the shipped day passed" |
+| P12 | `planner_w41_starts.rs`' `comparand_unmet` answers nothing | `a_comparand_that_is_not_the_frozen_one_is_caught` | "a bent step-5 row passed: []" |
+| P13 | `overrun_witnesses` counts nothing | the_overrun_lines_witness_p45s_reset (the region's) | "no frozen overrun line witnesses P45's reset (0 line(s))" |
+| P14 | `Built::of_fixture` reads every configuration | `a_fixture_configuration_the_oracle_would_not_read_is_refused` | "a configuration the oracle would not read was asked: Ok(())" |
+| P15 | `forkclass::whatif_json` asks no what-if | `the_kernel_plans_every_fresh_class_draw` | "no what-if was asked in 80 fresh draws" |
+| P16 | every instant of the day read as a wall | `the_kernel_plans_every_fresh_p56_day` | "a paused row the kernel drew over a wall (P56): [11:50–12:00, 13:00–13:10]" |
+| P17 | `forkday::basic_line_of` drops `now` | the_frozen_plan_basic_days_are_the_forks_answer_today (the region's) | "the frozen plan-basic days are not the fork's today (a re-bless is a decision): plan-basic early 07:00 …" |
+| P18 | `frozenhist::held_text` finds no committed text | `the_frozen_fork_renderings_are_the_forks_oracle_answer_today` (`TM_ORACLE`) | "…/emit_planner__plan_basic_early_emit.snap: no committed version holds it" |
+| P19 | the hand-written expectation of the kernel's rows at the meeting inverted | `the_kernel_draws_the_interruption_and_the_meeting_in_the_forks_order` | "interrupted Some("t4") at 13:50: the kernel's rows at 12:50 — left: [("wall", Some("g1")), ("lost", Some("t4"))]" |
+| P20 | `forkday::use_names_the_fork` answers no | `a_grouped_or_renamed_import_of_the_fork_is_a_reach` | "a renamed import outside the region: []" |
+| P21 | `no_second_planner`'s `use`-statement clause switched off | `the_planner_shapes_bite` | "a grouped or renamed import passed: "use crate::{planner as fork, store};…"" |
+
+**21 of 21 fail by name.**  Not planted, and why: the moved blesses' bodies (each is checked by its dry run reproducing
+its committed file byte for byte through the fresh oracle, §2 — a bent bless would write other bytes, which a dry run
+shows and nothing runs unasked); `kernel_prios`, `rows_at`, `grants` and `shipped_ask` (moved verbatim, each read by a
+test that passed unchanged before and after the move).
+
+### 10. Gaps 4680-4699
+
+**Gap 4680 — every frozen comparand stays re-blessable after R3: CLOSED here** (§2).  1. *What.*  Seven blesses sat in
+fork regions (gap 4463 named six; the class worlds' re-draw is the seventh) and three `insta` assertions in
+`emit_planner.rs`' region were the only writers of three snapshots a surviving test reads as the fork's frozen
+rendering — R3's deletion would have made eight comparands final.  2. *Done.*  Each is outside every region and asks
+`tm-oracle plan`; each reproduces its committed file byte for byte through an oracle built fresh for the step; each has
+an oracle twin of the check its region made in-tree; the bless gate states the rule as a class (§4).  3. *Residue.*
+Gaps 4688 and 4690.  4. *Nothing owed.*
+
+**Gap 4463 — CLOSED by gap 4680.**
+
+**Gap 4681 — R3's deletion turned both region gates red: CLOSED here** (§4, §5).  1. *What.*  W-44 track C's
+simulation failed `every_bless_holds_its_lines_against_the_committed_history` and
+`every_test_that_reaches_the_fork_keeps_it_in_one_region` (2 of its 27), the W-44 land's again (2 of its 31): the first
+named twelve blesses, seven in regions; the second held a floor of seven regions while the fork's file exists, which
+the deletion breaks with the file kept.  2. *Done.*  Both restated as properties, green before the deletion, after it
+(A), with the fork's file gone (C), and each bitten.  3. *Residue.*  None.  4. *Nothing owed* — the switch has nothing
+to rewrite in them.
+
+**Gap 4682 — a region held kernel-only assertions, harness bite tests and a bless that reached no fork: CLOSED here**
+(§3): each half stands outside, and the region gate holds that a region holds nothing but the fork (§4).
+
+**Gap 4683 — no guard held that no second planner reappears, and a renamed import of the fork was a reach no scan saw:
+CLOSED here** (§4, `no_second_planner.rs`, `forkday::use_names_the_fork`).  Residue: the blind spots in the two
+headers — a planner that cuts its slots by hand; a day built through another file's helper; a name a macro assembles;
+a glob import of a re-export; the library imported under another crate name; `tm-core/tests` and the FFI crate's
+tests.
+
+**Gap 4684 — gap 4321 moves with the swap, not before it.**  1. *What.*  §6.  2. *Why not changed.*  The line is the
+world a swap-class test builds for itself; re-drawing it alone would make the frozen comparison and `TUI_TESTS` describe
+a world no test plans over.  3. *Cost.*  None before R3: the line describes the test's world as the test builds it.
+4. *Clears it.*  The switch, by §6's four steps.
+
+**Gap 4685 — fork comparisons R3 deletes with no frozen line and no oracle twin.**  1. *What.*  The regions compare the
+kernel with the live in-tree fork on worlds no frozen file holds: `planner_w38_order`'s 22 days (6 interrupted at the
+meeting, 12 of gap 320's inputs, 4 woken), `planner_w39_arrival`'s two (woken and rebuilt), `kernel_unplaced_banner`'s
+world (P58's drop, the walk the fork's), `kernel_separator_worlds`' `nbsp-box` day (held by the separator days since
+W-43, gap 4464), and the fork's own §7 days of `planner_regressions`, `planner_dynamics`, `priority_plan_basic` and
+`planner_fixtures`' snapshots (D53: no shipped path plans them, so they were never comparands).  The kernel halves of
+the first three now stand outside (§3); the fork halves go with R3.  2. *Why not changed.*  Freezing a fork answer for
+a world no frozen file holds is a new comparand line — D70's introduction, the owner's to license per world — and the
+brief asked for the blesses, not new comparands.  3. *Cost.*  After R3 a kernel change that moves those days the way
+the fork would not is seen only by their kernel-only halves (hand-written expectations: rows at one instant, windows),
+not by value against the fork.  4. *Clears it.*  A frozen file of those worlds, blessed through the oracle, before R3 —
+or the owner's word that their kernel halves suffice.
+
+**Gap 4686 — twelve snapshots only the regions assert.**  `planner_fixtures__*_{timeline,diagnostics}` (8) and
+`planner_dynamics__{explain_*,week_plan_*}` (4) pin the fork's own output and nothing else reads them; R3's deletion
+orphans them and insta does not fail on an orphan.  *Clears it:* the switch deletes them (§7 item 5).
+
+**Gap 4687 — gap 4583 dissolves.**  `planner_w39_conference.rs`' `wednesday` is read by the conference bless, which is
+outside the region since §2, so the deletion leaves it live: the simulated deletion builds with NO warning (W-44's had
+one, this one).  The switch has nothing to do for gap 4583 — and must not delete `wednesday`.
+
+**Gap 4688 — the renderings were frozen from the fork's OWN §7 day.**  1. *What.*  The region's `insta` writers render
+`planner::plan` with the fork's own §7 pass — a configuration D53 says no shipped path builds; the new bless renders the
+shipped one (kernel-ranked) and reproduces the same bytes, because the two passes rank those three days alike.
+2. *Why not changed.*  Nothing moves: the committed bytes are both answers.  3. *Cost.*  None today; a fixture day on
+which the two passes differ would make the region's writer and the bless disagree before R3, and the bless is right.
+4. *Clears it.*  R3, which deletes the own-§7 writer.
+
+**Gap 4689 — the brief's gap 4491 was closed at the W-43 repair** (§0): nothing of it was left in a region.
+
+**Gap 4690 — the P56 bless cannot ADD a line.**  1. *What.*  A frozen P56 line's `cut` is the in-tree fork's own drawing;
+after R3 no backend draws it independently, and `p56_cut` drawing it would hold the rule to itself.  The bless therefore
+carries `cut` from the committed line and refuses a draw no committed version holds.  2. *Why.*  Lesson 5.  3. *Cost.*
+Widening `forkp56::P56_FROZEN` after R3 needs another source of truth for `cut` (a replayed pause cut by hand-checked
+walls), not this bless.  4. *Clears it.*  Nothing owed unless the P56 set must grow after R3.
+
+**Gap 4691 — R3's deletion leaves 132 cited names resolving to nothing.**  1. *What.*  Check 8 on the simulated
+deletion (§7): 69 names only a fork region declares and 63 only the fork's file declares, cited in append-only README
+blocks, surviving test doc comments, eleven Lean files (Planner.lean, Check.lean, Lookahead.lean, Negative.lean,
+PlanCheck.lean, Goals.lean, EmitWire, PlannerWit, Recur, PlanDiff, PlanWire), `tm-core/src/planwire.rs` and the
+oracle's `p64-runs.patch`.  2. *Why not changed.*  Each names an item that exists until R3 and resolves today;
+un-naming it now would leave check 8 nothing to verify before the switch, and the Lean files and `tm-core/src` are no
+file of this track's.  3. *Cost.*  Check 8 fails on the switch commit until each is counted in
+`kernel/citations-allow.txt` under the switch's banner or re-worded — and the swap's own re-worded doc comments in
+`tm/src` must cite no deleted name.  4. *Clears it.*  The switch, from `runs/sim2-citations-C.log`'s list (one line a
+name; `citations.py` itself gives each name's count).
+
+### 11. For the Land and the switch
+
+* **Branch `w45-c`**, one commit. **Files this track holds and touched**: the fork regions' files and their surviving
+  halves (`emit_planner.rs`, `planner_classes.rs`, `planner_fixtures.rs`, `planner_invariants.rs`, `planner_p56_cut.rs`,
+  `planner_separator_days.rs`, `planner_w38_order.rs`, `planner_w39_conference.rs`, `planner_w40_runs.rs`,
+  `planner_w41_starts.rs`), the region gates (`fork_rebless_history.rs`, `planner_classes.rs`), `support/fork*.rs` and
+  `support/frozenhist.rs`, and one new file, `tm/tests/no_second_planner.rs`; `kernel/README.md` and
+  `kernel/citations-allow.txt` appended. **No fixture file, no snapshot, no `.lean` file, nothing under `tm/src` or
+  `tm-core/src`, no oracle file.** No parity number; no `PARITY-PENDING`.
+* **Every `TM_ORACLE` arm needs an oracle built at or after W-44** (the `worked` op's `read_by`); this step built one fresh.
+* **The switch's deletion is §7's list**, and it has nothing to rewrite in the gates: the regions and
+  `tm-core/src/planner.rs` go, the twelve region-only snapshots go, the body swap removes the two shipped call sites —
+  after which `no_second_planner.rs` is green (it is red, by design, on a deletion without the swap: §5's simulation B).
+  Check 8 then names 132 cited names that resolve to nothing (§7, gap 4691), in README history, test docs and
+  eleven Lean files.
+* **Gap 4321** is the switch's, by §6's four steps.
+* **If track D's or Q's tests add a bless or a region**, the gates of §4 judge them by property: a bless in a region, or
+  a region test that reaches no fork, fails by name.

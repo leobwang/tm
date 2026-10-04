@@ -14,12 +14,13 @@
 //! below are one set, read by both arms. Nothing in it reaches the fork's
 //! planner, so R3's deletion leaves it building, running and comparing.
 //!
-//! **The fork's arm** — its four tests, their timeline and diagnostics
-//! snapshots and the re-bless of the frozen days — plans with
-//! `planner::plan` and its own §7 pass. It is one region, `BEGIN THE FORK
-//! PLANNER` … `END THE FORK PLANNER`, and R3 deletes it whole;
+//! **The fork's arm** — its four tests and their timeline and diagnostics
+//! snapshots — plans with `planner::plan` and its own §7 pass. It is one region,
+//! `BEGIN THE FORK PLANNER` … `END THE FORK PLANNER`, and R3 deletes it whole;
 //! [`the_fork_half_of_this_suite_is_one_region`] holds this file and
-//! `planner_common` to that.
+//! `planner_common` to that. **The re-bless of the frozen days is not in it**
+//! since W-45 track C (README gap 4680): it asks fork 4748911 out of the tree
+//! (`tm-oracle plan`), so the frozen days stay re-blessable after R3.
 //!
 //! What the kernel's day may differ from the fork's by is nothing: the two
 //! classes it did differ by (gaps 551 and 435, `support/forkday.rs`) CLOSED at
@@ -39,6 +40,24 @@ mod forkday;
 #[allow(dead_code)]
 #[path = "support/frozenhist.rs"]
 mod frozenhist;
+
+/// The comparand's backends — `tm-oracle plan` here, which the bless of the frozen days asks since
+/// W-45 track C (README gap 4680) — and the class world a fixture's day is asked over.
+#[path = "support/replay.rs"]
+#[allow(dead_code)]
+mod chokepoint;
+
+#[allow(dead_code)]
+#[path = "support/plangen.rs"]
+mod plangen;
+
+#[allow(dead_code)]
+#[path = "support/forkclass.rs"]
+mod forkclass;
+
+#[allow(dead_code)]
+#[path = "support/forkplan.rs"]
+mod forkplan;
 
 use chrono::{DateTime, NaiveTime};
 use chrono_tz::Tz;
@@ -359,6 +378,24 @@ fn the_kernel_plans_the_fixture_days_the_fork_planned() {
     assert_eq!(t.hashes_equal, 4, "every day hashes as the fork's, its breaks drawn (gap 551 closed): {t:?}");
 }
 
+/// **A fixture whose configuration the oracle would not read is refused, by name** (W-45 track C,
+/// README gap 4680): `forkclass::Built::of_fixture` asks a fixture's world of `tm-oracle plan` only at
+/// `Config::default()`, the configuration the oracle reads every world at. Each of the four days'
+/// own `config.toml` is that configuration and is accepted; the same day with one field moved is
+/// refused rather than asked at a configuration it does not hold.
+#[test]
+fn a_fixture_configuration_the_oracle_would_not_read_is_refused() {
+    for d in &DAYS {
+        let l = Loaded::of(d);
+        assert!(forkclass::Built::of_fixture(&l.docs, &l.log, &l.state, l.now, &l.fx.cfg).is_ok(), "{}: the fixture's own configuration was refused", d.name);
+    }
+    let l = Loaded::of(&DAYS[0]);
+    let mut cfg = l.fx.cfg.clone();
+    cfg.day.block_min += 1;
+    let refused = forkclass::Built::of_fixture(&l.docs, &l.log, &l.state, l.now, &cfg).map(|_| ());
+    assert!(refused.as_ref().is_err_and(|e| e.contains("Config::default()")), "a configuration the oracle would not read was asked: {refused:?}");
+}
+
 /// **R3's deletion is mechanical here**: every line of this file and of
 /// `planner_common` that reaches the fork's planner sits inside its one
 /// `BEGIN THE FORK PLANNER` … `END THE FORK PLANNER` region, so R3 deletes
@@ -413,6 +450,101 @@ fn the_fork_scan_sees_a_reference_outside_its_region_and_only_there() {
     assert!(forkday::fork_scan(&trailing).escapes.is_empty());
 }
 
+/// **One frozen fixture day, asked of fork 4748911 out of the tree** (W-45 track C, README gap
+/// 4680): the day's world as a class world reads it (`forkclass::Built::of_fixture`, which refuses
+/// a configuration the oracle would not read), the kernel's grants for its request — what the
+/// shipped binary hands its fork (D53) — and `tm-oracle plan`'s day as the shipped binary draws it
+/// (`forkplan::Planned::day`), digested as fork 4748911's `DayPlan::hash`. The line is
+/// `forkday::frozen_line_of`'s, the one writer the in-tree fork's line went through.
+fn fixture_oracle_line(d: &FixtureDay, oracle: &forkplan::Oracle) -> Result<String, String> {
+    let l = Loaded::of(d);
+    let b = forkclass::Built::of_fixture(&l.docs, &l.log, &l.state, l.now, &l.fx.cfg)?;
+    let (_, ans) = planreq::kernel_day(&b.request_world(), None).map_err(|e| format!("the kernel: {e}"))?;
+    let ask = forkplan::ForkAsk { state: &l.state, now: l.now, d60: false, p64: false, prios: &ans.prios, extend: None, log_line: None };
+    let day = forkplan::ForkPlan::plan(oracle, &b, &ask).map_err(|e| format!("the oracle: {e}"))?.day;
+    Ok(forkday::frozen_line_of(d.name, &forkplan::day_hash(&day), &day))
+}
+
+/// **The frozen fixture days are fork 4748911's answer today, out of the tree** (W-45 track C,
+/// README gap 4680) — every line, byte for byte, as [`fixture_oracle_line`] writes it now. The
+/// in-tree fork's half of this claim is the region's own four tests; this one outlives R3.
+/// Inert without `TM_ORACLE`.
+#[test]
+#[ignore]
+fn the_frozen_fork_days_are_the_forks_oracle_answer_today() {
+    let Some(bin) = forkplan::oracle_path() else {
+        eprintln!("inert: set TM_ORACLE to an oracle built by kernel/tm-kernel-ffi/examples/oracle/build-oracle.sh");
+        return;
+    };
+    let oracle = forkplan::Oracle::new(bin);
+    let frozen = forkday::frozen_days();
+    let mut stale = Vec::new();
+    for d in &DAYS {
+        let Some(held) = frozen.get(d.name) else {
+            stale.push(format!("{}: no frozen day", d.name));
+            continue;
+        };
+        match fixture_oracle_line(d, &oracle) {
+            Err(e) => stale.push(format!("{}: {e}", d.name)),
+            Ok(again) if again.trim_end() != serde_json::to_string(held).expect("a line").as_str() => {
+                let v: serde_json::Value = serde_json::from_str(&again).expect("a line");
+                stale.push(format!("{}: {}", d.name, forkplan::first_difference("line", held, &v).unwrap_or_else(|| "the bytes".to_string())));
+            }
+            Ok(_) => {}
+        }
+    }
+    println!("frozen fixture days the fork oracle answers as frozen: {} of {} ({} oracle request(s))", DAYS.len() - stale.len(), DAYS.len(), oracle.asked.lock().expect("census"));
+    assert!(stale.is_empty(), "the fork oracle does not answer the frozen fixture days as frozen:\n  {}", stale.join("\n  "));
+}
+
+/// **Re-bless the frozen fork days** — inert without `TM_PLANNER_BLESS`.
+///
+/// Each day is the fork as the shipped binary plans it (D53): the kernel's own
+/// grants for this request, read by the binary's reader, handed to
+/// `planner::plan` through `with_ranking` — `planning::build_ranked`'s call.
+/// Rewriting a committed comparand is a decision and never a repair (AGENTS
+/// §7.2).
+///
+/// **It asks fork 4748911 OUT of the tree and sits outside the fork region**
+/// (W-45 track C, README gap 4680): each day is [`fixture_oracle_line`]'s —
+/// `tm-oracle plan` over the fixture's world, ranked by the kernel's grants as
+/// the binary ranks it (D53) — so the file stays re-blessable after R3 (until
+/// W-45 it planned in-tree and R3 made the file final, gap 4463).
+/// `TM_PLANNER_BLESS_DAYS_OUT` writes elsewhere, for a dry run.
+///
+/// **It holds the lines it already has, since W-42 track C** (README gaps 4151 and
+/// 4283): until then it rewrote the whole file with nothing held — a re-bless held
+/// to no rule at all, beside siblings that refuse to change a held line. These four
+/// days record no departure (a line is the shipped fork's day and its digest), so
+/// no parity number (D64(a)) and no corrected harness reading (D64(c)) can license
+/// moving one; a day the fork answers differently is a finding to report, and is
+/// REFUSED by name. A day no committed version holds is added; what a line is held
+/// against is the file's COMMITTED history (`frozenhist::held`), never the working
+/// copy; a line HEAD holds that no day of [`DAYS`] writes is refused.
+#[test]
+#[ignore]
+fn the_frozen_fork_days_are_reblessed() {
+    if std::env::var_os("TM_PLANNER_BLESS").is_none() {
+        eprintln!("inert: set TM_PLANNER_BLESS=1 (with TM_ORACLE) to rewrite {}", forkday::FROZEN_DAYS);
+        return;
+    }
+    let oracle = forkplan::Oracle::new(forkplan::oracle_path().expect("TM_PLANNER_BLESS asks fork 4748911 out of the tree: set TM_ORACLE"));
+    let held = frozenhist::held(&forkday::frozen_path(), frozenhist::key_of("name")).unwrap_or_else(|e| panic!("{e}"));
+    eprintln!("{}", held.census(forkday::FROZEN_DAYS));
+    let (mut out, mut refused) = (String::new(), Vec::new());
+    for d in &DAYS {
+        let line = fixture_oracle_line(d, &oracle).unwrap_or_else(|e| panic!("{}: {e}", d.name));
+        if held.ever.get(d.name).is_some_and(|old| old.raw.as_str() != line.trim_end()) {
+            refused.push(format!("{}: the fork answers this frozen day differently, and it is not rewritten", d.name));
+        }
+        out.push_str(&line);
+    }
+    refused.extend(held.head.iter().filter(|n| !DAYS.iter().any(|d| d.name == n.as_str())).map(|n| format!("{n}: a frozen line no day writes")));
+    assert!(refused.is_empty(), "the re-bless is refused and wrote nothing:\n  {}", refused.join("\n  "));
+    let out_path = std::env::var_os("TM_PLANNER_BLESS_DAYS_OUT").map(std::path::PathBuf::from).unwrap_or_else(forkday::frozen_path);
+    std::fs::write(out_path, out).expect("the frozen days are written");
+}
+
 // BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gap 2722)
 use tm_core::planner;
 
@@ -465,45 +597,4 @@ fn plan_travel_day() {
     check_travel_day(&day, &fx, now);
 }
 
-/// **Re-bless the frozen fork days** — inert without `TM_PLANNER_BLESS`.
-///
-/// Each day is the fork as the shipped binary plans it (D53): the kernel's own
-/// grants for this request, read by the binary's reader, handed to
-/// `planner::plan` through `with_ranking` — `planning::build_ranked`'s call.
-/// Rewriting a committed comparand is a decision and never a repair (AGENTS
-/// §7.2); after R3 this test is gone with the region and the file is final.
-///
-/// **It holds the lines it already has, since W-42 track C** (README gaps 4151 and
-/// 4283): until then it rewrote the whole file with nothing held — a re-bless held
-/// to no rule at all, beside siblings that refuse to change a held line. These four
-/// days record no departure (a line is the shipped fork's day and its digest), so
-/// no parity number (D64(a)) and no corrected harness reading (D64(c)) can license
-/// moving one; a day the fork answers differently is a finding to report, and is
-/// REFUSED by name. A day no committed version holds is added; what a line is held
-/// against is the file's COMMITTED history (`frozenhist::held`), never the working
-/// copy; a line HEAD holds that no day of [`DAYS`] writes is refused.
-#[test]
-#[ignore]
-fn the_frozen_fork_days_are_reblessed() {
-    if std::env::var_os("TM_PLANNER_BLESS").is_none() {
-        eprintln!("inert: set TM_PLANNER_BLESS=1 to rewrite {}", forkday::FROZEN_DAYS);
-        return;
-    }
-    let held = frozenhist::held(&forkday::frozen_path(), frozenhist::key_of("name")).unwrap_or_else(|e| panic!("{e}"));
-    eprintln!("{}", held.census(forkday::FROZEN_DAYS));
-    let (mut out, mut refused) = (String::new(), Vec::new());
-    for d in &DAYS {
-        let l = Loaded::of(d);
-        let (_, ans) = planreq::kernel_day(&l.world(), None).unwrap_or_else(|e| panic!("{}: {e}", d.name));
-        let fork = planner::plan(&l.fx.input(&l.state, l.now).with_ranking(&l.cands, &ans.prios));
-        let line = forkday::frozen_line(d.name, &fork);
-        if held.ever.get(d.name).is_some_and(|old| old.raw.as_str() != line.trim_end()) {
-            refused.push(format!("{}: the fork answers this frozen day differently, and it is not rewritten", d.name));
-        }
-        out.push_str(&line);
-    }
-    refused.extend(held.head.iter().filter(|n| !DAYS.iter().any(|d| d.name == n.as_str())).map(|n| format!("{n}: a frozen line no day writes")));
-    assert!(refused.is_empty(), "the re-bless is refused and wrote nothing:\n  {}", refused.join("\n  "));
-    std::fs::write(forkday::frozen_path(), out).expect("the frozen days are written");
-}
 // END THE FORK PLANNER

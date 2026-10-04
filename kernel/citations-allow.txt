@@ -1366,3 +1366,9 @@ with_minute
 # the W-44 land (the qualified name, three times); the repair's own prose, PlannerWit's note where it stood and the Lean notes name it without backticks.
 1 plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted
 3 PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted
+
+# W-45 TRACK C (README gaps 4680-4699).  planner_classes.rs' `bless_because` -- `forkclass::because_of` under a second
+# name, read only by the batch's and the driven days' blesses, which left the fork region at W-45 (README gap 4680) and
+# call `because_of` now -- is DELETED.  The citation counted here names it as it stood, in the append-only README block
+# of W-39 track H.
+1 bless_because

@@ -189,6 +189,41 @@ pub fn held_since(path: &Path, base: &str, key: impl Fn(&Value) -> Option<String
     Ok(out)
 }
 
+/// **What a bless of a WHOLE-FILE comparand holds** (W-45 track C, README gap 4680): a committed
+/// snapshot — `emit_planner.rs`' renderings of the fork's fixture days, which a surviving test reads
+/// as the fork's frozen answer — is held as [`held`] holds a line: its latest committed text since
+/// the base on HEAD's first-parent line (HEAD's where HEAD holds it), else the text the commit being
+/// merged holds; `Ok(None)` when no committed version holds the file. The working copy is never
+/// what is held, and a history git cannot read is UNCHECKED, an `Err`.
+pub fn held_text(path: &Path) -> Result<Option<(String, String)>, String> {
+    held_text_since(path, &base()?)
+}
+
+/// [`held_text`] over an explicit base (a test's own repository).
+pub fn held_text_since(path: &Path, base: &str) -> Result<Option<(String, String)>, String> {
+    let dir = path.parent().ok_or_else(|| format!("UNCHECKED: {} has no directory", path.display()))?;
+    let unchecked = |why: &str| format!("UNCHECKED: {}: {why} — a bless that cannot read the committed history writes nothing", path.display());
+    git(dir, &["merge-base", "--is-ancestor", base, "HEAD"])
+        .ok_or_else(|| unchecked(&format!("the base {base} is not an ancestor of HEAD, or git cannot say (a `git archive` copy, a shallow clone)")))?;
+    let revs = git(dir, &["rev-list", "--first-parent", "--reverse", &format!("{base}..HEAD")]).ok_or_else(|| unchecked("git rev-list failed"))?;
+    let mut latest: Option<(String, String)> = None;
+    for rev in std::iter::once(base.to_string()).chain(revs.split_whitespace().map(str::to_string)) {
+        let text = show(path, &rev).ok_or_else(|| unchecked(&format!("git cannot show it at {rev}")))?;
+        if !text.is_empty() {
+            latest = Some((rev, text));
+        }
+    }
+    if latest.is_none() {
+        for rev in merge_heads(dir) {
+            let text = show(path, &rev).ok_or_else(|| unchecked(&format!("git cannot show it at the merge head {rev}")))?;
+            if !text.is_empty() {
+                latest = Some((rev, text));
+            }
+        }
+    }
+    Ok(latest)
+}
+
 /// **Every committed version of the file since the base, oldest first, then the working copy**
 /// (the W-42 repair, README gap 4341): `(sha, {key: line})` per first-parent commit — the walk
 /// [`held_since`] reads — and `("WORKTREE", …)` last, read off the disk. What a PLAIN run holds the

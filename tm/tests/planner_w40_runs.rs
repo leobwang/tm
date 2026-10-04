@@ -70,7 +70,11 @@ mod plangen;
 mod forkplan;
 
 use chrono::NaiveTime;
+use tm_core::config::Config;
 use tm_core::dayplan::{DayPlan, SegKind};
+use tm_core::model::Id;
+use forkclass::Built;
+use tm_core::priority::{self, Candidate, Prio};
 use tm_core::store::RuntimeState;
 
 use planner_common::{at, date, of_texts, DayPlanner, Fixture, Kernel};
@@ -169,11 +173,192 @@ fn the_kernel_batches_across_a_ci_on_the_riding_day() {
     assert_eq!(work(&day), vec![(true, ids(&["l1", "j1"]))]);
 }
 
+/// **P64's precondition over one ranked order, by its property**: a batch §7.5 forms
+/// over `ranked` (fork `priority::batches`) whose plain members — the ones fork
+/// `build_groups` keeps — keyed as fork `split_by_filters` keys them (`loc:`,
+/// splittability, the running block), show one key AGAIN after another key. That is
+/// the one shape on which the fork's group-by and D74's runs split a batch
+/// differently; on every other batch the two are the same buckets in the same order.
+fn a_key_reappears(ranked: &[&Candidate], cfg: &Config, active: Option<&Id>) -> bool {
+    priority::batches(ranked, cfg).iter().any(|batch| {
+        let keys: Vec<_> = batch
+            .ids
+            .iter()
+            .filter_map(|id| ranked.iter().find(|c| c.id == *id && !c.is_wall && !c.is_optional && c.window.is_none()))
+            .map(|c| (c.loc.clone(), c.splittable, active == Some(&c.id)))
+            .collect();
+        let mut closed = Vec::new();
+        let mut run = None;
+        keys.into_iter().any(|k| {
+            if run.as_ref() == Some(&k) {
+                return false;
+            }
+            if let Some(r) = run.replace(k.clone()) {
+                closed.push(r);
+            }
+            closed.contains(&k)
+        })
+    })
+}
+
+/// **P64's precondition bites, both ways** (AGENTS §5.8): the split world's one batch,
+/// `[^t3, ^t1, ^t2]` with `^t1` atomic, shows the splittable key again after the atomic
+/// one; the same three with `^t1` written last, `[^t3, ^t2, ^t1]`, do not — the group-by
+/// and the runs are then the same two buckets. **It reads no fork** — the kernel's ranking and
+/// `tm_core::priority`'s batches — so it sits outside the region since W-45 track C (README gap
+/// 4682), with the precondition and the census that reads it.
+#[test]
+fn p64s_precondition_sees_a_key_again_and_only_then() {
+    let mut lines = vec![("t3", ""), ("t1", " atomic"), ("t2", "")];
+    for (expect, order) in [(true, "t3 t1 t2"), (false, "t3 t2 t1")] {
+        if !expect {
+            lines.swap(1, 2);
+        }
+        let week: String = std::iter::once("# Tasks\n".to_string())
+            .chain(lines.iter().map(|(id, flag)| format!("- [ ] 2 10m Task {id} ^{id}{flag}\n")))
+            .collect();
+        let fx = world(&week);
+        let now = at("2026-09-07", 9, 0);
+        let st = state(1);
+        let day = tm_core::planwire::plan_date(&st, now);
+        let cands = priority::collect_candidates(&fx.tree, &fx.replay, &fx.cfg, &fx.model, day, now);
+        let w = planner_common::planreq::World {
+            docs: &fx.docs,
+            log: &fx.log,
+            tree: &fx.tree,
+            cfg: &fx.cfg,
+            state: &st,
+            now,
+            cands: &cands,
+            replay: &fx.replay,
+        };
+        let (_, ans) = planner_common::planreq::kernel_day(&w, None).expect("the kernel ranks the day");
+        let ranked = priority::sorted_candidates(&ans.prios, &cands);
+        let order_seen: Vec<&str> = ranked.iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(order_seen.join(" "), order, "the ranked order of the {order} world");
+        assert_eq!(a_key_reappears(&ranked, &fx.cfg, None), expect, "the {order} world");
+    }
+}
+
+/// The census's seed — one no frozen file draws from — and its size.
+const CENSUS_SEED: &str = "w40-k D74 runs census";
+const CENSUS_DRAWS: usize = 128;
+
+/// **P64's precondition for one world**: over every order the comparand plans it in —
+/// the kernel's ranking as shipped and with D60's key run in the fork (P51), and on a
+/// running-block day the kernel's ranking of the GROWN request (P52's what-if).
+fn p64_precondition(b: &Built, prios: &[Prio]) -> bool {
+    let active = b.world.state.active.as_ref().map(|a| &a.id);
+    let mut rankings = vec![prios.to_vec()];
+    rankings.extend(forkplan::grown_prios(b));
+    rankings.iter().any(|ps| {
+        let d60 = forkclass::d60_cands(&b.cands, ps);
+        [&b.cands, &d60]
+            .iter()
+            .any(|cs| a_key_reappears(&priority::sorted_candidates(ps, cs), &b.cfg, active))
+    })
+}
+
+/// **What D74 moves on generated days, by value** (README gap 3546; parity P64). The class
+/// draw from [`CENSUS_SEED`], [`CENSUS_DRAWS`] draws: each world the shipped binary holds
+/// (`forkclass::binary_holds`, as the seeded batch is chosen) is planned by the kernel and
+/// compared with the comparand — fork 4748911 as the shipped binary runs it, kernel-ranked
+/// (D53), with the registered departures applied by their properties
+/// (`forkplan::comparand_answers`) — by `forkclass::compare_line`, the frozen lines' own
+/// comparison. **Every day the kernel plans unlike the fork carries P64's precondition**
+/// ([`p64_precondition`]); the census prints how many days carry it, how many of those the
+/// kernel plans unlike the fork, and the values that differ. On the kernel before D74 the
+/// same draws differ on no day (README, W-40 track K).
+///
+/// **Since the W-40 land step (README gap 3740 closed) the comparand RUNS P64** — the fork's
+/// `PlanInput::with_runs`, the oracle's `p64-runs.patch` — so the kernel is held to it on
+/// EVERY day and must differ on none, and what D74 moves is the comparand's own `p64` flag
+/// (the runs moved the fork's day): the census asserts that flag is set only on a day that
+/// carries P64's precondition. At the land: 128 held, the precondition on 2, the runs moving
+/// the fork's day on the count it prints, the kernel unlike the comparand on 0.
+///
+/// **A measurement, and `#[ignore]`d for its cost**: every draw is planned live by both
+/// planners and the comparand's departures are re-derived, about five minutes on this
+/// machine; it runs with `--include-ignored`, as the oracle arms do.
+///
+/// **Since W-45 track C the comparand is asked of `tm-oracle plan`** (README gap 4682; the owner's
+/// D72) — fork 4748911 out of the tree, as every comparand is built after R3 — so the census
+/// outlives R3 and sits outside the fork region; inert without `TM_ORACLE`. Until W-45 it asked the
+/// in-tree fork, and R3 would have deleted it with the region.
+#[test]
+#[ignore]
+fn every_day_the_kernel_plans_unlike_the_fork_carries_p64s_precondition() {
+    let Some(bin) = forkplan::oracle_path() else {
+        eprintln!("inert: set TM_ORACLE to an oracle built by kernel/tm-kernel-ffi/examples/oracle/build-oracle.sh");
+        return;
+    };
+    let oracle = forkplan::Oracle::new(bin);
+    let mut t = forkclass::ClassTally::default();
+    let (mut held, mut refused, mut pre, mut moved, mut values) = (0usize, 0usize, 0usize, 0usize, 0usize);
+    let mut p64_moved = 0usize;
+    let mut bad = Vec::new();
+    let mut shown = Vec::new();
+    for draw in forkclass::class_draws(CENSUS_SEED, None).take(CENSUS_DRAWS) {
+        let world = forkclass::world_of(&draw);
+        let b = Built::of(world.clone());
+        if forkclass::binary_holds(&b).is_err() {
+            refused += 1;
+            continue;
+        }
+        held += 1;
+        let (_, prios) =
+            forkclass::kernel_answer_with_grants(&b).unwrap_or_else(|e| panic!("draw {}: the kernel: {e}", draw.index));
+        let answers = forkplan::comparand_answers(&b, &prios, &oracle)
+            .unwrap_or_else(|e| panic!("draw {}: the oracle: {e}", draw.index));
+        let class = forkclass::class_of(&b).key();
+        let mut line =
+            forkclass::drawn_line(format!("census draw {}", draw.index), CENSUS_SEED, draw.index, &draw, &world, &class);
+        for key in forkclass::ANSWERS {
+            forkclass::set_answer(&mut line, key, answers[key].clone());
+        }
+        let findings = forkclass::compare_line(&line, &mut t);
+        let p = p64_precondition(&b, &prios);
+        pre += usize::from(p);
+        // Since the W-40 land step the comparand RUNS P64 (`forkplan::comparand_answers`: the
+        // fork's `PlanInput::with_runs`), so the kernel is held to it on every day, and what
+        // D74 moves is the comparand's own `p64` flag: set where the runs move the fork's day.
+        let runs_moved = answers["p64"]["p64"] == true;
+        p64_moved += usize::from(runs_moved);
+        if runs_moved && !p {
+            bad.push(format!("draw {} ({class}): the runs moved the fork's day without P64's precondition", draw.index));
+        }
+        if findings.is_empty() {
+            continue;
+        }
+        moved += 1;
+        values += findings.len();
+        bad.push(format!("draw {} ({class}): {}", draw.index, findings.join("; ")));
+        if shown.len() < 8 {
+            shown.push(format!("draw {} ({class}): {}", draw.index, findings.join("; ")));
+        }
+    }
+    println!(
+        "D74 census ({CENSUS_SEED:?}, {CENSUS_DRAWS} draws): {held} held by the binary, {refused} refused; \
+         P64's precondition on {pre} day(s); the runs move the fork's day on {p64_moved}; the kernel plans unlike \
+         the comparand on {moved} day(s), {values} value(s); {}",
+        t.line(values)
+    );
+    for s in &shown {
+        println!("  {s}");
+    }
+    assert!(held > 0, "the census held no world");
+    assert!(
+        bad.is_empty(),
+        "{} day(s) the kernel plans unlike the comparand, or the runs move the fork's day without P64's precondition:\n  {}",
+        bad.len(),
+        bad.join("\n  ")
+    );
+}
+
 // BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gaps 3546, 3714)
-use forkclass::Built;
-use tm_core::config::Config;
-use tm_core::model::Id;
-use tm_core::priority::{self, Candidate, Prio};
+// (P64's precondition, its bite test and the census that reads it left this region at W-45 track C —
+// README gap 4682: the precondition reads the kernel's ranking and `tm_core::priority`, never the fork,
+// and the census asks `tm-oracle plan` now — and took their imports with them.)
 
 /// The fork's day, ranked by the kernel's own §7 answer — the shipped
 /// `planning::build_ranked` wiring (D53).
@@ -247,173 +432,4 @@ fn the_fork_batches_across_a_ci_too() {
     assert_eq!(work(&day), vec![(true, ids(&["l1", "j1"]))]);
 }
 
-/// The census's seed — one no frozen file draws from — and its size.
-const CENSUS_SEED: &str = "w40-k D74 runs census";
-const CENSUS_DRAWS: usize = 128;
-
-/// **P64's precondition over one ranked order, by its property**: a batch §7.5 forms
-/// over `ranked` (fork `priority::batches`) whose plain members — the ones fork
-/// `build_groups` keeps — keyed as fork `split_by_filters` keys them (`loc:`,
-/// splittability, the running block), show one key AGAIN after another key. That is
-/// the one shape on which the fork's group-by and D74's runs split a batch
-/// differently; on every other batch the two are the same buckets in the same order.
-fn a_key_reappears(ranked: &[&Candidate], cfg: &Config, active: Option<&Id>) -> bool {
-    priority::batches(ranked, cfg).iter().any(|batch| {
-        let keys: Vec<_> = batch
-            .ids
-            .iter()
-            .filter_map(|id| ranked.iter().find(|c| c.id == *id && !c.is_wall && !c.is_optional && c.window.is_none()))
-            .map(|c| (c.loc.clone(), c.splittable, active == Some(&c.id)))
-            .collect();
-        let mut closed = Vec::new();
-        let mut run = None;
-        keys.into_iter().any(|k| {
-            if run.as_ref() == Some(&k) {
-                return false;
-            }
-            if let Some(r) = run.replace(k.clone()) {
-                closed.push(r);
-            }
-            closed.contains(&k)
-        })
-    })
-}
-
-/// **P64's precondition for one world**: over every order the comparand plans it in —
-/// the kernel's ranking as shipped and with D60's key run in the fork (P51), and on a
-/// running-block day the kernel's ranking of the GROWN request (P52's what-if).
-fn p64_precondition(b: &Built, prios: &[Prio]) -> bool {
-    let active = b.world.state.active.as_ref().map(|a| &a.id);
-    let mut rankings = vec![prios.to_vec()];
-    rankings.extend(forkplan::grown_prios(b));
-    rankings.iter().any(|ps| {
-        let d60 = forkclass::d60_cands(&b.cands, ps);
-        [&b.cands, &d60]
-            .iter()
-            .any(|cs| a_key_reappears(&priority::sorted_candidates(ps, cs), &b.cfg, active))
-    })
-}
-
-/// **P64's precondition bites, both ways** (AGENTS §5.8): the split world's one batch,
-/// `[^t3, ^t1, ^t2]` with `^t1` atomic, shows the splittable key again after the atomic
-/// one; the same three with `^t1` written last, `[^t3, ^t2, ^t1]`, do not — the group-by
-/// and the runs are then the same two buckets.
-#[test]
-fn p64s_precondition_sees_a_key_again_and_only_then() {
-    let mut lines = vec![("t3", ""), ("t1", " atomic"), ("t2", "")];
-    for (expect, order) in [(true, "t3 t1 t2"), (false, "t3 t2 t1")] {
-        if !expect {
-            lines.swap(1, 2);
-        }
-        let week: String = std::iter::once("# Tasks\n".to_string())
-            .chain(lines.iter().map(|(id, flag)| format!("- [ ] 2 10m Task {id} ^{id}{flag}\n")))
-            .collect();
-        let fx = world(&week);
-        let now = at("2026-09-07", 9, 0);
-        let st = state(1);
-        let day = tm_core::planwire::plan_date(&st, now);
-        let cands = priority::collect_candidates(&fx.tree, &fx.replay, &fx.cfg, &fx.model, day, now);
-        let w = planner_common::planreq::World {
-            docs: &fx.docs,
-            log: &fx.log,
-            tree: &fx.tree,
-            cfg: &fx.cfg,
-            state: &st,
-            now,
-            cands: &cands,
-            replay: &fx.replay,
-        };
-        let (_, ans) = planner_common::planreq::kernel_day(&w, None).expect("the kernel ranks the day");
-        let ranked = priority::sorted_candidates(&ans.prios, &cands);
-        let order_seen: Vec<&str> = ranked.iter().map(|c| c.id.as_str()).collect();
-        assert_eq!(order_seen.join(" "), order, "the ranked order of the {order} world");
-        assert_eq!(a_key_reappears(&ranked, &fx.cfg, None), expect, "the {order} world");
-    }
-}
-
-/// **What D74 moves on generated days, by value** (README gap 3546; parity P64). The class
-/// draw from [`CENSUS_SEED`], [`CENSUS_DRAWS`] draws: each world the shipped binary holds
-/// (`forkclass::binary_holds`, as the seeded batch is chosen) is planned by the kernel and
-/// compared with the comparand — fork 4748911 as the shipped binary runs it, kernel-ranked
-/// (D53), with the registered departures applied by their properties
-/// (`forkplan::comparand_answers`) — by `forkclass::compare_line`, the frozen lines' own
-/// comparison. **Every day the kernel plans unlike the fork carries P64's precondition**
-/// ([`p64_precondition`]); the census prints how many days carry it, how many of those the
-/// kernel plans unlike the fork, and the values that differ. On the kernel before D74 the
-/// same draws differ on no day (README, W-40 track K).
-///
-/// **Since the W-40 land step (README gap 3740 closed) the comparand RUNS P64** — the fork's
-/// `PlanInput::with_runs`, the oracle's `p64-runs.patch` — so the kernel is held to it on
-/// EVERY day and must differ on none, and what D74 moves is the comparand's own `p64` flag
-/// (the runs moved the fork's day): the census asserts that flag is set only on a day that
-/// carries P64's precondition. At the land: 128 held, the precondition on 2, the runs moving
-/// the fork's day on the count it prints, the kernel unlike the comparand on 0.
-///
-/// **A measurement, and `#[ignore]`d for its cost**: every draw is planned live by both
-/// planners and the comparand's departures are re-derived, about five minutes on this
-/// machine; it runs with `--include-ignored`, as the oracle arms do.
-#[test]
-#[ignore]
-fn every_day_the_kernel_plans_unlike_the_fork_carries_p64s_precondition() {
-    let mut t = forkclass::ClassTally::default();
-    let (mut held, mut refused, mut pre, mut moved, mut values) = (0usize, 0usize, 0usize, 0usize, 0usize);
-    let mut p64_moved = 0usize;
-    let mut bad = Vec::new();
-    let mut shown = Vec::new();
-    for draw in forkclass::class_draws(CENSUS_SEED, None).take(CENSUS_DRAWS) {
-        let world = forkclass::world_of(&draw);
-        let b = Built::of(world.clone());
-        if forkclass::binary_holds(&b).is_err() {
-            refused += 1;
-            continue;
-        }
-        held += 1;
-        let (_, prios) =
-            forkclass::kernel_answer_with_grants(&b).unwrap_or_else(|e| panic!("draw {}: the kernel: {e}", draw.index));
-        let answers = forkplan::comparand_answers(&b, &prios, &forkplan::InTree)
-            .unwrap_or_else(|e| panic!("draw {}: the fork: {e}", draw.index));
-        let class = forkclass::class_of(&b).key();
-        let mut line =
-            forkclass::drawn_line(format!("census draw {}", draw.index), CENSUS_SEED, draw.index, &draw, &world, &class);
-        for key in forkclass::ANSWERS {
-            forkclass::set_answer(&mut line, key, answers[key].clone());
-        }
-        let findings = forkclass::compare_line(&line, &mut t);
-        let p = p64_precondition(&b, &prios);
-        pre += usize::from(p);
-        // Since the W-40 land step the comparand RUNS P64 (`forkplan::comparand_answers`: the
-        // fork's `PlanInput::with_runs`), so the kernel is held to it on every day, and what
-        // D74 moves is the comparand's own `p64` flag: set where the runs move the fork's day.
-        let runs_moved = answers["p64"]["p64"] == true;
-        p64_moved += usize::from(runs_moved);
-        if runs_moved && !p {
-            bad.push(format!("draw {} ({class}): the runs moved the fork's day without P64's precondition", draw.index));
-        }
-        if findings.is_empty() {
-            continue;
-        }
-        moved += 1;
-        values += findings.len();
-        bad.push(format!("draw {} ({class}): {}", draw.index, findings.join("; ")));
-        if shown.len() < 8 {
-            shown.push(format!("draw {} ({class}): {}", draw.index, findings.join("; ")));
-        }
-    }
-    println!(
-        "D74 census ({CENSUS_SEED:?}, {CENSUS_DRAWS} draws): {held} held by the binary, {refused} refused; \
-         P64's precondition on {pre} day(s); the runs move the fork's day on {p64_moved}; the kernel plans unlike \
-         the comparand on {moved} day(s), {values} value(s); {}",
-        t.line(values)
-    );
-    for s in &shown {
-        println!("  {s}");
-    }
-    assert!(held > 0, "the census held no world");
-    assert!(
-        bad.is_empty(),
-        "{} day(s) the kernel plans unlike the comparand, or the runs move the fork's day without P64's precondition:\n  {}",
-        bad.len(),
-        bad.join("\n  ")
-    );
-}
 // END THE FORK PLANNER

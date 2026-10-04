@@ -96,14 +96,15 @@ mod forkclass;
 #[path = "support/forkplan.rs"]
 mod forkplan;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
 
-use chrono::{DateTime, Duration, NaiveTime};
+use chrono::{DateTime, Duration, NaiveDate, NaiveTime};
 use chrono_tz::Tz;
 use proptest::prelude::*;
 use serde_json::{json, Value};
-use tm_core::capacity::{self, local_dt};
+use tm_core::capacity::{self, local_dt, Exact, CAP_DEN};
+use tm_core::priority::PrioClass;
 use tm_core::model::{Id, Loc, Shape};
 use tm_core::dayplan::{DayPlan, SegKind, Segment};
 use tm_core::planwire;
@@ -761,6 +762,128 @@ fn kernel_plan(req: &Value) -> Result<Value, String> {
     Ok(p)
 }
 
+/// **The kernel's own §7 answer, read back as the fork's `Prio`** (W-30), so the fork can be
+/// asked to plan the day WITH IT — `PlanInput::with_ranking`, which is exactly what the shipped
+/// binary does (`planning::build_ranked` → `Ctx::priorities` → `kernel_capacity::rank`, then
+/// `with_ranking`).
+///
+/// **Why a second fork run exists at all.** §8.2 step 5's assignment cannot be asserted against
+/// a fork that ran its OWN §7 pass, because the two passes are given different capacity by
+/// design — parity **P1** for the future days and parity **P41** for day 0 — and every
+/// difference in `p` reaches step 5 as a different rank order. Measured at this commit, over
+/// 526 cases, the number of days on which the whole §7 answer agreed row for row was **four**;
+/// an assertion gated on that is an assertion that does not run, which is the defect this arm
+/// shipped with for one whole run (README gap 2005). Handing the fork the kernel's answer makes
+/// step 5 comparable on EVERY day, and it compares the thing the binary actually runs.
+///
+/// It is `kernel_capacity::parse`'s **third** spelling and README gap **2006** is amended to say
+/// so rather than growing one quietly: `tm` is a `[[bin]]` with no library target.
+///
+/// `None` when the grants cannot be keyed 1:1 onto `cands` — an id naming two rows (§5.3's
+/// carried instance), or a candidate the kernel answered nothing for. The census counts those
+/// days; a guess would compare the kernel against a ranking neither planner holds.
+fn kernel_prios(plan: &Value, cands: &[Candidate]) -> Option<Vec<Prio>> {
+    let mut by_id: BTreeMap<&str, Option<&Value>> = BTreeMap::new();
+    for g in plan["__grants"].as_array().map(Vec::as_slice).unwrap_or_default() {
+        let id = g["id"].as_str()?;
+        // A second row under one id poisons the entry rather than overwriting it.
+        by_id.entry(id).and_modify(|e| *e = None).or_insert(Some(g));
+    }
+    let unit = |v: &Value| -> u128 { v.as_str().unwrap_or("0").parse::<u128>().unwrap_or(0) };
+    let mut out = Vec::with_capacity(cands.len());
+    for c in cands {
+        let g = (*by_id.get(c.id.as_str())?)?;
+        let class = match g["class"].as_str()? {
+            "wall" => PrioClass::Wall,
+            "hot" => PrioClass::Hot,
+            "impossible" => PrioClass::Impossible,
+            "overdue" => PrioClass::Overdue,
+            "mandatory" => PrioClass::Mandatory,
+            "hotflag" => PrioClass::HotFlag,
+            "dated" => PrioClass::Dated,
+            "floor" => PrioClass::Floor,
+            "rank" => PrioClass::Rank,
+            "optional" => PrioClass::Optional,
+            _ => return None,
+        };
+        // A wall is off §7.2's scale on both sides: the kernel writes `p: null` and the fork's
+        // own `Prio::wall` is the comparand, so it is built here rather than decoded.
+        if class == PrioClass::Wall {
+            // `Prio::wall` is private to `tm-core`; this is its body, and §7.2's
+            // "off the scale" is what both spellings say (`priority.rs:842`).
+            out.push(Prio {
+                id: c.id.clone(),
+                p: 0,
+                class,
+                k: c.k,
+                u: None,
+                bin: None,
+                need_min: 0,
+                avail_min: 0,
+                avail_min_exact: Exact::default(),
+                allocation_min: 0,
+                allocation_min_exact: Exact::default(),
+                shortfall_min: 0,
+                shortfall_min_exact: Exact::default(),
+                until: None,
+                hysteresis_applied: false,
+                raw_p: 0,
+            });
+            continue;
+        }
+        let avail = Exact::new(unit(&g["avail"]), CAP_DEN);
+        let alloc = Exact::new(unit(&g["allocation"]), CAP_DEN);
+        let short = Exact::new(unit(&g["shortfall"]), CAP_DEN);
+        let need = u32::try_from(g["need"].as_u64()?).ok()?;
+        let p = u8::try_from(g["p"].as_u64()?).ok()?;
+        let raw_p = u8::try_from(g["rawP"].as_u64()?).ok()?;
+        // `u` is the ONE field the grant does not carry, and the shipped reader rebuilds it:
+        // `planwire::prio_of` (moved from `kernel_capacity` at W-35 track R, gap 2876) sets it
+        // only where the grant has an `until` and is not a
+        // wall, as the exact `need / avail` held on the kernel's side of 1 — at or above 1
+        // exactly when the grant's `bin` is `null` (HOT), below it otherwise. **W-33, README
+        // gap 2518: this spelling used to fill `need / avail` for EVERY grant, a zero capacity
+        // infinite**, so every undated candidate — no grant, `avail` 0, a positive `need` —
+        // read as HOT here and as not-HOT in the shipped binary. Nothing step 5 reads uses `u`;
+        // §8.2 step 8's `hot` and `impossible` do (`Prio::is_hot`, `Prio::is_impossible`), and
+        // this arm has compared both against the kernel since W-33, so the spelling is the
+        // shipped one now. (Walls never reach here: they are built above.)
+        let until = g["until"].as_str().and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok());
+        let bin = g["bin"].as_u64().map(|b| b as u8);
+        let units = unit(&g["avail"]);
+        let uu = until.is_some().then(|| {
+            let exact = if units == 0 {
+                f64::INFINITY
+            } else {
+                (u128::from(need) * CAP_DEN) as f64 / units as f64
+            };
+            match bin {
+                None => exact.max(1.0),
+                Some(_) => exact.min(1.0 - f64::EPSILON),
+            }
+        });
+        out.push(Prio {
+            id: c.id.clone(),
+            p,
+            class,
+            k: u8::try_from(g["k"].as_u64()?).ok()?,
+            u: uu,
+            bin,
+            need_min: need,
+            avail_min: avail.floor_u32(),
+            avail_min_exact: avail,
+            allocation_min: alloc.floor_u32(),
+            allocation_min_exact: alloc,
+            shortfall_min: short.floor_u32(),
+            shortfall_min_exact: short,
+            until,
+            hysteresis_applied: p != raw_p,
+            raw_p,
+        });
+    }
+    Some(out)
+}
+
 
 /// **§8.2 step 2's ORDERING half, drawn** — README gap **2226**.
 ///
@@ -1387,12 +1510,21 @@ fn p46_day() -> Case {
 /// **The reversed day is served by due date** (W-38, README gap 3282) — the kernel half of the
 /// region's `the_reversed_day_is_served_by_due_date_on_every_run`: of two impossible items of one
 /// `ci`, the kernel serves the one due TODAY, on the second line, first (the owner's D60, P51).
+///
+/// **Its two preconditions, of the kernel alone** (W-45 track C, README gap 4682): both answers are
+/// `p = 0` impossible ties and D60's key moves the order — so "the item due today first" is D60's
+/// doing and not a ranking that put it first anyway. Until W-45 they were asserted only in the
+/// region's `_on_every_run` twin, beside the fork's half, and R3 would have deleted them with it.
 #[test]
 fn the_reversed_day_is_served_by_due_date() {
     let w = build(&reversed_day());
     let plan = kernel_plan(&w.plan_request()).expect("the kernel plans the reversed day");
-    let ids: Vec<String> = w.candidates().iter().map(|c| c.id.to_string()).collect();
+    let cvec = w.candidates();
+    let ps = kernel_prios(&plan, &cvec).expect("the kernel ranks the reversed day");
+    let ids: Vec<String> = cvec.iter().map(|c| c.id.to_string()).collect();
     assert_eq!(ids.len(), 2, "two candidates: {ids:?}");
+    assert!(ps.iter().all(forkclass::is_impossible_tie), "both are p = 0 and impossible: {ps:?}");
+    assert!(forkclass::is_p51(&cvec, &ps), "D60 moves the order on the reversed day");
     let k = w36_kernel_work_rows(&plan, rowwire::kernel_sec(w.now));
     assert!(!k.is_empty(), "the kernel assigns work on the reversed day");
     assert_eq!(k[0].2, vec![ids[1].clone()], "the kernel serves the item due today first: {k:?}");
@@ -1576,6 +1708,86 @@ proptest! {
             "planner_invariants oracle census: {cases} fresh draws, {refused} the binary cannot hold, {compared} compared with \
              fork 4748911's planner out of the tree ({asked_now} oracle requests): what-ifs {whatifs}; P45 days {p45}, P46 {p46}, \
              P47 {p47}, P51 {p51}, P52 {p52}, P55 {p55}, P56 {p56}"
+        );
+    }
+}
+
+/// **The plain arm's census** (W-45 track C): `[cases, drawn worlds the binary refuses, worlds the
+/// kernel planned, what-ifs asked and answered, base, hash, w35 and step-8 arms, days with no
+/// candidate]`.
+static KERNEL_DRAW_CENSUS: Mutex<[u64; 9]> = Mutex::new([0; 9]);
+
+proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: std::env::var("TM_PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(64),
+        max_shrink_iters: 16,
+        ..ProptestConfig::default()
+    })]
+
+    /// **The kernel plans every fresh class draw, and answers §9.1's what-if exactly where it is
+    /// asked — of the kernel alone, in a plain run** (W-45 track C, README gap 4682). The region's
+    /// generated arms each assert, beside their fork comparisons, that the kernel PLANS the world
+    /// they drew (`the kernel refused a day the fork planned`), that it answers `overtime` on a
+    /// request that asked one and on no other, and that a request with no candidate assigns no
+    /// work — none of which compares a fork, and all of which R3 would delete with the region. After
+    /// it the fork's half meets fresh draws only under `TM_ORACLE`
+    /// ([`the_kernel_plans_every_fresh_draw_as_the_forks_oracle_plans_it`]); this keeps the kernel's
+    /// half on fresh draws in every `cargo test` run. Each case is draw 0 of the class draw from a
+    /// fresh seed (`fresh_draw`: every arm's widenings — a multiplier and a logged break, a running
+    /// break and forced overtime, a travel or spent day — as the frozen batch draws them); a world
+    /// the shipped binary cannot hold is counted and set aside (D64(b)); the rest are asked as R3's
+    /// host asks them (`forkclass::kernel_answer_with_grants`: the host's worked minutes, the
+    /// what-if with its grown facts on a running block), decoded by the host's codec, which refuses
+    /// a day whose rows do not hash to the kernel's digest.
+    #[test]
+    fn the_kernel_plans_every_fresh_class_draw(bytes in any::<[u8; 12]>()) {
+        let (seed, draw, world, holds) = fresh_draw(&bytes);
+        let mut c = [0u64; 9];
+        c[0] = 1;
+        if holds.is_err() {
+            c[1] = 1;
+        } else {
+            let b = forkclass::Built::of(world);
+            let (k, _) = forkclass::kernel_answer_with_grants(&b).map_err(|e| {
+                TestCaseError::fail(format!("seed {seed}: the kernel refused a world the binary holds (repeat it: class_draws({seed:?}, None).next()): {e}"))
+            })?;
+            let asked = forkclass::whatif_json(&b).is_some();
+            prop_assert_eq!(
+                k.overtime.is_some(), asked,
+                "seed {}: the kernel answered `overtime` {} a request that asked {}", seed,
+                if k.overtime.is_some() { "to" } else { "nothing to" }, if asked { "one" } else { "none" }
+            );
+            if b.cands.is_empty() {
+                let assigned: Vec<String> = k.day.segments.iter().filter(|s| s.kind.is_work() && s.energy.is_some()).flat_map(|s| s.items()).map(|i| i.to_string()).collect();
+                prop_assert!(assigned.is_empty(), "seed {}: the kernel assigned {:?} from a request carrying no candidates", seed, assigned);
+                c[8] = 1;
+            }
+            c[2] = 1;
+            c[3] = u64::from(asked);
+            c[4 + usize::from(forkclass::Widening::number_of(draw.widening.arm()).unwrap_or(0))] = 1;
+        }
+        let [cases, refused, planned, whatifs, base, hash, w35, step8, empty] = {
+            let mut g = KERNEL_DRAW_CENSUS.lock().expect("census");
+            for (a, x) in g.iter_mut().zip(c) {
+                *a += x;
+            }
+            *g
+        };
+        let generated: u64 = std::env::var("TM_PROPTEST_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(64);
+        if cases >= generated {
+            // THE FLOORS (AGENTS §9.2): the kernel was asked most draws, on every arm's widening, and
+            // a what-if was answered.
+            prop_assert!(planned > generated / 2, "only {planned} of {cases} fresh draws were planned by the kernel");
+            prop_assert!(base > 0 && hash > 0 && w35 > 0 && step8 > 0, "an arm drew nothing the kernel planned: {base}, {hash}, {w35}, {step8}");
+            prop_assert!(whatifs > 0, "no what-if was asked in {cases} fresh draws");
+        }
+        eprintln!(
+            "planner_invariants kernel draw census: {cases} fresh draws, {refused} the binary cannot hold, {planned} planned by \
+             the kernel (base {base}, hash {hash}, w35 {w35}, step-8 {step8}); what-ifs asked and answered {whatifs}; days \
+             with no candidate {empty}"
         );
     }
 }
@@ -1940,14 +2152,12 @@ proptest! {
 // (`planner_classes.rs`) does on its 45 lines: what each arm compares that the frozen lines
 // cover by value, and what they do not, is README's W-37 track H table — the part they do not
 // cover is lost at R3 and is named there.
-use std::collections::BTreeMap;
 
 // `Timelike` is read only here (a whole-second check on the fork's rows): imported in the
-// region, so R3's deletion leaves no dead import behind (README gap 4080).
-use chrono::{NaiveDate, Timelike};
-use tm_core::capacity::{Exact, CAP_DEN};
+// region, so R3's deletion leaves no dead import behind (README gap 4080). (`NaiveDate`, `Exact`,
+// `CAP_DEN`, `PrioClass` and `BTreeMap` moved out with `kernel_prios` at W-45 track C.)
+use chrono::Timelike;
 use tm_core::planner::{self, PlanInput};
-use tm_core::priority::PrioClass;
 
 /// **The fork oracle IS the in-tree fork, on every fresh draw** (W-39, the owner's D72; README
 /// gap 3533) — while both exist, `tm-oracle plan` (fork 4748911 with `09d38fa`'s ranking seam
@@ -2469,128 +2679,6 @@ fn grant_fields(k: &Value, f: &Prio) -> (Vec<String>, Vec<String>) {
     say(&mut down, "p", format!("{:?}", k["p"].as_u64()), f.p.to_string());
     say(&mut down, "rawP", format!("{:?}", k["rawP"].as_u64()), f.raw_p.to_string());
     (cap, down)
-}
-
-/// **The kernel's own §7 answer, read back as the fork's `Prio`** (W-30), so the fork can be
-/// asked to plan the day WITH IT — `PlanInput::with_ranking`, which is exactly what the shipped
-/// binary does (`planning::build_ranked` → `Ctx::priorities` → `kernel_capacity::rank`, then
-/// `with_ranking`).
-///
-/// **Why a second fork run exists at all.** §8.2 step 5's assignment cannot be asserted against
-/// a fork that ran its OWN §7 pass, because the two passes are given different capacity by
-/// design — parity **P1** for the future days and parity **P41** for day 0 — and every
-/// difference in `p` reaches step 5 as a different rank order. Measured at this commit, over
-/// 526 cases, the number of days on which the whole §7 answer agreed row for row was **four**;
-/// an assertion gated on that is an assertion that does not run, which is the defect this arm
-/// shipped with for one whole run (README gap 2005). Handing the fork the kernel's answer makes
-/// step 5 comparable on EVERY day, and it compares the thing the binary actually runs.
-///
-/// It is `kernel_capacity::parse`'s **third** spelling and README gap **2006** is amended to say
-/// so rather than growing one quietly: `tm` is a `[[bin]]` with no library target.
-///
-/// `None` when the grants cannot be keyed 1:1 onto `cands` — an id naming two rows (§5.3's
-/// carried instance), or a candidate the kernel answered nothing for. The census counts those
-/// days; a guess would compare the kernel against a ranking neither planner holds.
-fn kernel_prios(plan: &Value, cands: &[Candidate]) -> Option<Vec<Prio>> {
-    let mut by_id: BTreeMap<&str, Option<&Value>> = BTreeMap::new();
-    for g in plan["__grants"].as_array().map(Vec::as_slice).unwrap_or_default() {
-        let id = g["id"].as_str()?;
-        // A second row under one id poisons the entry rather than overwriting it.
-        by_id.entry(id).and_modify(|e| *e = None).or_insert(Some(g));
-    }
-    let unit = |v: &Value| -> u128 { v.as_str().unwrap_or("0").parse::<u128>().unwrap_or(0) };
-    let mut out = Vec::with_capacity(cands.len());
-    for c in cands {
-        let g = (*by_id.get(c.id.as_str())?)?;
-        let class = match g["class"].as_str()? {
-            "wall" => PrioClass::Wall,
-            "hot" => PrioClass::Hot,
-            "impossible" => PrioClass::Impossible,
-            "overdue" => PrioClass::Overdue,
-            "mandatory" => PrioClass::Mandatory,
-            "hotflag" => PrioClass::HotFlag,
-            "dated" => PrioClass::Dated,
-            "floor" => PrioClass::Floor,
-            "rank" => PrioClass::Rank,
-            "optional" => PrioClass::Optional,
-            _ => return None,
-        };
-        // A wall is off §7.2's scale on both sides: the kernel writes `p: null` and the fork's
-        // own `Prio::wall` is the comparand, so it is built here rather than decoded.
-        if class == PrioClass::Wall {
-            // `Prio::wall` is private to `tm-core`; this is its body, and §7.2's
-            // "off the scale" is what both spellings say (`priority.rs:842`).
-            out.push(Prio {
-                id: c.id.clone(),
-                p: 0,
-                class,
-                k: c.k,
-                u: None,
-                bin: None,
-                need_min: 0,
-                avail_min: 0,
-                avail_min_exact: Exact::default(),
-                allocation_min: 0,
-                allocation_min_exact: Exact::default(),
-                shortfall_min: 0,
-                shortfall_min_exact: Exact::default(),
-                until: None,
-                hysteresis_applied: false,
-                raw_p: 0,
-            });
-            continue;
-        }
-        let avail = Exact::new(unit(&g["avail"]), CAP_DEN);
-        let alloc = Exact::new(unit(&g["allocation"]), CAP_DEN);
-        let short = Exact::new(unit(&g["shortfall"]), CAP_DEN);
-        let need = u32::try_from(g["need"].as_u64()?).ok()?;
-        let p = u8::try_from(g["p"].as_u64()?).ok()?;
-        let raw_p = u8::try_from(g["rawP"].as_u64()?).ok()?;
-        // `u` is the ONE field the grant does not carry, and the shipped reader rebuilds it:
-        // `planwire::prio_of` (moved from `kernel_capacity` at W-35 track R, gap 2876) sets it
-        // only where the grant has an `until` and is not a
-        // wall, as the exact `need / avail` held on the kernel's side of 1 — at or above 1
-        // exactly when the grant's `bin` is `null` (HOT), below it otherwise. **W-33, README
-        // gap 2518: this spelling used to fill `need / avail` for EVERY grant, a zero capacity
-        // infinite**, so every undated candidate — no grant, `avail` 0, a positive `need` —
-        // read as HOT here and as not-HOT in the shipped binary. Nothing step 5 reads uses `u`;
-        // §8.2 step 8's `hot` and `impossible` do (`Prio::is_hot`, `Prio::is_impossible`), and
-        // this arm has compared both against the kernel since W-33, so the spelling is the
-        // shipped one now. (Walls never reach here: they are built above.)
-        let until = g["until"].as_str().and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok());
-        let bin = g["bin"].as_u64().map(|b| b as u8);
-        let units = unit(&g["avail"]);
-        let uu = until.is_some().then(|| {
-            let exact = if units == 0 {
-                f64::INFINITY
-            } else {
-                (u128::from(need) * CAP_DEN) as f64 / units as f64
-            };
-            match bin {
-                None => exact.max(1.0),
-                Some(_) => exact.min(1.0 - f64::EPSILON),
-            }
-        });
-        out.push(Prio {
-            id: c.id.clone(),
-            p,
-            class,
-            k: u8::try_from(g["k"].as_u64()?).ok()?,
-            u: uu,
-            bin,
-            need_min: need,
-            avail_min: avail.floor_u32(),
-            avail_min_exact: avail,
-            allocation_min: alloc.floor_u32(),
-            allocation_min_exact: alloc,
-            shortfall_min: short.floor_u32(),
-            shortfall_min_exact: short,
-            until,
-            hysteresis_applied: p != raw_p,
-            raw_p,
-        });
-    }
-    Some(out)
 }
 
 /// The same, off the fork's day.

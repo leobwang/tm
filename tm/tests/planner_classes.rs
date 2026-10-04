@@ -10,11 +10,14 @@
 //! 550/551/435 as the only row classes the day may differ by.
 //!
 //! **The arm that survives R3** is everything outside the one region below:
-//! it reads the frozen lines and the kernel, and nothing of the fork's planner.
-//! **The fork's arm** — the re-bless, and the check that the frozen answers are
-//! still the fork's on this tree — plans with `planner::plan` and is one region,
-//! `BEGIN THE FORK PLANNER` … `END THE FORK PLANNER`, which R3 deletes whole;
-//! [`the_fork_half_of_this_suite_is_one_region`] holds this file to that.
+//! it reads the frozen lines and the kernel, and nothing of the fork's planner —
+//! and since W-45 track C (README gap 4680) every bless of the suite's frozen files
+//! is in it too, asking fork 4748911 out of the tree (`tm-oracle plan`), so no file
+//! is final at R3. **The fork's arm** — the checks that the frozen answers are still
+//! the in-tree fork's on this tree, and P45's witness — plans with `planner::plan`
+//! and is one region, `BEGIN THE FORK PLANNER` … `END THE FORK PLANNER`, which R3
+//! deletes whole; [`the_fork_half_of_this_suite_is_one_region`] holds this file to
+//! that.
 //!
 //! **Since W-37 track H the file answers to the owner's D64 by a test, not a
 //! sentence** (README gaps 3133, 3138, 3123): every world is the shared
@@ -89,6 +92,7 @@ use chrono_tz::Tz;
 use serde_json::Value;
 use tm_core::config::Config;
 use tm_core::dayplan::SegKind;
+use tm_core::store::RuntimeState;
 
 use forkclass::{class_of, class_space, compare_line, frozen_lines, Built, ClassTally, ClassWorld, DayShape, Run};
 
@@ -218,6 +222,7 @@ fn the_kernel_plans_plan_basic_every_ten_minutes_as_the_fork_planned() {
     let mut findings = Vec::new();
     let lines = forkday::frozen_basic_days();
     let mut states = BTreeSet::new();
+    let mut unsent = 0usize;
     for line in &lines {
         let name = line["name"].as_str().unwrap_or("<no name>");
         let state: tm_core::store::RuntimeState = serde_json::from_value(line["state"].clone()).expect("a stored state");
@@ -227,6 +232,16 @@ fn the_kernel_plans_plan_basic_every_ten_minutes_as_the_fork_planned() {
         let cands = tm_core::priority::collect_candidates(&fx.tree, &fx.replay, &fx.cfg, &fx.model, date, now);
         let sent = tm_core::planwire::routine_instances(&cands, &fx.tree, now, date, fx.cfg.tz);
         assert!(sent.iter().all(|r| r.from < r.to), "{name}: an empty span was sent (README gap 3201)");
+        // **…and the filter that keeps it from being sent FIRED** (W-45 track C, README gap 4682): the
+        // windowed candidates fork collect_routines keeps (its own filter) that the encoder did not
+        // send — a closed daily window, never placed — counted, as `planner_w37_rows.rs`' region
+        // counted them beside its fork comparison, so the property above is not asserted of a run
+        // that met no closed window.
+        unsent += cands
+            .iter()
+            .filter(|c| !c.is_wall && !c.is_optional && c.eligible() && c.window.is_some() && c.remaining_min > 0)
+            .filter(|c| !sent.iter().any(|r| r.id == c.id && r.inst == c.instance))
+            .count();
         let w = planner_common::planreq::World {
             docs: &fx.docs,
             log: &fx.log,
@@ -249,6 +264,7 @@ fn the_kernel_plans_plan_basic_every_ten_minutes_as_the_fork_planned() {
     assert_eq!(t.hashes_equal, t.days, "every day hashes as the fork's: {t:?}");
     assert!(t.hot_marks_435 >= 10, "a Routine row's `⚠` compared on too few days: {t:?}");
     assert!(t.break_rows_551 >= 10, "planned Break rows compared on too few days: {t:?}");
+    assert!(unsent > 0, "no closed window instance was left unsent (README gap 3201's filter fired on no frozen instant)");
 }
 
 /// **The kernel plans every day of the seeded batch as the fork planned it** (W-39, the owner's
@@ -769,6 +785,14 @@ const OUTSIDE_A_REGION: [(&str, &str); 0] = [];
 /// left to find by reading (README gap 2872). A file with no region may name
 /// the fork nowhere in code, which after R3 is the assertion that every
 /// comparand moved.
+///
+/// **And a region holds nothing but the fork** (W-45 track C, README gap 4682): every `#[test]`
+/// in a region reaches the fork's planner (`forkday::region_tests_unreached`), so R3's deletion
+/// takes no test that asked the kernel alone, no harness check and no bless — W-45 found a bless
+/// that reached no fork (the class worlds' re-draw), a precondition's bite test and the kernel halves
+/// of four tests sitting in regions, and moved each out. The guard reads the regions while
+/// `tm-core/src/planner.rs` exists and demands none once it is gone, so R3's deletion of both leaves
+/// it nothing to rewrite.
 #[test]
 fn every_test_that_reaches_the_fork_keeps_it_in_one_region() {
     let mut bad = Vec::new();
@@ -792,6 +816,10 @@ fn every_test_that_reaches_the_fork_keeps_it_in_one_region() {
         if !scan.deleted {
             regions.push(label.clone());
         }
+        let unreached = forkday::region_tests_unreached(text, &foreign);
+        if !unreached.is_empty() {
+            bad.push(format!("{label}: the fork region holds test(s) that reach no fork planner, which R3 would delete for nothing: {unreached:?}"));
+        }
         if let Some((_, why)) = OUTSIDE_A_REGION.iter().find(|(f, _)| *f == label) {
             exempt_seen.insert(label.clone());
             assert!(why.contains("EXIT") && why.starts_with("20"), "{label}: an exemption needs a date and an EXIT");
@@ -809,15 +837,20 @@ fn every_test_that_reaches_the_fork_keeps_it_in_one_region() {
             bad.push(format!("STALE: {f} is exempt and is not a test file of this tree"));
         }
     }
-    println!("files with one fork region: {}", regions.join(", "));
+    println!("files with one fork region: {} ({})", regions.len(), regions.join(", "));
     assert!(bad.is_empty(), "{}", bad.join("\n"));
-    // While the fork is here the scan must SEE its regions (a guard that reads
-    // no banner is reading nothing); once R3 deletes `planner.rs`, a region left
-    // behind is dead code and none may remain.
+    // Once R3 deletes `planner.rs`, a region left behind is dead code and none may remain.
+    //
+    // **The scan reads its banners on both sides of R3 without a count** (W-45 track C, README gap
+    // 4682). Until W-45 a floor demanded seven regions while `planner.rs` exists, so "a guard that
+    // reads no banner is reading nothing" — and R3 simulated as W-44 simulated it (the regions
+    // deleted, the fork's file kept for the binary) went red on the floor alone. The escape check
+    // above already bites a scan that reads no banner: every needle a region holds would read as an
+    // escape (`the_fork_scan_sees_a_reference_outside_its_region_and_only_there` and
+    // `the_region_guard_sees_code_outside_that_needs_the_region` bite the reader), and
+    // `srcwalk::every_rust_file` refuses a walk of fewer than a hundred files.
     let fork_here = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tm-core/src/planner.rs").exists();
-    if fork_here {
-        assert!(regions.len() >= 7, "the walk found {} fork regions: {regions:?}", regions.len());
-    } else {
+    if !fork_here {
         assert!(regions.is_empty(), "the fork is gone and regions remain: {regions:?}");
     }
 }
@@ -855,6 +888,61 @@ fn the_region_guard_sees_code_outside_that_needs_the_region() {
     assert_eq!(forkday::module_of("tm/tests/planner_common/mod.rs"), "planner_common");
     assert_eq!(forkday::module_of("tm/tests/support/forkclass.rs"), "forkclass");
     assert_eq!(forkday::top_level_name("    fn day(&self)"), None, "a method is not a top-level name");
+}
+
+/// **A region's test that reaches no fork is seen, and only such a test** (AGENTS §5.8; W-45 track
+/// C, README gap 4682): in a region, a test that calls the fork's planner, one that reaches it
+/// through a region helper, through a region struct whose `impl` plans, through a method of an
+/// `impl` the region adds to a type declared elsewhere, or through another file's region name, all
+/// reach it; a test that asks the kernel alone, or names the fork only in a comment or a string, does
+/// not — inside a `proptest!` block as at column zero. The banners are spelled in pieces so this
+/// file holds no region of its own here.
+#[test]
+fn a_region_test_that_reaches_no_fork_is_seen() {
+    let b = ["// BEGIN THE FORK", " PLANNER\n"].concat();
+    let e = ["// END THE FORK", " PLANNER\n"].concat();
+    let p = ["planner", "::plan"].concat();
+    let region = format!(
+        "fn helper() -> u8 {{ {p}(&x); 1 }}\nstruct Fork;\nimpl Planner for Fork {{\n    fn day(&self) {{ {p}(&y); }}\n}}\nimpl World {{\n    fn shipped(&self) {{ {p}(&z); }}\n}}\n\
+         #[test]\nfn direct() {{ {p}(&a); }}\n#[test]\nfn through_a_helper() {{ helper(); }}\n#[test]\nfn through_a_struct() {{ check(&Fork); }}\n\
+         #[test]\nfn through_a_method() {{ w.shipped(); }}\n#[test]\nfn through_another_region() {{ othermod::Backend.go(); }}\n\
+         #[test]\nfn kernel_alone() {{ kernel_day(); }}\n#[test]\nfn only_in_prose() {{\n    // {p}(&x) is named here\n    let s = \"{p}\";\n}}\n\
+         proptest! {{\n    #[test]\n    fn drawn_direct(x in any::<u8>()) {{ {p}(&x); }}\n    #[test]\n    fn drawn_kernel(x in any::<u8>()) {{ kernel_day(); }}\n}}\n"
+    );
+    let src = format!("fn outside() {{}}\n{b}{region}{e}");
+    // Another file's region name, as the guard reads the in-tree backend's — spelled as names no real region
+    // declares, so this file's own code holds no reach into a region.
+    let foreign = vec![("othermod".to_string(), "Backend".to_string())];
+    let mut unreached = forkday::region_tests_unreached(&src, &foreign);
+    unreached.sort();
+    assert_eq!(unreached, vec!["drawn_kernel", "kernel_alone", "only_in_prose"], "the reader saw {unreached:?}");
+    assert!(forkday::region_tests_unreached("#[test]\nfn kernel_alone() { kernel_day(); }\n", &foreign).is_empty(), "a test outside any region was read as a region's");
+}
+
+/// **A grouped or renamed import of the fork's planner is a reach** (AGENTS §5.8; W-45 track C,
+/// README gap 4683): `use tm_core::{config, planner as fp};` names the module by no needle, so every
+/// later `fp::diff(…)` reached the fork unseen by both scans. Outside a region it is an escape, on one
+/// line or several; inside one, a test calling through the alias — or importing it in its own body —
+/// reaches the fork; and an import that merely holds the word (`planwire`, `planner_common`, a path
+/// not rooted at the library) is neither. The banners and the crate's name are spelled in pieces so
+/// this file holds no region and no import of its own here.
+#[test]
+fn a_grouped_or_renamed_import_of_the_fork_is_a_reach() {
+    let b = ["// BEGIN THE FORK", " PLANNER\n"].concat();
+    let e = ["// END THE FORK", " PLANNER\n"].concat();
+    let m = ["tm_", "core"].concat();
+    let one = forkday::fork_scan(&format!("{b}{e}use {m}::{{config, planner as fp}};\nfn f() {{ fp::diff(&a, &b); }}\n")).escapes;
+    assert!(one.len() == 1 && one[0].contains("a `use` of the fork's planner module"), "a renamed import outside the region: {one:?}");
+    let several = forkday::fork_scan(&format!("{b}{e}use {m}::{{\n    config,\n    planner,\n}};\n")).escapes;
+    assert!(several.len() == 1 && several[0].contains("a `use` of the fork's planner module"), "a grouped import over four lines: {several:?}");
+    let quiet = format!("{b}{e}use {m}::{{config, planwire}};\nuse planner_common::{{at, Kernel}};\nuse other::{{planner as p}};\nfn g() {{ let planner = 1; }}\n");
+    let over = forkday::fork_scan(&quiet).escapes;
+    assert!(over.is_empty(), "an import that merely holds the word was read as the fork's: {over:?}");
+    let region = format!(
+        "{b}use {m}::{{planner as fp}};\n#[test]\nfn through_the_alias() {{ fp::diff(&a, &b); }}\n#[test]\nfn kernel_alone() {{ kernel_day(); }}\n\
+         #[test]\nfn imports_it_itself() {{\n    use {m}::{{planner as q}};\n    q::diff(&a, &b);\n}}\n{e}"
+    );
+    assert_eq!(forkday::region_tests_unreached(&region, &[]), vec!["kernel_alone"], "the alias was not read as a reach");
 }
 
 /// **A stored world reads back as the bytes it was written from** — the frozen
@@ -2270,110 +2358,13 @@ fn the_oracles_worked_op_reads_the_forks_own_lines() {
     assert!(main.contains(&format!("{:?}", forkplan::WORKED_READ_BY)), "the oracle's answer does not name the entry the harness refuses an answer without");
 }
 
-// BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gaps 2722, 2925)
-use tm_core::dayplan::DayPlan;
-use tm_core::planner;
-use tm_core::priority::Prio;
-use tm_core::store::RuntimeState;
-
-/// **The fork's answers for one stored world** — since W-39 `forkplan::comparand_answers`
-/// over the in-tree fork (`forkplan::InTree`), the ONE definition the oracle arm's comparand
-/// is built by too (the owner's D72): the departures are applied to the day's JSON there, so
-/// this region only PLANS. Every frozen line was re-blessed through it unchanged
-/// ([`the_frozen_classes_are_the_forks_answer_today`]).
-fn fork_answers(b: &Built, prios: &[Prio]) -> Value {
-    forkplan::comparand_answers(b, prios, &forkplan::InTree).unwrap_or_else(|e| panic!("the in-tree fork: {e}"))
-}
-
-/// **P45's reset clause has a witness** (W-38, README gap 3480): on a frozen `overrun` line the
-/// fork's rows after the break planned with the break LOGGED (`forkplan::p45_after`, the
-/// comparand) are not the rows planned at the same instant with it unlogged — so the frozen
-/// comparand pins the clause, and the kernel, held to it, resets its counter at a running break
-/// of at least `break_min`. Until W-38's `overrun` lines no frozen break day could tell the two
-/// apart.
-#[test]
-fn the_overrun_lines_witness_p45s_reset() {
-    let tz = tz();
-    let (mut lines, mut witnessed) = (0, Vec::new());
-    for line in frozen_lines().iter().filter(|l| l["secondary"] == "overrun") {
-        lines += 1;
-        let b = Built::of(ClassWorld::of_json(&line["world"], tz).expect("a stored world"));
-        let prios = forkclass::kernel_answer_with_grants(&b).expect("the kernel answers").1;
-        let with = forkplan::p45_after(&b, &prios, &forkplan::InTree).expect("the fork plans").expect("a running break");
-        let from = DateTime::parse_from_rfc3339(with["from"].as_str().expect("from")).expect("an instant").with_timezone(&tz);
-        let ask = forkplan::ForkAsk { state: &b.world.state, now: from, d60: true, p64: true, prios: &prios, extend: None, log_line: None };
-        let day = forkplan::ForkPlan::plan(&forkplan::InTree, &b, &ask).expect("the fork plans").day;
-        let unlogged: Vec<Value> = day["segments"]
-            .as_array()
-            .map(Vec::as_slice)
-            .unwrap_or_default()
-            .iter()
-            .filter(|s| forkplan::at(&s["start"]).is_some_and(|a| a >= from.fixed_offset()))
-            .cloned()
-            .collect();
-        if with["rows"] != Value::Array(unlogged) {
-            witnessed.push(line["class"].as_str().unwrap_or("?").to_string());
-        }
-    }
-    println!("overrun lines whose rows the logged break changes: {} of {lines}: {witnessed:?}", witnessed.len());
-    assert!(!witnessed.is_empty(), "no frozen overrun line witnesses P45's reset ({lines} line(s))");
-}
-
-/// The kernel's grants for a stored world — what `with_ranking` hands the fork.
-fn kernel_prios(b: &Built) -> Vec<Prio> {
-    forkclass::kernel_answer_with_grants(b).unwrap_or_else(|e| panic!("the kernel refused: {e}")).1
-}
-
-/// **The frozen answers are still the fork's on this tree** — while the fork
-/// is here, every frozen line's answers (`forkclass::ANSWERS`: the day, `shipped`,
-/// the flags, the what-if and since W-38 `p45`, `p52`, `p55` and `p56`) are exactly
-/// what the fork answers for its stored world over the kernel's grants now. A
-/// failure here says the FORK's answer moved (or the kernel's ranking it is
-/// handed); a failure of the surviving arm says the kernel's day moved.
-///
-/// **A line P81 nets on** (the owner's D87, W-42 track R; README gaps 4240 and 4248): the in-tree
-/// fork plans over the KERNEL's replay, which since D87 nets the line's logged break, so it cannot
-/// answer the line's fork-4748911 reading — `day`, `shipped` and `p55` — and those three are asked
-/// out of the tree (`the_frozen_lines_are_the_forks_oracle_answer_today`, with the oracle's own
-/// reading of the block's minutes since W-43, README gap 4250: the reordered log the in-tree fork
-/// was asked until then is a shape the owner's D92 nets). What the in-tree fork CAN answer is held
-/// here: P81's answer (`p81`, the comparand asked the D87 day) is the frozen one; over the kernel's
-/// replay of the stored world it draws THAT day; and every other answer is the line's.
-#[test]
-fn the_frozen_classes_are_the_forks_answer_today() {
-    let mut stale = Vec::new();
-    let mut p81_lines = 0usize;
-    for line in frozen_lines() {
-        let world = ClassWorld::of_json(&line["world"], tz()).expect("a stored world");
-        let b = Built::of(world.clone());
-        let prios = kernel_prios(&b);
-        let now = fork_answers(&b, &prios);
-        // The LINE, as `compare_line` names it: a secondary line carries its kind (W-38).
-        let who = format!("{}{}", line["class"].as_str().unwrap_or("?"), line["secondary"].as_str().map(|s| format!(" ({s})")).unwrap_or_default());
-        if line["p81"].is_null() {
-            for key in forkclass::ANSWERS {
-                if now[key] != line[key] {
-                    stale.push(format!("{who}: `{key}`"));
-                }
-            }
-            continue;
-        }
-        p81_lines += 1;
-        // Over the kernel's replay the in-tree fork draws P81's answer's day — the netting is the
-        // kernel's reading, and P81's answer is fork 4748911 asked it.
-        if now["day"]["day"] != line["p81"]["day"] || now["day"]["hash"] != line["p81"]["hash"] {
-            stale.push(format!("{who}: `day` over the kernel's replay is not P81's answer's day"));
-        }
-        for key in forkclass::ANSWERS.iter().filter(|k| !["day", "shipped", "p55"].contains(k)) {
-            if now[*key] != line[*key] {
-                stale.push(format!("{who}: `{key}` over the kernel's replay"));
-            }
-        }
-    }
-    println!("frozen fork classes re-asked: {} line(s), {p81_lines} of them carrying P81's answer", frozen_lines().len());
-    assert!(p81_lines > 0, "no frozen line carries P81's answer");
-    assert!(stale.is_empty(), "the frozen answers are not the fork's today (re-bless is a decision, AGENTS §7.2):\n  {}", stale.join("\n  "));
-}
+// ---------------------------------------------------------------------------
+// The blesses that outlive R3 (W-45 track C, README gap 4680). Each asks fork 4748911 OUT of the
+// tree — `tm-oracle plan`, the owner's D72 — so no frozen file of this suite is final at R3. Until
+// W-45 the four below sat in the fork region with the in-tree fork they planned by, and R3's
+// deletion would have taken every way to re-bless `plan-basic`'s days, the batch, the driven days
+// and the classes' worlds (README gap 4463 named three of the four).
+// ---------------------------------------------------------------------------
 
 /// **`plan-basic`'s two states, as the fixture suite plans them**: arrived at 07:00
 /// (`planner_common::basic_state`) and at 10:30 (`planner_fixtures.rs`' and
@@ -2400,31 +2391,57 @@ fn basic_instants() -> Vec<(String, RuntimeState, DateTime<Tz>)> {
     out
 }
 
-/// The shipped fork's day for one frozen `plan-basic` instant (D53: `planner::plan` over the
-/// kernel's own grants — `planning::build_ranked`'s call), as `planner_w37_rows.rs` planned it.
-fn basic_fork_day(fx: &planner_common::Fixture, state: &RuntimeState, now: DateTime<Tz>) -> DayPlan {
-    let date = tm_core::planwire::plan_date(state, now);
-    let cands = tm_core::priority::collect_candidates(&fx.tree, &fx.replay, &fx.cfg, &fx.model, date, now);
-    let w = planner_common::planreq::World { docs: &fx.docs, log: &fx.log, tree: &fx.tree, cfg: &fx.cfg, state, now, cands: &cands, replay: &fx.replay };
-    let (_, ans) = planner_common::planreq::kernel_day(&w, None).expect("the kernel plans the day");
-    planner::plan(&fx.input(state, now).with_ranking(&cands, &ans.prios))
+/// **One frozen `plan-basic` line, asked of fork 4748911 out of the tree** (W-45 track C, README
+/// gap 4680): the fixture's world as a class world reads it (`forkclass::Built::of_fixture`, which
+/// refuses a configuration the oracle would not read), the kernel's grants for its request — what
+/// the shipped binary hands its fork (D53, `planning::build_ranked`'s call) — and `tm-oracle plan`'s
+/// day for `state` at `now`, as the shipped binary draws it (`forkplan::Planned::day`), digested as
+/// fork 4748911's `DayPlan::hash` (`forkplan::day_hash`). The line is `forkday::basic_line_of`'s, the
+/// one writer the in-tree fork's line went through.
+fn basic_oracle_line(
+    fx: &planner_common::Fixture,
+    oracle: &forkplan::Oracle,
+    name: &str,
+    state: &RuntimeState,
+    now: DateTime<Tz>,
+) -> Result<String, String> {
+    let b = Built::of_fixture(&fx.docs, &fx.log, state, now, &fx.cfg)?;
+    let (_, ans) = planreq::kernel_day(&b.request_world(), None).map_err(|e| format!("the kernel: {e}"))?;
+    let ask = forkplan::ForkAsk { state, now, d60: false, p64: false, prios: &ans.prios, extend: None, log_line: None };
+    let day = forkplan::ForkPlan::plan(oracle, &b, &ask).map_err(|e| format!("the oracle: {e}"))?.day;
+    Ok(forkday::basic_line_of(name, state, now, &forkplan::day_hash(&day), &day))
 }
 
-/// **The frozen `plan-basic` days are still the fork's on this tree** (W-38), every line by
-/// value, while the fork is here.
+/// **The frozen `plan-basic` days are fork 4748911's answer today, out of the tree** (W-45 track C,
+/// README gap 4680) — every line, byte for byte, as [`basic_oracle_line`] writes it now: the
+/// assertion the in-region the_frozen_plan_basic_days_are_the_forks_answer_today makes of the
+/// in-tree fork, made of `tm-oracle plan`, so it outlives R3. Inert without `TM_ORACLE`.
 #[test]
-fn the_frozen_plan_basic_days_are_the_forks_answer_today() {
+#[ignore]
+fn the_frozen_plan_basic_days_are_the_forks_oracle_answer_today() {
+    let Some(bin) = forkplan::oracle_path() else {
+        eprintln!("inert: set TM_ORACLE to an oracle built by kernel/tm-kernel-ffi/examples/oracle/build-oracle.sh");
+        return;
+    };
+    let oracle = forkplan::Oracle::new(bin);
     let fx = planner_common::load_with_log("plan-basic", Some(planner_common::BASIC_LOG));
+    let lines = forkday::frozen_basic_days();
     let mut stale = Vec::new();
-    for line in forkday::frozen_basic_days() {
+    for line in &lines {
+        let name = line["name"].as_str().unwrap_or_default();
         let state: RuntimeState = serde_json::from_value(line["state"].clone()).expect("a stored state");
         let now = DateTime::parse_from_rfc3339(line["now"].as_str().unwrap_or_default()).expect("an instant").with_timezone(&fx.cfg.tz);
-        let name = line["name"].as_str().unwrap_or_default();
-        if forkday::basic_line(name, &state, now, &basic_fork_day(&fx, &state, now)).trim_end() != serde_json::to_string(&line).expect("a line").as_str() {
-            stale.push(name.to_string());
+        match basic_oracle_line(&fx, &oracle, name, &state, now) {
+            Err(e) => stale.push(format!("{name}: {e}")),
+            Ok(again) if again.trim_end() != serde_json::to_string(line).expect("a line").as_str() => {
+                let v: Value = serde_json::from_str(&again).expect("a line");
+                stale.push(format!("{name}: {}", forkplan::first_difference("line", line, &v).unwrap_or_else(|| "the bytes".to_string())));
+            }
+            Ok(_) => {}
         }
     }
-    assert!(stale.is_empty(), "the frozen plan-basic days are not the fork's today (a re-bless is a decision):\n  {}", stale.join("\n  "));
+    println!("frozen plan-basic days the fork oracle answers as frozen: {} of {} ({} oracle request(s))", lines.len() - stale.len(), lines.len(), oracle.asked.lock().expect("census"));
+    assert!(!lines.is_empty() && stale.is_empty(), "the fork oracle does not answer the frozen plan-basic days as frozen:\n  {}", stale.join("\n  "));
 }
 
 /// **Freeze `plan-basic`'s ten-minute days** (W-38) — inert without `TM_PLANNER_BLESS_BASIC`.
@@ -2432,26 +2449,32 @@ fn the_frozen_plan_basic_days_are_the_forks_answer_today() {
 /// change a line it holds: under the owner's D64 a frozen day changes only for a registered
 /// parity number or a world the binary cannot build, and these lines carry no flag a number
 /// could license — so a day of this file that the fork answers differently is a finding to
-/// report, never a line to rewrite. After R3 it is gone with the region and the file is final.
-/// (These lines carry no departure, so the owner's D85 — D64(c), a corrected harness reading —
+/// report, never a line to rewrite. (These lines carry no departure, so the owner's D85 — D64(c), a corrected harness reading —
 /// cannot reach them either: what it may move is a departure the line records, and the shipped
 /// fork's day it holds by value is the whole line.) **What a line is held against is the file's
 /// COMMITTED history** (W-42 track C, README gap 4151; `frozenhist::held`), never the working copy,
 /// so deleting the file is not a fresh freeze; a line HEAD holds that no instant draws is refused.
+///
+/// **It asks fork 4748911 OUT of the tree and sits outside the fork region** (W-45 track C, README
+/// gap 4680): each day is [`basic_oracle_line`]'s — `tm-oracle plan` over the fixture's world,
+/// ranked by the kernel's grants as the binary ranks it (D53) — so the file stays re-blessable after
+/// R3 (until W-45 the bless planned in-tree and R3 made the file final, gap 4463).
+/// `TM_PLANNER_BLESS_BASIC_OUT` writes elsewhere, for a dry run.
 #[test]
 #[ignore]
 fn the_frozen_plan_basic_days_are_blessed() {
     if std::env::var_os("TM_PLANNER_BLESS_BASIC").is_none() {
-        eprintln!("inert: set TM_PLANNER_BLESS_BASIC=1 to write {}", forkday::FROZEN_BASIC);
+        eprintln!("inert: set TM_PLANNER_BLESS_BASIC=1 (with TM_ORACLE) to write {}", forkday::FROZEN_BASIC);
         return;
     }
+    let oracle = forkplan::Oracle::new(forkplan::oracle_path().expect("TM_PLANNER_BLESS_BASIC asks fork 4748911 out of the tree: set TM_ORACLE"));
     let fx = planner_common::load_with_log("plan-basic", Some(planner_common::BASIC_LOG));
     let path = forkday::frozen_basic_path();
     let held = frozenhist::held(&path, frozenhist::key_of("name")).unwrap_or_else(|e| panic!("{e}"));
     eprintln!("{}", held.census(forkday::FROZEN_BASIC));
     let (mut out, mut added, mut refused, mut names) = (String::new(), 0usize, Vec::new(), Vec::new());
     for (name, state, now) in basic_instants() {
-        let line = forkday::basic_line(&name, &state, now, &basic_fork_day(&fx, &state, now));
+        let line = basic_oracle_line(&fx, &oracle, &name, &state, now).unwrap_or_else(|e| panic!("{name}: {e}"));
         match held.ever.get(&name) {
             Some(old) if old.raw.as_str() != line.trim_end() => refused.push(name.clone()),
             Some(_) => {}
@@ -2463,65 +2486,37 @@ fn the_frozen_plan_basic_days_are_blessed() {
     refused.extend(held.head.iter().filter(|n| !names.contains(n)).map(|n| format!("{n}: a frozen line no instant draws any more")));
     eprintln!("plan-basic days: {added} added, {} refused", refused.len());
     assert!(refused.is_empty(), "the fork answers these frozen days differently, and they are not rewritten:\n  {}", refused.join("\n  "));
-    std::fs::write(&path, out).expect("the frozen plan-basic days are written");
-}
-
-/// **The re-bless's reasons** (the owner's D64): the parity numbers
-/// `TM_PLANNER_BLESS_BECAUSE` names, comma-separated as `P<n>`. A token that
-/// is not one FAILS rather than being skipped.
-fn bless_because() -> Vec<u32> {
-    std::env::var("TM_PLANNER_BLESS_BECAUSE")
-        .unwrap_or_default()
-        .split(',')
-        .map(str::trim)
-        .filter(|t| !t.is_empty())
-        .map(|t| {
-            t.strip_prefix('P')
-                .and_then(|d| d.parse().ok())
-                .unwrap_or_else(|| panic!("TM_PLANNER_BLESS_BECAUSE: `{t}` is not a parity number P<n>"))
-        })
-        .collect()
-}
-
-/// **The frozen batch is still the fork's answer on this tree** (W-39, the owner's D72) — every
-/// batch line's answers are exactly what the fork answers for its stored world over the kernel's
-/// grants now, as the classes' live check asks of theirs.
-#[test]
-fn the_frozen_batch_is_the_forks_answer_today() {
-    let mut stale = Vec::new();
-    for line in forkclass::batch_lines() {
-        let b = Built::of(ClassWorld::of_json(&line["world"], tz()).expect("a stored world"));
-        let now = fork_answers(&b, &kernel_prios(&b));
-        for key in forkclass::ANSWERS {
-            if now[key] != line[key] {
-                stale.push(format!("{}: `{key}`", line["name"].as_str().unwrap_or("?")));
-            }
-        }
-    }
-    assert!(stale.is_empty(), "the frozen batch is not the fork's answer today (a re-bless is a decision, AGENTS §7.2):\n  {}", stale.join("\n  "));
+    let out_path = std::env::var_os("TM_PLANNER_BLESS_BASIC_OUT").map(std::path::PathBuf::from).unwrap_or_else(|| path.clone());
+    std::fs::write(&out_path, out).expect("the frozen plan-basic days are written");
 }
 
 /// **Freeze the seeded batch** (W-39, the owner's D72, README gap 3533) — inert without
 /// `TM_PLANNER_BLESS_BATCH`. It draws `forkclass::BATCH_DRAWS` draws of the class draw from
 /// `forkclass::BATCH_SEED`, keeps the ones whose world the shipped binary holds
 /// (`forkclass::binary_holds`, D64(b)), and writes each with the fork's answers
-/// (`fork_answers`, the classes' own). A line it already holds is held to the owner's D64
+/// (`forkplan::comparand_answers`, the classes' own, over the oracle). A line it already holds is held to the owner's D64
 /// exactly as the classes' re-bless is (`forkclass::d64_allows`, `TM_PLANNER_BLESS_BECAUSE`):
 /// a changed answer needs a registered number the line carries, and a changed WORLD is a
 /// re-draw, which this refuses by name. `TM_PLANNER_BLESS_BATCH_OUT` writes elsewhere, for a
-/// dry run. After R3 it is gone with the region and the file is final. **What a line is held
+/// dry run. **What a line is held
 /// against is the file's COMMITTED history** (W-42 track C, README gap 4151;
 /// `frozenhist::held`), never the working copy — so deleting the file is not a fresh freeze — and
 /// a line HEAD holds that the draw no longer writes is refused; `TM_PLANNER_BLESS_HARNESS` names a
 /// corrected harness reading (the owner's D85, D64(c)).
+///
+/// **It asks fork 4748911 OUT of the tree and sits outside the fork region** (W-45 track C, README
+/// gap 4680): every answer is `forkplan::comparand_answers` over `tm-oracle plan` (the classes'
+/// re-bless's shape since W-43, README gap 4462) and the shipped fork's day the oracle's, so the
+/// batch stays re-blessable under D64 after R3 deletes the in-tree fork.
 #[test]
 #[ignore]
 fn the_frozen_batch_is_blessed() {
     if std::env::var_os("TM_PLANNER_BLESS_BATCH").is_none() {
-        eprintln!("inert: set TM_PLANNER_BLESS_BATCH=1 to write {}", forkclass::FROZEN_BATCH);
+        eprintln!("inert: set TM_PLANNER_BLESS_BATCH=1 (with TM_ORACLE) to write {}", forkclass::FROZEN_BATCH);
         return;
     }
-    let because = bless_because();
+    let oracle = forkplan::Oracle::new(forkplan::oracle_path().expect("TM_PLANNER_BLESS_BATCH asks fork 4748911 out of the tree: set TM_ORACLE"));
+    let because = forkclass::because_of("TM_PLANNER_BLESS_BECAUSE");
     let harness = forkclass::harness_of("TM_PLANNER_BLESS_HARNESS");
     let registered = forkclass::registered_parity();
     let path = forkclass::batch_path();
@@ -2537,8 +2532,8 @@ fn the_frozen_batch_is_blessed() {
             not_held.push(format!("draw {index}: {}", e.join("; ")));
             continue;
         }
-        let prios = kernel_prios(&b);
-        let answers = fork_answers(&b, &prios);
+        let prios = forkclass::kernel_answer_with_grants(&b).unwrap_or_else(|e| panic!("draw {index}: the kernel refused: {e}")).1;
+        let answers = forkplan::comparand_answers(&b, &prios, &oracle).unwrap_or_else(|e| panic!("draw {index}: the oracle: {e}"));
         let mut line = forkclass::batch_line(index, &draw, &world, &class_of(&b).key());
         for key in forkclass::ANSWERS {
             forkclass::set_answer(&mut line, key, answers[key].clone());
@@ -2551,7 +2546,7 @@ fn the_frozen_batch_is_blessed() {
             }
             Some(old) => {
                 let ask = forkplan::ForkAsk { state: &b.world.state, now: b.world.now, d60: false, p64: false, prios: &prios, extend: None, log_line: None };
-                let shipped_day = forkplan::ForkPlan::plan(&forkplan::InTree, &b, &ask).expect("the fork plans").fork_day;
+                let shipped_day = forkplan::ForkPlan::plan(&oracle, &b, &ask).unwrap_or_else(|e| panic!("draw {index}: the oracle: {e}")).fork_day;
                 match forkclass::d64_allows(old, &line, &shipped_day, &because, harness.as_deref(), &registered) {
                     Err(e) => refused.push(e),
                     Ok(keys) if !keys.is_empty() => changed.push(format!("draw {index} `{}`", keys.join("`, `"))),
@@ -2576,39 +2571,27 @@ fn the_frozen_batch_is_blessed() {
     std::fs::write(&out_path, out).expect("the frozen batch is written");
 }
 
-/// **The frozen driven days are still the fork's answer on this tree** (W-39, README gap 3390).
-#[test]
-fn the_frozen_driven_days_are_the_forks_answer_today() {
-    let mut stale = Vec::new();
-    for line in forkclass::driven_lines() {
-        let b = Built::of(ClassWorld::of_json(&line["world"], tz()).expect("a stored world"));
-        let now = fork_answers(&b, &kernel_prios(&b));
-        for key in forkclass::ANSWERS {
-            if now[key] != line[key] {
-                stale.push(format!("{}: `{key}`", line["name"].as_str().unwrap_or("?")));
-            }
-        }
-    }
-    assert!(stale.is_empty(), "the frozen driven days are not the fork's answer today:\n  {}", stale.join("\n  "));
-}
-
 /// **Freeze the driven days** (W-39, README gap 3390) — inert without `TM_PLANNER_BLESS_DRIVEN`.
 /// Each of `forkclass::DRIVES` is driven with the built binary over its parent primary line and
-/// frozen with `fork_answers`, the classes' own. A line it holds is held to the owner's D64 as the
+/// frozen with `forkplan::comparand_answers` over `tm-oracle plan`, the classes' own. A line it holds is held to the owner's D64 as the
 /// classes' re-bless is (`forkclass::d64_allows`, `TM_PLANNER_BLESS_BECAUSE`), and a changed world
 /// is refused by name. `TM_PLANNER_BLESS_DRIVEN_OUT` writes elsewhere, for a dry run. **What a
 /// line is held against is the file's COMMITTED history** (W-42 track C, README gap 4151;
 /// `frozenhist::held`), never the working copy, and a line HEAD holds that no drive writes is
 /// refused; `TM_PLANNER_BLESS_HARNESS` names a corrected harness reading (the owner's D85).
+///
+/// **It asks fork 4748911 OUT of the tree and sits outside the fork region** (W-45 track C, README
+/// gap 4680), as the batch's bless does, so the driven days stay re-blessable after R3.
 #[test]
 #[ignore]
 fn the_frozen_driven_days_are_blessed() {
     if std::env::var_os("TM_PLANNER_BLESS_DRIVEN").is_none() {
-        eprintln!("inert: set TM_PLANNER_BLESS_DRIVEN=1 to write {}", forkclass::FROZEN_DRIVEN);
+        eprintln!("inert: set TM_PLANNER_BLESS_DRIVEN=1 (with TM_ORACLE) to write {}", forkclass::FROZEN_DRIVEN);
         return;
     }
+    let oracle = forkplan::Oracle::new(forkplan::oracle_path().expect("TM_PLANNER_BLESS_DRIVEN asks fork 4748911 out of the tree: set TM_ORACLE"));
     let tz = tz();
-    let because = bless_because();
+    let because = forkclass::because_of("TM_PLANNER_BLESS_BECAUSE");
     let harness = forkclass::harness_of("TM_PLANNER_BLESS_HARNESS");
     let registered = forkclass::registered_parity();
     let path = forkclass::driven_path();
@@ -2620,8 +2603,8 @@ fn the_frozen_driven_days_are_blessed() {
         let parent = frozen_lines().iter().find(|l| l["class"] == d.from && l["secondary"].is_null()).expect("a primary parent");
         let world = forkclass::drive(&ClassWorld::of_json(&parent["world"], tz).expect("a stored world"), d).unwrap_or_else(|e| panic!("{}: {e}", d.name));
         let b = Built::of(world.clone());
-        let prios = kernel_prios(&b);
-        let answers = fork_answers(&b, &prios);
+        let prios = forkclass::kernel_answer_with_grants(&b).unwrap_or_else(|e| panic!("{}: the kernel refused: {e}", d.name)).1;
+        let answers = forkplan::comparand_answers(&b, &prios, &oracle).unwrap_or_else(|e| panic!("{}: the oracle: {e}", d.name));
         let mut line = serde_json::json!({
             "name": d.name, "class": class_of(&b).key(), "from": d.from,
             "verbs": d.verbs.iter().map(|(at, args)| serde_json::json!([at, args])).collect::<Vec<_>>(),
@@ -2635,7 +2618,7 @@ fn the_frozen_driven_days_are_blessed() {
                 refused.push(format!("{}: the binary writes another world now — a re-draw, which D64(b) must decide", d.name));
             } else {
                 let ask = forkplan::ForkAsk { state: &b.world.state, now: b.world.now, d60: false, p64: false, prios: &prios, extend: None, log_line: None };
-                let shipped_day = forkplan::ForkPlan::plan(&forkplan::InTree, &b, &ask).expect("the fork plans").fork_day;
+                let shipped_day = forkplan::ForkPlan::plan(&oracle, &b, &ask).unwrap_or_else(|e| panic!("{}: the oracle: {e}", d.name)).fork_day;
                 if let Err(e) = forkclass::d64_allows(old, &line, &shipped_day, &because, harness.as_deref(), &registered) {
                     refused.push(e);
                 }
@@ -2669,10 +2652,16 @@ fn the_frozen_driven_days_are_blessed() {
 /// `TM_PLANNER_DRAW_ADD=<floor>@<index>[,…]` adds a DRAWN secondary line for a
 /// floor of [`DRAWN_FLOORS`] (W-38: the two `p52` lines), only for a world the
 /// binary can hold and a draw no line records. `TM_PLANNER_DRAW_OUT` writes
-/// elsewhere, for a dry run. After R3 this test is gone with the region: a
-/// world the fork cannot answer cannot be frozen. Since W-42 track C (README gap
-/// 4151) a derived line the working copy lacks is looked up in the file's
-/// COMMITTED history (`frozenhist::held`) before it is re-derived as added.
+/// elsewhere, for a dry run. Since W-42 track C (README gap 4151) a derived line
+/// the working copy lacks is looked up in the file's COMMITTED history
+/// (`frozenhist::held`) before it is re-derived as added.
+///
+/// **It reaches no fork planner, and sits outside the fork region** (W-45 track C,
+/// README gap 4680): it clears a re-drawn line's answers and writes no answer, and
+/// the re-bless that fills them asks `tm-oracle plan`
+/// ([`the_frozen_fork_classes_are_reblessed`], since W-43), so a re-draw stays possible
+/// after R3. Until W-45 it sat in the region, and R3 would have deleted it with the
+/// fork it never asked.
 #[test]
 #[ignore]
 fn the_frozen_class_worlds_are_redrawn() {
@@ -2948,4 +2937,196 @@ fn the_frozen_class_worlds_are_redrawn() {
     let text: String = out.iter().map(|l| serde_json::to_string(l).expect("a line serialises") + "\n").collect();
     std::fs::write(&out_path, text).expect("the frozen classes are written");
 }
+
+/// **P45's reset clause, witnessed over one backend** (W-38, README gap 3480; split from the region's
+/// test at W-45 track C, README gap 4682, so the witness outlives R3): on a frozen `overrun` line the
+/// fork's rows after the break planned with the break LOGGED (`forkplan::p45_after`, the comparand)
+/// are not the rows planned at the same instant with it unlogged — so the frozen comparand pins the
+/// clause, and the kernel, held to it, resets its counter at a running break of at least
+/// `break_min`. Until W-38's `overrun` lines no frozen break day could tell the two apart. The
+/// overrun lines read, and the classes of those that witness it.
+fn overrun_witnesses(fp: &dyn forkplan::ForkPlan) -> (usize, Vec<String>) {
+    let tz = tz();
+    let (mut lines, mut witnessed) = (0, Vec::new());
+    for line in frozen_lines().iter().filter(|l| l["secondary"] == "overrun") {
+        lines += 1;
+        let b = Built::of(ClassWorld::of_json(&line["world"], tz).expect("a stored world"));
+        let prios = forkclass::kernel_answer_with_grants(&b).expect("the kernel answers").1;
+        let with = forkplan::p45_after(&b, &prios, fp).expect("the fork plans").expect("a running break");
+        let from = DateTime::parse_from_rfc3339(with["from"].as_str().expect("from")).expect("an instant").with_timezone(&tz);
+        let ask = forkplan::ForkAsk { state: &b.world.state, now: from, d60: true, p64: true, prios: &prios, extend: None, log_line: None };
+        let day = fp.plan(&b, &ask).expect("the fork plans").day;
+        let unlogged: Vec<Value> = day["segments"]
+            .as_array()
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+            .iter()
+            .filter(|s| forkplan::at(&s["start"]).is_some_and(|a| a >= from.fixed_offset()))
+            .cloned()
+            .collect();
+        if with["rows"] != Value::Array(unlogged) {
+            witnessed.push(line["class"].as_str().unwrap_or("?").to_string());
+        }
+    }
+    (lines, witnessed)
+}
+
+/// **P45's reset clause has a witness, out of the tree** — [`overrun_witnesses`] over `tm-oracle
+/// plan`, fork 4748911 (W-45 track C, README gap 4682): the region's
+/// the_overrun_lines_witness_p45s_reset asks the in-tree fork, which R3 deletes; this asks the
+/// fork that outlives it. Inert without `TM_ORACLE`.
+#[test]
+#[ignore]
+fn the_overrun_lines_witness_p45s_reset_out_of_the_tree() {
+    let Some(bin) = forkplan::oracle_path() else {
+        eprintln!("inert: set TM_ORACLE to an oracle built by kernel/tm-kernel-ffi/examples/oracle/build-oracle.sh");
+        return;
+    };
+    let oracle = forkplan::Oracle::new(bin);
+    let (lines, witnessed) = overrun_witnesses(&oracle);
+    println!("overrun lines whose rows the logged break changes, asked of fork 4748911: {} of {lines}: {witnessed:?}", witnessed.len());
+    assert!(!witnessed.is_empty(), "no frozen overrun line witnesses P45's reset ({lines} line(s))");
+}
+
+// BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gaps 2722, 2925)
+use tm_core::dayplan::DayPlan;
+use tm_core::planner;
+use tm_core::priority::Prio;
+
+/// **The fork's answers for one stored world** — since W-39 `forkplan::comparand_answers`
+/// over the in-tree fork (`forkplan::InTree`), the ONE definition the oracle arm's comparand
+/// is built by too (the owner's D72): the departures are applied to the day's JSON there, so
+/// this region only PLANS. Every frozen line was re-blessed through it unchanged
+/// ([`the_frozen_classes_are_the_forks_answer_today`]).
+fn fork_answers(b: &Built, prios: &[Prio]) -> Value {
+    forkplan::comparand_answers(b, prios, &forkplan::InTree).unwrap_or_else(|e| panic!("the in-tree fork: {e}"))
+}
+
+/// **P45's reset clause has a witness** (W-38, README gap 3480) — [`overrun_witnesses`] over the
+/// in-tree fork; its out-of-the-tree twin, `the_overrun_lines_witness_p45s_reset_out_of_the_tree`,
+/// outlives R3.
+#[test]
+fn the_overrun_lines_witness_p45s_reset() {
+    let (lines, witnessed) = overrun_witnesses(&forkplan::InTree);
+    println!("overrun lines whose rows the logged break changes: {} of {lines}: {witnessed:?}", witnessed.len());
+    assert!(!witnessed.is_empty(), "no frozen overrun line witnesses P45's reset ({lines} line(s))");
+}
+
+/// The kernel's grants for a stored world — what `with_ranking` hands the fork.
+fn kernel_prios(b: &Built) -> Vec<Prio> {
+    forkclass::kernel_answer_with_grants(b).unwrap_or_else(|e| panic!("the kernel refused: {e}")).1
+}
+
+/// **The frozen answers are still the fork's on this tree** — while the fork
+/// is here, every frozen line's answers (`forkclass::ANSWERS`: the day, `shipped`,
+/// the flags, the what-if and since W-38 `p45`, `p52`, `p55` and `p56`) are exactly
+/// what the fork answers for its stored world over the kernel's grants now. A
+/// failure here says the FORK's answer moved (or the kernel's ranking it is
+/// handed); a failure of the surviving arm says the kernel's day moved.
+///
+/// **A line P81 nets on** (the owner's D87, W-42 track R; README gaps 4240 and 4248): the in-tree
+/// fork plans over the KERNEL's replay, which since D87 nets the line's logged break, so it cannot
+/// answer the line's fork-4748911 reading — `day`, `shipped` and `p55` — and those three are asked
+/// out of the tree (`the_frozen_lines_are_the_forks_oracle_answer_today`, with the oracle's own
+/// reading of the block's minutes since W-43, README gap 4250: the reordered log the in-tree fork
+/// was asked until then is a shape the owner's D92 nets). What the in-tree fork CAN answer is held
+/// here: P81's answer (`p81`, the comparand asked the D87 day) is the frozen one; over the kernel's
+/// replay of the stored world it draws THAT day; and every other answer is the line's.
+#[test]
+fn the_frozen_classes_are_the_forks_answer_today() {
+    let mut stale = Vec::new();
+    let mut p81_lines = 0usize;
+    for line in frozen_lines() {
+        let world = ClassWorld::of_json(&line["world"], tz()).expect("a stored world");
+        let b = Built::of(world.clone());
+        let prios = kernel_prios(&b);
+        let now = fork_answers(&b, &prios);
+        // The LINE, as `compare_line` names it: a secondary line carries its kind (W-38).
+        let who = format!("{}{}", line["class"].as_str().unwrap_or("?"), line["secondary"].as_str().map(|s| format!(" ({s})")).unwrap_or_default());
+        if line["p81"].is_null() {
+            for key in forkclass::ANSWERS {
+                if now[key] != line[key] {
+                    stale.push(format!("{who}: `{key}`"));
+                }
+            }
+            continue;
+        }
+        p81_lines += 1;
+        // Over the kernel's replay the in-tree fork draws P81's answer's day — the netting is the
+        // kernel's reading, and P81's answer is fork 4748911 asked it.
+        if now["day"]["day"] != line["p81"]["day"] || now["day"]["hash"] != line["p81"]["hash"] {
+            stale.push(format!("{who}: `day` over the kernel's replay is not P81's answer's day"));
+        }
+        for key in forkclass::ANSWERS.iter().filter(|k| !["day", "shipped", "p55"].contains(k)) {
+            if now[*key] != line[*key] {
+                stale.push(format!("{who}: `{key}` over the kernel's replay"));
+            }
+        }
+    }
+    println!("frozen fork classes re-asked: {} line(s), {p81_lines} of them carrying P81's answer", frozen_lines().len());
+    assert!(p81_lines > 0, "no frozen line carries P81's answer");
+    assert!(stale.is_empty(), "the frozen answers are not the fork's today (re-bless is a decision, AGENTS §7.2):\n  {}", stale.join("\n  "));
+}
+
+/// The shipped fork's day for one frozen `plan-basic` instant (D53: `planner::plan` over the
+/// kernel's own grants — `planning::build_ranked`'s call), as `planner_w37_rows.rs` planned it.
+fn basic_fork_day(fx: &planner_common::Fixture, state: &RuntimeState, now: DateTime<Tz>) -> DayPlan {
+    let date = tm_core::planwire::plan_date(state, now);
+    let cands = tm_core::priority::collect_candidates(&fx.tree, &fx.replay, &fx.cfg, &fx.model, date, now);
+    let w = planner_common::planreq::World { docs: &fx.docs, log: &fx.log, tree: &fx.tree, cfg: &fx.cfg, state, now, cands: &cands, replay: &fx.replay };
+    let (_, ans) = planner_common::planreq::kernel_day(&w, None).expect("the kernel plans the day");
+    planner::plan(&fx.input(state, now).with_ranking(&cands, &ans.prios))
+}
+
+/// **The frozen `plan-basic` days are still the fork's on this tree** (W-38), every line by
+/// value, while the fork is here.
+#[test]
+fn the_frozen_plan_basic_days_are_the_forks_answer_today() {
+    let fx = planner_common::load_with_log("plan-basic", Some(planner_common::BASIC_LOG));
+    let mut stale = Vec::new();
+    for line in forkday::frozen_basic_days() {
+        let state: RuntimeState = serde_json::from_value(line["state"].clone()).expect("a stored state");
+        let now = DateTime::parse_from_rfc3339(line["now"].as_str().unwrap_or_default()).expect("an instant").with_timezone(&fx.cfg.tz);
+        let name = line["name"].as_str().unwrap_or_default();
+        if forkday::basic_line(name, &state, now, &basic_fork_day(&fx, &state, now)).trim_end() != serde_json::to_string(&line).expect("a line").as_str() {
+            stale.push(name.to_string());
+        }
+    }
+    assert!(stale.is_empty(), "the frozen plan-basic days are not the fork's today (a re-bless is a decision):\n  {}", stale.join("\n  "));
+}
+
+/// **The frozen batch is still the fork's answer on this tree** (W-39, the owner's D72) — every
+/// batch line's answers are exactly what the fork answers for its stored world over the kernel's
+/// grants now, as the classes' live check asks of theirs.
+#[test]
+fn the_frozen_batch_is_the_forks_answer_today() {
+    let mut stale = Vec::new();
+    for line in forkclass::batch_lines() {
+        let b = Built::of(ClassWorld::of_json(&line["world"], tz()).expect("a stored world"));
+        let now = fork_answers(&b, &kernel_prios(&b));
+        for key in forkclass::ANSWERS {
+            if now[key] != line[key] {
+                stale.push(format!("{}: `{key}`", line["name"].as_str().unwrap_or("?")));
+            }
+        }
+    }
+    assert!(stale.is_empty(), "the frozen batch is not the fork's answer today (a re-bless is a decision, AGENTS §7.2):\n  {}", stale.join("\n  "));
+}
+
+/// **The frozen driven days are still the fork's answer on this tree** (W-39, README gap 3390).
+#[test]
+fn the_frozen_driven_days_are_the_forks_answer_today() {
+    let mut stale = Vec::new();
+    for line in forkclass::driven_lines() {
+        let b = Built::of(ClassWorld::of_json(&line["world"], tz()).expect("a stored world"));
+        let now = fork_answers(&b, &kernel_prios(&b));
+        for key in forkclass::ANSWERS {
+            if now[key] != line[key] {
+                stale.push(format!("{}: `{key}`", line["name"].as_str().unwrap_or("?")));
+            }
+        }
+    }
+    assert!(stale.is_empty(), "the frozen driven days are not the fork's answer today:\n  {}", stale.join("\n  "));
+}
+
 // END THE FORK PLANNER
