@@ -40,6 +40,13 @@
 //! (`resume_section_from`); [`a_tail_that_names_a_day_the_process_checkpoint_sealed_is_rebuilt_not_refused`] is the
 //! witness, and the arm's census counts how many drawn sections the old rule would have sent refused.
 //!
+//! # The law it is the host's half of
+//!
+//! `Planner.PlanReq.todayRecord_on_a_resumed_run_is_the_whole_logs` (`TodayWhole.lean`) states the property over the
+//! planner's own reading: on a run that resumed the stored checkpoint of `a` over the tail `b`, at the request's
+//! day, the planner's day record is the whole log's replay's.  Its hypotheses are an ACCEPTED resume of a SEALABLE
+//! checkpoint; what makes the binary's section one is this file's to hold.
+//!
 //! # What this file measures
 //!
 //! The laws are the kernel's; this is the HOST's half, through the FFI, on the binary's own code: a log drawn over
@@ -592,4 +599,67 @@ fn a_tail_that_names_a_day_the_process_checkpoint_sealed_is_rebuilt_not_refused(
     assert!(!a.whole["open"]["block"].is_null(), "the block is open in the whole log's answer");
     assert_eq!(a.got["open"]["block"], a.whole["open"]["block"]);
     assert_eq!(a.got["open"]["interrupt"], a.whole["open"]["interrupt"]);
+}
+
+/// **The in-memory rebuild is the request section's alone** (README gaps 4660 and 4666): after the witness's request
+/// section was rebuilt in memory, the week grid's section — which reads sealed day records — still resumes the
+/// checkpoint the load wrote and carries the sealed records below its ledger day (here the 2nd's, `^b1x0`'s start);
+/// had the rebuild replaced `ReplayCache::last`, which the week section resumes, it would carry none, silently.
+#[test]
+fn the_week_section_does_not_resume_the_request_sections_rebuild() {
+    let w = World {
+        days: 5,
+        skip: vec![false; 5],
+        wake: vec![None, None, None, None, Some(0)],
+        arrive: vec![0; 5],
+        blocks: vec![0, 1, 0, 0, 0],
+        marks: vec![0, 0, 8, 8, 0],
+        open_block: Some(1),
+        late_mark: 0,
+        open_int: Some((4, None)),
+        ahead: None,
+        loads: vec![0, 0, 0, 0, 1],
+        final_load: false,
+        scope: 0,
+    };
+    let (lines, loads) = draw(&w);
+    let today = base() + Duration::days(4);
+    let today_day = kernel_log::day_of(today);
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let root = dir.path();
+    std::fs::create_dir_all(root.join(".tm")).expect("mkdir .tm");
+    let log = root.join(".tm/log.jsonl");
+    let tz = wire(root);
+    let (n, d) = loads[0];
+    std::fs::write(&log, text_of(&lines, n)).expect("write the log");
+    let bytes = std::fs::read(&log).expect("read the log");
+    let date = base() + Duration::days(i64::from(d));
+    kernel_log::replay_scoped(root, &bytes, TZ, &tz, date, kernel_log::Scope::Hot, None).expect("the load");
+    std::fs::write(&log, text_of(&lines, lines.len())).expect("write the log");
+    let bytes = std::fs::read(&log).expect("read the log");
+    // The request section: the grown tail is refused over the load's checkpoint and rebuilt in memory.
+    let section: Value = serde_json::from_str(
+        &kernel_log::capacity_log_section(root, &bytes, &tz, today_day).expect("the request's section"),
+    )
+    .expect("json");
+    let stored = std::fs::read_to_string(root.join(kernel_log::CACHE_DIR).join(kernel_log::CKPT_FILE)).expect("ckpt.json");
+    let disk = kernel_log::Snapshot::from_text(&stored).expect("the load's checkpoint");
+    assert!(disk.meta.ledger_day > kernel_log::day_of(base() + Duration::days(1)), "the load sealed the 2nd: {:?}", disk.meta);
+    assert_ne!(
+        section["ckpt"]["ledgerDay"].as_u64(),
+        Some(disk.meta.ledger_day),
+        "the request section is the in-memory rebuild's, which holds the stretch's day open"
+    );
+    // The week section, the 1st through today: the load's checkpoint, with the 2nd's sealed record.
+    let week: Value = serde_json::from_str(
+        &kernel_log::week_log_section(root, &bytes, &tz, today_day, kernel_log::day_of(base()), today_day)
+            .expect("the week section"),
+    )
+    .expect("json");
+    assert_eq!(week["ckpt"]["ledgerDay"].as_u64(), Some(disk.meta.ledger_day), "the week section resumes the load's checkpoint");
+    let sealed = week["sealed"]["days"].as_array().expect("sealed days");
+    assert!(
+        sealed.iter().any(|r| r[0].as_u64() == Some(kernel_log::day_of(base() + Duration::days(1)))),
+        "the week section carries the 2nd's sealed record: {sealed:?}"
+    );
 }

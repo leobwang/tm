@@ -8299,3 +8299,11 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Replay.a_planned_only_break_anchors_since_break_at_its_planned_end
 #print axioms Tm.WallTimer.a_resume_ends_the_interruption_and_not_the_users_pause
 #print axioms Tm.WallTimer.a_break_across_the_walls_start_does_not_stand_for_the_users_stop
+
+/-
+   APPENDED 2026-10-04: stage 6, run W-45, TRACK Q — README gap 3583's property as a law over the
+   planner's own reading (`TodayWhole.lean`, a module of theorems only): the planner's day record is
+   the run answer's reading of today, and on a resumed run it is the whole log's replay's.
+-/
+#print axioms Tm.Planner.PlanReq.todayRecord_is_the_answers_reading
+#print axioms Tm.Planner.PlanReq.todayRecord_on_a_resumed_run_is_the_whole_logs

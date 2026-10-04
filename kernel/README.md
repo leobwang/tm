@@ -88804,7 +88804,8 @@ checkpoint keeps every day at or above its ledger day as an OPEN day and its mac
 `Seal.Ckpt.machine`); and an accepted resume answers as the whole log's replay on every query at or above its
 horizons — `Seal.resume_is_replay` (law 2 through the disk), `Seal.an_accepted_resume_covers_now` (`L ≤ T`),
 `Seal.the_answer_reads_the_replay` and `Seal.the_answer_reads_the_replays_scalar_facts` (law 1, the open block and
-interruption among them).  No line of the property names an event.  What a tail could cut, each drawn and counted
+interruption among them); §8 states the composition as one law over the planner's own reading.  No line of the
+property names an event.  What a tail could cut, each drawn and counted
 (§1's census): the wake and the arrival (today's record), the day's breaks and starts (its segments), a block begun
 before the cut (the machine's), an interruption open across the cut (the machine's), and today's own lines written
 early by a clock ahead of the log (a folded open day).
@@ -89083,7 +89084,7 @@ No Lean definition changed, so check 9 owes nothing (§7).
   Against the W-44 repair's 2,768 over 148: `kernel_request_today_whole` 15 (the 13 unit tests `kernel_log.rs`
   carries in through `#[path]`, the arm and its witness), `cli_resume_replan` 15 (13 through `support/replay.rs`, the
   binary pin and the kernel arm), `cli_tick_request` 1, `cli_latency` +1 (T19) = 2,800.  Two earlier sets were
-  discarded, by name: the first ran the first shape of §2's fix (§8), and the second's first run failed one latency
+  discarded, by name: the first ran the first shape of §2's fix (§11), and the second's first run failed one latency
   row on a loaded machine (gap 4668).
 * **The named suites** (run 1; runs 2 and 3 the same): T5 `kernel_replay_parity` 48 (4 ignored), the door
   `kernel_log_door` 42, `cli_switch_acceptance` 16, `cli_latency` 7 (1 ignored), `kernel_call_counts` 2, `one_padder`
@@ -89094,7 +89095,44 @@ No Lean definition changed, so check 9 owes nothing (§7).
   gap-4046 arm once (`r4046-gen1.log`, §3).
 * **T19**, two runs alone after the workspace runs (`t19-1.log`, `t19-2.log`, load 8.7-9.0, §4).
 
-### 8. Status note (kept current while the step ran)
+### 8. The property as a law over the planner's reading (`TodayWhole.lean`, the second commit)
+
+§1 composed the property in prose from four laws; `kernel/TmKernel/TmKernel/TodayWhole.lean`, a module of theorems
+only (imported by the root, as §2.3 requires, and audited in `Check.lean`), states it over the planner's own reading:
+
+* `Planner.PlanReq.todayRecord_is_the_answers_reading` — `PlanReq.todayRecord` is the run answer's `.day today
+  .record` reading (`Seal.askAnswer`) wherever the answer reads today at all (its ledger day at or below today);
+* `Planner.PlanReq.todayRecord_on_a_resumed_run_is_the_whole_logs` — on a run that resumed the stored checkpoint of
+  the lines `a` over the tail `b`, at the request's own day (the hypotheses of `Seal.resume_is_replay`), the
+  planner's day record is `Replay.ask` of the whole log's replay, `a ++ b`: the accepted resume covers the day
+  (`Seal.an_accepted_resume_covers_now`) and the answer reads the replay from its ledger day up
+  (`Seal.answer_reads_the_replay`).
+
+No event is named in either.  Both depend on `propext`, `Classical.choice` and `Quot.sound` only.  The module emits
+no definition, so checks 9, 11, 12 and 13 have nothing new to answer; check 14 replays it with the rest.
+
+### 9. The separate slot, pinned (the second commit)
+
+§2's fix keeps a refused request tail's in-memory rebuild in `ReplayCache::asked`, never in `ReplayCache::last`,
+because the week grid's section and a held replay resume `last` and would read no sealed record from an in-memory
+rebuild.  Nothing pinned that: `the_week_section_does_not_resume_the_request_sections_rebuild`
+(`tm/tests/kernel_request_today_whole.rs`) builds the witness's world, has the request section rebuilt in memory, and
+then asks the week grid's section for the 1st through the 5th — which must resume the load's checkpoint (its ledger
+day) and carry the 2nd's sealed record.  Plant P12 (`plants-p12.log`, in `clone2`: the rebuild kept in
+`ReplayCache::last`, this fix's first shape) fails it and nothing else of the file; porcelain empty before and after.
+
+### 10. Acceptance of the second commit, capped
+
+* **`check.sh`, seventeen lines, all ok, exit 0**, in `scratchpad/w45-q/clone` synced to the second commit's tree
+  (`check5.log`, 34 s; `check6.log` on this README): the axiom audit **6,346** (Classical.choice 3,339, Quot.sound
+  4,877, propext 5,931; 412 on none) — the two new theorems; check 9 **734 rostered, 0 owed** (no definition); check 12
+  **1,518 reachable, 1,099 exempt** over 96 library modules; check 14 **95 modules** (the new one replayed); every
+  other line as §7.
+* **`cargo test --workspace --no-fail-fast`, THREE runs** (`wsG1..3.log`; the porcelain, the whole diff and the
+  untracked files' digests equal at each start and end; loads 7.6-18.7 at the starts and ends): **each 151 result lines, 2,801 passed, 0
+  failed, 36 ignored**, no compiler warning — the first commit's 2,800 and §9's test.
+
+### 11. Status note (kept current while the step ran)
 
 * 09:28 — HEAD `3d13f1e`, tree clean; worktree `w45-q` made; `.lake` copied from the main checkout (built at
   `6afdb1b`, whose Lean `3d13f1e` keeps) — `lake build TmKernel:static` a no-op.  09:41 the workspace's test build
@@ -89123,3 +89161,7 @@ No Lean definition changed, so check 9 owes nothing (§7).
 * 11:05-11:39 — the three counted workspace runs green (§7); 11:40 the arm's census ×3 and T19 ×2 on the final code;
   11:42-11:45 `check.sh` on the final tree (`check3.log` seventeen ok after the module mention was re-spelled).
 * Then this block's figures, `check.sh` once more on the final README (`check4.log`), and the commit.
+* 11:44 — commit `a054b04` (the green work above).  11:44-11:47 the theorem module brought in (its import, its two
+  audit lines), the separate slot pinned (§9) and planted (P12, `plants-p12.log`), `check.sh` on the second commit's
+  tree (`check5.log`); 11:47-12:24 its three workspace runs, green (§10); then this section, `check6.log`, and the
+  second commit.
