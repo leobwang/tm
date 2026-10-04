@@ -87012,3 +87012,390 @@ holding none for long.
 
 **Gap 4510 — AGENTS §10.1's figures were track G's tree** (the critic's): re-measured at this step (§8) and the table
 and its paragraph corrected; CLOSED.
+
+<!-- =====================================================================
+     APPENDED 2026-10-03: stage 6 (the planner), run **W-44**, **TRACK K**
+     — the owner's D94: a clock behind the log is in scope, and the kernel's
+     replay nets EVERY break span on a block's ledger days as the host's
+     union does.  Worktree `.claude/worktrees/w44-k` (branch `w44-k` off
+     `ed72e36`); clones, plants, drives and scratch evidence under
+     `scratchpad/w44-k/`, never in the shared tree.  Gap range
+     **4520-4549**.  Parity **P92** (pre-allocated to this track).
+     ===================================================================== -->
+
+## Stage 6 — W-44 track K: every break span on a block's ledger days, netted (D94, P92), and the last goal
+
+### 0. The brief, measured before it was acted on
+
+* HEAD `ed72e36`, the tree clean, no worktree but `stage5-lookahead`; the HEAD binary is `f5d7a16`'s code (the last
+  code commit), copied as `scratchpad/w44-k/tm-head`.  The run-wide figures (17 `check.sh` lines, 6,298 audit lines,
+  burn-down 1, P1-P91, check 12 1,507 / 1,099) are the orchestrator's at `f5d7a16`; this track's own are §9's.
+* **The brief's mechanism is right** (W-43 track K's block, gaps 4361 and 4506): `Replay.Machine.brk` held the LAST
+  break stepped, `Replay.restartAt` read it only where a clock starts, and the host's `Replay::idle_min_since` unions
+  every break of the block's ledger days.
+* **Not in the brief, and a correction of the README's own record: gap 4363 is real.**  The W-43 repair withdrew
+  its reading of gap 4363 on a drive with no wake between the break and the `start` ("the host's seams are LEDGER
+  days").  With a wake between them (S10, S11 of §1) the break is filed on the ledger day BEFORE the block's, the
+  host reads no idle mark of it — and the replay at `ed72e36` netted it anyway (`tm stop` 50, `tm review day` 40).  D94
+  closes it in the host's direction (§3).
+* **Not in the brief: the class has a residual the build did not take** (§1's S7/S8; gap 4520) — and the generated arm
+  of §4 found two more members of it, both pre-existing (one reads 45 against 28 at `ed72e36`).
+* **Not in the brief: T5 holds no P92 shape, so there is nothing to carry by value** (§1's census, §4; gap 4522).
+* **A count corrected**: W-43 track K's status note and the W-43 repair's gap 4506 read "474" T5 inputs; the dump they
+  were counted from (`scratchpad/w43-k/dump/index.tsv`) holds **473** — 474 is the directory's entry count, the index
+  included.  `kernel_replay_parity.rs` has changed only its carries since (P85's, in `cd14952`; nothing since), so 473
+  is T5's input count at `ed72e36` too.
+
+### 1. The shape table (step 1) — measured as a class, on the binary at `ed72e36`
+
+Driven on `scratchpad/w44-k/tm-head` (the main checkout's `target/debug/tm`, `f5d7a16`'s code) and on this branch's
+binary, `tm init --example`, `wake 07:00`, the readers after the last line (`scratchpad/w44-k/drive/shapes.sh`,
+`shapes-head.out`, `shapes-k.out`).  "Host" is `tm stop`'s "after Nm" (the host's union, `Replay::idle_min_since`) or
+`tm now`'s header for a running block; "replay" is `tm review day`'s `block_min` (the kernel's credit) or the plan's
+open row (`so far`).  Every log is written by the binary, with a `--now` that moves backwards — a clock behind the log.
+
+| shape | the log | host | replay at `ed72e36` | this branch | the plan's rows at `ed72e36` |
+|---|---|---|---|---|---|
+| S1 (gap 4506) | break 30m at 09:00, break 5m at 09:40, `start` at `--now 09:10`, `stop` 10:00 | 25 | **50** | 25 | Block 09:10-10:00 across both breaks |
+| S1r | S1, running at 10:00 | 25 | **50 so far** | 25 so far | open row 09:10-10:00 across both |
+| S2 (gap 4361) | break 15m at 10:00, `start` at `--now 09:50`, `stop` 11:00 | 55 | **70** | 55 | Block 09:50-11:00 across the break |
+| S2r | S2, running at 10:30 | 25 | **40 so far** | 25 so far | open row 09:50-10:30 across it |
+| S3 | break 30m at 09:00, then break 10m at `--now 09:10` (inside it), `start` 09:05, `stop` 10:00 | 30 | **55** | 30 | Block 09:05-10:00 across both |
+| S3b | S3 with the `start` at 09:15, inside both | 30 | **40** | 30 | Block from 09:20 across the first's tail |
+| S4 | S2 with `pause` 10:20-10:30 | 45 | **60** | 45 | Block 09:50-10:20 across the break |
+| S5 | `start` 09:00, `pause` 09:05, breaks 10:00 (15m) and 10:30 (5m), `unpause` at `--now 10:05`, `stop` 11:00 | 45 | **60** | 45 | Block 10:05-11:00 across both |
+| S6 | S5 with `interrupt`/`resume` | 45 | **60** | 45 | the same |
+| S10 (gap 4363) | a wake on the 6th, break 30m at 06:50 on the 7th, the 7th's wake 07:00, `start` 07:10, `stop` 08:00 | 50 | **40** | 50 | Block from 07:20 |
+| S11 (gap 4363, D87's arm) | both wakes, `start` 07:10, then break 30m at `--now 06:50`, `stop` 08:00 | 50 | **40** | 50 | Block from 07:20 |
+| S7 (residual) | `start` 08:00, `pause` 09:00-09:10, then break 20m at `--now 08:30`, `stop` 10:00 | 90 | **110** | **110** | Block 08:00-09:00 across the break |
+| S8 (residual) | S7 with the break logged while paused | 90 | **110** | **110** | the same |
+| S9 (one reading) | `start` 08:00, `done` 09:00 (60m), then break 20m at `--now 08:30` | 60 (logged) | 60 | 60 | Block 08:00-09:00 across the break — both readers |
+| S12 (control) | the binary forward: break, `start`, break, `stop` | 25 | 25 | 25 | — |
+| S13 (control, D92's shape) | break 25m at 09:00, `start` at `--now 09:10`, `stop` 10:00 | 35 | 35 | 35 | — |
+
+So the class is **every clock read of a block over a break the log holds that is not the last one stepped, or that the
+clock meets after it started, or that is filed on a ledger day before the block's** — five readers at `ed72e36`
+(the start, the `unpause`, the `resume`, a closed stretch, the open block) and two directions (the replay netting too
+little, S1-S6; too much, S10-S11).  All of it is now one reading.  **Two shapes are not** (§7, gap 4520): a break
+logged after a stretch of the OPEN block it overlaps was closed (S7, S8) — the host's union nets it at the next
+reading; the replay credited and drew the stretch at its close.  And one shape is a log that contradicts itself
+with one reading (S9): §5.
+
+T5's 473 inputs hold **none** of the class: `scratchpad/w44-k/census/shapes94.py`, a model of the two machines read off
+the log text alone, counts 0 at every shape over the dump W-43 track K took (`scratchpad/w43-k/dump`), and counts each
+shape on the driven logs (S1-S6, S10, S11, S1r, S2r) and none on S7-S9, S12, S13 — so the model is not vacuous.
+
+### 2. Parity P92 — issued
+
+**Parity P92 taken**: the kernel's replay nets EVERY `break` it holds on a block's ledger days wherever the block's clock meets it, as the host's `Replay::idle_min_since` unions them — a clock (re)started inside any such break (`start`, `unpause`, `resume`) starts past all of them (`Replay.restartAt`, `Replay.lift`), a stretch closed across one stepped before its clock met it is cut around it (`Replay.closeSub`, `Replay.pieces`), the open block at the end of the log is read past one held ahead of its clock (`Replay.openOf`), and a break filed on a ledger day before the block's `start`'s stops no clock (`Replay.Machine.brks` holds every break within `maxKeepDays` ledger days of the newest, with its day) — so `tm review`'s minutes, load and mix, the heat grid, an item's done minutes, the close's remaining, the planner's past and open rows and the sealed records read a block as `tm stop`, `tm done` and `tm now` do on a log a clock behind it wrote; fork 4748911's replay netted no break at all, and D92's the last one stepped where a clock starts (the owner's D94, W-44 track K, README gaps 4361, 4506 and 4363)
+
+**Behaviour rows**: the table of §1, the column "this branch" against "replay at `ed72e36`".  Fork 4748911's replay
+nets no break at all (S1 50, S2 70, S3 55, S4 and S5 60), so P92 departs from it wherever a held break lies in a
+block's stretch — and on S10 and S11 (50) D94 agrees with the fork where D92 did not: a break of the ledger day before
+the block's is no break of the block's, for the fork, the host and now the replay.  P81 and P85 are the fork's first two
+departures here, P92 the third and the general one.
+
+### 3. One reading (step 2): every break on a block's ledger days, wherever its clock meets it
+
+`Replay.Machine.brks : List HeldBrk` replaces D92's `brk` — every break the machine steps, as its span `[s, e)` and the
+ledger day it was stepped on (`dy s`, the day the host files its idle mark under) — and `Replay.Block.day` is the
+ledger day of the block's `start` (the day the host reads the block's idle marks from).  A block's clock nets the
+breaks of its own days (`spansFor`: held, day ≥ the block's), at every read:
+
+* **where it (re)starts** — a `start`, an `unpause`, a `resume`: `restartAt m day t = lift (spansFor m.brks day) t`,
+  past every span the instant reached falls in (`liftGo`, fuel the span count: each jump lands on a later end);
+* **where a stretch is closed** — a `pause`, an interruption, a `stop`, the next `start`, a `done`, a break stepped
+  while it runs: `closeSub` cuts `[since, t)` into `pieces` around the spans (`nextStart`, the earliest span start after
+  the piece's own), each a sub-segment of its own (site R8's per-sub-segment floor) and each its own `Block` segment;
+* **where a break is stepped while the clock runs** (D87's arm): `brkFx` closes the stretch at the break's start and
+  restarts past every span of the block's days — unless the break is filed on a ledger day BEFORE the block's, which
+  stops no clock (gap 4363, the host's direction);
+* **the open block at the end of the log** (`openOf`, in `Replay.finish` and `Seal.answer`): a running clock with a
+  held break AHEAD of it — stepped before the clock met it — is read past the last such break, the pieces before it
+  banked: so `tm now`'s header and the planner's open row read one number (S2r: 25 and 25; `ed72e36` 25 and 40).
+  The banked pieces are not drawn while the block runs (they are its first segments when it is closed).
+
+**The bound** (`pruneBrks`, at `Seal.maxKeepDays`): every break stepped is held with the ones before it, filtered to
+those within 31 ledger days of the newest held. `Replay` sits below `Seal` and writes the literal;
+`Seal.pruneBrks_is_bounded_by_maxKeepDays` ties it to the name by `rfl`, so the two cannot drift apart unseen (a first
+build moved the constant down into `Replay`, and check 12 refused it: the compiler folds the constant into its users,
+so the new definition was reached by nothing, and `reach-exempt.txt` may only shrink). So the machine — and the
+checkpoint that carries it (`Seal.cMachine` now encodes the list, each held break as its span and day) — holds the
+breaks of at most 32 ledger days, whatever the length of the log; proved over every fold
+(`Seal.a_replay_holds_breaks_within_maxKeepDays_of_the_newest`, via `arm_brks`, `stepWith_brks_within`,
+`foldl_brks_within`, `pruneBrks_within`) and witnessed biting (`Replay.pruneBrks_drops_a_break_past_the_bound`, cheat
+277). Why 31: the host's union reads the idle marks its replay loads, and a `Hot` read loads the open days, which a
+reseal keeps from at most `keepDays ≤ maxKeepDays` days behind its reach — the kernel holds every break the host can
+union, short of a reading more than 31 days behind the newest break (gap 4521).
+
+**Laws, proved** (nothing admitted to the library): `restartAt_avoids_the_breaks_held` (a clock starts where no break of
+its days covers: `lift_uncovered`, `liftGo_uncovered` by a count of spans still ending ahead), `closeSub_avoids_the_breaks_held`
+(no `Block` segment a close draws lies across a nonempty break of the block's days: `piecesGo_avoids`, `nextStart_spec`),
+`openOf_restarts_outside_the_breaks_held`, `piecesGo_starts` (a piece starts at the clock's start or at a span's end — the
+one fact the window laws needed of it), `brkFx_cases_on_the_blocks_days`.  **Re-proved with their statements unchanged
+(D5)**: every law over `closeSub`, `closePause`, `cut`, `brkFx_machine`, `brkFx_obs`, `arm_split`, the conservation
+and late-binding invariants, and every window law in the `Seal*` files (`closeSub_brk`, `cut_brk` and `restartAt_cases`
+keep their names over `brks`).  **Restated, the old form refuted and kept on its subdomain (D5, AGENTS §3.1 item 3)**:
+`brkFx_cases` (a break of an earlier ledger day writes one machine and no `closeSub` —
+`brkFx_cases_as_d92_stated_it_is_refuted`, `brkFx_cases_on_the_blocks_days`), R8's `worked_minutes_floor_each_subsegment`
+(now each piece's floor — `…_as_c3_stated_it_is_refuted`, `…_with_no_break_held`), and W-43's
+a_break_logged_before_a_start_but_begun_after_it_is_not_netted (`…_is_not_netted_is_refuted`).  **The window
+machinery**: `Seal.closeReads` (the instants `closeSub` reads the day index at — the pieces' starts) replaces
+`blockSince` wherever a step closes a stretch (`stepQueries`, the `*_congr` lemmas, `closeReads_mi`), and
+`machineInstants` holds every held break's end.  A first build listed every held break's end as a query, and T5's
+windowed test caught it at once: a query bounds the new ledger day from below, so the ledger day sank up to 31 days
+behind its floor (`ledger day 739918`); reading exactly the pieces' starts restored it.
+
+Replay witnesses (each decided under an 8 GiB cap; the module whole in 11 s): `a_start_inside_an_earlier_break_nets_every_break_held`
+(S1: 25), `a_break_logged_before_a_start_but_begun_after_it_is_netted` (50, drawn around the break),
+`a_start_inside_overlapping_breaks_runs_from_their_union_end` (30), `an_unpause_…` and `a_resume_inside_an_earlier_break_nets_every_break_held`
+(45), `the_open_block_is_read_past_a_break_held_ahead_of_its_clock` (S2r: 10 banked, from 10:15),
+`a_break_on_the_ledger_day_before_the_blocks_is_not_netted` and `a_break_on_the_ledger_day_before_a_running_block_stops_no_clock`
+(S10, S11: 50).  D92's witnesses all stand unchanged.
+
+### 4. The comparand (step 3)
+
+* **The generated arm — one number, as a class** (`tm/tests/kernel_break_union.rs`, new): a day of one block with one
+  to three breaks, each logged AHEAD of the `start` (in any order; a clock behind the log) or inside the block at one
+  of four positions, a `pause`/`unpause` or an `interrupt`/`resume` on top, and a quarter of days drawn from 07:05 with
+  a break of the ledger day before.  On every day it compares, the host's `Replay::running_worked_min` at the `stop`'s
+  instant equals the replay's credit after it, and — where every break ended by then — the open block the replay reads
+  at the end of the log (`OpenBlock::worked_min_at`).  Census of the committed runs in §9; floors on the compared share
+  and on each of gap 4361's, gap 4506's, gap 4363's and the open-ahead shapes.  **It found the residual twice** before its rule
+  named it (§1, gap 4520): two breaks logged out of order while the block runs, and a `pause` stamped inside a stretch
+  a later break had closed — pinned by `the_residual_the_arm_leaves_out_reads_two_ways_by_its_witnesses`, the first
+  also as the seed in `kernel_break_union.proptest-regressions` (D46, committed).  The rule leaves out a day whose
+  in-block lines are not in their stamps' order, and counts it.
+* **Fork 4748911's frozen answers (T5, the door)**: P92 moves **none** of them — the census of §1 over T5's 473 inputs
+  is 0 at every shape, and T5 (44 passed, 4 ignored) and the door (36) are green unchanged over this kernel.  So there
+  is no carry to write: a carry of nothing would compare nothing (gap 4522 is what a fork comparand for P92's shapes
+  needs).  Their bite on a corrupted kernel answer is the existing tests' (`p85_is_carried_…`, the door's).
+* **The planner's frozen lines**: none moves (`planner_classes` 66 passed, `planner_p85_days` 17, `planner_invariants`
+  §9) — their worlds hold no break the class reaches.  Track C was told this track may introduce lines under D64(a)/D70
+  with P92, and none was needed.
+* **What compares what after R3** (lesson 5): the generated arm compares the HOST's function (`tm-core`'s
+  `idle_min_since`, which R3 keeps) with the kernel's replay — two definitions, so it outlives R3; T5 and the door
+  compare the kernel with fork 4748911's frozen bytes; the Lean witnesses with values written down.
+
+### 5. The last goal (step 4): `plan_places_no_block_over_a_break` — REFUTED on a world with one reading; burn-down 0
+
+**Proved as written?**  No: it is false on replay-built runs.  **The world** (`PlannerWit.theMidBreakRequest`, section
+14, moved): the census log with its break stamped 07:10 spliced in AFTER `m1`'s 08:05 `done` — a log a clock behind the
+log writes (driven, S9: `tm done` at 09:00, then `tm --now 08:30 break 20m` and its end; `tm review day` 60, the plan's
+rows Block 08:00-09:00 and Break 08:30-08:50).  **One reading**: the `done`'s `actual_min` is the host's union, logged
+before the break existed, and the replay credits it; no host reading of a block nets a break logged after the block
+closed (the union reads the RUNNING block, `running_worked_min` answers `None` for a closed one); the drawing holds both
+facts the log states.  So the refutation stands on the log, not on a kernel defect (lesson 4):
+`PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted`, and the goal leaves `Goals.lean`
+(burn-down **0**).  `PlanCheck.plan_places_no_block_over_a_break` (the Block rows from `now`) stays proved beside it.
+**Why not a refutation on gap 4361's log**: since D94 that day keeps its Block off its Break
+(`PlannerWit.the_ahead_break_day_keeps_its_block_off_the_break`, section 33, and cheat 276).  **Why not a restatement over
+"the runs the replay builds"**: the one-reading world above IS replay-built, so no such restatement is true either.
+
+**What else moved in `PlannerWit`** (D5: each statement kept, its witness moved, or refuted and renamed):
+`the_mid_break_day_lays_a_block_across_a_break`, `the_core_seven_is_false_on_three_whole_days`,
+`the_paying_past_fails_on_four_whole_days` and `every_refuted_day_refutes_its_own_clause` keep their statements on the
+moved day (one reading now, where W-43 had them standing on gap 4361); `PlanCheck.PastPays.offBreak` stays needed —
+by a world with one reading.  Section 26's three uses of the open-break day
+(`the_open_requests_agree`, `the_battery_bites_on_the_open_row`,
+`noBlockOverABreak_of_a_logless_day_over_the_closed_rows_is_refuted`) are re-witnessed by `openAcrossBreakRun`, a run
+the decoder does NOT build (the open block as D92 read it): since D94 no replay hands the planner an open block whose
+stretch crosses a break of its days, the statements range over every `PlanReq`, and the planner draws the open row
+without clipping it at a Break row — which is all the run shows (gap 4523).  Section 33 (new) holds D94's two planner
+days: `the_ahead_break_day_keeps_its_block_off_the_break` (Block `[07:05, 07:10]`, Break, Block `[07:25, 08:05]`) and
+`the_open_row_is_read_past_a_break_held_ahead_of_its_clock` (open row `[12:20, 14:00)`, `105m so far`, the host's).
+
+### 6. Driven on this branch's binary
+
+* **The table of §1**, every row (`scratchpad/w44-k/drive/shapes-k.out`, `table-k.txt`; re-driven on this commit's
+  binary as `shapes-k3.out`, every reading, row and stop line the same): S1-S6, S10, S11, S1r, S2r one reading, the
+  plan's rows cut around the breaks; S7, S8 unchanged (gap 4520); S9 unchanged (one reading, §5); S12, S13 unchanged.
+* **The cache** (`drive/cache3.sh` on this commit's binary): the HEAD binary reads S2's day (`block_min 70`) and writes
+  `.tm/cache/replay/` under its kernel id `e64969d1f74076c7`; this branch's binary, on the same tree, rebuilds it under
+  `f097260ab29b7413` and reads `block_min 55`, the Block cut around the break.  The checkpoint's machine codec changed too (a list of held breaks, the
+  block's day), so a HEAD checkpoint does not decode — the kernel id refuses it first.
+* **The TUI through a pty** (`drive/tuipty.py`, `vt.py` as W-42 track R wrote them; `tui-head-0.raw`, `tui-k-0.raw`,
+  and `tui-k2-0.raw` on this commit's binary, the same frame):
+  S2r at 10:30.  HEAD's Today timeline draws `09:50` Finish ch.5 (the open row from the `start`, across the break),
+  `10:00` break, `10:30` ▶; this branch's draws `10:00` break, `10:15` Finish ch.5 (the open row from the break's end),
+  `10:30` ▶; both Now panes read `elapsed 25m`, the host's union.  Read with `--now` fixed, so the TUI's clock did not run.
+
+### 7. Gaps 4520-4549
+
+**Gap 4361 — CLOSED** (§3, P92): a break logged ahead of a `start` but begun after it is cut out of the stretch the clock
+meets it in.  **Gap 4506 — CLOSED** (§3): a clock started inside a break that is not the last stepped starts past every
+break of its days.  **Gap 4363 — CLOSED, in the host's direction** (§0, §3): a break filed on a ledger day before the
+block's stops no clock, at a start (D92's `restartAt` netted it) or while the clock runs (D87's arm netted it).
+**Gap 4364 — CLOSED** (superseded at the W-43 repair by 4506).  **Gap 4362 — CLOSED** (§5: the goal refuted on a world
+with one reading; burn-down 0).
+
+**Gap 4520 — a mark logged after the replay closed a stretch it lies across is read two ways.**  1. *What.*  The replay
+closes the running stretch at every clock-stopping mark and, D87's `brkFx`, at every break it steps while the clock
+runs, crediting and drawing it then; a break, a `pause` or an `interrupt` logged LATER but stamped inside that stretch —
+a clock behind the log by more than the stretch — cannot be netted from it, while the host's union nets it at the next
+reading.  Driven (§1): S7 and S8, `tm stop` 90 beside `tm review day` 110; the generated arm's witnesses (§4): 28
+beside 29, and 28 beside 44 (45 at `ed72e36`: the machine's order, not D94's).  2. *Why not changed.*  Netting it means
+remembering the open block's closed stretches (a list in `Block`, through the checkpoint codec) and un-drawing a
+segment already applied to a day (a new day effect, and every law over the day's segments), or deferring the open
+block's segments to its end — which takes the drawn first stretch of every block a P81 break splits off the planner's
+past rows while it runs.  D94's text names the shapes a clock behind the log writes AHEAD of the clock (gaps 4361,
+4506); this one is the clock behind the log writing BEHIND it, and a decision of its own.  3. *Cost.*  On such a log
+the host's minutes and the replay's differ, and the drawing lies a Block across the late break.  0 of T5's 473 inputs
+hold it (the census of §1).  4. *Clears it.*  The owner: net a late mark into the open block's closed stretches (and say
+what is drawn), or rule it out of scope beside D94.
+
+**Gap 4521 — the bound's edge.**  1. *What.*  `pruneBrks` keeps the breaks within 31 ledger days of the NEWEST held; a
+break stamped far ahead (a clock ahead of the log by more than 31 days) drops every break before it, and a block open
+for more than 31 ledger days loses the oldest of its own.  2. *Why.*  The bound is what keeps the checkpoint from
+growing with the log (§3), and 31 is the farthest a `Hot` read's open days reach behind a reseal (`Seal.maxKeepDays`).
+3. *Cost.*  On such a log a break the host still unions (its scope can reach further back when a stall pins the ledger
+day) is not netted.  4. *Clears it.*  Nothing unless such a log appears; a seal-cut prune instead (the checkpoint keeps
+what the ledger day reaches) is the alternative, at the price of a relational proof through every window law.
+
+**Gap 4522 — P92 has no fork comparand.**  1. *What.*  No input of T5 or the door holds a shape P92 moves (§1's census:
+0 of 473), so fork 4748911's frozen answers hold the replay to the fork only where P92 changes nothing, and no frozen
+line asks the fork the D94 day.  2. *Why not changed.*  A frozen fork answer for P92's shapes is a new fixture under
+`tm/tests/fixtures/` (track C's), and this track's permission was for lines D94 MOVES, of which there are none
+(W-43 track K's gap 4367 is the precedent).  3. *Cost.*  P92 is held to the host by the generated arm and to written
+values by the Lean witnesses, not to the fork.  4. *Clears it.*  Track C or the land: freeze the fork's replay of a
+seeded sample of the arm's class, carried by a P92 rule as `p85.rs` carries P85.
+
+**Gap 4523 — section 26's refutation over the closed rows stands on a run the decoder does not build.**  1. *What.*
+`PlannerWit.noBlockOverABreak_of_a_logless_day_over_the_closed_rows_is_refuted` (and two conjuncts it reads) is witnessed
+by `openAcrossBreakRun`, the open block as D92 read it over gap 4361's log.  2. *Why.*  Since D94 no replay hands the
+planner an open block whose stretch crosses a break of its days, and the statement ranges over every `PlanReq`, whose run
+is any `Seal.Run`; the run shows exactly that the planner does not clip the open row at a Break row.  3. *Cost.*  The
+refutation is a fact about the planner's function, not about a log.  4. *Clears it.*  Restating the law over the runs
+the replay builds and proving it, which needs a replay-level invariant (the open block's clock starts outside every
+held break of its days) carried through `Seal.Run`.
+
+**Gap 4524 — the open block is read past a held break even before `now` reaches it.**  1. *What.*  `openOf` has no
+`now`: a running clock with a held break ahead of it is read as having met it, the pieces before it banked.  A reading
+at a `now` before that break's end (a `--now` behind the log's own breaks) over-reads the banked pieces.  2. *Why.*
+The replay's `finish` takes no instant; a log the binary writes holds a break only after it ended.  3. *Cost.*  On such
+a reading the open row's note (when the request does not carry the host's minutes, P55) and the planner's past read
+ahead of `now`.  4. *Clears it.*  The planner passing `now` to the open block's reading.
+
+**Gap 4525 — the open block's banked pieces are not drawn while it runs.**  1. *What.*  `openOf` banks the minutes of
+the stretch before a break held ahead of the clock but emits no segment for it; the planner draws the open row from the
+break's end, and the earlier piece appears only when the block is closed (S2r: `[09:50, 10:00]` undrawn at 10:30).
+2. *Why.*  A segment emitted at `finish` would land in a day record the window seals while the block can still change.
+3. *Cost.*  Ten minutes of worked time missing from the day bar until the block is stopped, on a log a clock behind the
+log wrote.  4. *Clears it.*  The planner drawing the open block's banked pieces from the run, if wanted.
+
+### 8. D40 — every definition this track added or changed, constant-folded in clones (never the worktree)
+
+Nine clones (`scratchpad/w44-k/d40/mut{A1,A2,B,C1..C6}`, each a `cp -a` of `scratchpad/w44-k/clone` synced to this
+tree, its `.lake` with it), `mutrun.sh` running `mutate.py --write --only <name>` under a 16 GB cap, one name at a time;
+`git status --porcelain` and `git diff` hashed before and after every run with `kernel/mutations.txt` excluded, and equal
+every time (`cbfc77aa63ed` / `bb32437fdaf3`; `cbfc77aa63ed` / `43984ba388f9` for the twin's re-run below, after its law
+landed).  The rows were merged by `scratchpad/w44-k/d40/merge_rows.py` through `mutate.write_rows` (a key replaced, never duplicated).
+
+* **The drift first** (`drift-*.out`).  Replay.lean grew by ~600 lines and SealStep.lean's congruence lemmas moved, so
+  twelve rows' recorded pin sites named a declaration that no longer encloses that line, and `mutate.py` refuses every
+  run while one does (the first launch, `mut-*.out` at 23:53, stopped there on all five clones).  Each was re-run with
+  `--verify --write --only`: `Replay.arm`, `brkEnd`, `brkFx`, `cut`, `dayArm`, `restartAt`, `resumeBlock`,
+  `Seal.Ckpt.empty`, `brkEndAt?`, `entryInstants`, `stepQueries`, `machineInstants` — every verdict PINNED as before,
+  the sites rewritten.  Two now pin on this track's laws: `brkFx` on `brkFx_cases also brkFx_cases_on_the_blocks_days`,
+  `restartAt` on `restartAt_cases also restartAt_avoids_the_breaks_held`.
+* **Then the 27 owed**, every one PINNED or rostered by rule: `Replay.pruneBrks` (`[]`, the identity `l`, `default`),
+  `spansFor`, `covers` (`true` and `false`, on `nextStart_covers also liftGo_uncovered`), `liftGo` (the identity
+  `fun _ a1 => a1` and a synthesised instant), `lift`, `nextStart`, `piecesGo`, `pieces` (the identity `H`, `[]`),
+  `lastEndAfter` (on `the_open_block_is_read_past_a_break_held_ahead_of_its_clock`, its statement decided false),
+  `openOf` (on `openOf_restarts_outside_the_breaks_held also a_start_cuts_any_open_block_even_the_same_id`),
+  `closeSub` (a synthesised pair, on `brkFx_cases also brkFx_cases_on_the_blocks_days`), `Seal.answer` and
+  `Seal.resumedAnswer` (a synthesised answer), `Seal.closeReads` (on `closeSub_congr also closeReads_mi`), and the
+  PlannerWit lines `midBreakLine` and `aheadBreakLine` (`⟨0, none⟩`, each on its day's witness, decided false),
+  `midBreakLines` and `aheadBreakLines` (`default` and `[]`, on the same witnesses).  The four
+  runs and requests (`openAcrossBreakRun`, `theOpenAcrossBreakRequest`, `aheadBreakRun`, `theAheadBreakRequest`) are
+  UNFOLDABLE witness fixtures (`no Inhabited Seal.Run` / `PlanReq`), exempt by `WITNESS_MODULES`' rule.
+* **Found: `Seal.resumedAnswerFast` read ALONE** (`mut-B.out`).  The compiled twin of `resumedAnswer` — the one the
+  binary runs — was told from a synthesised constant by its `@[csimp]` lemma's proof and by nothing else: with that
+  proof `sorry` the package built.  A row nobody had ever written (it was unchanged since the baseline until this
+  track pointed its open block at `Replay.openOf`).  Answered by a law of the twin itself,
+  `Seal.the_compiled_resume_reads_its_open_block_through_openOf` (the compiled resume hands the planner the open block
+  `openOf` reads, `rfl`), and re-run on the tree carrying it (`mut-B2.out`): PINNED, `resumedAnswer_eq_resumedAnswerFast
+  also the_compiled_resume_reads_its_open_block_through_openOf`.
+* **Pinned by nothing, by name** (no constant of the type, no identity, no synthesised term): `Replay.State.init` and
+  `Seal.cMachine` as before, and two rows this track adds — `Seal.cBlock` (`no Inhabited (Codec Block)`; the block's
+  codec gained `day`) and `Replay.finish` (`no Inhabited Facts`; its open block is `openOf`'s now).  Their behaviour is
+  held by the checkpoint round trips and by every law over the replay's facts, which no fold can reach (README gap 980's
+  exemption, counted by the gate on every run).
+
+### 9. Acceptance, capped (`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`; 16 GB for the drives, the mutations and the latency runs)
+
+* **`check.sh`, seventeen lines, all ok, exit 0**, in `scratchpad/w44-k/clone` re-synced to this commit's tree (`git
+  diff` hash equal to the worktree's; check 9's gate never runs in the tree committed from; `check-final2.log`): the
+  build; totality; **the axiom audit 6,341** (6,298 at HEAD: 44 names in, 1 out — W-43's witness renamed; the eight
+  definitions §6.3 names still audited beside the 6,333 theorems); `Negative.lean` rejected; FFI **95**; the corpus
+  **29/37 files and 4/5 plans**; **stage goals 0** (1 at HEAD); prose citations **58,450** (56,030 resolved, 2,420 allowed, 0 allow entries unused); check 9 **732 new or changed
+  since `86c4dc6`, 732 rostered (261 unfoldable, 168 witness fixtures, 44 pinned by nothing; 2 literal), 0 owed**;
+  parity **P1-P92, next free P93**; check 11 **3,402 bodies, 14 groups (3 compiled, 11 value), 0 UNANSWERED**, second key
+  97 generalisation groups, 0 UNANSWERED; check 12 **1,518** reachable (1,507 at HEAD: D94's ten and `closeReads`),
+  **1,099** exempt, 0 UNANSWERED; check 13 fields 17/17, inputs 33 of 37, sent 169, written 220, 0 UNANSWERED; check 14
+  94 modules.  The first run on the clone (00:37-00:43, `check-final1.log`) failed check 8 alone, on one backticked
+  script name in §8, written as its path since.
+* **No new compiler warning**: the build's trace logs hold **106** warnings, as at HEAD (`warns.py`, W-43 track K's,
+  over the main checkout's `.lake` and the worktree's).  One was new on the first full build — an unused `simp`
+  argument in `Seal.brkFx_mi`'s proof — and is gone.  Rust: 0 warnings in every run below.
+* **`cargo test --workspace --no-fail-fast`, THREE runs on the final code** (`ws1..3.log`; porcelain and diff hashed
+  equal at each start and end, `08fadfee549d` / `bfd0ef3eb140`): **142 result lines, 2,578 passed, 0 failed, 36
+  ignored, 0 warnings**, each run 559-564 s (00:43-01:11, load 3.9-4.5).  The count, by arithmetic: the W-43 repair's
+  2,564 + `kernel_break_union` 14 (its 3 and the 11 `kernel_log` unit tests `support/replay.rs` brings) = 2,578; 141 + 1
+  = 142 result lines; 36 ignored, unchanged.  No `.proptest-regressions` file moved (each hashed after the runs, the new
+  `kernel_break_union.proptest-regressions` still its one committed seed).
+* **The named suites, in run 3**: T5 `kernel_replay_parity` 44 (4 ignored), the door `kernel_log_door` 36,
+  `cli_switch_acceptance` 16, `cli_latency` 6 (1 ignored), `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 32,
+  `kernel_row_cells` 33, `kernel_item_grammar` 6, `kernel_planner_wire` 27, `planner_classes` 66 (6 ignored),
+  `planner_invariants` 45 (2 ignored), `cli_conformance` 6, `cli_json_matrix` 8; beside them `planner_p85_days` 17 (2
+  ignored), `cli_break_into_block` 2, `cli_pause_in_break` 6, and this track's `kernel_break_union` 14.
+* **The generated arm alone, three runs with `--nocapture`** (`arm-1..3.log`, 25-32 s each; the census line each run
+  prints): 257 cases each (256 drawn and the committed seed); **177, 193 and 172 compared**, 80, 64 and 85 left out by
+  the stated rule (gap 4520); gap 4361's shape on 105, 126 and 111 compared days, gap 4506's on 18, 19 and 12, gap
+  4363's on 8, 11 and 6; 139, 134 and 127 open readings compared, 75, 79 and 72 of them over a break held ahead of the
+  clock.  Every floor held.
+* **`cli_latency --include-ignored`**, one run at load 3.3 (`lat1.log`): 7 passed in 28.1 s — T18's planner call 7.9 ms
+  on the example tree, 91.7 ms on T11's, 98.9 / 209.3 ms on T14's 3- and 10-year trees; a later verb 76.1 ms, at one
+  year 111.5, at three years 182.5 and 162.1; the first verb at three years 2,713.9 and 2,701.9 ms (genesis 2,488.8).  No
+  band touched.  The first verb read 2,222.3 ms at the W-43 repair (load 1.5), so it was timed against HEAD's own
+  binary at one load (`lat-ab.log`: HEAD's `cli_latency` test binary and this branch's, the three-year test alone,
+  alternating three times at load 2.3-2.8): HEAD 3,154.5 / 3,137.8 / 3,105.1 ms, this branch 3,206.6 / 3,218.0 / 2,667.4
+  ms — the replay's new work (a held list pruned per break, pieces per close) moves the genesis by nothing measurable.
+* **Drives**: §6 (the shape table, the cache and the TUI through a pty, re-driven on this commit's binary).
+* **Plants**: D40's mutations of §8, each in a clone, the porcelain hashed before and after.
+
+### 10. Status note (kept current while the track ran)
+
+* 21:10 — worktree made off `ed72e36`; `kernel/TmKernel/.lake` copied from the main checkout (lake: 192 jobs replayed,
+  nothing rebuilt); the HEAD binary frozen as `scratchpad/w44-k/tm-head` (the main checkout's `target/debug/tm`, built
+  17:11 from `f5d7a16`'s code — `ed72e36` is documentation only).
+* 21:40 — **step 1 measured** (§1): fourteen shapes driven on `tm-head` (`scratchpad/w44-k/drive/shapes.sh`,
+  `shapes-head.out`, `shapes-head2.out`, `table-head.txt`).  Nine read a block two ways; two are one reading by the
+  binary's own writers (controls); one (S9) is one reading on a log that contradicts itself.
+* 22:20 — **step 2 built in the worktree, the library green** (`lake build TmKernel:static`, 192 jobs; PlannerWit 6 m):
+  `Replay.Machine.brks` (`HeldBrk`: span and ledger day; replaces D92's `brk`), `Replay.Block.day`, the bound's constant
+  moved down from `Seal` (undone at check 12, §3), `pruneBrks` (the bound), `spansFor` (the block's ledger days),
+  `lift`/`liftGo`, `nextStart`, `pieces`/`piecesGo`, `closeSub` cutting the stretch around the spans, `restartAt` =
+  `lift`, `brkFx` (holds every break; stops no clock for a break of an earlier ledger day), `openOf` (the open block read
+  past a break ahead of its clock, in `finish` and `Seal.answer`), the codecs (`cBlock`, `cMachine`), `stepQueries` and
+  `machineInstants` widened by every held break's end (the queries narrowed to `Seal.closeReads` at T5, §3), every Seal
+  law re-proved.  New laws: `restartAt_avoids_the_breaks_held`,
+  `closeSub_avoids_the_breaks_held`, `openOf_restarts_outside_the_breaks_held`, the bound over every fold
+  (`Seal.a_replay_holds_breaks_within_maxKeepDays_of_the_newest`); refuted and renamed (D5): `brkFx_cases` as D92 stated it,
+  R8 as C3 stated it, W-43's a_break_logged_before_a_start_but_begun_after_it_is_not_netted.  PlannerWit: section 14
+  moved to a break logged after `m1`'s `done` (one reading), the goal refuted there; section 26's refutation over the closed
+  half re-witnessed by a run the decoder does not build; section 33 (D94's two planner days).  `Goals.lean` holds no goal.
+  Cheats 274-279; `Check.lean` 6,338 lines, no `sorryAx`.  Next: the Rust (T5's carry P92, the generated arm), the
+  drives on this branch's binary, D40, `check.sh` in a clone, the workspace runs.
+* 22:40-23:15 — the Rust: the generated arm (`kernel_break_union.rs`), whose first draws found gap 4520's two shapes
+  (one seed committed, its rule stated); T5 and the door green unchanged; the drives on this branch's binary (§6).
+* 23:15-23:45 — check 12 refused three unreached definitions (the bound's constant moved into `Replay`, a codec for the
+  held break, `blockSince` read nowhere once `closeReads` replaced it): the literal and its `rfl` law, the codec
+  inlined, `closeReads` reading `blockSince`; the census lines re-derived; check 8's two dead allow entries deleted and
+  the renamed witness counted; the notes in `PlanCheck.lean` and `Planner.lean` made line-neutral; an unused `simp`
+  argument removed (warnings 106 = 106).
+* 23:53-00:37 — D40 (§8): the first launch stopped on twelve drifted rows (and died with its shell); the drift
+  re-verified 23:54-23:55; the 27 owed in nine clones 00:05-00:36 (two runners stopped once their last owed fixture was PINNED, the rest done elsewhere); `resumedAnswerFast` read ALONE and gained its law.
+* 00:37-00:43 — `check.sh` on the clone: all ok but check 8 (a backticked script name); fixed.
+* 00:43-01:11 — the workspace, three runs, green; 01:12-01:15 the latency run and its A/B against HEAD's binary.
+* 01:20 — this section; the last `check.sh` on the final tree; the commit.

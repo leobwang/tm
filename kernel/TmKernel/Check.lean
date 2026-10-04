@@ -8163,7 +8163,6 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Replay.an_unpause_inside_a_break_restarts_the_clock_at_its_end
 #print axioms Tm.Replay.a_resume_inside_a_break_restarts_the_clock_at_its_end
 #print axioms Tm.Replay.a_break_the_start_ended_nets_nothing
-#print axioms Tm.Replay.a_break_logged_before_a_start_but_begun_after_it_is_not_netted
 #print axioms Tm.Seal.mi_of_eq
 #print axioms Tm.Seal.restartAt_mi
 #print axioms Tm.Seal.a_machine_holds_its_last_breaks_end
@@ -8237,3 +8236,55 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Field.parseDT_is_chronos_parse_datetime
 #print axioms Tm.Field.parseTime_is_chronos_parse_time
 #print axioms Tm.LogStamp.trimWs_eq_dropWhile
+
+-- =====================================================================
+-- APPENDED 2026-10-03: stage 6 (the planner), run W-44, TRACK K — the owner's D94 (README gaps 4361, 4506 and
+-- 4362; parity P92): every break on a block's ledger days is netted (`Replay.Machine.brks`, `Replay.restartAt`,
+-- `Replay.closeSub`, `Replay.openOf`), D94's bound (`Replay.pruneBrks`), and the last goal refuted on a world with one
+-- reading.  One line removed: Replay.a_break_logged_before_a_start_but_begun_after_it_is_not_netted, refuted and
+-- renamed `…_is_not_netted_is_refuted` (D5).
+-- =====================================================================
+#print axioms Tm.PlannerWit.aheadBreakRun_resumes_ok
+#print axioms Tm.PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted
+#print axioms Tm.PlannerWit.the_ahead_break_day_keeps_its_block_off_the_break
+#print axioms Tm.PlannerWit.the_open_row_is_read_past_a_break_held_ahead_of_its_clock
+#print axioms Tm.Replay.a_break_logged_before_a_start_but_begun_after_it_is_netted
+#print axioms Tm.Replay.a_break_logged_before_a_start_but_begun_after_it_is_not_netted_is_refuted
+#print axioms Tm.Replay.a_break_on_the_ledger_day_before_a_running_block_stops_no_clock
+#print axioms Tm.Replay.a_break_on_the_ledger_day_before_the_blocks_is_not_netted
+#print axioms Tm.Replay.an_unpause_inside_an_earlier_break_nets_every_break_held
+#print axioms Tm.Replay.a_resume_inside_an_earlier_break_nets_every_break_held
+#print axioms Tm.Replay.a_start_inside_an_earlier_break_nets_every_break_held
+#print axioms Tm.Replay.a_start_inside_overlapping_breaks_runs_from_their_union_end
+#print axioms Tm.Replay.brkFx_cases_as_d92_stated_it_is_refuted
+#print axioms Tm.Replay.brkFx_cases_on_the_blocks_days
+#print axioms Tm.Replay.brkFx_fx_obs
+#print axioms Tm.Replay.closeSub_avoids_the_breaks_held
+#print axioms Tm.Replay.countP_lt_of_witness
+#print axioms Tm.Replay.liftGo_cases
+#print axioms Tm.Replay.liftGo_uncovered
+#print axioms Tm.Replay.lift_uncovered
+#print axioms Tm.Replay.mem_pruneBrks
+#print axioms Tm.Replay.mem_spansFor
+#print axioms Tm.Replay.nextStart_covers
+#print axioms Tm.Replay.nextStart_spec
+#print axioms Tm.Replay.openOf_restarts_outside_the_breaks_held
+#print axioms Tm.Replay.piecesGo_avoids
+#print axioms Tm.Replay.piecesGo_starts
+#print axioms Tm.Replay.pruneBrks_drops_a_break_past_the_bound
+#print axioms Tm.Replay.restartAt_avoids_the_breaks_held
+#print axioms Tm.Replay.spansFor_end
+#print axioms Tm.Replay.the_open_block_is_read_past_a_break_held_ahead_of_its_clock
+#print axioms Tm.Replay.worked_minutes_floor_each_subsegment_as_c3_stated_it_is_refuted
+#print axioms Tm.Replay.worked_minutes_floor_each_subsegment_with_no_break_held
+#print axioms Tm.Seal.a_machine_holds_the_end_of_every_break_it_holds
+#print axioms Tm.Seal.a_replay_holds_breaks_within_maxKeepDays_of_the_newest
+#print axioms Tm.Seal.arm_brks
+#print axioms Tm.Seal.foldl_brks_within
+#print axioms Tm.Seal.foldl_maxDay_le
+#print axioms Tm.Seal.le_foldl_maxDay
+#print axioms Tm.Seal.pruneBrks_within
+#print axioms Tm.Seal.stepWith_brks_within
+#print axioms Tm.Seal.closeReads_mi
+#print axioms Tm.Seal.pruneBrks_is_bounded_by_maxKeepDays
+#print axioms Tm.Seal.the_compiled_resume_reads_its_open_block_through_openOf

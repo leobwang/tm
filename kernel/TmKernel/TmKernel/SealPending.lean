@@ -71,7 +71,7 @@ theorem arm_pending (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Ma
     · simp only [List.filterMap_cons, Effect.machineOf?, List.filterMap_nil, List.mem_singleton] at hm
       subst hm
       left
-      show (m.block.map (Replay.resumeBlock · t (Replay.restartAt m t))).bind (·.obs) = m.block.bind (·.obs)
+      show (m.block.map (fun b => Replay.resumeBlock b t (Replay.restartAt m b.day t))).bind (·.obs) = m.block.bind (·.obs)
       cases m.block with
       | none => rfl
       | some b => exact Replay.resumeBlock_obs b t _
@@ -101,7 +101,7 @@ theorem arm_pending (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Ma
       · exact Or.inl rfl
   case brk p a w =>
     rw [List.filterMap_append, (Replay.dayArm_obs dy sl e t d).1, List.append_nil] at hm
-    exact Or.inl (Replay.brkFx_machine dy m t _ m' hm).2.2
+    exact Or.inl (Replay.brkFx_machine dy m t _ d m' hm).2.2
   all_goals rw [(Replay.dayArm_obs dy sl e t d).1] at hm; simp at hm
 
 /-- **A step's pending observation is its start's, none, or on the step's day.** -/

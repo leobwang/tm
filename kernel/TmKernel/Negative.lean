@@ -2490,12 +2490,11 @@ theorem wallTodayIsReadOfEveryCandidate :
 /- CHEAT 201 — `noBlockOverABreak` asserted to hold on a day whose log records a
    `break` across a block.  Every Break row of the day is a replayed
    one (`Planner.a_break_row_is_a_replayed_row`) and so is every Block row the
-   planner did not reserve, so a log with a break logged ahead of `m1`'s 07:05
-   `start` but begun at 07:10 (README gap 4361; D92 nets one begun before the
-   start) gives the day a Break row INSIDE a Block row.  (The goal it once
-   refuted is back in `Goals.lean`: that refutation stood on a two-readings log.)
-   This block claims the checker says
-   `true` there.  `decide` refuses: it says `false`, and so does `planOkCore`. -/
+   planner did not reserve, so a log with a break stamped 07:10 but logged
+   after `m1`'s 08:05 `done` (since W-44, a world with one reading: no clock
+   read the break before `m1` was closed; D94 nets every break a clock meets)
+   gives the day a Break row INSIDE a Block row.  This block claims the checker
+   says `true` there.  `decide` refuses: it says `false`, and so does `planOkCore`. -/
 theorem theMidBreakDayKeepsItsBlocksOffTheBreak :
     PlanCheck.noBlockOverABreak PlannerWit.theMidBreakRequest
       (Planner.dayPlan PlannerWit.theMidBreakRequest) = true := by decide
@@ -2854,8 +2853,8 @@ theorem aStoppedBlockIsDrawnAcrossItsBreak :
    computes the arm, which also stops the block's clock, and refuses. -/
 theorem aBreaksArmIsItsDayArm :
     Replay.arm (fun _ => 739865) (fun _ => none)
-        ⟨some ⟨['a'], (⟨63924368400, 0⟩, ⟨false, 0⟩), some (⟨63924368400, 0⟩, ⟨false, 0⟩), false, none, 0, none⟩, none, none,
-          none⟩
+        ⟨some ⟨['a'], (⟨63924368400, 0⟩, ⟨false, 0⟩), some (⟨63924368400, 0⟩, ⟨false, 0⟩), false, none, 0, none,
+          739865⟩, none, none, []⟩
         (Replay.bE 2 63924370200 (.brk 20 (some 20) none)) (⟨63924370200, 0⟩, ⟨false, 0⟩) 739865
       = Replay.dayArm (fun _ => 739865) (fun _ => none) (Replay.bE 2 63924370200 (.brk 20 (some 20) none))
           (⟨63924370200, 0⟩, ⟨false, 0⟩) 739865 := by
@@ -2939,6 +2938,80 @@ theorem aSpacedClockIsNoTime : Field.parseTime [' ','9',':','0','5'] = none := b
    `guardWf` refuses it by name.  This block claims the edit takes it; `decide` refuses. -/
 theorem aYearPast9999IsEdited :
     (editValOf .due ['+','1','0','0','0','0','-','1','-','7']).isSome = true := by
+  decide
+
+/- ====================================================================
+   W-44 track K — the owner's D94 (README gaps 4361 and 4506, parity P92):
+   every break on a block's ledger days is netted, wherever the block's clock
+   meets it.  Cheats 274-279, numbered from the highest in the checkout
+   (273); the land renumbers if another track took the same numbers (AGENTS
+   6.2).  CHEAT 201's comment (section 14's day moved to a break logged after
+   `m1`'s `done`) and CHEAT 248's machine literal (`Replay.Machine.brks`,
+   `Replay.Block.day`) were edited so each still fails for the reason it
+   states.
+   ==================================================================== -/
+
+/- CHEAT 274 — D92's credit for a clock started inside an EARLIER break with a
+   later one stepped between (README gap 4506): a thirty-minute `break` at
+   09:00, a five-minute one at 09:40, `start a` 09:10, `stop a` 10:00,
+   credited the clock's whole 50 minutes.  D94's `Replay.restartAt` starts it
+   past the first break and `Replay.closeSub` cuts it around the second, so
+   `decide` computes 25 — the host's union — and refuses 50. -/
+theorem aStartInsideAnEarlierBreakIsCreditedTheStretch :
+    ((Replay.replay Replay.utcZone [Replay.bE 1 63924368400 (.brk 30 (some 30) none),
+        Replay.bE 2 63924370800 (.brk 5 (some 5) none), Replay.bE 3 63924369000 (Replay.bStart ['a']),
+        Replay.bE 4 63924372000 (.stop ['a'] 0)]).items.get ['a']).map (·.minutes) = some 50 := by
+  decide
+
+/- CHEAT 275 — D92's credit for a break logged ahead of a `start` but begun
+   after it (README gap 4361): a ten-minute `break` at 09:05 logged before
+   `start a` 09:00, `stop a` 10:00, credited 60.  D94's `Replay.closeSub` cuts
+   the stretch where the clock meets the break, so `decide` computes 50 and
+   refuses 60. -/
+theorem aBreakAheadOfItsClockIsNotNetted :
+    ((Replay.replay Replay.utcZone [Replay.bE 1 63924368700 (.brk 10 (some 10) none),
+        Replay.bE 2 63924368400 (Replay.bStart ['a']), Replay.bE 3 63924372000 (.stop ['a'] 0)]).items.get
+        ['a']).map (·.minutes) = some 60 := by
+  decide
+
+/- CHEAT 276 — the planner's day for gap 4361's log as D92 drew it: the census
+   log with its break stamped 07:10 logged ahead of `m1`'s 07:05 `start`
+   claimed to lay a Block across the Break.  `decide` computes `m1` cut around
+   the Break and `noBlockOverABreak` true, and refuses. -/
+theorem theAheadBreakDayLaysABlockAcrossTheBreak :
+    PlanCheck.noBlockOverABreak PlannerWit.theAheadBreakRequest
+      (Planner.dayPlan PlannerWit.theAheadBreakRequest) = false := by decide
+
+/- CHEAT 277 — D94's bound claimed not to bite: a break 32 ledger days older
+   than the newest held, kept.  `decide` computes `Replay.pruneBrks` dropping
+   it, and refuses. -/
+theorem pruneBrksKeepsABreakPastTheBound :
+    (Replay.pruneBrks [⟨(⟨0, 0⟩, ⟨false, 0⟩), (⟨60, 0⟩, ⟨false, 0⟩), 40⟩,
+      ⟨(⟨0, 0⟩, ⟨false, 0⟩), (⟨60, 0⟩, ⟨false, 0⟩), 8⟩]).length = 2 := by
+  decide
+
+/- CHEAT 278 — a break filed on the ledger day BEFORE the block's netted
+   (README gap 4363): the 6th's wake, a thirty-minute `break` at 06:50 on the
+   7th (before the 7th's 07:00 wake), `start a` 07:10, `stop a` 08:00,
+   credited 40 as D92 restarted the clock at the break's end.  The host reads
+   a block's idle marks from its `start`'s day on, and so does D94's machine:
+   `decide` computes 50 and refuses 40. -/
+theorem aBreakOnTheDayBeforeIsNetted :
+    ((Replay.replay Replay.utcZone [Replay.bE 1 63924274800 (.wake 420 none),
+        Replay.bE 2 63924360600 (.brk 30 (some 30) none), Replay.bE 3 63924361200 (.wake 420 none),
+        Replay.bE 4 63924361800 (Replay.bStart ['a']), Replay.bE 5 63924364800 (.stop ['a'] 0)]).items.get
+        ['a']).map (·.minutes) = some 40 := by
+  decide
+
+/- CHEAT 279 — the open block read as D92 read it, its clock running from its
+   `start` across a break held ahead of it: a fifteen-minute `break` at 10:00
+   logged before `start a` 09:50, nothing after — claimed open since 09:50
+   with nothing banked.  D94's `Replay.openOf` reads it past the break:
+   `decide` computes ten minutes banked and the clock from 10:15, and refuses. -/
+theorem theOpenBlockRunsAcrossABreakHeldAheadOfIt :
+    (Replay.replay Replay.utcZone [Replay.bE 1 63924372000 (.brk 15 (some 15) none),
+        Replay.bE 2 63924371400 (Replay.bStart ['a'])]).openBlock.map
+        (fun b => (b.workedMin, b.since.map (·.1.sec))) = some (0, some 63924371400) := by
   decide
 
 end Tm

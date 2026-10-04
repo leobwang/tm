@@ -26,7 +26,7 @@ theorem answer_ckptOfEntries : answer (ckptOfEntries z T₀ L cut es er ws) =
     ⟨L, horizonOf L, ((itemIds (foldedState z es er)).map (itemAggOf (foldedState z es er))).map ItemAgg.finish,
      windowsFrom (foldedState z es er) (horizonOf L), instOtherOf (foldedState z es er), namedOf (foldedState z es er),
      (daysFrom (foldedState z es er) (foldedHeaders z es er) L).map (OpenDay.finish (foldedState z es er).machine),
-     (foldedState z es er).machine.block.map (fun b => ⟨b.id, b.started, b.workedMin, b.since, b.paused⟩),
+     Replay.openOf (foldedState z es er).machine,
      (foldedState z es er).machine.interrupt.map (fun i => ⟨0, some i.1, none, i.2.1, i.2.2, 0, []⟩),
      Replay.maxDay? ((foldedState z es er).days.pairs.map Prod.fst), (foldedState z es er).global.lastEffective,
      es.length, (foldedState z es er).unknown, (foldedState z es er).longestLeak, (foldedState z es er).rwarns.reverse,

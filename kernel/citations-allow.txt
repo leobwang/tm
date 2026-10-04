@@ -1300,8 +1300,11 @@ with_minute
 # (README gap 4366).  The track's own prose names it without backticks.
 # W-43 LAND: gap 4366 is closed -- the two Lean notes now name it unbackticked, as dead, so the qualified count
 # fell 3 -> 1 (the W-18 merge's README block alone).
-1 plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted
-1 PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted
+# W-44 TRACK K (README gap 4362): the refutation is BACK in PlannerWit, on a world with one reading (the owner's D94),
+# so the name resolves and both entries above are deleted -- an entry that exempts nothing fails.  The dead name now is
+# W-43's replay witness of gap 4361's edge, refuted and renamed `…_is_not_netted_is_refuted` (D5): W-43 track K's
+# append-only README block cites it twice; this track's prose names it without backticks.
+2 a_break_logged_before_a_start_but_begun_after_it_is_not_netted
 # W-43 TRACK H (README gaps 4390-4399).  The W-42 repair's pinned test of README gap 4342 was RENAMED when D91 closed
 # the gap it pinned (it now asserts the opposite, as d91_on_a_day_with_unfinished_work_the_tui_closes_in_memory_and_
 # asks_what_tm_plan_asks).  The W-42 repair's append-only block cites it by the name it carried then; track H's own

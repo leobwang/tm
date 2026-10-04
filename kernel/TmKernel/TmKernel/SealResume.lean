@@ -32,31 +32,46 @@ def blockSince (m : Machine) : List Cal.Instant := ((m.block.bind (·.since)).ma
 /-- The open block's pause start, if any. -/
 def blockPaused (m : Machine) : List Cal.Instant := ((m.block.bind (·.pausedAt)).map (·.1)).toList
 
+/-- **The instants `Replay.closeSub` reads the day index at** (the owner's D94): the open block's sub-segment start
+(`blockSince`, as before D94 — a stretch closed at or before it reads nothing, and is listed all the same), and the
+start of every piece of the stretch it closes: the clock's start, and the end of each break of the block's ledger days
+it holds that the stretch runs past — never an instant before the clock's start, so the new ledger day these bound
+from below (`stepLows`) stays where the clock's start put it. -/
+def closeReads (m : Machine) (t : Replay.At) : List Cal.Instant :=
+  blockSince m ++
+    match m.block with
+    | some b =>
+      match b.since with
+      | some s => (Replay.pieces (Replay.spansFor m.brks b.day) s t).map (·.1.1)
+      | none => []
+    | none => []
+
 /-- **Every instant a step reads the day index at**: the entry's own (`entryInstants`), and the open block's sub-segment
 and pause starts when the step closes them (`closeSub`, `closePause`; a `break`'s `Replay.brkFx` closes the running
-sub-segment, D87). -/
+sub-segment, D87) — since the owner's D94 the sub-segment's pieces' starts (`closeReads`): a closed stretch is cut
+around the breaks the machine holds, and a piece after one begins at its end. -/
 def stepQueries (m : Machine) (e : Entry) : List Cal.Instant :=
   entryInstants e ++
     match e.ev with
-    | .start .. => blockSince m ++ blockPaused m
+    | .start .. => closeReads m (e.t.val, e.off.val) ++ blockPaused m
     | .pause id =>
       match m.block with
-      | some b => if b.id = id ∧ b.paused = false then blockSince m else []
+      | some b => if b.id = id ∧ b.paused = false then closeReads m (e.t.val, e.off.val) else []
       | none => []
     | .unpause id =>
       match m.block with
       | some b => if b.id = id ∧ b.paused = true then blockPaused m else []
       | none => []
-    | .interrupt _ => blockSince m ++ blockPaused m
+    | .interrupt _ => closeReads m (e.t.val, e.off.val) ++ blockPaused m
     | .stop id _ =>
       match m.block with
-      | some b => if b.id = id then blockSince m ++ blockPaused m else []
+      | some b => if b.id = id then closeReads m (e.t.val, e.off.val) ++ blockPaused m else []
       | none => []
     | .done id .. =>
       match m.block with
-      | some b => if b.id = id then blockSince m ++ blockPaused m else []
+      | some b => if b.id = id then closeReads m (e.t.val, e.off.val) ++ blockPaused m else []
       | none => []
-    | .brk .. => blockSince m
+    | .brk .. => closeReads m (e.t.val, e.off.val)
     | _ => []
 
 /-- **The tail without its settled undos** (§7.4): a settled undo cancels nothing after the cut. -/
@@ -206,7 +221,7 @@ def resumedAnswer (K : Ckpt) (st : State) (hs : List (Nat × HeaderRec)) (entrie
    (canon idLt (K.items.map (·.id) ++ itemIds st)).map (fun i => (aggMerged K st i).finish),
    windowsFrom st (horizonOf K.ledgerDay), instOtherOf st, namedOf st,
    (daysFrom st hs K.ledgerDay).map (OpenDay.finish st.machine),
-   st.machine.block.map (fun b => ⟨b.id, b.started, b.workedMin, b.since, b.paused⟩),
+   Replay.openOf st.machine,
    st.machine.interrupt.map (fun i => ⟨0, some i.1, none, i.2.1, i.2.2, 0, []⟩),
    maxOpt K.lastDay (Replay.maxDay? (st.days.pairs.map Prod.fst)),
    st.global.lastEffective, K.entryCount + entries, st.unknown, st.longestLeak, st.rwarns.reverse,
