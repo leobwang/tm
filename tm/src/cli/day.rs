@@ -210,10 +210,16 @@ fn end_break(ctx: &mut Ctx) -> Result<Option<u32>, CliError> {
 /// [`end_break`] at `end` — `now`, or the end a `tm stop --at`/`tm done --at`
 /// states for the block (D79: the stop is at `end` in every respect, so a
 /// break running then is over then too). The break began at the ONE reading
-/// of its start (`Ctx::running_break`, P73) — the evening's after midnight,
-/// where fork 4748911 read the cache's clock on today's date and logged a
-/// break begun before midnight TONIGHT with `actual_min: 0` (README gap 3820);
-/// a break with no `started` began at `end`.
+/// of its start (`Ctx::running_break`) — since the owner's **D105** (parity
+/// P100) the instant its `break_start` was logged at, so the `break` line this
+/// writes is stamped at exactly that instant and the replay pairs the two;
+/// for a break a binary before D105 began, the cache's clock read as P73 reads
+/// it — the evening's after midnight, where fork 4748911 read the cache's
+/// clock on today's date and logged a break begun before midnight TONIGHT with
+/// `actual_min: 0` (README gap 3820); a break with no `started` began at `end`.
+/// **Every verb that ends a break ends it here** (D97's class: `tm break`,
+/// `tm start`, `tm stop`, `tm done`, `tm interrupt`, `tm resume`), so the line
+/// that ends the running break has one writer.
 fn end_break_at(ctx: &mut Ctx, end: DateTime<chrono_tz::Tz>) -> Result<Option<u32>, CliError> {
     let start_dt = ctx.running_break().unwrap_or(end);
     let Some(br) = ctx.state.break_.take() else {

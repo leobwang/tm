@@ -354,6 +354,7 @@ def resumedAnswerFast (K : Ckpt) (st : State) (hs : List (Nat × HeaderRec)) (en
    (daysFrom st hs K.ledgerDay).map (OpenDay.finish st.machine),
    Replay.openOf st.machine,
    st.machine.interrupt.map (fun i => ⟨0, some i.1, none, i.2.1, i.2.2, 0, []⟩),
+   st.machine.brkOpen,
    maxOpt K.lastDay (Replay.maxDay? (st.days.pairs.map Prod.fst)),
    st.global.lastEffective, K.entryCount + entries, st.unknown, st.longestLeak, st.rwarns.reverse,
    (K.warnings ++ ws).take maxWarnings, K.warnings.length + K.warnOverflow + ws.length - maxWarnings⟩

@@ -494,7 +494,7 @@ theorem the_weeks_cut_is_answered :
            ⟨739872, some { Replay.DayAcc.empty with segments :=
               [⟨(⟨63924974400, 0⟩, Cal.Offset.utc), (⟨63924975000, 0⟩, Cal.Offset.utc), .pause ['t','4']⟩] },
              none, [], [], [], [], [], []⟩],
-          none, none, none, none, 0, 0, none, [], [], 0⟩)
+          none, none, none, none, none, 0, 0, none, [], [], 0⟩)
         (fun _ _ => [⟨['g','1'], 739865, 739865, 63924382200, 63924382200, 63924385800⟩]) 0 (some 739865) (some 60) with
       | .ok v => v == .obj [("marks".toList, .arr []), ("pausedFor".toList, .null),
           ("cut".toList, .arr [.obj [("day".toList, .str ['2','0','2','6','-','0','9','-','0','7']),
@@ -506,13 +506,13 @@ theorem the_weeks_cut_is_answered :
                 ("wall".toList, .arr [.arr [.num 63924382200, .num 63924385800]])]])]])]
       | .error _ => false) = true ∧
     (match answer (.obj [("walls".toList, .obj [("at".toList, .str "2026-09-07T15:00:00Z".toList)])]) (some Replay.utcZone)
-        (some ⟨0, 0, [], [], [], [], [], none, none, none, none, 0, 0, none, [], [], 0⟩)
+        (some ⟨0, 0, [], [], [], [], [], none, none, none, none, none, 0, 0, none, [], [], 0⟩)
         (fun _ _ => []) 0 (some 739865) (some 60) with
       | .ok v => v == .obj [("marks".toList, .arr []), ("pausedFor".toList, .null)]
       | .error _ => false) = true ∧
     (match answer (.obj [("walls".toList, .obj [("at".toList, .str "2026-09-07T15:00:00Z".toList),
           ("week".toList, .str "2026-13-01".toList)])]) (some Replay.utcZone)
-        (some ⟨0, 0, [], [], [], [], [], none, none, none, none, 0, 0, none, [], [], 0⟩)
+        (some ⟨0, 0, [], [], [], [], [], none, none, none, none, none, 0, 0, none, [], [], 0⟩)
         (fun _ _ => []) 0 (some 739865) (some 60) with
       | .error .badWeek => true | _ => false) = true := by
   decide

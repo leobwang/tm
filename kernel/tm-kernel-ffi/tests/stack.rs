@@ -187,7 +187,7 @@ fn the_log_op_reads_and_renders_at_the_line_bound_on_a_2mib_thread() {
         assert_eq!(
             out,
             format!(
-                r#"{{"ok":{{"docs":[],"report":{{"closes":[]}},"log":{{"lines":8192,"warnings":[],"facts":{{"ledgerDay":0,"horizon":0,"items":[],"window":[],"instOther":[],"named":[],"days":[[739865,null,null,[],[],[],[],[],[{}]]],"open":{{"block":null,"interrupt":null}},"lastDay":null,"lastEffective":null,"entryCount":8192,"unknown":0,"longestLeak":null,"replayWarnings":[],"warnings":{{"first":[],"overflow":0}}}},"headers":[],"render":[],"reseal":null}}}}}}"#,
+                r#"{{"ok":{{"docs":[],"report":{{"closes":[]}},"log":{{"lines":8192,"warnings":[],"facts":{{"ledgerDay":0,"horizon":0,"items":[],"window":[],"instOther":[],"named":[],"days":[[739865,null,null,[],[],[],[],[],[{}]]],"open":{{"block":null,"interrupt":null,"break":null}},"lastDay":null,"lastEffective":null,"entryCount":8192,"unknown":0,"longestLeak":null,"replayWarnings":[],"warnings":{{"first":[],"overflow":0}}}},"headers":[],"render":[],"reseal":null}}}}}}"#,
                 headers.join(",")
             )
         );
@@ -233,7 +233,7 @@ fn the_log_op_reads_and_renders_at_the_line_bound_on_a_2mib_thread() {
         let last: i64 = (739_865 - 8_191) * 86_400 + 6 * 3_600 + 5 * 60;
         assert!(
             out.ends_with(&format!(
-                r#"]]]],"open":{{"block":null,"interrupt":null}},"lastDay":739865,"lastEffective":[{last},0,false,0],"entryCount":8192,"unknown":0,"longestLeak":null,"replayWarnings":[],"warnings":{{"first":[],"overflow":0}}}},"headers":[],"render":[],"reseal":null}}}}}}"#
+                r#"]]]],"open":{{"block":null,"interrupt":null,"break":null}},"lastDay":739865,"lastEffective":[{last},0,false,0],"entryCount":8192,"unknown":0,"longestLeak":null,"replayWarnings":[],"warnings":{{"first":[],"overflow":0}}}},"headers":[],"render":[],"reseal":null}}}}}}"#
             )),
             "{}",
             &out[out.len().saturating_sub(400)..]
@@ -272,7 +272,7 @@ fn the_log_op_reads_and_renders_at_the_line_bound_on_a_2mib_thread() {
         // C4: every `done` completes `a`, so its done dates are the 6 days (its first the 7th,
         // 6 of them), and its `last_done` is the last `done` (block 4,095: day 739,870 at 16:31).
         assert!(out.contains(r#",0,0],[63924827460,0,false,0],false,739865,6]],"window":["#), "{}", &out[..out.len().min(600)]);
-        assert!(out.contains(r#""open":{"block":null,"interrupt":null},"lastDay":739870,"lastEffective":[63924827460,0,false,0],"#), "{}", &out[out.len().saturating_sub(600)..]);
+        assert!(out.contains(r#""open":{"block":null,"interrupt":null,"break":null},"lastDay":739870,"lastEffective":[63924827460,0,false,0],"#), "{}", &out[out.len().saturating_sub(600)..]);
         for d in 739_865..=739_870 {
             assert!(out.contains(&format!(r#"[{d},[["a","#)), "the window of day {d}");
         }

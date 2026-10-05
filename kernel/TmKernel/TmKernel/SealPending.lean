@@ -102,6 +102,11 @@ theorem arm_pending (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Ma
   case brk p a w =>
     rw [List.filterMap_append, (Replay.dayArm_obs dy sl e t d).1, List.append_nil] at hm
     exact Or.inl (Replay.brkFx_machine dy m t _ d m' hm).2.2
+  case brkStart pl w =>
+    -- D105: the running break is set and the block, with its pending observation, untouched.
+    simp only [Effect.machineOf?, List.filterMap_cons, List.filterMap_nil, List.mem_singleton] at hm
+    subst hm
+    exact Or.inl rfl
   all_goals rw [(Replay.dayArm_obs dy sl e t d).1] at hm; simp at hm
 
 /-- **A step's pending observation is its start's, none, or on the step's day.** -/

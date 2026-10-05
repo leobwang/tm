@@ -697,8 +697,8 @@ theorem the_day_befores_marks_are_read :
     (match answer (.obj [("walls".toList, .obj [("at".toList, .str "2026-09-07T13:20:00-05:00".toList),
         ("break".toList, .null)])]) (some Replay.utcZone)
         (some ⟨0, 0, [], [], [], [], [⟨7, none, some ⟨none, [.pause ((⟨1000, 0⟩, Cal.Offset.utc) : Replay.At), .unpause ((⟨2000, 0⟩, Cal.Offset.utc) : Replay.At)], none⟩,
-          [], [], [], [], [], []⟩], some ⟨['t','4'], ((⟨500, 0⟩, Cal.Offset.utc) : Replay.At), 0, none, false⟩, none, none, none, 0, 0, none,
-          [], [], 0⟩)
+          [], [], [], [], [], []⟩], some ⟨['t','4'], ((⟨500, 0⟩, Cal.Offset.utc) : Replay.At), 0, none, false⟩, none, none, none, none, 0,
+          0, none, [], [], 0⟩)
         (fun _ _ => [⟨['g','1'], 8, 8, 1000, 1000, 2000⟩]) 0 (some 8) (some 60) with
       | .ok v => v == .obj [("marks".toList, .arr []), ("pausedFor".toList, .null)]
       | .error _ => false) = true := by

@@ -2013,6 +2013,7 @@ mod tests {
             longest_leak: None,
             open_block: None,
             open_interrupt: None,
+            open_break: None,
             unknown: 0,
             warnings: Vec::new(),
             seams: Default::default(),

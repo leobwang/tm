@@ -111,6 +111,10 @@ theorem arm_lastCut (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Ma
   case brk p a w =>
     rw [List.filterMap_append, (Replay.dayArm_obs dy sl e t d).1, List.append_nil] at hm
     exact Or.inl (Replay.brkFx_machine dy m t _ d m' hm).1
+  case brkStart pl w =>
+    simp only [Effect.machineOf?, List.filterMap_cons, List.filterMap_nil, List.mem_singleton] at hm
+    subst hm
+    exact Or.inl rfl
   all_goals rw [(Replay.dayArm_obs dy sl e t d).1] at hm; simp at hm
 
 /-- **An arm's machine keeps the open interruption, closes it, or opens one on the arm's day.** -/
@@ -188,6 +192,80 @@ theorem arm_interrupt (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : 
   case brk p a w =>
     rw [List.filterMap_append, (Replay.dayArm_obs dy sl e t d).1, List.append_nil] at hm
     exact Or.inl (Replay.brkFx_machine dy m t _ d m' hm).2.1
+  case brkStart pl w =>
+    simp only [Effect.machineOf?, List.filterMap_cons, List.filterMap_nil, List.mem_singleton] at hm
+    subst hm
+    exact Or.inl rfl
+  all_goals rw [(Replay.dayArm_obs dy sl e t d).1] at hm; simp at hm
+
+/-- **An arm's machine keeps the running break, ends it, or opens one on the arm's day** (the owner's D105, parity
+P100): a `break_start` opens it on its own day, a `break` line ends it (`Replay.brkFx_brkOpen`), and every other arm
+keeps it (`Replay.cut_brkOpen`, `Replay.closeSub_brkOpen`, `Replay.closePause_brkOpen`, `Replay.doneClose_brkOpen`). -/
+theorem arm_brkOpen (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Machine) (e : Entry) (t : Replay.At)
+    (d : Nat) (m' : Machine) (hm : m' ∈ (Replay.arm dy sl m e t d).filterMap Effect.machineOf?) :
+    m'.brkOpen = m.brkOpen ∨ m'.brkOpen = none ∨ ∃ b, m'.brkOpen = some b ∧ b.day = d := by
+  unfold Replay.arm at hm
+  cases hev : e.ev <;> simp only [hev] at hm
+  case start id pred rep hsw sleptMin loc _ _ =>
+    simp only [List.filterMap_append, (Replay.cut_obs dy m t).2.2.1, List.nil_append, List.filterMap_cons,
+      Effect.machineOf?, List.filterMap_nil, List.mem_singleton] at hm
+    subst hm
+    exact Or.inl (Replay.cut_brkOpen dy m t)
+  case pause id =>
+    split at hm
+    · split at hm
+      · simp only [List.filterMap_append, (Replay.closeSub_obs dy m t).2.2, List.nil_append, List.filterMap_cons,
+          Effect.machineOf?, List.filterMap_nil, List.mem_singleton] at hm
+        subst hm
+        exact Or.inl (Replay.closeSub_brkOpen dy m t)
+      · simp at hm
+    · simp at hm
+  case unpause id =>
+    split at hm
+    · split at hm
+      · simp only [List.filterMap_append, (Replay.closePause_obs dy m t).2.2, List.nil_append, List.filterMap_cons,
+          Effect.machineOf?, List.filterMap_nil, List.mem_singleton] at hm
+        subst hm
+        exact Or.inl (Replay.closePause_brkOpen dy m t)
+      · simp at hm
+    · simp at hm
+  case interrupt id =>
+    simp only [List.filterMap_append, (Replay.closeSub_obs dy m t).2.2, (Replay.closePause_obs dy _ t).2.2,
+      List.nil_append, List.filterMap_cons, Effect.machineOf?, List.filterMap_nil, List.mem_singleton] at hm
+    subst hm
+    left
+    have h1 := Replay.closePause_brkOpen dy (Replay.closeSub dy m t).1 t
+    have h2 := Replay.closeSub_brkOpen dy m t
+    split
+    · exact h1.trans h2
+    · exact h1.trans h2
+  case resume lost dropped =>
+    split at hm <;>
+    · simp only [List.filterMap_cons, Effect.machineOf?, List.filterMap_nil, List.mem_singleton] at hm
+      subst hm
+      exact Or.inl rfl
+  case stop id rem =>
+    split at hm
+    · split at hm
+      · simp only [List.filterMap_append, (Replay.cut_obs dy m t).2.2.1, List.nil_append, List.filterMap_cons,
+          Effect.machineOf?, List.filterMap_nil, List.mem_singleton] at hm
+        subst hm
+        exact Or.inl (Replay.cut_brkOpen dy m t)
+      · simp at hm
+    · simp at hm
+  case extend id by_ => simp [Effect.machineOf?] at hm
+  case done id est actual went tags ci isPartial =>
+    rw [doneFx_machines] at hm
+    simp only [List.mem_singleton] at hm
+    subst hm
+    exact Or.inl (Replay.doneClose_brkOpen dy m t id actual.val went)
+  case brk p a w =>
+    rw [List.filterMap_append, (Replay.dayArm_obs dy sl e t d).1, List.append_nil] at hm
+    exact Or.inr (Or.inl (Replay.brkFx_brkOpen dy m t _ d m' hm))
+  case brkStart pl w =>
+    simp only [Effect.machineOf?, List.filterMap_cons, List.filterMap_nil, List.mem_singleton] at hm
+    subst hm
+    exact Or.inr (Or.inr ⟨_, rfl, rfl⟩)
   all_goals rw [(Replay.dayArm_obs dy sl e t d).1] at hm; simp at hm
 
 theorem stepWith_machine_eq (z : Cal.Tz) (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (st : State) (e : Entry) :
@@ -215,19 +293,23 @@ theorem stepWith_machineDays (z : Cal.Tz) (dy : Cal.Instant → Nat) (sl : Nat �
     have hm := List.mem_of_getLast? hl
     unfold machineDays at hx ⊢
     simp only [List.mem_append, Option.mem_toList, Option.mem_def, Option.map_eq_some_iff] at hx ⊢
-    rcases hx with (⟨o, ho, rfl⟩ | ⟨c, hc, rfl⟩) | ⟨i, hi, rfl⟩
+    rcases hx with ((⟨o, ho, rfl⟩ | ⟨c, hc, rfl⟩) | ⟨i, hi, rfl⟩) | ⟨b, hb, rfl⟩
     · rcases arm_pending dy sl st.machine e _ _ m' hm with h | h | ⟨o', h, hd⟩
-      · rw [h] at ho; exact Or.inl (Or.inl (Or.inl ⟨o, ho, rfl⟩))
+      · rw [h] at ho; exact Or.inl (Or.inl (Or.inl (Or.inl ⟨o, ho, rfl⟩)))
       · rw [h] at ho; cases ho
       · rw [h] at ho; cases ho; exact Or.inr hd
     · rcases arm_lastCut dy sl st.machine e _ _ m' hm with h | h | ⟨c', h, hd⟩
-      · rw [h] at hc; exact Or.inl (Or.inl (Or.inr ⟨c, hc, rfl⟩))
+      · rw [h] at hc; exact Or.inl (Or.inl (Or.inl (Or.inr ⟨c, hc, rfl⟩)))
       · rw [h] at hc; cases hc
       · rw [h] at hc; cases hc; exact Or.inr hd
     · rcases arm_interrupt dy sl st.machine e _ _ m' hm with h | h | ⟨i', h, hd⟩
-      · rw [h] at hi; exact Or.inl (Or.inr ⟨i, hi, rfl⟩)
+      · rw [h] at hi; exact Or.inl (Or.inl (Or.inr ⟨i, hi, rfl⟩))
       · rw [h] at hi; cases hi
       · rw [h] at hi; cases hi; exact Or.inr hd
+    · rcases arm_brkOpen dy sl st.machine e _ _ m' hm with h | h | ⟨b', h, hd⟩
+      · rw [h] at hb; exact Or.inl (Or.inr ⟨b, hb, rfl⟩)
+      · rw [h] at hb; cases hb
+      · rw [h] at hb; cases hb; exact Or.inr hd
 
 /-- **A fold's machine days are its start state's or one of its entries' days.** -/
 theorem foldl_machineDays (z : Cal.Tz) (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) :

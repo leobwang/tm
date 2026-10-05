@@ -689,6 +689,9 @@ fn any_event() -> impl Strategy<Value = Event> {
         (s(), any::<u32>()).prop_map(|(id, remaining_min)| Event::Stop { id, remaining_min }),
         (any::<u32>(), any::<Option<u32>>(), prop::option::of(s()))
             .prop_map(|(planned_min, actual_min, r#where)| Event::Break { planned_min, actual_min, r#where }),
+        // The owner's D105 (parity P100): the line `tm break` writes when a break begins.
+        (any::<u32>(), prop::option::of(s()))
+            .prop_map(|(planned_min, r#where)| Event::BreakStart { planned_min, r#where }),
         (any::<u8>(), any::<u8>(), hsw, s()).prop_map(|(pred, rep, hsw, loc)| Event::Energy { pred, rep, hsw, loc }),
         prop::option::of(s()).prop_map(|id| Event::Interrupt { id }),
         (any::<u32>(), prop::collection::vec(s(), 0..3)).prop_map(|(lost_min, dropped)| Event::Resume { lost_min, dropped }),
@@ -918,8 +921,9 @@ fn the_writer_proptest_covers_every_writable_event() {
     }
     let all: BTreeSet<String> = EVENT_NAMES.iter().map(|n| n.to_string()).collect();
     assert_eq!(seen, all, "T2 does not generate every writable event");
-    // `Unknown` is deliberately absent: the writer never writes one.
-    assert_eq!(EVENT_NAMES.len(), 26);
+    // `Unknown` is deliberately absent: the writer never writes one. 26 until the owner's
+    // D105 added `break_start` (parity P100).
+    assert_eq!(EVENT_NAMES.len(), 27);
 }
 
 /// **T2 over a generated month** (design §22.1's S2 acceptance: "the bytes are
@@ -1231,7 +1235,7 @@ fn the_fork_reads_back_every_rendering_the_kernel_writes() {
 // itself, measured.
 //
 // The section above built the evidence BEFORE the swap: T2 over 256 random
-// events, the coverage check that T2 generates all 26 kinds, and the generated
+// events, the coverage check that T2 generates all 27 kinds (26 before D105), and the generated
 // month. Those pin that the kernel **renders** what the Rust writer wrote. What
 // follows pins the thing the swap actually changes — that the kernel, handed an
 // event's *values* by a verb, hands back the very bytes `LogEntry::to_json`
@@ -1272,7 +1276,7 @@ proptest! {
 /// **Every writable event kind, byte for byte** (the brief's "how many kinds").
 ///
 /// The coverage check beside it (`the_writer_proptest_covers_every_writable_event`)
-/// pins that `any_event` reaches all 26; this walks the same deterministic
+/// pins that `any_event` reaches all 27 (26 before the owner's D105); this walks the same deterministic
 /// stream and compares the bytes of each, so no kind is swapped on no evidence.
 #[test]
 fn the_writer_swap_moves_no_byte_of_any_writable_event() {
@@ -1292,14 +1296,15 @@ fn the_writer_swap_moves_no_byte_of_any_writable_event() {
     }
     let all: BTreeSet<String> = EVENT_NAMES.iter().map(|n| n.to_string()).collect();
     assert_eq!(seen, all, "a writable event kind was swapped without being compared");
-    assert_eq!(EVENT_NAMES.len(), 26);
+    // 26 until the owner's D105 added `break_start` (parity P100).
+    assert_eq!(EVENT_NAMES.len(), 27);
     eprintln!("S2: {compared} generated events, {} kinds, kernel bytes == writer bytes", seen.len());
 }
 
 /// The `(instant, tag, field values)` of a line, as a verb would hand them over:
 /// values only, in the object's own order, never bytes. `None` for a line that
 /// is not an object, whose `t` is not a stamp chrono reads, or whose tag is not
-/// one of the 26 — an unknown event is the writer's `rest`, which serde sorts
+/// one of the 27 — an unknown event is the writer's `rest`, which serde sorts
 /// and which `log_serde.rs` already pins.
 fn values_of(line: &[u8]) -> Option<(DateTime<FixedOffset>, String, Value)> {
     let v: Value = serde_json::from_slice(line).ok()?;

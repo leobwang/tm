@@ -1689,7 +1689,7 @@ mod tests {
 
 use tm_core::log::{
     fmt_timestamp, BreakRecord, CloseRecord, DayReplay, DaySeam, Demotion, DurationObs, EnergyObs, IdleMark, IdleRecord, InstanceRecord, Interruption,
-    ItemReplay, LeakRecord, LogSegment, LogWarning, NamedLatest, NamedRecord, OpenBlock, Replay, SegmentKind, StartRecord, ViewRow,
+    ItemReplay, LeakRecord, LogSegment, LogWarning, NamedLatest, NamedRecord, OpenBlock, OpenBreak, Replay, SegmentKind, StartRecord, ViewRow,
 };
 use tm_core::model::InstanceStatus;
 
@@ -2245,6 +2245,17 @@ pub fn decode_facts(answer: &Value, tz: Tz) -> D<Replay> {
         })
     })?;
     let open_interrupt = d_opt(open.get("interrupt").unwrap_or(&Value::Null), |o| d_interruption(o).map(|p| p.1))?;
+    // **The running break** — the owner's D105, parity P100: `[start, planned, where?, day]`
+    // (`Seal.cOptOpenBrk`), the surviving `break_start` no `break` line has ended.
+    let open_break = d_opt(open.get("break").unwrap_or(&Value::Null), |o| {
+        let o = d_tuple(o, 4, "the running break")?;
+        Ok(OpenBreak {
+            started: d_when(d_at(o, 0, "the running break's start")?, "the running break's start")?,
+            planned_min: d_u32(d_at(o, 1, "the running break's planned minutes")?, "the running break's planned minutes")?,
+            r#where: d_opt(d_at(o, 2, "the running break's place")?, |x| d_str(x, "the running break's place"))?,
+            day: d_date(d_at(o, 3, "the running break's day")?, "the running break's day")?,
+        })
+    })?;
     let longest_leak = d_opt(v.get("longestLeak").unwrap_or(&Value::Null), |x| {
         let x = d_tuple(x, 3, "the longest leak")?;
         Ok(LeakRecord {
@@ -2279,6 +2290,7 @@ pub fn decode_facts(answer: &Value, tz: Tz) -> D<Replay> {
         longest_leak,
         open_block,
         open_interrupt,
+        open_break,
         unknown: d_u32(v.get("unknown").unwrap_or(&Value::Null), "facts.unknown")?,
         warnings,
         seams,

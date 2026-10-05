@@ -1960,6 +1960,25 @@ def run(decls, write, verbose=True):
         # instead of them, and marked synthesised so a guess that does not
         # elaborate is UNAVAILABLE rather than a gate failure.
         extra = extra_constant(decl)
+        # **A synthesised constant that IS the body is the LITERAL verdict, not a mutation**
+        # (W-46 track K, README gap 4766).  `extra_constant` builds `⟨c1, …, cn⟩` out of the type's
+        # own fields, and a definition whose body is that very term -- `Seal.blankAnswer`, the
+        # all-empty answer a resume hands back when no fact is wanted -- is not DISTINGUISHABLE from
+        # it by anything, ever: it is one, which is the LITERAL rule above, met by a structure
+        # literal the scalar regex does not read.  Folding it is a build of the same term, so it
+        # came back SURVIVED and failed the gate on the one definition that cannot be pinned.  Only
+        # an EXACT match (whitespace aside) is read this way: a structure-literal body that differs
+        # from the synthesised term -- every witness fixture -- is still mutated, and one nothing
+        # pins is still SURVIVED.
+        if (extra is not None and literal is None
+                and " ".join(extra.split()) == " ".join((decl["body"] or "").split())):
+            literal = extra
+            soft.append((tag, "LITERAL", "the body IS the synthesised constant `%s`" % extra))
+            if verbose:
+                print("  %-58s %-9s %-8s %-38s"
+                      % (tag, ":= " + extra, "LITERAL",
+                         "the body IS the synthesised constant"), flush=True)
+            extra = None
         tries = [(c, False) for c in constants_for(decl)]
         if ident:
             tries.append((ident, False))

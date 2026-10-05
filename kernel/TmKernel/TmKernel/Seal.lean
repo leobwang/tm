@@ -382,6 +382,20 @@ def cBreakRec : Codec BreakRec :=
     (fun r => (r.t, r.day, r.plannedMin, r.actualMin, r.where_, ()))
     (fun p => ⟨p.1, p.2.1, p.2.2.1, p.2.2.2.1, p.2.2.2.2.1⟩) (fun _ => rfl)
 
+/-- **The running break** (the owner's D105, parity P100; `Replay.OpenBrk`): `null`, or `[start, planned, where?, day]`
+— what the checkpoint's machine carries across a cut (`cMachine`'s fifth element) and what the `log` answer's
+`open.break` says (`emitAnswer`): ONE codec for both, so the bytes a resume reads back and the bytes the host rebuilds
+`.tm/state.json`'s `break` from have one definition (AGENTS §5.3).  It is written as the optional codec whole, the
+tuple inside it, and not as a tuple codec beside a `cOpt` of it as `cOpenBlock` is: a codec only `cMachine`'s hoisted
+initialiser reads is a definition check 12 cannot see reached (`callgraph.closed_users`, the walk's declared blind
+spot), `reach-exempt.txt` may only shrink (D51), and this one is read by `emitAnswer`'s own body, which the export
+reaches. -/
+def cOptOpenBrk : Codec (Option Replay.OpenBrk) :=
+  cOpt (cIso (cTuple <| tCons cAt <| tCons cNat <| tCons cOptStr <| tCons cNat <| tNil)
+      (fun (r : Replay.OpenBrk) => (r.s, r.planned, r.where_, r.day, ()))
+      (fun p => ⟨p.1, p.2.1, p.2.2.1, p.2.2.2.1⟩) (fun _ => rfl))
+    (fun _ => nofun)
+
 def cIdleRec : Codec IdleRec :=
   cIso (cTuple <| tCons cAt <| tCons cNat <| tCons cStr <| tCons cNat <| tNil)
     (fun r => (r.t, r.day, r.attributed, r.min, ())) (fun p => ⟨p.1, p.2.1, p.2.2.1, p.2.2.2.1⟩) (fun _ => rfl)
@@ -501,8 +515,10 @@ def cMachine : Codec Machine :=
       <| tCons (cOpt cOpenInt cOpenInt_nonnull)
       <| tCons (cList maxList (cIso (cTuple <| tCons cAt <| tCons cAt <| tCons cNat <| tNil)
           (fun (k : Replay.HeldBrk) => (k.s, k.e, k.day, ())) (fun p => ⟨p.1, p.2.1, p.2.2.1⟩) (fun _ => rfl)))
+      <| tCons cOptOpenBrk
       <| tNil)
-    (fun m => (m.block, m.lastCut, m.interrupt, m.brks, ())) (fun p => ⟨p.1, p.2.1, p.2.2.1, p.2.2.2.1⟩) (fun _ => rfl)
+    (fun m => (m.block, m.lastCut, m.interrupt, m.brks, m.brkOpen, ()))
+    (fun p => ⟨p.1, p.2.1, p.2.2.1, p.2.2.2.1, p.2.2.2.2.1⟩) (fun _ => rfl)
 
 def cHeaderRec : Codec HeaderRec :=
   cIso (cTuple <| tCons cNat <| tCons cStr <| tCons cOptStr <| tCons cBool <| tCons cVInstant <| tCons cVOffset <| tNil)
@@ -836,6 +852,8 @@ structure Answer where
   days : List DayRecord
   openBlock : Option OpenBlock
   openInterrupt : Option Interruption
+  /-- the running break (D105, `Replay.Machine.brkOpen`) -/
+  openBreak : Option Replay.OpenBrk
   lastDay : Option Nat
   lastEffective : Option At
   entryCount : Nat
@@ -1523,6 +1541,7 @@ def answer (k : Ckpt) : Seal.Answer :=
    k.openDays.map (OpenDay.finish k.machine),
    Replay.openOf k.machine,
    k.machine.interrupt.map (fun i => ⟨0, some i.1, none, i.2.1, i.2.2, 0, []⟩),
+   k.machine.brkOpen,
    k.lastDay, k.lastEff, k.entryCount, k.unknown, k.longestLeak, k.rwarns, k.warnings, k.warnOverflow⟩
 
 /-- The answer's observations (law 11): each open day's, energy then durations. -/
@@ -1566,6 +1585,7 @@ def askAnswer (v : Seal.Answer) : Q → Option Replay.Answer
   | .named name id => some (.named ((v.named.find? (fun p => decide (p.1 = (name, id)))).map Prod.snd))
   | .openBlock => some (.openBlock v.openBlock)
   | .openInterrupt => some (.openInterrupt v.openInterrupt)
+  | .openBreak => some (.openBreak v.openBreak)
   | .lastDay => some (.date v.lastDay)
   | .lastEffective => some (.stamp v.lastEffective)
   | .unknown => some (.count v.unknown)
@@ -1598,9 +1618,18 @@ def keyAtOrAbove (L H : Nat) : Replay.Key → Bool
   | _ => true
 
 /-- The days the machine can still write (§9.4's `L'` rule): the pending observation's, the last cut's and the open
-interruption's. -/
+interruption's — and, since the owner's D105, the running break's: the `break` line that ends it is stamped at its
+start, so it writes the day the `break_start` was stepped on, and the ledger day may not pass it. -/
 def machineDays (m : Machine) : List Nat :=
   ((m.block.bind (·.obs)).map (·.day)).toList ++ (m.lastCut.map (·.day)).toList ++ (m.interrupt.map (·.2.1)).toList
+    ++ (m.brkOpen.map (·.day)).toList
+
+/-- **A running break holds the ledger day** (the owner's D105, parity P100): its day is one the machine can still
+write — the `break` line that ends it is stamped at its start, so it is filed under that day — and a reseal's ledger day
+therefore never passes a break still running, as it never passes an open interruption. -/
+theorem a_running_break_holds_the_ledger_day (m : Machine) (b : Replay.OpenBrk) (h : m.brkOpen = some b) :
+    b.day ∈ machineDays m := by
+  unfold machineDays; simp [h]
 
 /-- The effects of the unfolded survivors, stepped after the folded ones on the call-wide index (specification). -/
 def unfoldedEffects (z : Cal.Tz) (es er : List Entry) : List Replay.Effect :=
@@ -1632,7 +1661,7 @@ def sealable (z : Cal.Tz) (T₀ L : Nat) (ls r : List Log.Line) : Bool :=
 
 /-- **The empty checkpoint** (§9.2): nothing folded, cut 0, ledger day 0. -/
 def Ckpt.empty (z : Cal.Tz) : Ckpt :=
-  ⟨ckptVersion, z.val.key, 0, 0, 0, none, none, [], [], [], false, [], ⟨none, none, none, []⟩, [], [], [], [], [], none,
+  ⟨ckptVersion, z.val.key, 0, 0, 0, none, none, [], [], [], false, [], ⟨none, none, none, [], none⟩, [], [], [], [], [], none,
    none, 0, 0, none, [], [], 0⟩
 
 /-- The meta the host reads beside a checkpoint. -/
@@ -1705,17 +1734,18 @@ theorem the_answer_reads_the_replays_longest_leak (z : Cal.Tz) (T₀ L : Nat) (l
   rfl
 
 /-- **Every scalar all-time reading of the answer is the replay's**, for every log and every ledger day: the open block
-and interruption, the last day, the last effective stamp, the unknown count, the replay warnings and the entry count
-(beside the longest leak above).  The checkpoint keeps each whole (A). -/
+and interruption, the running break (D105), the last day, the last effective stamp, the unknown count, the replay
+warnings and the entry count (beside the longest leak above).  The checkpoint keeps each whole (A). -/
 theorem the_answer_reads_the_replays_scalar_facts (z : Cal.Tz) (T₀ L : Nat) (ls : List Log.Line) :
     askAnswer (answer (ckptOf z T₀ L ls [])) .openBlock = some (Replay.ask (replayLines z ls) .openBlock) ∧
     askAnswer (answer (ckptOf z T₀ L ls [])) .openInterrupt = some (Replay.ask (replayLines z ls) .openInterrupt) ∧
+    askAnswer (answer (ckptOf z T₀ L ls [])) .openBreak = some (Replay.ask (replayLines z ls) .openBreak) ∧
     askAnswer (answer (ckptOf z T₀ L ls [])) .lastDay = some (Replay.ask (replayLines z ls) .lastDay) ∧
     askAnswer (answer (ckptOf z T₀ L ls [])) .lastEffective = some (Replay.ask (replayLines z ls) .lastEffective) ∧
     askAnswer (answer (ckptOf z T₀ L ls [])) .unknown = some (Replay.ask (replayLines z ls) .unknown) ∧
     askAnswer (answer (ckptOf z T₀ L ls [])) .replayWarnings = some (Replay.ask (replayLines z ls) .replayWarnings) ∧
     askAnswer (answer (ckptOf z T₀ L ls [])) .entryCount = some (Replay.ask (replayLines z ls) .entryCount) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;>
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;>
   (simp only [askAnswer, answer, ckptOf, ckptOfEntries, replayLines, Replay.ask, Replay.factsView, Replay.replayDoc,
     replay_eq_finish_foldedState, Log.lineEntries, Replay.finish, Replay.HMap.keys_pairs_mapVals]; try rfl)
 
@@ -1753,8 +1783,8 @@ theorem the_empty_checkpoint_is_wf (z : Cal.Tz) : (Ckpt.empty z).wf = true := by
   have hz : z.val.key.length ≤ maxTzKey := by
     have := z.property; simp only [Cal.TzTable.wf, Bool.and_eq_true, decide_eq_true_eq] at this
     exact this.1.1.1
-  simp [Ckpt.empty, Ckpt.wf, Ckpt.fault, check, hz, cList, ascending, cOpt, cMachine, cIso, cTuple, tCons, tNil,
-    ckptVersion]
+  simp [Ckpt.empty, Ckpt.wf, Ckpt.fault, check, hz, cList, ascending, cOpt, cMachine, cOptOpenBrk, cIso, cTuple, tCons,
+    tNil, ckptVersion]
 
 /-! ## Witnesses (W1)
 

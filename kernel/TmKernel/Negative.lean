@@ -3014,4 +3014,43 @@ theorem theOpenBlockRunsAcrossABreakHeldAheadOfIt :
         (fun b => (b.workedMin, b.since.map (·.1.sec))) = some (0, some 63924371400) := by
   decide
 
+/- ===========================================================================
+   APPENDED 2026-10-05: stage 6, run W-46, TRACK K — the owner's D105 (README
+   "Stage 6 — W-46 track K", gaps 1034, 1085, 4740; parity P100): `tm break`
+   logs a `break_start`, and the replay holds the running break until a
+   `break` line ends it.  Cheats 280-283 (whoever lands renumbers).
+   =========================================================================== -/
+
+/- CHEAT 280 — the pairing denied: a `break_start` at 09:30 and the `break`
+   line that ends it, claimed to leave the break running.  `brkFx` ends the
+   running break on every machine it writes: `decide` computes `none` and
+   refuses. -/
+theorem aBreakLineLeavesTheBreakRunning :
+    (Replay.replay Replay.utcZone [Replay.bE 1 63924370200 (.brkStart 20 none),
+        Replay.bE 2 63924370200 (.brk 20 (some 15) none)]).openBreak ≠ none := by
+  decide
+
+/- CHEAT 281 — an undone `break_start` claimed still running: `tm undo` of
+   `tm break` appends `undo{of: "break_start"}`, and the mask cancels the
+   start, so no break runs.  `decide` refuses. -/
+theorem anUndoneBreakStartStillRuns :
+    (Replay.replay Replay.utcZone [Replay.bE 1 63924370200 (.brkStart 20 none),
+        Replay.bE 2 63924370260 (.undo Log.Kind.brkStart.tag none)]).openBreak ≠ none := by
+  decide
+
+/- CHEAT 282 — the kernel claimed to read a `break_start` as fork 4748911
+   does, as an unknown event (parity P100).  It is a known kind: the unknown
+   count stays 0, and `decide` refuses 1. -/
+theorem aBreakStartIsAnUnknownEvent :
+    (Replay.replay Replay.utcZone [Replay.bE 1 63924370200 (.brkStart 20 none)]).unknown = 1 := by
+  decide
+
+/- CHEAT 283 — a running break claimed to hold no ledger day: the `break` line
+   that ends it is stamped at its start, so its day is one the machine can
+   still write (`Seal.machineDays`), and a reseal may not pass it.  `decide`
+   computes `[739865]` and refuses `[]`. -/
+theorem aRunningBreakHoldsNoLedgerDay :
+    Seal.machineDays ⟨none, none, none, [], some ⟨(⟨63924370200, 0⟩, ⟨false, 0⟩), 20, none, 739865⟩⟩ = [] := by
+  decide
+
 end Tm

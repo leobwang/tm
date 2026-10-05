@@ -57,7 +57,7 @@ use tm_core::log::{DayReplay, Event, LogEntry, Replay};
 use tm_core::model::{Id, Item, Loc, State};
 use tm_core::priority::{self, Candidate, Prio};
 use tm_core::store::{
-    self, ActiveBlock, Closed, FsStore, InterruptState, PlanFiles, RuntimeState, Store, StoreExt,
+    self, ActiveBlock, BreakState, Closed, FsStore, InterruptState, PlanFiles, RuntimeState, Store, StoreExt,
     LOG_PATH, MODEL_PATH,
 };
 use tm_core::tree::Tree;
@@ -145,7 +145,7 @@ fn roll_day(state: &mut RuntimeState, today: NaiveDate) -> bool {
 /// say what it could not restore instead of regenerating it as `null`.
 ///
 /// Each one is host-only for a reason the log module's own conventions state,
-/// not for a reason this file decided:
+/// not for a reason this file decided.
 ///
 /// * **`break`** — "`break.t` is when the break began; the entry is appended
 ///   when the break **ends**" (`tm_core::log`'s event conventions, and
@@ -166,6 +166,14 @@ fn roll_day(state: &mut RuntimeState, today: NaiveDate) -> bool {
 ///   162 lines. On a tree whose plan depends on the pause it reaches further —
 ///   a re-laid afternoon, a moved plan hash and a second `Event::Plan` — which
 ///   is a derivable cache's deletion writing to the authority; README gap 1085.
+///
+///   **The log can answer for one since the owner's D105** (README "Stage 6 —
+///   W-46 track K", gaps 1034, 1085 and 4740, parity **P100**): a `break_start`
+///   line — the break's start, its planned minutes and its place — is read by
+///   the kernel's replay as the running break
+///   ([`tm_core::log::Replay::open_break`]), and [`derived_state`] restores
+///   `break` and the pause from it. A break the log holds no `break_start` for
+///   is still gone with the file.
 /// * **`active.est_min`** — `Event::Start` carries `pred`, `hsw`, `slept_min`,
 ///   `loc`, `blocks_done` and `since_break_min`, and **no estimate**; `tm
 ///   extend` then adds its minutes to the cached number, so two `extend`s and
@@ -233,7 +241,7 @@ fn host_only(field: &str) -> &'static str {
 /// | `active` | `Replay::open_block` — id, `started`, `paused`; **not** `est_min` |
 /// | `interrupt` | `Replay::open_interrupt` — `started`, `id` |
 /// | `last_plan_hash` | `DayReplay::last_plan_hash` (`Event::Plan`) |
-/// | `break` | **nothing** ([`HOST_ONLY_STATE`]) — and the `active.paused` a *break* set with it; a `tm pause`'s survives, because `Event::Pause` is in the log |
+/// | `break` | `Replay::open_break` when the log holds the break's `break_start` (the owner's **D105**, parity P100): its start's `HH:MM`, `planned_min` and `where`, and the `active.paused` it sets; otherwise **nothing** ([`HOST_ONLY_STATE`]) — a `tm pause`'s pause survives, because `Event::Pause` is in the log |
 /// | `priorities_yesterday`, `closed` | **nothing** ([`HOST_ONLY_STATE`]); both come back empty, and `closed`'s emptiness is load-bearing in the safe direction |
 ///
 /// **The one residue inside a derivable field, measured rather than waved at.**
@@ -546,13 +554,22 @@ fn derived_state(replay: &Replay, tz: Tz, today: NaiveDate, running_break: bool)
             // `tm start` writes it from.
             est_min: 0,
             // Every writer of the field, through the event it logs
-            // ([`logged_pause`]); a break still running logs nothing, so it is
-            // whatever the cache still knows is running. The replay's own
-            // reading stands only where the scope does not reach the start.
+            // ([`logged_pause`]); a running break pauses it too — the log's
+            // own (`Replay::open_break`, the owner's D105), or one the cache
+            // still holds that a binary before D105 began (`running_break`).
+            // The replay's own reading stands only where the scope does not
+            // reach the start.
             paused: logged_pause(replay, b).unwrap_or(b.paused || interrupted.is_some())
-                || running_break,
+                || running_break
+                || replay.open_break.is_some(),
         }),
-        break_: None,
+        // **The running break is the log's** (the owner's D105, parity P100):
+        // the `break_start` no `break` line has ended, at its start's clock.
+        break_: replay.open_break.as_ref().map(|b| BreakState {
+            started: Some(hhmm(b.started)),
+            planned_min: b.planned_min,
+            place: b.r#where.clone(),
+        }),
         interrupt: interrupted.map(|i| InterruptState {
             started: i.start.map(hhmm),
             id: i.id.as_deref().map(Id::new),
@@ -1058,11 +1075,17 @@ impl Ctx {
     ///
     /// The comparison is on the running block's **identity** alone. What only
     /// the cache knows about that block stays the cache's: `est_min`, which
-    /// `tm extend` adds to and no event carries, and `paused`, which `tm break`
-    /// sets without an `Event::Pause`. Only when the log names a *different*
-    /// block is the whole record replaced, and then `est_min` is rebuilt
-    /// through [`Ctx::planned_block`] because the cache's belonged to another
-    /// block.
+    /// `tm extend` adds to and no event carries. Only when the log names a
+    /// *different* block is the whole record replaced, and then `est_min` is
+    /// rebuilt through [`Ctx::planned_block`] because the cache's belonged to
+    /// another block.
+    ///
+    /// **And a running break the log holds and the cache does not is the
+    /// log's** (the owner's D105, parity P100): its `break_start` was appended
+    /// and the cache never written (a verb cut off between the two), so the
+    /// break, and the pause it sets, come back from the log. A break the cache
+    /// holds and the log does not is kept: a binary before D105 began it, and
+    /// it logged no `break_start` to read it from.
     ///
     /// # Who is told
     ///
@@ -1155,14 +1178,28 @@ impl Ctx {
             if here != logged {
                 self.state.interrupt = derived.interrupt.clone();
             }
+            if let (None, Some(b)) = (self.state.break_.as_ref(), derived.break_.clone()) {
+                if loud {
+                    eprintln!(
+                        "tm: .tm/state.json said no break is running and .tm/log.jsonl says one began at {} — \
+                         the log decides (§10.2 is a cache of it, D42, D105)",
+                        b.started.map(|t| t.format("%H:%M").to_string()).unwrap_or_default()
+                    );
+                }
+                self.state.break_ = Some(b);
+                if let Some(a) = self.state.active.as_mut() {
+                    a.paused = true;
+                }
+            }
             return;
         }
 
         let before = self.state.clone();
         self.state = RuntimeState {
-            // Host-only: an absent file cannot have held them, so they are
-            // `Default` — and the notice below says which they were.
-            break_: None,
+            // The running break is the log's since D105 (`derived.break_`, from
+            // `Replay::open_break`); the two below are host-only: an absent
+            // file cannot have held them, so they are `Default` — and the
+            // notice below says which they were.
             priorities_yesterday: before.priorities_yesterday.clone(),
             closed: before.closed.clone(),
             active: derived.active.clone().map(|mut a| {
@@ -1194,8 +1231,19 @@ impl Ctx {
         // condition is the log having anything to say about today: a synced
         // directory nobody has driven today still says nothing, and a tree that
         // has been driven today and lost its cache always does.
+        //
+        // Since the owner's D105 (parity P100) a running break is derived — the
+        // `break_start` `tm break` logs — so the fourth condition is a running
+        // break the rebuild RESTORED, named like a running block; the third
+        // stays, because a break a binary before D105 began logged no
+        // `break_start` and is still lost with the file.
         let used_today = self.replay.day(self.today).is_some();
-        if loud && (self.state.active.is_some() || self.state.interrupt.is_some() || used_today) {
+        if loud
+            && (self.state.active.is_some()
+                || self.state.interrupt.is_some()
+                || self.state.break_.is_some()
+                || used_today)
+        {
             eprintln!(
                 "tm: .tm/state.json was missing; rebuilt from .tm/log.jsonl \
                  (§10.2 is a cache of the log — D42){}",
@@ -1236,6 +1284,10 @@ impl Ctx {
     ///   and a block that comes back paused was paused by an `Event::Pause`,
     ///   which the log does carry. The old parenthetical asserted the first case
     ///   unconditionally and was false in the second.
+    ///
+    ///   **Restored instead when the log holds its `break_start`** (the owner's
+    ///   D105, parity P100): the replay reads the running break from that line,
+    ///   so the rebuild puts it back with the pause it sets, and says so.
     /// * **Recomputed.** `active.est_min`, from [`Ctx::planned_block`] — the
     ///   item's estimate *now*, not the one the block was started with. That is
     ///   a different source, not an absence, and the number is printed so the
@@ -1247,21 +1299,38 @@ impl Ctx {
     ///   and misleading about the consequence.
     fn rebuild_notice(&self) -> Vec<String> {
         let mut out = Vec::new();
-        let pause_note = match self.state.active.as_ref() {
-            Some(a) if a.paused => {
-                " — this block's `active.paused` came back from the log's own \
-                 `pause` event, so only the break itself is gone"
-            }
-            Some(_) => {
-                " — and if one was running, the `active.paused` it had set is \
-                 gone with it and the block is running again"
-            }
-            None => "",
-        };
-        out.push(format!(
-            "GONE, and the log cannot answer for it: `break` — {}{pause_note}.",
-            host_only("`break`")
-        ));
+        // **A running break is RESTORED, not gone** — the owner's D105 (parity
+        // P100, README gaps 1034, 1085, 4740): `tm break` logs its `break_start`,
+        // so the break and the pause it sets come back from the log. Until D105
+        // this line said `break` was GONE, which it was. Named when there is one,
+        // so a user can see the break survived (gap 1191's rule, kept: a running
+        // break's fate is never left to be found).
+        if let Some(b) = self.state.break_.as_ref() {
+            out.push(format!(
+                "RESTORED from the log: `break` — began {}, {}m planned{} — from the `break_start` \
+                 `tm break` logged (D105){}.",
+                b.started.map(|t| t.format("%H:%M").to_string()).unwrap_or_else(|| "?".to_string()),
+                b.planned_min,
+                b.place.as_ref().map(|p| format!(", {p}")).unwrap_or_default(),
+                if self.state.active.is_some() { ", and the `active.paused` it sets" } else { "" }
+            ));
+        } else {
+            let pause_note = match self.state.active.as_ref() {
+                Some(a) if a.paused => {
+                    " — this block's `active.paused` came back from the log's own \
+                     `pause` event, so only the break itself is gone"
+                }
+                Some(_) => {
+                    " — and if one was running, the `active.paused` it had set is \
+                     gone with it and the block is running again"
+                }
+                None => "",
+            };
+            out.push(format!(
+                "GONE, and the log cannot answer for it: `break` — {}{pause_note}.",
+                host_only("`break`")
+            ));
+        }
         if let Some(a) = self.state.active.as_ref() {
             out.push(format!(
                 "RECOMPUTED rather than restored: `active.est_min` is {}m — {}.",
@@ -1902,13 +1971,24 @@ impl Ctx {
     }
 
     /// **When the break `.tm/state.json` holds running began** — the ONE
-    /// reading every verb takes ([`tm_core::store::BreakState::started_at`]:
-    /// the latest instant at or before `now` with the cached clock; the
-    /// campaign's D81 call on README gap 3820, parity P73). Never [`Ctx::at`]:
-    /// a break begun before local midnight is the evening's after it. `None`
-    /// with no break running, or one with no `started`.
+    /// reading every verb takes. **The log's instant first** (the owner's
+    /// **D105**, parity P100, D75's rule for a block's start applied to a
+    /// break's): the `t` of the `break_start` no `break` has ended
+    /// ([`tm_core::log::Replay::open_break`]), so the `break` line that ends it
+    /// is stamped where its start was logged, to the second, on whatever date.
+    /// A break the log holds no `break_start` for — one a binary before D105
+    /// began — keeps the cache's clock read as
+    /// [`tm_core::store::BreakState::started_at`] reads it (the latest instant
+    /// at or before `now` with the cached clock; the campaign's D81 call on
+    /// README gap 3820, parity P73). Never [`Ctx::at`]: a break begun before
+    /// local midnight is the evening's after it. `None` with no break running,
+    /// or one with no `started`.
     pub fn running_break(&self) -> Option<DateTime<Tz>> {
-        self.state.break_.as_ref().and_then(|b| b.started_at(self.cfg.tz, self.now_tz))
+        let cached = self.state.break_.as_ref()?;
+        match self.replay.open_break.as_ref() {
+            Some(b) => Some(b.started.with_timezone(&self.cfg.tz)),
+            None => cached.started_at(self.cfg.tz, self.now_tz),
+        }
     }
 
     /// **§8.1's working window and block budget from one arrival** — the ONE

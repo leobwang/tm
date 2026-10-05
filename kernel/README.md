@@ -90867,3 +90867,287 @@ landing commit deletes that banner's entries (they resolve once the code is ther
 * 17:27-18:00 — the archive's three workspace runs (red by the two blockers alone); the call-count rows and property.
 * 17:59-18:33 — this commit's three workspace runs, green; then this block, `check.sh` in a clone, the archive commit,
   the commit.
+
+<!-- =====================================================================
+     APPENDED 2026-10-05: stage 6 (the planner), run **W-46**, **TRACK K**
+     — the owner's D105: `tm break` LOGS THE BREAK'S START, so a running
+     break is derivable from the log and deleting `.tm/state.json` mid-break
+     changes nothing (D42).  Gaps 4760-4789 are track K's; parity P100
+     (pre-allocated to this track).  Whoever lands renumbers.
+     ===================================================================== -->
+
+## Stage 6 — W-46 track K: the break's start is logged (D105), and the replay holds the running break
+
+**Status.**  Landed in two commits on the track's branch `w46-k`, the first the READER and the second the WRITER — the
+instrument before the change (D21): the kernel reads a `break_start` and holds the running break before any verb writes
+one, so the first commit moves no answer of any log the binary has ever written.  This block is kept current while the
+step runs; §9 is its clock.
+
+### 0. The brief, measured
+
+* HEAD `16aaafc` (docs: D104–D106), tree clean; worktrees `stage5-lookahead` and, beside this track's `w46-k`, the
+  run's `w46-c` and `w46-h`.  `kernel/README.md`'s last gap was 4757 (`grep -n 'Gap 4757'`), and `python3 parity.py`
+  said `next free P100` before this step.
+* **The brief named the wrong file for D42's reconcile.**  "`tm/src/cli/kernel_log.rs`' state rebuild (D42's
+  reconcile)": the reconcile is `tm/src/cli/ctx.rs` — `Ctx::reconcile_state`, `derived_state`, `HOST_ONLY_STATE`,
+  `Ctx::rebuild_notice`.  `kernel_log.rs` holds the decoder the rebuild reads through (`decode_facts`).  This track
+  edited the reconcile in `ctx.rs` and the decoder in `kernel_log.rs`, and nothing in `kernel_log.rs`' zone-table cache
+  (track H's).
+* "a codec change rebuilds an old checkpoint by the kernel-id/digest rules": true as stated, and nothing extra is owed —
+  `kernel_log::kernel_id` is the FNV-1a-64 of the linked archive (`tm-kernel-ffi/build.rs`), so a checkpoint any other
+  kernel wrote goes to genesis whatever its format; `Seal.ckptVersion` stays 1, as D94's machine change left it.
+
+### 1. The class: what `.tm/state.json` holds while it runs that no log line holds (step 1)
+
+Read off `RuntimeState` (`tm-core/src/store.rs`), the verbs that write each field (`tm/src/cli/day.rs`) and the
+derivation (`ctx::derived_state`).  "A line while it runs" means a line written when the thing BEGINS:
+
+| field (running state) | the line that holds it while it runs | D105 |
+|---|---|---|
+| `break.started`, `break.planned_min`, `break.where` | **none** before D105 — the `break` line is appended when the break ENDS, stamped at its start | **covered**: `break_start` |
+| `active.paused` a running break set | **none** — `tm break` pauses the block without a `pause` line | **covered**: a running break pauses the block it runs over (`derived_state`) |
+| `active.paused` a `tm pause` set | `pause` (and `unpause`) | derived already (`ctx::logged_stops`) |
+| `active.id`, `active.started` | `start` | derived already |
+| `active.est_min` | none (`start` carries no estimate; `extend` carries minutes) | **host-only, unchanged** — `RECOMPUTED` by `Ctx::planned_block` |
+| `interrupt.started`, `interrupt.id` | `interrupt`, at its start | derived already (`Replay::open_interruption`) |
+| `since_break_min` (a `start` line's field, not a `state.json` one) | computed by `tm start` from the day's since-break anchor or the RUNNING break's start | **covered**: the running break's start is now the log's (`Ctx::running_break` reads `Replay::open_break` first) |
+| `priorities_yesterday`, `closed` | none, by design | host-only, unchanged (`RESET`) |
+
+So D105's class is the running break and the pause it sets, and nothing else in `.tm/state.json` runs without a line.
+`active.est_min` is a separate residue (a `tm extend` before the deletion is not in the rebuilt estimate) that D105
+does not touch.
+
+**Driven at HEAD's binary** (`16aaafc`, built in this worktree; `kernel/corpus/plan-basic` with
+`logs/energy-14d.jsonl`, the fixture `cli_switch_acceptance`'s test uses; `wake 06:05`, `arrive lounge`, `start ^p1` at
+2026-09-07T13:00, `break 20m --where walk` at 2026-09-10T09:00; the eleven `--json` spellings at 09:00, `.tm/state.json`
+deleted, `tm --json now`, the eleven again):
+
+```
+tm: .tm/state.json was missing; rebuilt from .tm/log.jsonl (§10.2 is a cache of the log — D42) — ^p1 is running, started 13:00
+tm: GONE, and the log cannot answer for it: `break` — a running break is logged only when it ends, so one that was running left no line to rebuild from — and if one was running, the `active.paused` it had set is gone with it and the block is running again.
+MOVED: now.out
+log lines 164 before, 164 after
+state: "active.paused" true -> false, "break" {started 09:00, planned_min 20, where walk} -> null, priorities_yesterday reset
+```
+
+### 2. The event (step 2)
+
+* **`break_start`**, the 27th known kind — `Log.Kind.brkStart` / `Log.Event.brkStart` in the kernel,
+  `Event::BreakStart` in `tm-core` — with two fields, `planned_min` (`u32`) and `where` (optional string), and `t` the
+  break's start (`ctx.now` when `tm break` runs).  `{"t":"2026-09-10T09:00:00-05:00","ev":"break_start","planned_min":20,"where":"walk"}`.
+* **One definition of the line** (D16): one `Kind.schema` row, read by `Log.readArgs` and written by `Log.renderArgs`;
+  the host hands the kernel a typed `Event::BreakStart` through `Ctx::append_event` and the kernel's `emit` section
+  (`Log.emitEvent`, `Log.renderLine`) returns the bytes.  The fields are in the order serde's sorted map writes an
+  unknown event's keys, so fork 4748911's own `to_json` of the line is the line, byte for byte (below).
+* **The pairing is file order.**  A `break_start` sets the machine's running break (`Replay.Machine.brkOpen`: its stamp,
+  planned minutes, place and ledger day); every `break` line's arm — `Replay.brkFx`, the one body a break's machine
+  effect has — ends it, whatever that line's stamp (`a_break_line_ends_the_running_break_whatever_its_stamp`).  The line
+  that ends a break keeps the fork's shape and is written in one place, `day::end_break_at`, which every verb that ends a
+  break reaches (D97's class, held by `cli_break_ended_journal.rs`' `the_class_of_verbs_that_end_a_break_is_read_off_the_code`:
+  `tm break`, `tm start`, `tm stop`, `tm done`, `tm interrupt`, `tm resume`; `tm wake` refuses over a running break,
+  D76/D81).  Its stamp is the logged start (`Ctx::running_break` reads `Replay::open_break` first), so the two lines of
+  one break carry one instant; a break a binary before D105 began has no `break_start`, and its start is the cache's
+  clock read as P73 reads it.
+* **A start with no end is the running break** — a crash between the two lines included: it runs until a `break` line
+  or an undo ends it, and it holds the ledger day (§3).  **A second start before an end replaces the first**
+  (`a_second_break_start_replaces_the_first`); the binary never writes one, because `tm break` with a break running ends
+  it.  **`tm undo` of `tm break`** appends `undo{of: "break_start"}` (the recorder's header is the tag and no id) and the
+  mask cancels the start (`an_undone_break_start_leaves_no_break_running`); `tm undo` of the verb that ENDED a break
+  cancels its `break` line and the break runs again (`an_undone_break_line_leaves_the_break_running`), which is what the
+  `.tm/state.json` it restores says.
+* **How fork 4748911 reads the line — asked, not guessed** (the oracle, `build-oracle.sh` re-run into this track's
+  scratch, a no-op on a fresh tree; `tm-oracle parse-entry`, `tm-oracle replay America/Chicago`):
+
+```
+{"display":"2026-09-10 09:00","epoch":1789048800,"id":null,"json":"{\"t\":\"2026-09-10T09:00:00-05:00\",\"ev\":\"break_start\",\"planned_min\":20,\"where\":\"walk\"}","nanos":0,"offset":-18000,"t":"2026-09-10T09:00:00-05:00","tag":"break_start","v":"entry"}
+{"display":"2026-09-10 09:00","epoch":1789048800,"id":null,"json":"{\"t\":\"2026-09-10T09:00:00-05:00\",\"ev\":\"break_start\",\"planned_min\":\"x\"}","nanos":0,"offset":-18000,"t":"2026-09-10T09:00:00-05:00","tag":"break_start","v":"entry"}
+replay of [wake, start p1, break_start]: unknown: 1, open_block p1 running since 08:00
+```
+
+  An entry with the tag `break_start`, no id, and its own rendering byte-identical: **the fork reads it as an unknown
+  event** (`Event::Unknown`, counted in `Replay.unknown`, no running break), and a malformed one (`planned_min` a string)
+  as an entry where the kernel names `badField planned_min`.  That is P100 (§6).
+
+### 3. The replay and the seal (step 3)
+
+* **The machine** (`Replay.lean`): `OpenBrk` (`s`, `planned`, `where_`, `day`) and `Machine.brkOpen`; `arm`'s
+  `brkStart` case writes one machine and nothing else (`the_break_start_arm_opens_the_running_break`,
+  `the_break_start_has_no_completion_arm`), and `brkFx` writes no running break on any machine it writes
+  (`brkFx_brkOpen`).  Every other arm keeps it (`closeSub_brkOpen`, `closePause_brkOpen`, `cut_brkOpen`,
+  `doneClose_brkOpen`, and `Seal.arm_brkOpen`, the whole case analysis).  It moves no clock: a block's clock nets a
+  break when the `break` line that ends it arrives (`brkFx`, D87/D92/D94), exactly as before
+  (`a_running_break_moves_no_clock`), so a log with no `break_start` replays as it did.
+* **The facts**: `Facts.openBreak`, `Q.openBreak`/`Answer.openBreak` beside the open block and interruption,
+  `Seal.Answer.openBreak`, and the `log` answer's `open.break` (`Seal.cOptOpenBrk`: `null`, or `[start, planned,
+  where?, day]`; `Boundary.emitAnswer`).  The host decodes it into `tm_core::log::Replay::open_break`
+  (`kernel_log::decode_facts`; `None` is not serialised, so a replay with no running break writes exactly what it did).
+* **The seal**: the checkpoint's machine carries it across a cut (`Seal.cMachine`, a fifth element — the SAME codec,
+  `Seal.cOptOpenBrk`, so the bytes a resume reads back and the bytes the host rebuilds `.tm/state.json`'s `break` from
+  have one definition (§5.3; gap 4763); its round trip proved once per combinator as every codec's is), and its day is one of `Seal.machineDays` — the `break` line that ends
+  a running break is stamped at its start, so it is filed under that day, and a reseal's ledger day never passes it
+  (`a_running_break_holds_the_ledger_day`; law 6's `stepWith_machineDays` gained the fourth case).  Every scalar law of
+  the answer now covers it (`the_answer_reads_the_replays_scalar_facts` gained the conjunct; `answer_reads_state`'s
+  case analysis gained `openBreak` through `openBreak_reads_state` and `answer_openBreak`; law 2's resumed answer
+  equals the whole log's through the machine's agreement, `SealLaw2D`'s `refine` one component longer).
+* **Re-proved, never narrowed (D5)**: every law the new constructor or field touched — `the_log_reads_what_it_renders`
+  and `a_known_event_is_never_read_as_unknown` needed no edit (they quantify over `Kind`); `arm_split_of_not_brk`, the
+  conservation, sleep and observation laws (`Conserves`, `SleptInv`, `arm_obs`, `arm_durations_nil`), the seal step's
+  machine instants and held breaks (`SealStep`), the pending observation (`SealPending`), the last cut and interruption
+  (`SealCutMachine`) each gained a `brkStart` case; `brkFx_cases_on_the_blocks_days` and `brkFx_of_stopped` state the
+  machine with `brkOpen := none`.
+* **Witnesses** (the D105 witness section at the end of `Replay.lean`, each probed under `MemoryMax=8G timeout 120` in a scratch file
+  importing the built module: 0.41 s, 554 MB; a planted false copy fails by name):
+  `a_break_start_is_the_running_break`, `a_break_line_ends_the_running_break`,
+  `a_break_line_ends_the_running_break_whatever_its_stamp`, `an_undone_break_start_leaves_no_break_running`,
+  `an_undone_break_line_leaves_the_break_running`, `a_second_break_start_replaces_the_first`,
+  `a_break_start_is_not_an_unknown_event` (P100, separated: the same line as fork 4748911 reads it counts one unknown
+  event and opens no break), `a_running_break_moves_no_clock`.
+* **Cheats 280-283** (`Negative.lean`): a `break` line that leaves the break running, an undone `break_start` still
+  running, a `break_start` counted as an unknown event, a running break holding no ledger day — each refused by
+  `decide`.
+
+**Parity P100 taken**: a `break_start` line -- `tm break` logs it when a break BEGINS, `t` its start, `planned_min` and `where` (the owner's D105) -- is a known event to the kernel: its replay holds the running break until a `break` line ends it (`Replay.Machine.brkOpen`, the `log` answer's `open.break`, `tm_core::log::Replay::open_break`), counts no unknown event, and names a malformed one (`badField planned_min`); D42's rebuild restores `.tm/state.json`'s `break` and the pause it sets from it, and the `break` line that ends a break is stamped at the logged start; fork 4748911 writes no such line, and reads one as an unknown event (`Replay.unknown` + 1, no running break, a malformed one an entry) (the owner's D105, W-46 track K, README gaps 4740, 1034 and 1085)
+
+### 4. The comparands (step 4) — the writer's commit
+
+The reader's commit moves no comparand: no log fork 4748911 ever wrote holds a `break_start`
+(`kernel_break_start.rs`' `a_log_with_no_break_start_has_no_running_break`, over the four corpus logs and a generated
+month at both rates), and the kernel's reading of every other line is unchanged.  What the writer's commit owes the
+comparands is §4 of its own update below.
+
+### 5. D42's acceptance on both binaries (step 5) — the writer's commit
+
+### 6. The reader's own tests
+
+`tm/tests/kernel_break_start.rs` (new; six tests, through the FFI and the host's own decoder `kernel_log::decode_facts`,
+never a twin): a `break_start` is the running break on the wire (`open.break`, four elements) and decoded (its start,
+planned minutes, place and day; `unknown` 0; the open block the same as without it); the pair matched in file order,
+an earlier-stamped `break` ending it, an undone start leaving none, an undone end bringing it back, a second start
+replacing the first; a malformed one named `badField planned_min`; no running break out of any corpus log or generated
+month; **a running break across a seal cut** — a 200-day generated log with a `break_start` at line 6,151 of 8,080 and
+every later `break` line removed, read through the door (`kernel_log::replay_scoped`) at `Hot` and `All`, from genesis
+and from the checkpoint it wrote: the checkpoint's cut is line 7,984 (past the `break_start`, so the second pass met
+the break in the checkpoint's machine), its ledger day 2026-05-30 — the break's own day, held there by
+`Seal.machineDays` — and all four reads agree; and **D42's rebuild restoring a logged break and its pause** (the line
+appended by hand exactly as the writer's commit writes it): `.tm/state.json`'s `break` back byte for byte, `active.paused`
+back, and the notice says "RESTORED from the log: `break` …".
+
+`kernel/tm-kernel-ffi/tests/kernel.rs` gains `the_log_op_answers_a_running_break` — the wire's own bytes: a lone
+`break_start` at 09:00 planning 20 minutes at `cafe` answers `"open":{"block":null,"interrupt":null,"break":[[63924368400,0,false,0],20,"cafe",739865]}`
+with `"entryCount":1,"unknown":0`, and a `break` line after it, or an `undo` of it, answers `"break":null`.  The six
+`open` objects the FFI suites pin byte for byte (three in `kernel.rs`, three in `stack.rs`) gain `"break":null` and
+nothing else: the answer grew one key, by D105, and no other byte of those answers moved.
+
+### 7. Acceptance
+
+Every command capped (`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`; 16 GB for the oracle and the
+drives).  Baseline: `a3588b4`'s, run by the orchestrator — `check.sh` 17 ok (axiom audit 6,349, FFI 95), `cargo test
+--workspace` 2,872 passed / 0 failed / 42 ignored across 153 result lines.
+
+**The reader's commit.**
+
+* `check.sh` on this commit's tree in a clone (`scratchpad/w46-k/v-reader`: `16aaafc` with this diff applied and the
+  worktree's `.lake` copied in; `git status --porcelain` identical before and after), 06:42-06:47, load 0.21 → 2.90:
+  **17 lines, all ok, exit 0, 5 min 0 s.**  Build ok; totality ok; axiom audit **6,368** theorems (**+19**, every one
+  audited; Classical.choice 3,354, Quot.sound 4,894, propext 5,949; 416 depend on none); `Negative.lean` rejected
+  (cheats 280-283 among the rejections); FFI **96** tests (+1, `the_log_op_answers_a_running_break`); corpus 29/37
+  files and 4/5 whole plans; stage goals 1 (unchanged); prose citations 60,888 (58,445 resolved, 2,443 allowed, 0
+  allow entries unused); new definitions mutated **749** rostered (+13: 269 unfoldable, 169 witness fixtures, 49 pinned
+  by nothing, 3 literal), 0 owed; parity **P1-P100**, next free P101; no two names for one definition, 3,405 bodies, 0
+  UNANSWERED; every emitted definition reached, 3,494 definitions, 1,519 reachable, 1,099 exempt (unchanged), 0
+  UNANSWERED; the four field and key checks as at `a3588b4`; the kernel replays all 95 modules.  This section is
+  prose the gate reads, so checks 8 and 10 were run again here after it was written: 60,912 citations, 58,469 resolved,
+  ok; P1-P100 re-resolved, ok.  `Negative.lean` compiled as check 4 compiles it (`-DmaxErrors=1000000`): cheats 280-283
+  are each refused by `decide`, "proved that the proposition … is false" — the reason each states.
+* `cargo test --workspace`, **three runs** here, one at a time: **2,891 passed / 0 failed / 42 ignored across 154 result
+  lines, all three** (10 min 26 s at load 2.1 → 3.2; 11 min 9 s at 3.2 → 5.7; 10 min 46 s at 5.7 → 7.9 — the writer's
+  clone building and testing beside the last two, niced and capped at 16 GB); `git status --porcelain` and `git diff`
+  hashed identical before and after each, so no `.proptest-regressions` seed was written (D46).  The delta from
+  `a3588b4` is exactly the new binary: `kernel_break_start`'s 6 tests and the 13 unit tests of `kernel_log` its
+  `#[path]` include compiles in.
+* The named suites, identical in all three runs: `cli_switch_acceptance` 16, `cli_latency` 7 (+1 ignored),
+  `kernel_call_counts` 3, `one_padder` 9, `one_renderer` 34, `kernel_row_cells` 35, `kernel_item_grammar` 6,
+  `kernel_planner_wire` 27, `planner_classes` 73 (+8), `planner_invariants` 48 (+2), `cli_conformance` 7,
+  `cli_json_matrix` 8, `cli_tz_cache_digest` 3, T5 (`kernel_replay_parity`) 48 (+4), the door (`kernel_log_door`) 42,
+  T1-T3 (`kernel_log_grammar`) 24 (+2), `kernel_break_start` 19; and with `--include-ignored` and `TM_ORACLE` (an oracle
+  `build-oracle.sh` refreshed into this track's scratch, a no-op): `cli_latency` 8, `cli_switch_acceptance` 16, the door
+  42 (16 `All` reads against the frozen fork, 32,982 values), T1-T3 26 (1,375 kernel renderings read back to the fork's
+  own entry), T5 52.
+
+### 8. Gaps 4760-4789 (this track's)
+
+**Gap 4760 — a break begun BEFORE D105 is still lost with `.tm/state.json`.**  1. *What.*  A running break a binary
+before the writer's commit began logged no `break_start`; while the file exists the cache keeps it (the reconcile's
+cached branch adopts the log's break only when the cache has none), and when the file is deleted it is gone, and
+nothing can say so — the file that held it is the one deleted.  2. *Why.*  No line holds it; the transition is one
+break long.  3. *Cost.*  A user who upgrades mid-break and deletes the cache before ending it loses that break's
+start (its `break` line is then stamped at the end's instant, `actual_min` 0).  4. *Clears it.*  Nothing owed: it ends
+with the first break after the upgrade.
+
+**Gap 4761 — the kernel's planner reads the running break from the request, not from its own replay.**  1. *What.*
+`PlanWire`'s `RuntimeIn.brk` (P45) is the host's `.tm/state.json` `break`, while the replay the same request carries
+now holds the running break (`Seal.Answer.openBreak`).  2. *Why.*  D105 is a log change; the planner's input is R3's.
+D42's reconcile makes the cache the log's, so the two agree on every tree the binary writes.  3. *Cost.*  Two readers
+of one fact, kept equal by a reconcile rather than by construction (§5.3).  4. *Clears it.*  The planner reads
+`r.run.answer.openBreak` and the request stops carrying `brk` (R3 or after), with its law.
+
+**Gap 4762 — the end of a break is matched in FILE ORDER, so a `break` line for another break ends the running one.**
+1. *What.*  Any `break` line ends the running break (`brkFx`), whatever its stamp.  2. *Why.*  The binary writes the
+two lines of one break at one instant, and the one way two breaks interleave is a hand edit, or a binary before D105
+ending a break after a D105 one began — neither of which the pairing could read better by matching instants
+(the old line's stamp is the cache's minute).  3. *Cost.*  A hand-edited log can end a running break with a line about
+another; witnessed and stated (`a_break_line_ends_the_running_break_whatever_its_stamp`).  4. *Clears it.*  Nothing
+owed unless the owner wants instants matched.
+
+**Gap 4763 — CLOSED in the step: the running break's codec was a definition check 12 could not see reached.**  The
+reader's first build defined the tuple's codec on its own (Seal.cOpenBrk, now gone) and, in `SealWire.lean`, an `abbrev` of `cOpt` over
+it, as `cOpenBlock`/`cOptOpenBlock` are.  Check 12 failed on both, NOT EXEMPT: `cMachine` reads its components only in
+its hoisted initialiser, and the `abbrev` was inlined into `emitAnswer` and hoisted again (its ninth hoisted closed constant in
+the emitted C) — the walk's declared blind spot (`callgraph.closed_users`) — and `reach-exempt.txt`, where the seven
+siblings of that shape are grandfathered, is strictly shrink-only (D51, gap 4043).  It is ONE codec now:
+`Seal.cOptOpenBrk`, a `def` in `Seal.lean` whose global `emitAnswer`'s own body reads (reached), and `cMachine`'s fifth
+element — so the checkpoint and the answer share one definition of the running break's bytes (§5.3), which the first
+shape did not quite say.  The `## Seal.lean` census is re-derived in the same edit (70 of its 239, dated, per gap 2411's
+rule for a rewritten reason); `SealWire.lean`'s is unchanged (19 of 35).  What stays is the blind spot itself: the
+codec's decoder runs at a resume only through `cMachine`'s closure, which no call-graph walk can see (gap 2130's class).
+
+**Gap 4764 — three new or changed definitions are pinned by NOTHING, one of them for a tool reason.**  1. *What.*
+`Seal.cOptOpenBrk` is a codec (no `Inhabited Codec`, and the synthesised literal does not elaborate), as `cBlock` and
+`cMachine` are; `Log.Kind.build` is UNFOLDABLE (no `Inhabited` of its dependent type).
+`Replay.factsView` was refused a constant by `mutate.py` itself: its synthesis read the `Answer` of `Q → Answer` as
+`Seal.Answer` and built a `Seal.Answer` literal (UNAVAILABLE).  2. *Why.*  The tool's type resolution is textual
+(its own header says so).  3. *Cost.*  Three rows the gate counts as "pinned by nothing" (49 at this step, 50 before gap 4763 made two codecs one).  4. *Clears
+it.*  `factsView`: `mutate.py` resolving a name against the declaring namespace; the codecs: the class gap 980 puts
+to the owner.
+
+**Gap 4765 — AGENTS.md §2.3 still says "the 26 `define_events!` kinds".**  1. *What.*  The process document's `Log`
+bullet.  2. *Why.*  Not this track's to edit.  3. *Cost.*  A stale count in the authority on process.  4. *Clears it.*
+The orchestrator's next AGENTS.md edit: 27 since D105.
+
+**Gap 4766 — CLOSED: check 9 failed on the one definition that cannot be pinned.**  `Seal.blankAnswer` — the
+all-empty answer a resume hands back when no fact is wanted, its body the anonymous constructor of zeros — changed
+for the first time since check 9's baseline (one `none` for the new field), and `mutate.py`'s synthesised constant
+for `Answer` IS that body, so folding it built the same term and came back SURVIVED: the gate failed on a definition
+that is, by its own rule, a constant (LITERAL: "not DISTINGUISHABLE from a constant of its type by anything, ever: it
+is one").  The LITERAL verdict read scalars only.  `mutate.py` now reads an EXACT match between a synthesised constant
+and the body (whitespace aside) as LITERAL — reported, counted, never a fold — and only that: a structure-literal body
+that differs from the synthesised term is mutated as before, and one nothing pins is still SURVIVED.  The row reads
+`unfoldable,literal` (3 literal rows in the gate's summary, 2 before).
+
+### 9. Status notes (kept current while the step ran)
+
+* 23:28 — worktree `w46-k` at `16aaafc`, its `.lake` warmed from the main checkout's (a no-op build); the oracle
+  refreshed into this track's scratch (no-op).
+* 23:40-00:20 — the grammar (`Log.lean`), the machine and facts (`Replay.lean`), the seal (`Seal*.lean`), the wire
+  (`Boundary.emitAnswer`); the whole kernel built (12 min under load 60); the host's event, decoder and derivation.
+* 00:20-00:45 — one workspace run with the writer included (2,851 passed / 21 failed / 42 ignored, 153 result lines):
+  the failures are §4's and §5's moves and four latency rows at load 58 (re-run in §7); the split into the reader commit
+  and the writer commit followed.
+* 00:48 — the mutation roster's drifted pin sites re-verified in a clone (`mutate.py --verify --write`), then the owed
+  rows.
+* 02:25 — the session was CUT OFF (an account usage limit) mid-way through the reader's first workspace run (64 result
+  lines in, all green) and with the writer half-applied in a scratch clone; nothing was committed.
+* 06:38 — RESUMED by a second agent from the uncommitted worktree (nothing reset or discarded): the reader re-measured
+  in a clone (`check.sh`) and here (three workspace runs), then committed; the writer rebuilt from the scratch scripts
+  the first agent left, re-measured, then committed.
+* 06:42-07:22 — the reader: `check.sh` in a clone, three workspace runs here, the oracle arms (§7); committed.

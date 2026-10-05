@@ -8317,3 +8317,29 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -/
 #print axioms Tm.Planner.PlanReq.todayRecord_is_the_answers_reading
 #print axioms Tm.Planner.PlanReq.todayRecord_on_a_resumed_run_is_the_whole_logs
+
+/-
+   APPENDED 2026-10-05: stage 6, run W-46, TRACK K — the owner's D105 (README "Stage 6 — W-46 track K",
+   gaps 1034, 1085, 4740; parity P100): `tm break` logs a `break_start`, the machine holds the running break
+   (`Replay.Machine.brkOpen`) until a `break` line ends it, the facts and the checkpoint carry it, and its day
+   holds the ledger day.
+-/
+#print axioms Tm.Replay.closeSub_brkOpen
+#print axioms Tm.Replay.closePause_brkOpen
+#print axioms Tm.Replay.cut_brkOpen
+#print axioms Tm.Replay.doneClose_brkOpen
+#print axioms Tm.Replay.brkFx_brkOpen
+#print axioms Tm.Replay.the_break_start_arm_opens_the_running_break
+#print axioms Tm.Replay.the_break_start_has_no_completion_arm
+#print axioms Tm.Replay.a_break_start_is_the_running_break
+#print axioms Tm.Replay.a_break_line_ends_the_running_break
+#print axioms Tm.Replay.a_break_line_ends_the_running_break_whatever_its_stamp
+#print axioms Tm.Replay.an_undone_break_start_leaves_no_break_running
+#print axioms Tm.Replay.an_undone_break_line_leaves_the_break_running
+#print axioms Tm.Replay.a_second_break_start_replaces_the_first
+#print axioms Tm.Replay.a_break_start_is_not_an_unknown_event
+#print axioms Tm.Replay.a_running_break_moves_no_clock
+#print axioms Tm.Seal.a_running_break_holds_the_ledger_day
+#print axioms Tm.Seal.openBreak_reads_state
+#print axioms Tm.Seal.answer_openBreak
+#print axioms Tm.Seal.arm_brkOpen

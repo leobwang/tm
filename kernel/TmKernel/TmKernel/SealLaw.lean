@@ -828,6 +828,14 @@ theorem scalars_read_state (st : State) (hs : List (Nat × HeaderRec)) (n : Nat)
   · show some (Replay.Answer.count v.entryCount) = some (Replay.Answer.count n)
     rw [h8]
 
+/-- **The running break of an answer holding a state's machine is the finished state's** (the owner's D105, parity
+P100): the scalar beside `scalars_read_state`'s, stated apart so their projections stay as they were. -/
+theorem openBreak_reads_state (st : State) (hs : List (Nat × HeaderRec)) (n : Nat) (v : Seal.Answer)
+    (h : v.openBreak = st.machine.brkOpen) :
+    askAnswer v .openBreak = some (Replay.ask ⟨Replay.finish st, hs, n⟩ .openBreak) := by
+  show some (Replay.Answer.openBreak v.openBreak) = some (Replay.Answer.openBreak (Replay.finish st).openBreak)
+  rw [h]; rfl
+
 /-! ### The answer of a specification checkpoint, field by field -/
 
 section Proj
@@ -859,6 +867,9 @@ theorem answer_openBlock : (answer (ckptOfEntries z T₀ L cut es er ws)).openBl
   simp only [answer, ckptOfEntries]
 theorem answer_openInterrupt : (answer (ckptOfEntries z T₀ L cut es er ws)).openInterrupt
     = (foldedState z es er).machine.interrupt.map (fun i => ⟨0, some i.1, none, i.2.1, i.2.2, 0, []⟩) := by
+  simp only [answer, ckptOfEntries]
+theorem answer_openBreak : (answer (ckptOfEntries z T₀ L cut es er ws)).openBreak
+    = (foldedState z es er).machine.brkOpen := by
   simp only [answer, ckptOfEntries]
 theorem answer_lastDay :
     (answer (ckptOfEntries z T₀ L cut es er ws)).lastDay = Replay.maxDay? ((foldedState z es er).days.pairs.map Prod.fst) := by
@@ -916,6 +927,8 @@ theorem answer_reads_state (z : Cal.Tz) (T₀ L cut : Nat) (es : List Entry) (ws
   | named name id => exact (hoth [] [] name id).2
   | openBlock => exact hsc.1
   | openInterrupt => exact hsc.2.1
+  | openBreak =>
+    exact openBreak_reads_state (foldedState z es []) (foldedHeaders z es []) es.length _ (answer_openBreak z T₀ L cut es [] ws)
   | lastDay => exact hsc.2.2.1
   | lastEffective => exact hsc.2.2.2.1
   | unknown => exact hsc.2.2.2.2.1
@@ -1077,6 +1090,7 @@ theorem arm_durations_nil (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (
   case brk planned actual where_ =>
     rw [List.filterMap_append, (Replay.dayArm_obs dy sl e t d).2.1, List.append_nil]
     exact (Replay.brkFx_obs dy m t _ d).2
+  case brkStart planned where_ => rfl
   all_goals exact (Replay.dayArm_obs dy sl e t d).2.1
 
 /-- **Each machine arm adds at most one observation on its own line**, energy or duration, not both. -/

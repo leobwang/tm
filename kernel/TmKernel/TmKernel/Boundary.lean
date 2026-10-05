@@ -3382,7 +3382,9 @@ def logLines (r : LogReq) : List Log.Line := (r.lines.foldl logLineStep ([], r.f
 /-- **The facts of an answer** (§10.2, W3): its horizons, its all-time facts, window and days, every record in the
 codec shape the kernel reads back (`Seal.emitDayRecord`, `Seal.emitWindowRecord`, `Seal.cItemAgg`, `Seal.cInstRec`,
 `Seal.cNamedRec`: one emitter per shape, W1's disagreement 13), the open block and interruption, the counts, the
-replay warnings, and the line warnings as the answer's `warnings` spells them (the first 256 and the overflow). -/
+replay warnings, and the line warnings as the answer's `warnings` spells them (the first 256 and the overflow).  Since
+the owner's D105 (parity P100) `open` carries the running break as well, `open.break`: `null`, or `[start, planned,
+where?, day]` — what `.tm/state.json`'s `break` is rebuilt from. -/
 def emitAnswer (a : Seal.Answer) : JVal :=
   .obj [("ledgerDay".toList, .num a.ledgerDay), ("horizon".toList, .num a.horizon),
         ("items".toList, .arr (a.items.map Seal.cItemAgg.enc)),
@@ -3390,7 +3392,8 @@ def emitAnswer (a : Seal.Answer) : JVal :=
         ("instOther".toList, Seal.cInstOther.enc a.instOther), ("named".toList, Seal.cNamed.enc a.named),
         ("days".toList, .arr (a.days.map Seal.emitDayRecord)),
         ("open".toList, .obj [("block".toList, Seal.cOptOpenBlock.enc a.openBlock),
-          ("interrupt".toList, Seal.cOptInterruption.enc a.openInterrupt)]),
+          ("interrupt".toList, Seal.cOptInterruption.enc a.openInterrupt),
+          ("break".toList, Seal.cOptOpenBrk.enc a.openBreak)]),
         ("lastDay".toList, Seal.cOptNat.enc a.lastDay), ("lastEffective".toList, Seal.cOptAt.enc a.lastEffective),
         ("entryCount".toList, .num a.entryCount), ("unknown".toList, .num a.unknown),
         ("longestLeak".toList, Seal.cOptLeak.enc a.longestLeak), ("replayWarnings".toList, Seal.cRWarns.enc a.rwarns),
@@ -12896,8 +12899,8 @@ theorem the_log_op_merges_a_sealed_day_below_its_ledger_day :
       = .inr (logBody ⟨1, [], true, none, [], true, Replay.utcZone, some 739900,
           some { Seal.Ckpt.empty Replay.utcZone with ledgerDay := 5 }, none,
           some ⟨[⟨3, none, none, [], [], [], [], [], []⟩, ⟨7, none, none, [], [], [], [], [], []⟩], []⟩⟩
-        (emitAnswer ⟨5, 0, [], [], [], [], [⟨3, none, none, [], [], [], [], [], []⟩], none, none, none, none, 0, 0, none,
-          [], [], 0⟩) [] .null) := by
+        (emitAnswer ⟨5, 0, [], [], [], [], [⟨3, none, none, [], [], [], [], [], []⟩], none, none, none, none, none, 0, 0,
+          none, [], [], 0⟩) [] .null) := by
   decide
 
 end W3
