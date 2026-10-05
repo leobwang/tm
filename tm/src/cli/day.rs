@@ -2075,7 +2075,29 @@ pub fn resume(g: &Globals) -> Result<i32, CliError> {
         // it just logged, as the next verb's load will.
         ctx.reload()?;
     }
-    let (plan, prios) = planning::build(&ctx, false)?;
+    // **The replan reads this verb's own `resume` line** (the owner's D106, README
+    // gap 4661; stage 6 W-46 track H, parity **P101**). Fork 4748911 planned
+    // before it appended the line, so the plan it wrote — the day file's
+    // `tm:plan` block, `.tm/last_plan.json` and the `plan` event's hash — had a
+    // hole where the interruption was, and the next planning verb drew the
+    // interruption `lost` there and moved the hash with no time passing: two
+    // readings of one span (AGENTS §5.3). The line records `dropped`, which needs
+    // the plan, so it is HELD in memory while the day is planned — by the one
+    // hold every in-memory housekeeping write goes through (the owner's D96:
+    // `Ctx::hold_begin`, `Ctx::append_event` into the hold, `Ctx::reload` reading
+    // the context as the hold leaves it, `Ctx::release`) — and written after,
+    // with `dropped` read off the plan it is written beside. The held line says
+    // `dropped: []`: the replay keeps `dropped` as a record of the line
+    // (`tm review day`'s), and no fact the planner reads is one of it, so the day
+    // planned beside the held line is the day planned beside the written one —
+    // `cli_resume_replan` holds the next planning verb's hash to it.
+    ctx.hold_begin()?;
+    let held = ctx
+        .append_event(Event::Resume { lost_min: lost, dropped: Vec::new() })
+        .and_then(|()| ctx.reload())
+        .and_then(|()| planning::build(&ctx, false));
+    ctx.release();
+    let (plan, prios) = held?;
     let after: Vec<String> = plan
         .segments
         .iter()

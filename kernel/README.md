@@ -90867,3 +90867,278 @@ landing commit deletes that banner's entries (they resolve once the code is ther
 * 17:27-18:00 — the archive's three workspace runs (red by the two blockers alone); the call-count rows and property.
 * 17:59-18:33 — this commit's three workspace runs, green; then this block, `check.sh` in a clone, the archive commit,
   the commit.
+
+<!-- =====================================================================
+     APPENDED 2026-10-04: stage 6 (the planner), run **W-46**, **TRACK H** —
+     the owner's D104 (a served zone table checked against the binary's own
+     zone database and rebuilt when it disagrees: README gaps 4621 and 4711,
+     the first R3 BLOCKER) and D106 (`tm resume` plans after its own line:
+     gap 4661), and gap 4751 (the planner refusals as a class).  Gaps
+     4790-4809 are this track's; parity P101 taken here (`P102`, pre-allocated
+     for D104 "only if a measured answer moves beyond what D93/D98 register",
+     NOT taken: §1.6), and P100 is track K's — declared a hole on this branch
+     only, for the Land to fill or renumber into.  Written on branch `w46-h`.
+     ===================================================================== -->
+
+## Stage 6 — W-46 track H: the zone table checked and rebuilt, `tm resume` planning after its own line, and the planner refusals as a class
+
+**Status.**  D104 and D106 are built on the unswitched binary and measured on both binaries (§1, §2); gap 4751 is
+§3.  The first R3 BLOCKER, gap 4621, is CLOSED here (with gap 4711); the second, gap 4740, is track K's (D105).
+
+### 0. The brief, measured
+
+* **HEAD `16aaafc`** (the owner's D104-D106, docs only), tree clean; worktrees `stage5-lookahead` and this track's
+  `w46-h`.  **Correction:** the brief says `16aaafc` was "pushed to origin"; `git status` on `rebuild-on-lean` said
+  *"ahead of 'origin/rebuild-on-lean' by 1 commit"* when this track began — `origin` stood at `a3588b4`.
+* `tm/src/cli/tz_table.rs`' `wire_for` is the ONE function that reads `.tm/cache/replay/tz.json` (§1.1); its
+  production callers are four (`Ctx::tz_wire`, `kernel_capacity::reads`, `day::call_the_walls`,
+  `lifecycle::line_warnings`), as measured below.
+* The zone probe at opt-level 1 (the test profile), America/Chicago: **61.1 ms** best of 3 at load 2.7
+  (93.6 ms at load 59, `examples/tzprobe.rs`); chrono-tz **0.10.4**, its IANA_TZDB_VERSION **2025b**, **597** zones.
+* Two tests outside this track's file list assert the sentence D104 withdraws or a count D106 moves, so D104 and
+  D106 move them, each named for the Land (§1.4, §2.4): `tm/tests/kernel_tz_table.rs`'
+  `the_cache_keeps_the_wire_value_under_its_key` and `tm/tests/kernel_call_counts.rs`' `resume` row.
+
+### 1. D104 — a served zone table is checked against the binary's zone database, and rebuilt when it disagrees (gaps 4621, 4711 closed)
+
+**1.1 The class, by body shape.**  Every place the binary serves a zone table to the kernel, found by grepping
+`tm/src` and `tm-core/src` for every reader of the file (`tz.json`, `CACHE_FILE`) and every request section that
+carries a `"tz"`:
+
+| site | what it sends | where its table comes from |
+|---|---|---|
+| `kernel_capacity::reads` | the capacity request, and since P78 `tm check`'s planner request (R3's `tm plan`) | `tz_table::wire_for` |
+| `day::call_the_walls` | D61's walls request, and the week grid's cut | `tz_table::wire_for` |
+| `kernel_log::wrap_log` | every `log` request: the replay, genesis, `line_warnings`, `headers_after`, `render_lines`, `replay_unsealed` | its `tz` argument: `Ctx::tz_wire` (every `Ctx` replay and `Ctx::settle`) or `lifecycle::line_warnings`, both `tz_table::wire_for` |
+| `tz_table::wire_for` | — | the ONE reader of `tz.json` |
+
+So the check is in `wire_for` and nowhere else, and `tm check` meets the table every planning verb meets, through the
+same function.  `cli_tz_cache_digest`'s `no_file_but_the_zone_table_names_its_cache_in_code` holds the reader half
+as a property of the source (no Rust file of `tm/src` or `tm-core/src` but `tz_table.rs` names the file in code).
+
+**1.2 Which instants the kernel reads through the table** — so the check covers ALL of them, not the planned day.
+`Cal.offsetAt` and `Cal.localHits` (through `instantOf`) are the table's only readers, and they are asked: at every
+log line's instant (`Replay.entryDays`, the day index, the sealed day records — genesis replays the whole log, and a
+hand-edited line may carry any instant); at the request's `at` (day 0, `nowAgrees`); at the windows, wakes and walls
+of every lookahead day (`windowOn`, `wakeInstantOf`, `wallsOn`); at the planned day's rows; at the week grid's days.
+That is any second of `[1900, 2200]`, so the check is the whole table — and it is cheaper than the probe it saves:
+
+**1.3 The check** (`tz_table::agrees`, behind `ZoneTable::from_wire`).  A cached text is served only when its digest
+matches (W-44), it is exactly what the one encoder writes for a table (`from_wire`: every offset and instant taken
+back only when `fmt_offset`/`fmt_instant` spell it so, and the table accepted only when `to_wire` gives the value
+read — no second grammar of the zone wire), and the table agrees with chrono-tz: the key is `key_of(tz)`, the base is
+the offset at 1900-01-01, every transition is a change of the zone at that very second (the second before reads the
+old offset, the second itself the new, and they differ), and on a grid of one day (`CHECK_STEP`) from 1900 to 2200
+the table reads the zone's offset.  A change the table lacks opens a span of the zone; every span outlasts the step,
+so the span holds a grid point, where the two disagree.  **The fact that stands on, measured and held**: the
+shortest span of any of the 597 zones over `[1900, 2200]` is **601,200 s** (America/Boa_Vista from
+2000-10-08T04:00:00Z; Noronha, Recife, and Gaza and Hebron in 2040, 2054 and 2072), a margin of seven over the
+step; `every_span_of_every_zone_outlasts_the_checks_step_and_every_probe_agrees` sweeps every zone and fails, by
+zone, the day a chrono-tz upgrade brings a shorter one — and asserts every zone's probe passes the check (§5.8's
+other direction).  Cost: **3.03 ms** best of 7 for Chicago (UTC 1.87, Lord_Howe 2.73, Gaza 2.94) against the
+probe's **61.1 ms**, at opt-level 1.  A process remembers the one text it checked (`tz_table::served`, keyed by the
+zone and the whole text), so a verb that reads the zone three or four times pays it once.
+
+A table that disagrees is rebuilt by `wire_for`'s existing path — probed, written to a temporary file and renamed
+into place, and when that write fails served from memory, never the file (D93's path, one definition).  **And what
+the replay cache derived from a table is bound to that table** (README gap 4790, found driving the class and closed
+here): the replay snapshot was bound to the table's KEY alone (`Snapshot::valid_for`'s `tzKey`), so days sealed under a
+table a binary before D104 served from a hand-edited, re-digested `tz.json` stayed sealed under it after D104 rebuilt
+the table.  Driven (`scratchpad/w46-h/drive_sealed2.py`: seventy days of wakes and an evening block on 2026-07-12,
+the edited table served by the binary of `16aaafc`, then this track's binary on the same tree): `tm review day
+--date 2026-07-12` answered **0** minutes, its cache-less copy **20**.  The snapshot's `tzKey` is now
+`kernel_log::zone_id` — the key and the digest of the table actually served — so a snapshot replayed through any
+other table is "another zone" and the replay rebuilds (§9.8); a snapshot written before this is rebuilt once (as a
+change of the kernel archive already rebuilds it).  Pinned by `kernel_log`'s
+`a_snapshot_sealed_under_another_table_with_its_key_is_rebuilt`, which FAILS with the key-only binding (a clone,
+`scratchpad/w46-h/plant`).
+
+**1.4 The assertion restated** (D104's own words).  `tm/tests/cli_tz_cache_digest.rs`:
+*old* (the W-44 repair) — the test then named only_the_digest_stands_between_a_changed_offset_and_the_days_minutes
+asserted that the planted offset with its digest recomputed is SERVED ("a table whose digest matches is trusted as
+written (D13)": the evening's twenty minutes credited to Monday); *new* —
+`a_changed_offset_never_reaches_the_days_minutes_whether_or_not_its_digest_matches`: the same table is rebuilt,
+the minutes stay Sunday's, and the file is rewritten with the probe; the digest half (W-44) is unchanged.  And the
+CLASS member D104 forces outside this track's files, for the Land: `tm/tests/kernel_tz_table.rs`'
+`the_cache_keeps_the_wire_value_under_its_key` asserted "a matching key and digest is read, not re-probed" over a
+doctored Kolkata table with no transitions; restated, the doctored table is probed afresh and overwritten (D104),
+and "read, not re-probed" is asserted of the binary's own table by the file's inode, which a probe's rename would
+change.  Every other assertion of both tests is unchanged.  `tm_check_reads_the_day_with_the_decoder_tm_plan_reads_it_with`
+(gap 4742's instrument) holds as written: both verbs answer.
+
+**1.5 The plants** (`every_planted_table_answers_as_a_cache_less_tree`): the evening world copied twice per plant,
+once with `.tm/cache/replay/` holding ONLY the planted `tz.json` — so the first verb replays the whole log through
+the table it is served — and once with no cache; the verbs run on both at the same instants and must say the same
+(exit, stdout, stderr) and leave the same files (generation tags named alike).  Every plant's digest is recomputed.
+Driven with the check REMOVED (a clone, `wire_for`'s filter back to the key alone — the pre-D104 rule;
+`scratchpad/w46-h/plant-d104-off.log`), **29 answers and files moved**:
+
+| plant | where it falls | with the check removed | with D104 |
+|---|---|---|---|
+| offset: the 2026 spring change moved to `-03:00:00` | the planned day's span | `plan`, `now`, `review day` (Sep 7 credited 20 minutes), `review week`, `tm plan`; six files | same as cache-less |
+| truncated at 2026-03-08 | the planned day and after | the five above and `tm check` (`error[planner-refusal]: … nowDisagrees at`, exit 2); six files | same |
+| foreign: Berlin's table under Chicago's key | everything | the five; six files | same |
+| another key: Berlin's under its own key | — | nothing (the key refused it before D104: the control) | same |
+| history: the offset edit asked on 2026-11-10 | the log's history only | `review day --date 2026-09-06`, `review week --date 2026-09-06`; two files (the checkpoint, `tz.json`) | same |
+| lookahead: the 2026-11-01 fall-back a week later, asked on 2026-10-29 | the lookahead's days only | no answer moves on this world (no grant reads the moved hour); the planted file is served and kept | same, and rebuilt |
+| unwritable: the offset edit in a read-only cache | the planned day | the five; four files | same, the planted file left on disk and never served |
+
+And on the unswitched binary of `16aaafc` itself (`scratchpad/w46-h/drive_plant.py`), the offset plant:
+`review day` at 00:10 Monday — planted `("2026-09-07", 20)`, cache-less `("2026-09-07", 0)`, the file not rewritten;
+on this track's binary both `("2026-09-07", 0)` and the file rewritten to the probe.
+
+**1.6 No parity number.**  Fork 4748911 has no zone cache — it read chrono-tz at every call — so on every tree the
+fork plans in chrono-tz's zone, and D104 makes the binary do the same on a tree whose cache disagrees.  The answers
+D104 moves (§1.5) move from the pre-D104 binary's toward the fork's, never away: nothing beyond what D93/D98's rule
+already registers moves, so `P102` is not taken and the Land renumbers down past it.
+
+### 2. D106 — `tm resume` plans after its own `resume` line (gap 4661 closed; parity P101)
+
+**What changed** (`day::resume`).  The verb clears the interruption, ends a running break first (P90), and then
+plans with its `resume` line HELD in memory, through the one hold every in-memory housekeeping write goes through —
+the owner's D96: `Ctx::hold_begin`; `Ctx::append_event` into the hold (`Ctx::append_line` writes to the hold's
+mirror); `Ctx::reload`, which while holding is `Ctx::settle` (the files off the mirror, the log as `Ctx::log_now`
+reads it — the file and the held line — replayed by `kernel_log::replay_unsealed`, which writes nothing);
+`planning::build`, whose requests read the plan directory through `Ctx::reading` and the log through
+`Ctx::log_now`; and `Ctx::release`.  Then the line is WRITTEN, with `dropped` read off the plan it is written
+beside, and the plan is written.  The held line says `dropped: []`.
+
+**Why the hold and not "appended first".**  The line records `dropped`, which is read off the plan, so a line
+appended first would have to carry `dropped` from a plan planned BEFORE it — fork 4748911's plan — while the verb
+writes another beside it: two readings of "the replan" in one verb (AGENTS §5.3).  Held, `dropped` is read off the
+plan the verb writes, and the fork's rule for it (an item the last plan held and this one does not) is unchanged.
+**Why the held `dropped: []` is the written line's day.**  The replay keeps a `resume` line's `dropped` as a record
+of the line (the day record's `dropped`, the interruption's — `tm review day`'s), and no fact a planner reads is one
+of it: fork 4748911's `planner.rs` reads none (`DayReplay.dropped` and `Interruption.dropped` have no reader there),
+and neither does `Planner.dayPlan`.  `cli_resume_replan`'s `a_resume_lines_dropped_moves_no_row_of_the_day` holds
+it on the binary: `tm plan --json` on two copies of the resumed tree whose `resume` lines differ only in `dropped`
+(`[]` against `["m1","t3"]`), each replaying from nothing — the same answer, byte for byte.
+
+**Parity P101 taken**: `tm resume` plans AFTER its own `resume` line — the line held in memory while the day is planned (`Ctx::hold_begin`, the owner's D96's hold), then written with `dropped` read off that plan — so the plan it writes (the day file's `tm:plan` block, `.tm/last_plan.json`, its `plan` event's hash) draws the interruption it resumes, `lost` from its start to the resume, as every later replan does, and the next planning verb at the same instant moves nothing and logs no `plan` event; fork 4748911's `tm resume` planned before it appended the line, so the plan it wrote had no row over the interruption and the next planning verb drew the row and logged a `plan` event with a changed hash, with no time passing (the owner's D106, W-46 track H, README gap 4661)
+
+Behaviour row (driven, both binaries, §4.3's example tree: `wake` 07:00, `start ^m1` 09:00, `interrupt` 09:20,
+`resume` 09:50, then `tm plan` at 09:50): **before** (the unswitched binary of `16aaafc`) — the written plan's rows
+over 09:20-09:50: none; the log after the resume: one `plan` event; after `tm plan`: two `plan` events, and
+`.tm/last_plan.json` and `day/2026-09-07.md` both changed; **after** (this track) — the written plan's row over
+09:20-09:50: `09:20-09:50 lost m1`; the log after the resume: one `plan` event; after `tm plan`: still one, and both
+files byte-identical.  The `resume` line reads `{"t":"2026-09-07T09:50:00-05:00","ev":"resume","lost_min":30,"dropped":[]}`
+on both.  Pinned by `tm/tests/cli_resume_replan.rs`' `the_plan_tm_resume_writes_draws_the_interruption_it_resumes`
+(its pin flipped: until this step it was named the_plan_tm_resume_writes_leaves_the_interruption_it_resumes_undrawn
+and held the hole), beside `a_resume_lines_dropped_moves_no_row_of_the_day` and the generator-class proptest
+`the_append_adds_exactly_the_interruptions_lost_row_to_the_past_half`, unchanged — the row D106 brings into the
+written plan, measured over the planner generator's interrupted days.
+
+**What it costs**, and the count that moves with it (for the Land: `tm/tests/kernel_call_counts.rs`, outside this
+track's files).  Reading the context as the hold leaves it asks whether the checkpoint resumes and replays the held
+tail — two `log` calls — and the held line is the kernel's rendering too (D16): `tm resume`'s row moves from
+`log` 5 / `emit` 2 to `log` 7 / `emit` 3, every other column unchanged (`walls` 1, `apply` 1, `capacity` 1,
+`planner` 0).
+
+**The frozen comparand D106 moves, re-drawn under the owner's D64(b)** — `tm/tests/fixtures/fork-4748911-week-grid.jsonl`,
+a file outside this track's list (track C's), touched because the change forced it, as W-41 track E and the W-44
+repair touched it before (named for the Land, §7).  The first workspace run failed
+`fork_week_grid`'s `every_frozen_week_is_the_world_its_steps_build` on **11** of its 46 worlds, every one whose steps
+run `tm resume`: their steps now build another world, because the plan `tm resume` writes draws the interruption and
+the next planning verb logs no `plan` event (P101).  The old lines describe worlds the shipped binary can no longer
+build from their steps, which is D64(b).  The gate's own bless (`TM_GRID_BLESS=1`, `TM_GRID_BLESS_BECAUSE=101`,
+`TM_GRID_BLESS_REDRAW` dated and naming D64(b), P101 and gap 4661, over an oracle built fresh for the step,
+`scratchpad/w46-h/oracle`, 30 s; `bless.log`): **0 added, 11 changed — `world` only, 0 refused**; the fork's answers
+on every line unchanged; `forkgrid::rebless_allows` held every other line to the committed history.  By line, the
+world files that moved, each the binary's planning output: `cli/week` and `cli/week-sealed` — `.tm/log.jsonl`;
+week draws 9, 21, 27 — `.tm/log.jsonl` and `day/2026-09-08.md` with its `.svg`; week draw 23 — those and
+`.tm/last_plan.json`; week draws 24, 30 and midnight draw 7 — `.tm/log.jsonl` and `day/2026-09-07.md` with its
+`.svg`; midnight draws 2, 3 — those and `.tm/last_plan.json`.  In every moved log the difference is two lines, both
+`plan` events.  Then `every_frozen_week_is_the_world_its_steps_build` green, `fork_rebless_history` 10 of 10, and
+the oracle arms under `TM_ORACLE`: `the_frozen_week_grids_are_the_forks_oracle_answer_today` **46 of 46**,
+`the_binary_draws_every_fresh_week_as_the_forks_oracle_draws_it` green (`grid-oracle.log`).
+
+Cost, driven on both binaries (`scratchpad/w46-h/time_resume.py`, §4.3's tree with 0, 365 and 1,095 days of logged
+wakes, three fresh trees each, load 4.3): `tm resume` **41-45 ms** on the binary of `16aaafc`, **45-51 ms** on this
+track's — the hold's mirror and replay with D104's check, about 6 ms.
+
+### 3. Gap 4751 — the planner refusals as a class
+
+Not in this commit: the next commit on this branch (§5's status notes say where it stands).
+
+### 4. Acceptance, capped (`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`; 16 GB for the drives and the latency rows)
+
+**This machine was shared and loaded through the step** — three tracks of this run and other projects (Lean and Verus
+jobs), the one-minute load between 3 and 114 — and `cli_latency`'s rows are a load threshold, not a property of a
+tree (README gap 1333's finding, §12 of its block).  So every latency figure here carries its `uptime`, and every
+latency failure is set beside the BASELINE binary's under the same load (a clone at `16aaafc`,
+`scratchpad/w46-h/base`), interleaved.
+
+* **`cargo test --workspace --no-fail-fast`, THREE runs** on this commit's code (the worktree; porcelain, diff and the
+  `.proptest-regressions` files hashed equal at every start and end, `scratchpad/w46-h/ws-r*.log`):
+  run 1 (00:05-00:19, load 4.5→22.6; before the week grid's re-draw, §2) — 153 result lines, 2,951 passed, **6
+  failed** (`fork_week_grid`'s frozen worlds, §2, and five `cli_latency` rows: each a first verb's genesis still
+  running after 5 s), 42 ignored; run 2 (00:30-00:42, load 13→11) — 153 result lines, 2,953 passed, **4 failed** (four
+  `cli_latency` rows, the same first-verb bound), 42 ignored; run 3 (00:42-00:54, load 11→13) — **153 result lines,
+  2,957 passed, 0 failed, 42 ignored**, 0 compiler warnings.  No `.proptest-regressions` file moved.  Against the W-45
+  repair's 2,872: +85 — this track's new tests (`cli_tz_cache_digest` +5, `cli_resume_replan` +1) and `kernel_log`'s
+  new unit test, which every test binary that includes `support/replay.rs` runs (+79).
+* **The latency control** (`scratchpad/w46-h/lat-ab-*.log`): `cli_latency` as the workspace runs it (its tests in
+  parallel), baseline and this track interleaved, three rounds at load 11→114 — the baseline FAILED in all three
+  rounds (1, 1 and 5 rows), this track in two (2 and 3), every failure a verb still running past its bound; and one
+  test at a time, three rounds at load 25→12 — both failed round 1 (load 25-39) and both passed rounds 2 and 3.  At
+  comparable load (rounds 2 and 3, one at a time), baseline against this track: the later verb on the months tree
+  70.9/71.0 against 81.0/75.9 ms; on T11's three-year tree 177.2/182.1 against 182.2/172.0 ms; the ten stalled days'
+  worst 713.8/754.0 against 733.4/765.8 ms; T18's `tm check` on the example tree 23.3/20.1 against 23.3/24.5 ms;
+  T19's read of a tick's inputs 0.30/0.28 against 4.83/3.62 ms — that row is ONE `wire_for` and so the check itself,
+  paid once a process.  No band moved; none was touched.
+* **The named suites, run 3** (passed / ignored; each count includes the `kernel_log` unit tests a binary that
+  includes `support/replay.rs` runs): T5 `kernel_replay_parity` 50/4, the door `kernel_log_door` 44,
+  `cli_switch_acceptance` 16, `cli_latency` 7/1, `kernel_call_counts` 3, `one_padder` 9, `one_renderer` 35,
+  `kernel_row_cells` 36, `kernel_item_grammar` 6, `kernel_planner_wire` 27, `planner_classes` 75/8,
+  `planner_invariants` 49/2, `cli_conformance` 7, `cli_json_matrix` 8, `cli_tz_cache_digest` **8**,
+  `cli_resume_replan` **17**, `kernel_tz_table` 5/2, `fork_week_grid` 22/3 and its oracle arms (§2),
+  `fork_rebless_history` 10.  FFI: check 5.
+* **`check.sh`** on this commit's tree, in a clone (`scratchpad/w46-h/chk`, its diff hashed equal to the worktree's,
+  `check2.log`, 00:59-01:00, load 74→48): **seventeen lines, all ok, exit 0, 38 s** — the build; totality; the axiom
+  audit **6,349**; `Negative.lean` rejected; FFI **95**; corpus **29/37 files and 4/5 plans**; stage goals **1**;
+  prose citations **60,752 (58,301 resolved, 2,451 allowed — 206 vocabulary, 524 counted), 0 allow entries unused**;
+  check 9 **736** rostered, 0 owed; parity **P1-P101, 1 declared hole (P100), next free P102**; check 11 0
+  UNANSWERED; check 12 **1,518 reachable, 1,099 exempt**; check 13 17/17, 33 of 37, sent 169, written 220; check 14
+  **95 modules**.  No Lean changed in this commit.  This paragraph's own words: checks 8 and 10 re-run on it.
+
+### 5. Gaps 4790-4809
+
+**Gap 4790 — CLOSED here: the replay snapshot was bound to the zone table's key alone.**  1. *What.*
+`Snapshot::valid_for` compared the snapshot's `tzKey` with the served table's `key`, so a snapshot sealed under one
+table was resumed under another with the same key.  2. *Why it mattered.*  Before D104 a hand-edited `tz.json` with
+its digest recomputed was served and days were sealed under it; after D104 rebuilt the table, those days stayed
+sealed under the edit (driven: 0 minutes where the cache-less copy answers 20, §1.3).  3. *Cost, until here.*  A
+history read through a table no binary would serve, on a tree a pre-D104 binary ran over such a table.  4.
+*Cleared* by `kernel_log::zone_id`: the snapshot is bound to the key and the digest of the table served; its test
+fails with the key-only binding.
+
+**Gap 4621 — CLOSED here (the first R3 BLOCKER), by the owner's D104** (§1): a planned day can no longer be planned in
+a table the host does not decode in, because a served table is the binary's own.  **Gap 4711 — CLOSED with it**:
+`tm check` reads the zone through the same `wire_for`, so on that tree every verb meets the rebuilt table.  The
+archived switch's run of the restated test is §2.5 / §6.
+
+**Gap 4661 — CLOSED here, by the owner's D106** (§2).
+
+### 6. Status notes (kept current while the step runs)
+
+* 23:27 — worktree `w46-h` at `16aaafc`; the build cache copied from the main checkout (`lake build` a no-op).
+* 23:30-23:45 — D104 built; the probe's and the check's cost; the shortest span of every zone; the plants, and their
+  bite with the check removed in a clone.
+* 23:46-23:50 — the latency rows on both binaries, twice.
+* 23:55-00:05 — D106 built; both binaries driven; gap 4790 found driving the class and closed.
+* 00:05-00:54 — three workspace runs (§4); the week grid's re-draw between runs 1 and 2 (§2); the latency control.
+* 00:55 — gap 4751's laws proved in a scratch module (§3, the next commit on this branch); this commit's `check.sh`.
+
+### 7. For the Land step
+
+* **Files outside this track's list, touched because D104 or D106 forced it** — each edit small and named, each a
+  member of the class the decision moves: `tm/tests/kernel_tz_table.rs` (one test, `the_cache_keeps_the_wire_value_under_its_key`,
+  §1.4: the sentence D104 withdraws); `tm/tests/kernel_call_counts.rs` (`tm resume`'s `log` and `emit` rows, §2 — track
+  K's D105 moves this file's `break` rows: a textual merge, different arms); `tm/tests/fixtures/fork-4748911-week-grid.jsonl`
+  (eleven lines' `world` and `d64b`, §2 — track C's file; track K's D105 moves every world whose steps take a break, so
+  the Land re-draws this file ONCE on the merged binary, as W-41's land did, naming both reasons, and holds every line
+  this track or K re-drew to its branch's version by value).
+* **`kernel/parity.txt`**: `hole P100` is this branch's stand-in for track K's number — delete it when K's row lands;
+  `P101` is this track's; `P102` was not taken (§1.6), so the switch's numbers renumber down into it.
+* **The archived switch** (`refs/archive/w45/r3-switch`): cherry-picked onto this track in a clone, §8 (the next
+  commit's block records it).

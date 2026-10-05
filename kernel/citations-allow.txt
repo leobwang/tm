@@ -1384,3 +1384,12 @@ with_minute
 1 tui::tests::r3_a_refused_tick_keeps_the_last_day_and_a_fault_is_held_for_the_driver
 1 tui::tests::r3_the_tui_refuses_to_open_on_a_day_the_kernel_refuses
 1 tui::tests::the_overtime_box_names_what_the_kernels_what_if_drops
+
+# W-46 TRACK H (README gaps 4621 and 4661; the owner's D104 and D106).  Two tests are RENAMED with the statement each
+# makes: `cli_tz_cache_digest`'s assertion is restated under D104 (a re-digested table that disagrees with the binary's
+# zone database is rebuilt, never served) and `cli_resume_replan`'s pin is flipped under D106 (`tm resume` plans after
+# its own line).  The old names are cited, as history, by the append-only README blocks of the W-44 repair, W-45 track
+# Q, the W-45 land, switch and repair; each is counted at its measured number, and W-46's own prose names them bare.
+6 only_the_digest_stands_between_a_changed_offset_and_the_days_minutes
+1 cli_tz_cache_digest::only_the_digest_stands_between_a_changed_offset_and_the_days_minutes
+2 the_plan_tm_resume_writes_leaves_the_interruption_it_resumes_undrawn

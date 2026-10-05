@@ -113,8 +113,12 @@ fn expected_log_calls(verb: &str) -> u32 {
         // `log` replay, as every capacity call does (gap 275).
         "check" => 3,
         // `interrupt` and `resume` since the W-45 repair (README gap 4745): `resume` replans.
+        // `resume` 7 since the owner's D106 (W-46 track H, README gap 4661, parity P101): it plans
+        // with its own `resume` line held in memory (D96's hold), and reading the context as the
+        // hold leaves it (`Ctx::settle`, `kernel_log::replay_unsealed`) asks whether the checkpoint
+        // resumes and then replays the held tail — two `log` calls more than the 5 it made.
         "interrupt" => 4,
-        "resume" => 5,
+        "resume" => 7,
         other => panic!("`tm {other}` is not in the measured table"),
     }
 }
@@ -224,8 +228,10 @@ fn expected_emit_calls(verb: &str) -> u32 {
         "log" => 0,
         "check" => 0,
         // `interrupt` and `resume` since the W-45 repair (README gap 4745): `resume` replans.
+        // `resume` 3 since D106 (W-46 track H, README gap 4661): the `resume` line it holds while it
+        // plans is the kernel's rendering too (D16), and the line it then writes is a second one.
         "interrupt" => 1,
-        "resume" => 2,
+        "resume" => 3,
         other => panic!("`tm {other}` is not in the measured table"),
     }
 }

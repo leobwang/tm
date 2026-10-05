@@ -121,6 +121,19 @@ pub fn kernel_id() -> &'static str {
 /// binary's one body, `tm_core::fnv` (the W-44 repair, README gap 4612).
 pub use tm_core::fnv::fnv1a64;
 
+/// **The zone a snapshot is bound to: the table's key AND a digest of the table it was replayed through** (the
+/// owner's D104; stage 6 W-46 track H, README gap 4790). The key alone (W3) let a checkpoint sealed under one table
+/// be resumed under another that carries the same key: a binary before D104 served a hand-edited `tz.json` whose
+/// digest was recomputed, and sealed days under it; once D104 rebuilt the table, those days stayed sealed under the
+/// edit — driven on such a tree, `tm review day --date 2026-07-12` answered 0 minutes where its cache-less copy
+/// answered 20. Bound to the digest of the table actually served (`tz_table::wire_for`, which since D104 serves only
+/// the binary's own), a snapshot replayed through any other table is "another zone" (`Snapshot::valid_for`), and the
+/// replay rebuilds (§9.8), as for a zone whose key changed. A snapshot written before this is "another zone" once.
+fn zone_id(tz: &Value) -> String {
+    let key = tz.get("key").and_then(Value::as_str).unwrap_or_default();
+    format!("{key}#{:016x}", fnv1a64(tz.to_string().as_bytes()))
+}
+
 // ---------------------------------------------------------------------------
 // The byte split.
 
@@ -1051,7 +1064,7 @@ impl ReplayCache {
         want: &Want,
     ) -> Result<Replayed, GenesisError> {
         let now = date_of(now_day);
-        let tz_key = tz.get("key").and_then(Value::as_str).unwrap_or_default().to_string();
+        let tz_key = zone_id(tz);
         let s = split(bytes);
         // A checkpoint that does not match its own digest (D98) is not resumed from: the cache is rebuilt from the
         // log below, and the rebuild says so once.
@@ -1148,7 +1161,7 @@ impl ReplayCache {
         why: Option<String>,
         unpersisted: bool,
     ) -> Result<Replayed, GenesisError> {
-        let tz_key = tz.get("key").and_then(Value::as_str).unwrap_or_default().to_string();
+        let tz_key = zone_id(tz);
         let g = genesis(now, tz, s, Policy { keep_days: KEEP_DAYS, max_line }, want)?;
         let rs = Resealed {
             ckpt: g.top.ckpt.clone().unwrap_or_default(),
@@ -1431,6 +1444,47 @@ mod tests {
         (0..days)
             .map(|i| format!("{{\"t\":\"{}T06:05:00-05:00\",\"ev\":\"wake\",\"slept_min\":480}}\n", first + chrono::Duration::days(i)))
             .collect()
+    }
+
+    /// **A snapshot sealed under one table is never resumed under another that carries its key** (the owner's D104,
+    /// README gap 4790). Seventy days of wakes and, on Sunday 2026-07-12, a wake at 23:30 and a block 23:35-23:55
+    /// CDT, replayed through a table whose 2026 spring change was moved to `-03:00:00` (its key kept: the table a
+    /// binary before D104 served from a hand-edited, re-digested `tz.json`) — which puts the evening on Monday and
+    /// seals it there — and then through the binary's own table, as D104 serves it: the answer is a cache-less
+    /// replay's, every fact of it. With the snapshot bound to the key alone, the second replay resumed the
+    /// checkpoint sealed under the edit and kept the evening on Monday.
+    #[test]
+    fn a_snapshot_sealed_under_another_table_with_its_key_is_rebuilt() {
+        let tz: Tz = "America/Chicago".parse().expect("a zone");
+        let truth = super::super::tz_table::probe(tz);
+        let mut edited = truth.clone();
+        let spring = 1_772_956_800; // 2026-03-08T08:00:00Z
+        edited.transitions.iter_mut().filter(|(t, _)| *t == spring).for_each(|p| p.1 = -3 * 3600);
+        assert_ne!(edited, truth, "the edit moved an offset");
+        assert_eq!(edited.key, truth.key, "and kept the key");
+        let first = chrono::NaiveDate::from_ymd_opt(2026, 7, 1).expect("a date");
+        let mut text = String::new();
+        for i in 0..70 {
+            let d = first + chrono::Duration::days(i);
+            if d == chrono::NaiveDate::from_ymd_opt(2026, 7, 12).expect("a date") {
+                text.push_str(&format!("{{\"t\":\"{d}T23:30:00-05:00\",\"ev\":\"wake\",\"slept_min\":480}}\n"));
+                text.push_str(&format!(
+                    "{{\"t\":\"{d}T23:35:00-05:00\",\"ev\":\"start\",\"id\":\"m1\",\"pred\":3,\"rep\":3,\"hsw\":0.08,\"slept_min\":0,\"loc\":\"lounge\",\"blocks_done\":0,\"since_break_min\":0}}\n"
+                ));
+                text.push_str(&format!("{{\"t\":\"{d}T23:55:00-05:00\",\"ev\":\"stop\",\"id\":\"m1\",\"remaining_min\":340}}\n"));
+            } else {
+                text.push_str(&format!("{{\"t\":\"{d}T06:05:00-05:00\",\"ev\":\"wake\",\"slept_min\":480}}\n"));
+            }
+        }
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 9, 15).expect("a date");
+        let (dir, bare) = (tempfile::tempdir().expect("a scratch directory"), tempfile::tempdir().expect("another"));
+        let stale = replay_scoped(dir.path(), text.as_bytes(), tz, &edited.to_wire(), today, Scope::All, None).expect("the edit's replay");
+        let cache = ReplayCache::new(Some(dir.path().join(CACHE_DIR))).read_snapshot().expect("a snapshot");
+        assert!(cache.meta.cut > 0 && !cache.manifest.is_empty(), "the edit's replay sealed the evening's month");
+        let after = replay_scoped(dir.path(), text.as_bytes(), tz, &truth.to_wire(), today, Scope::All, None).expect("the replay");
+        let fresh = replay_scoped(bare.path(), text.as_bytes(), tz, &truth.to_wire(), today, Scope::All, None).expect("a cache-less replay");
+        assert_ne!(stale.replay, fresh.replay, "the edit moved the replay, so this test bites");
+        assert!(after.replay == fresh.replay, "a snapshot sealed under another table with its key was resumed");
     }
 
     /// **A month file read whose bytes do not match its digest is never served** (the owner's D93, README gap
@@ -2834,7 +2888,7 @@ fn resume_section_from(
 ) -> Result<(String, Option<Snapshot>), GenesisError> {
     let want = Want { facts: true, headers_from: None, render: vec![] };
     let s = split(bytes);
-    let tz_key = tz.get("key").and_then(Value::as_str).unwrap_or_default().to_string();
+    let tz_key = zone_id(tz);
     let dir = root.join(CACHE_DIR);
     let mut all = caches().lock().unwrap_or_else(|p| p.into_inner());
     let cache = all.entry(root.to_path_buf()).or_insert_with(|| ReplayCache::new(Some(dir)));
