@@ -2,10 +2,26 @@
 //! `Tree::from_texts` trees and synthetic capacity vectors: `!k` inheritance,
 //! the floor rule, the pure-rank rule, optional, overdue, the `hot` flag,
 //! mandatory routines, blocked items, sorting and batching (§7.5).
+//!
+//! **Two kinds of test, since R3 leaves fork 4748911's §7 pass with no shipped caller** (stage 6
+//! W-46 track C; README gap 4752, the class).  A test that also asserts what the binary keeps —
+//! the candidates `collect_candidates` gives, `sorted`, `blocked`, `priorities_for_state`,
+//! `done_this_period`, `period_range`, eligibility — reads the fork's grants, cap and floor
+//! readings and sort key BY VALUE (`fork_compute`, `support/forkcap.rs`: this binary's frozen
+//! file, `tm-oracle capacity` under `TM_ORACLE`), as it read tm-core's in-tree copies until W-46.
+//! A test whose every assertion is the fork pass's own behaviour still calls the in-tree copy and
+//! is deleted with it at R3 (README "W-46 track C", the deletion list): `p_is_clamped_to_seven`,
+//! `hysteresis_limits_improvement_to_one_step`, `an_unreachable_floor_is_impossible`,
+//! `batching_groups_small_equal_ci_items`.
 
 #[path = "support/replay.rs"]
 #[allow(dead_code)]
 mod chokepoint;
+
+/// Fork 4748911's answers, by value (W-46 track C).
+#[allow(dead_code)]
+#[path = "support/forkcap.rs"]
+mod forkcap;
 
 use std::collections::BTreeMap;
 
@@ -43,11 +59,27 @@ fn flat(days: usize, level: usize, minutes: u32) -> Vec<DayCapacity> {
     let start = date(MONDAY);
     (0..days)
         .map(|i| {
-            let mut d = DayCapacity::empty(start + Duration::days(i as i64));
-            d.minutes_at_level[level] = minutes;
-            d
+            let mut minutes_at_level = [0; 6];
+            minutes_at_level[level] = minutes;
+            DayCapacity { date: start + Duration::days(i as i64), minutes_at_level }
         })
         .collect()
+}
+
+/// **Fork 4748911's grants** — fork `priority::compute`, by value (`forkcap::rank`).
+fn fork_compute(
+    cands: &[Candidate],
+    caps: &[DayCapacity],
+    yesterday: &BTreeMap<Id, u8>,
+    cfg: &Config,
+    today: NaiveDate,
+) -> Vec<tm_core::priority::Prio> {
+    forkcap::rank(forkcap::store(), cands, caps, yesterday, cfg, today).0
+}
+
+/// **Fork 4748911's cap and floor readings of one candidate** (`forkcap::cand_facts`).
+fn fork_facts(c: &Candidate, cfg: &Config) -> forkcap::ForkCand {
+    forkcap::cand_facts(forkcap::store(), &[c], cfg)[0]
 }
 
 fn empty() -> BTreeMap<Id, u8> {
@@ -132,7 +164,7 @@ fn k_comes_from_the_root() {
     assert_eq!(find(&cands, "w4").k, 3);
 
     // p = k + 2 for all four (finite, undated, no floor), clamped at 7.
-    let prios = priority::compute(
+    let prios = fork_compute(
         &cands,
         &flat(7, 5, 240),
         &empty(),
@@ -254,7 +286,7 @@ fn priorities_for_state_round_trips() {
     )]);
     let replay = no_log();
     let cands = candidates(&t, &replay);
-    let prios = priority::compute(&cands, &flat(7, 5, 240), &empty(), &cfg, date(MONDAY));
+    let prios = fork_compute(&cands, &flat(7, 5, 240), &empty(), &cfg, date(MONDAY));
     let stored = priority::priorities_for_state(&prios);
     assert_eq!(stored.get(&Id::new("a")), Some(&5));
     assert!(
@@ -321,10 +353,10 @@ fn open_floor_uses_the_remainder_of_the_period() {
     let f1 = find(&cands, "f1");
     assert_eq!(f1.floor_done_min, 120);
     assert_eq!(f1.floor.expect("a floor").amount.as_minutes(), 360);
-    assert_eq!(f1.floor_need_min(&cfg), Some(312));
+    assert_eq!(fork_facts(f1, &cfg).floor_need_min, Some(312));
 
     let caps = flat(5, 5, 240);
-    let prios = priority::compute(&cands, &caps, &empty(), &cfg, date(MONDAY));
+    let prios = fork_compute(&cands, &caps, &empty(), &cfg, date(MONDAY));
     let p = &prios[0];
     assert_eq!(p.class, PrioClass::Floor);
     assert_eq!(p.need_min, 312);
@@ -365,7 +397,7 @@ fn an_exhausted_cap_is_an_ineligibility_reason() {
     let cands = candidates(&t, &replay);
     let d1 = find(&cands, "d1");
     assert_eq!(d1.cap_done_min, 120);
-    assert_eq!(d1.cap_left_min(), Some(0));
+    assert_eq!(fork_facts(d1, &Config::default()).cap_left_min, Some(0));
     assert!(!d1.eligible());
     assert!(matches!(
         d1.ineligible_reason(),
@@ -377,7 +409,7 @@ fn an_exhausted_cap_is_an_ineligibility_reason() {
     let replay = chokepoint::replay_of_entries(&entries, TZ);
     let cands = candidates(&t, &replay);
     assert!(find(&cands, "d1").eligible());
-    assert_eq!(find(&cands, "d1").cap_left_min(), Some(60));
+    assert_eq!(fork_facts(find(&cands, "d1"), &Config::default()).cap_left_min, Some(60));
 }
 
 // ---------------------------------------------------------------------------
@@ -416,7 +448,7 @@ fn every_rule_line_of_the_spec() {
         vec!["ov", "ho", "t4", "t5", "x1", "pl", "a3", "Severance S3E4"]
     );
 
-    let prios = priority::compute(&cands, &flat(7, 5, 240), &empty(), &cfg, date(MONDAY));
+    let prios = fork_compute(&cands, &flat(7, 5, 240), &empty(), &cfg, date(MONDAY));
     assert_eq!(class_of(&prios, "ov"), PrioClass::Overdue);
     assert_eq!(p_of(&prios, "ov"), 0);
     assert_eq!(class_of(&prios, "ho"), PrioClass::HotFlag);
@@ -470,7 +502,7 @@ fn a_mandatory_routine_instance_is_p_zero() {
     assert!(lunch.instance.is_some());
     assert!(lunch.window.is_some());
 
-    let prios = priority::compute(&cands, &flat(7, 5, 240), &empty(), &cfg, date(MONDAY));
+    let prios = fork_compute(&cands, &flat(7, 5, 240), &empty(), &cfg, date(MONDAY));
     // Lunch's window closes today at 13:30 → mandatory (§5.2).
     assert_eq!(class_of(&prios, "lunch"), PrioClass::Mandatory);
     assert_eq!(p_of(&prios, "lunch"), 0);
@@ -556,7 +588,7 @@ fn sort_key_is_p_then_root_line_then_own_line() {
     ]);
     let replay = no_log();
     let cands = candidates(&t, &replay);
-    let prios = priority::compute(&cands, &flat(7, 5, 240), &empty(), &cfg, date(MONDAY));
+    let prios = fork_compute(&cands, &flat(7, 5, 240), &empty(), &cfg, date(MONDAY));
     // All three are k(2) + 2 = 4.
     for id in ["a", "b", "c"] {
         assert_eq!(p_of(&prios, id), 4);
@@ -569,9 +601,11 @@ fn sort_key_is_p_then_root_line_then_own_line() {
         vec!["c", "b", "a"]
     );
 
-    let key_b = priority::sort_key(
+    let key_b = forkcap::sort_key(
+        forkcap::store(),
         prios.iter().find(|p| p.id.as_str() == "b").expect("b"),
         find(&cands, "b"),
+        &cfg,
     );
     assert_eq!(key_b, (4, (0, 2), (1, 1)));
 }

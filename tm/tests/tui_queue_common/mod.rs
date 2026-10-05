@@ -12,6 +12,14 @@
 //! synthetic capacity `priority_plan_basic.rs` uses (half a day today, a whole
 //! one after), so the `u` and `fits` columns pin §7's arithmetic and not
 //! `capacity::lookahead`'s.
+//!
+//! **§7's arithmetic is fork 4748911's, by value** (stage 6 W-46 track C; README gap
+//! 4752, the class): the grants the screens render are fork `priority::compute`'s over the
+//! world's candidates and that capacity, read from this test binary's frozen file
+//! (`forkcap::FROZEN`, `../support/forkcap.rs`) and asked of `tm-oracle capacity` under
+//! `TM_ORACLE`.  Until W-46 they were tm-core's in-tree copy of it, which R3 leaves with no
+//! shipped caller and deletes — the screens are the binary's and keep their tests; where
+//! their input comes from is the harness's.
 
 #![allow(dead_code)]
 
@@ -41,10 +49,17 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::{Frame, Terminal};
 
-use tm_core::capacity::{local_dt, DayCapacity, UnitCapacity};
+use tm_core::capacity::{local_dt, DayCapacity, UnitCapacity, CAP_DEN};
 use tm_core::energy::Model;
 use tm_core::log::{Event, LogEntry, Replay};
 use tm_core::priority::{self, Candidate, Prio};
+
+/// Fork 4748911's answers, by value (W-46 track C): this binary's `forkcap::FROZEN` file, one per
+/// binary that includes this harness (`tui_queue_capture`, `tui_queue_keys`, `tui_queue_reorder`,
+/// `tui_queue_screens`), each re-blessed by its own run of the module's bless.
+#[allow(dead_code)]
+#[path = "../support/forkcap.rs"]
+pub mod forkcap;
 use tm_core::store::{MemStore, PlanFiles, Store};
 use tm_core::tree::Tree;
 
@@ -107,14 +122,9 @@ impl World {
 /// Today keeps half a day, every later day a whole one.
 fn caps(days: u32, from: NaiveDate) -> Vec<DayCapacity> {
     (0..days as i64)
-        .map(|i| {
-            let mut d = DayCapacity::empty(from + Duration::days(i));
-            d.minutes_at_level = if i == 0 {
-                [0, 0, 30, 30, 60, 60]
-            } else {
-                [0, 0, 60, 60, 120, 120]
-            };
-            d
+        .map(|i| DayCapacity {
+            date: from + Duration::days(i),
+            minutes_at_level: if i == 0 { [0, 0, 30, 30, 60, 60] } else { [0, 0, 60, 60, 120, 120] },
         })
         .collect()
 }
@@ -166,8 +176,9 @@ pub fn world_with(
         now,
     );
     let caps = caps(priority::lookahead_days(&candidates, today), today);
-    let prios = priority::compute(&candidates, &caps, yesterday, &files.config, today);
-    let caps = caps.iter().map(UnitCapacity::from_minutes).collect();
+    let (prios, _) = forkcap::rank(forkcap::store(), &candidates, &caps, yesterday, &files.config, today);
+    // A whole-minute day in units: each level's minutes × `CAP_DEN`, the definition of a unit.
+    let caps = caps.iter().map(|d| UnitCapacity { date: d.date, units: d.minutes_at_level.map(|m| u128::from(m) * CAP_DEN) }).collect();
     World {
         files,
         tree,

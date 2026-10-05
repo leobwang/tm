@@ -103,7 +103,7 @@ use chrono::{DateTime, Duration, NaiveDate, NaiveTime};
 use chrono_tz::Tz;
 use proptest::prelude::*;
 use serde_json::{json, Value};
-use tm_core::capacity::{self, local_dt, Exact, CAP_DEN};
+use tm_core::capacity::{local_dt, Exact, CAP_DEN};
 use tm_core::priority::PrioClass;
 use tm_core::model::{Id, Loc, Shape};
 use tm_core::dayplan::{DayPlan, SegKind, Segment};
@@ -312,10 +312,9 @@ fn check_day_invariants(p: &dyn Planner, case: &Case, w: &World) -> Result<(), T
     // §9 gives the running block its minutes whatever the budget says
     // (that is the state §9.1's overtime prompt runs in); everything the
     // planner *chose* fits the remaining budget.
-    let remaining = capacity::remaining_budget(
-        w.state.budget.unwrap_or(6),
-        w.replay.blocks_done(date()),
-    );
+    // §8.1's remaining budget, `budget − blocks_done` and never below zero (fork
+    // `capacity::remaining_budget`'s rule; R3 deletes that function, README gap 4752).
+    let remaining = w.state.budget.unwrap_or(6).saturating_sub(w.replay.blocks_done(date()));
     prop_assert!(
         day.planned_block_minutes(w.now) - running_min <= remaining * block_min,
         "{} planned minutes ({running_min} of them running) for {remaining} blocks\n{day:?}",
@@ -2028,7 +2027,7 @@ fn replay_worked(w: &World, st: &RuntimeState) -> Option<u32> {
         .open_block
         .as_ref()
         .filter(|b| b.id == a.id.as_str())
-        .map(|b| b.worked_min_at(w.now.fixed_offset()))
+        .map(|b| chokepoint::open_worked_min_at(b, w.now.fixed_offset()))
 }
 
 /// **The host's worked minutes of the running block** — `day::worked_min`'s reading, the very call

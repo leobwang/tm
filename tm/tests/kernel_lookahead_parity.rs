@@ -2,7 +2,14 @@
 //! (stage 5 D10 step L7; design `kernel/design/stage5/stage5-D9-D10-design.md`
 //! §13.7, §14.8 row L7, §17).
 //!
-//! The fork is the in-tree Rust: `tm_core::capacity::lookahead`, fed the walls
+//! The fork is fork 4748911 itself, OUT OF THE TREE since W-46 track C (README gap
+//! 4752, restated as a class there): its `capacity::lookahead`, its day-0 slot cut and
+//! energy (`cut_slots`, `EnergyCtx`, `energize`, `DayCapacity::from_slots`) and its §7
+//! pass (`priority::compute`, `utilization`, `bin_of`) answer from
+//! `tests/fixtures/fork-4748911-capacity-kernel_lookahead_parity.jsonl`, frozen by value
+//! through `tm-oracle capacity` (`support/forkcap.rs`; asked live under `TM_ORACLE`,
+//! re-blessed by that module's own bless).  Until then they were tm-core's in-tree copies,
+//! which R3 leaves with no shipped caller and deletes.  The fork is fed the walls
 //! `Ctx::walls_on` computes (`tm/src/cli/ctx.rs`; copied below as
 //! [`fork_walls_by_date`], because `Ctx` lives in the binary) and the wake
 //! `Ctx::wake_time` resolves (`Model::wake_or_expected`). The kernel is reached
@@ -57,11 +64,30 @@ use std::collections::BTreeMap;
 use chrono::{Datelike, Duration, NaiveDate, NaiveTime, Timelike, Weekday};
 use chrono_tz::Tz;
 use serde_json::{json, Value};
-use tm_core::capacity::{self, DayCapacity, EnergyCtx, Slot, Wall, WallsByDate};
+use tm_core::capacity::{self, DayCapacity, Slot, Wall, WallsByDate};
 use tm_core::config::{Config, PerWeekday, Step, StepFn};
-use tm_core::energy::{weekday_key, Hhmm, Model, Posterior, WeekdayMap};
+use tm_core::energy::{weekday_key, Hhmm, Model, WeekdayMap};
 use tm_core::model::{Loc, Shape};
 use tm_core::tree::Tree;
+
+/// Fork 4748911's answers, by value (W-46 track C).
+#[allow(dead_code)]
+#[path = "support/forkcap.rs"]
+mod forkcap;
+
+/// Fork 4748911, out of the tree: this binary's frozen file (`forkcap::FROZEN`, one line per
+/// request the generated and corpus windows, the recorded exceptions and the twin priorities
+/// make), or the oracle under `TM_ORACLE`.  Re-blessed by `forkcap`'s own bless,
+/// `the_frozen_fork_capacity_answers_are_reblessed_from_the_oracle`, which every binary that
+/// includes the module carries:
+///
+/// ```text
+/// TM_ORACLE=$(kernel/tm-kernel-ffi/examples/oracle/build-oracle.sh) TM_FORK_BLESS=1 \
+///   cargo test --test kernel_lookahead_parity -- --ignored the_frozen_fork_capacity_answers_are_reblessed_from_the_oracle
+/// ```
+fn fork_cap() -> &'static forkcap::Store {
+    forkcap::store()
+}
 
 /// `Look.capDen` (D17).
 const CAP_DEN: u128 = 1_000_000_000_000_000_000;
@@ -600,7 +626,7 @@ fn fork_walls_by_date(tree: &Tree, tz: Tz, today: NaiveDate, days: u32, clip: bo
 /// Day 0's slots: one slot per level holding the host's minutes.
 /// [`fork_today_slots`] over the case's own documents and config — the shape every caller but
 /// `run_case` needs (which already has the tree in hand).
-fn today_slots(c: &Case, cfg: &Config) -> Vec<Slot> {
+fn today_slots(c: &Case, cfg: &Config) -> (Vec<Slot>, [u32; 6]) {
     let files: Vec<(&str, &str)> = c.docs.iter().map(|(p, s)| (p.as_str(), s.as_str())).collect();
     let tree = Tree::from_texts(&files, cfg);
     let walls = fork_walls_on(&tree, c.tz, c.today);
@@ -638,28 +664,29 @@ fn fork_window(c: &Case, cfg: &Config, walls: &[Wall]) -> (chrono::DateTime<Tz>,
 }
 
 /// **The fork's `Ctx::today_slots(allow_home)`** — §8.2 step 3's slots for today, with their
-/// predicted energy. The comparand step L9's parity is against, *exactly* and not through P1
-/// (design §13.5). Deleted from the binary with [`fork_window`], and copied here for the same
-/// reason.
-fn fork_today_slots(c: &Case, cfg: &Config, model: &Model, walls: &[Wall]) -> Vec<Slot> {
+/// predicted energy, and day 0's minutes at each level (fork `DayCapacity::from_slots` of them).
+/// The comparand step L9's parity is against, *exactly* and not through P1 (design §13.5).
+/// Deleted from the binary with [`fork_window`], and copied here for the same reason: the window,
+/// the instant the cut starts from, the reports' instants, the wake and the location are resolved
+/// here as `Ctx::today_slots` resolved them, and the cut, its energy and the day's sum are fork
+/// 4748911's own — `cut_slots`, `EnergyCtx::new(..).with_slept(..).with_blocks_done(0)
+/// .with_allow_home(..)` and `energize`, asked out of the tree since W-46 track C
+/// ([`forkcap::today`]).
+fn fork_today_slots(c: &Case, cfg: &Config, model: &Model, walls: &[Wall]) -> (Vec<Slot>, [u32; 6]) {
     let (start, end) = fork_window(c, cfg, walls);
     let from = start.max(fork_now(c));
     if end <= from {
-        return Vec::new();
+        // `Ctx::today_slots` returned no slot here, before any cut: day 0 is the empty sum.
+        return (Vec::new(), [0; 6]);
     }
-    let cut = capacity::cut_slots(from, end, walls, cfg);
     let reports: Vec<(chrono::DateTime<Tz>, u8, u8)> = c
         .reports
         .iter()
         .map(|(t, pred, rep)| (capacity::local_dt(c.tz, c.today, *t), *pred, *rep))
         .collect();
-    let posterior = Posterior::from_reports(&reports, cfg);
     let wake = capacity::local_dt(c.tz, c.today, model.wake_or_expected(wake_time(c), c.today.weekday(), cfg));
-    let ectx = EnergyCtx::new(model, cfg, &posterior, wake, Loc::parse(&c.loc).unwrap_or(Loc::Lounge))
-        .with_slept(c.slept)
-        .with_blocks_done(0)
-        .with_allow_home(c.allow_home);
-    capacity::energize(&cut.slots, &ectx)
+    let loc = Loc::parse(&c.loc).unwrap_or(Loc::Lounge);
+    forkcap::today(fork_cap(), cfg, model, (from, end), walls, &reports, wake, loc.as_str(), c.slept, 0, c.allow_home, c.today)
 }
 
 fn wake_time(c: &Case) -> Option<NaiveTime> {
@@ -907,7 +934,7 @@ fn run_case(c: &Case, tz_wire: &Value, t: &mut Tally) {
     // Day 0's slots, the fork's own (step L9): computed from the case's `state`, `at`,
     // `--allow-home`, sleep reading and energy reports, exactly as `Ctx::today_slots` did.
     let real_model = fork_model(c, None);
-    let slots = fork_today_slots(c, &cfg, &real_model, &today_walls);
+    let (slots, day0_own) = fork_today_slots(c, &cfg, &real_model, &today_walls);
 
     // P27: the doubles' window minutes and budget against the exact pairs'.
     let (xw, xb) = exact_window_and_budget(c);
@@ -934,16 +961,16 @@ fn run_case(c: &Case, tz_wire: &Value, t: &mut Tally) {
 
     // Where P27 bites, the kernel's exact window is the fork's corrected one — and that reaches
     // day 0 too, since L9 derives it from the same `[day]` pair.
-    let slots_exact = if p27 {
+    let (slots_exact, day0_exact) = if p27 {
         fork_today_slots(c, &cfg_exact, &real_model, &today_walls)
     } else {
-        slots.clone()
+        (slots.clone(), day0_own)
     };
     let wake_of = |m: &Model| m.wake_or_expected(wake_time(c), c.today.weekday(), &cfg);
     let fork = |cfg: &Config, force: Option<f64>, walls: &WallsByDate| {
         let m = fork_model(c, force);
         let s = if std::ptr::eq(cfg, &cfg_exact) { &slots_exact } else { &slots };
-        capacity::lookahead(walls, cfg, &m, s, c.today, 7, wake_of(&m))
+        forkcap::lookahead(fork_cap(), walls, cfg, &m, s, c.today, 7, wake_of(&m))
     };
     // The same runs with the logged wake cut to its minute: where they differ, the
     // wake's seconds are observable (site R11), and the kernel must still agree.
@@ -953,7 +980,7 @@ fn run_case(c: &Case, tz_wire: &Value, t: &mut Tally) {
             .with_second(0)
             .and_then(|w| w.with_nanosecond(0))
             .expect("a clock");
-        capacity::lookahead(&walls, &cfg_exact, &m, &slots, c.today, 7, wake)
+        forkcap::lookahead(fork_cap(), &walls, &cfg_exact, &m, &slots, c.today, 7, wake)
     };
     let (m_lounge, m_home) = (fork_minute_wake(1.0), fork_minute_wake(0.0));
     let (f_lounge, f_home, f_real) = (
@@ -984,8 +1011,9 @@ fn run_case(c: &Case, tz_wire: &Value, t: &mut Tally) {
     }
 
     // **Step L9's parity, against `Ctx::today_slots` exactly**: the kernel's day 0 is the fork's
-    // own slots summed by `DayCapacity::from_slots`, in units.
-    let day0: [u128; 6] = units(&DayCapacity::from_slots(c.today, &slots_exact));
+    // own slots summed by `DayCapacity::from_slots`, in units (fork 4748911's own sum, out of the
+    // tree since W-46 track C).
+    let day0: [u128; 6] = day0_exact.map(|m| m as u128 * CAP_DEN);
     for i in 0..7 {
         let d = c.today + Duration::days(i as i64);
         let wd = d.weekday().num_days_from_monday() as usize;
@@ -1012,7 +1040,7 @@ fn run_case(c: &Case, tz_wire: &Value, t: &mut Tally) {
                 if k[0].1 != day0 {
                     eprintln!(
                         "the fork's day-0 slots: {:?}",
-                        slots_exact.iter().map(|s| (s.start.to_string(), s.energy, s.minutes())).collect::<Vec<_>>()
+                        slots_exact.iter().map(|s| (s.start.to_string(), s.energy, s.end.to_string())).collect::<Vec<_>>()
                     );
                 }
             }
@@ -1097,8 +1125,8 @@ fn run_case(c: &Case, tz_wire: &Value, t: &mut Tally) {
             let arrival = capacity::local_dt(c.tz, d, m.expected_arrival_on(d.weekday(), &cfg_exact));
             let ws: &[Wall] = walls.get(&d).map_or(&[], |v| v.as_slice());
             let (end, _) = capacity::window_and_budget(arrival, ws, &cfg_exact);
-            let cut = capacity::cut_slots(arrival, end, ws, &cfg_exact);
-            t.whole_cut_visible += usize::from(cut.slot_minutes() > 0 && prof.total() == cut.slot_minutes());
+            let cut = forkcap::cut(fork_cap(), &cfg_exact, arrival, end, ws);
+            t.whole_cut_visible += usize::from(cut.slot_minutes > 0 && prof.total() == cut.slot_minutes);
         }
 
         // Gap 85: what clipping each date's walls to that date would change.
@@ -1179,6 +1207,7 @@ fn the_lookahead_is_the_forks_at_each_location_and_mixes_exactly() {
         }
     }
     report(&t, "T13, corpus");
+    println!("{}", fork_cap().census());
     assert!(t.future_days >= 168);
     assert!(t.disagreements.is_empty(), "{} disagreements", t.disagreements.len());
 }
@@ -1346,7 +1375,7 @@ fn the_recorded_exceptions_are_refused_where_the_fork_answers() {
         let cfg = fork_config(&c, c.window_hours.parse().unwrap(), c.budget_ratio.parse().unwrap());
         let m = fork_model(&c, None);
         let wake = m.wake_or_expected(wake_time(&c), c.today.weekday(), &cfg);
-        let caps = capacity::lookahead(&WallsByDate::new(), &cfg, &m, &today_slots(&c, &cfg), c.today, 7, wake);
+        let caps = forkcap::lookahead(fork_cap(), &WallsByDate::new(), &cfg, &m, &today_slots(&c, &cfg).0, c.today, 7, wake);
         assert_eq!(caps.len(), 7, "{what}: the fork answers");
     }
     // P30: 3,661 days.
@@ -1360,11 +1389,12 @@ fn the_recorded_exceptions_are_refused_where_the_fork_answers() {
     );
     let m = fork_model(&base, None);
     let wake = m.wake_or_expected(wake_time(&base), base.today.weekday(), &cfg);
-    let caps = capacity::lookahead(
+    let caps = forkcap::lookahead(
+        fork_cap(),
         &WallsByDate::new(),
         &cfg,
         &m,
-        &today_slots(&base, &cfg),
+        &today_slots(&base, &cfg).0,
         base.today,
         3661,
         wake,
@@ -1589,10 +1619,11 @@ fn rule_json(g: &GenCand, fp: &Prio, hysteresis: bool, hot: bool, bin: Option<u8
            "bin": if entered && !hot { bin } else { None }})
 }
 
-/// The fork's reading of the pass: `u = need_min / avail_min` as a double.
-fn fork_pass(fp: &Prio, cfg: &Config) -> (bool, Option<u8>) {
-    let u = priority::utilization(fp.need_min, fp.avail_min);
-    let bin = priority::bin_of(u, &cfg.priority.bins);
+/// The fork's reading of the pass: `u = need_min / avail_min` as a double, binned on the
+/// configured ladder — fork `priority::utilization` and `priority::bin_of` over the fork's own
+/// grant, which the oracle's `rank` op returns beside it (`forkcap::pass_of`; W-46 track C).
+fn fork_pass(pass: (f64, Option<u8>)) -> (bool, Option<u8>) {
+    let (_, bin) = pass;
     (bin.is_none(), bin.or(Some(0)))
 }
 
@@ -1648,12 +1679,12 @@ fn run_priorities(c: &Case, tz_wire: &Value, cs: &[GenCand], hysteresis: bool, t
     let walls = fork_walls_by_date(&tree, c.tz, c.today, 7, false);
     let m = fork_model(c, None);
     let wake = m.wake_or_expected(wake_time(c), c.today.weekday(), &cfg);
-    let caps = capacity::lookahead(&walls, &cfg, &m, &today_slots(c, &cfg), c.today, 7, wake);
+    let caps = forkcap::lookahead(fork_cap(), &walls, &cfg, &m, &today_slots(c, &cfg).0, c.today, 7, wake);
 
     let yesterday: BTreeMap<Id, u8> =
         cs.iter().filter_map(|g| g.yesterday.map(|y| (Id::new(g.id.clone()), y))).collect();
-    let fork = priority::compute(&fork_cands(cs, &cfg, c.tz, c.today, false), &caps, &yesterday, &cfg, c.today);
-    let fork_own = priority::compute(&fork_cands(cs, &cfg, c.tz, c.today, true), &caps, &yesterday, &cfg, c.today);
+    let (fork, fork_passes) = forkcap::rank(fork_cap(), &fork_cands(cs, &cfg, c.tz, c.today, false), &caps, &yesterday, &cfg, c.today);
+    let (fork_own, _) = forkcap::rank(fork_cap(), &fork_cands(cs, &cfg, c.tz, c.today, true), &caps, &yesterday, &cfg, c.today);
 
     let twin: [(u128, u128); 7] =
         std::array::from_fn(|i| if 2 * weight_units(c, i) >= CAP_DEN { (1, 1) } else { (0, 1) });
@@ -1670,7 +1701,7 @@ fn run_priorities(c: &Case, tz_wire: &Value, cs: &[GenCand], hysteresis: bool, t
 
     for (i, g) in cs.iter().enumerate() {
         let fp = &fork[i];
-        let (fh, fb) = fork_pass(fp, &cfg);
+        let (fh, fb) = fork_pass(fork_passes[i]);
         let (xh, xb) = exact_pass(g, fp);
         let as_fork = rule_json(g, fp, hysteresis, fh, fb);
         let as_kernel = rule_json(g, fp, hysteresis, xh, xb);
@@ -1795,7 +1826,7 @@ fn the_twin_priorities_are_the_forks_modulo_p2_p3_p7() {
     for (z, zone) in zones().iter().enumerate() {
         let mut case = case_with_a_day0_of(&mut r, *zone, 12);
         assert_eq!(
-            DayCapacity::from_slots(case.today, &today_slots(&case, &fork_config(&case, 8.0, 0.75))).minutes_at_level,
+            today_slots(&case, &fork_config(&case, 8.0, 0.75)).1,
             [12, 0, 0, 0, 0, 0],
             "the made day 0 in {}",
             zone.0.name()
@@ -1813,6 +1844,7 @@ fn the_twin_priorities_are_the_forks_modulo_p2_p3_p7() {
         assert_eq!((t.p7, t.hot), (before + 1, hot_before + 1), "the tie is HOT in {}", zone.0.name());
     }
     println!("after the targeted P7 windows: P7 on {}, disagreements: {}", t.p7, t.disagreements.len());
+    println!("{}", fork_cap().census());
     assert!(t.candidates >= 256 && t.entered > 0 && t.impossible > 0 && t.dated > 0 && t.held > 0 && t.walls > 0);
     assert!(t.floor_answers > 0 && t.floor_class > 0, "the floor pass is reached");
     assert!(t.p2 > 0 && t.p3_reach > 0, "the recorded exceptions are reached");

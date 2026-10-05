@@ -156,7 +156,7 @@ use proptest::strategy::ValueTree;
 use proptest::test_runner::{RngAlgorithm, TestRng, TestRunner};
 use serde_json::{json, Value};
 
-use tm_core::capacity::{self, local_dt};
+use tm_core::capacity::local_dt;
 use tm_core::config::Config;
 use tm_core::dayplan::{DayPlan, SegKind};
 use tm_core::energy::{Model, DEFAULT_TAG};
@@ -331,7 +331,7 @@ impl Built {
                 .open_block
                 .as_ref()
                 .filter(|b| b.id == a.id.as_str())
-                .map(|b| b.worked_min_at(self.world.now.fixed_offset()))
+                .map(|b| chokepoint::open_worked_min_at(b, self.world.now.fixed_offset()))
                 .unwrap_or_else(|| (self.world.now - started).num_minutes().max(0) as u32),
         )
     }
@@ -360,7 +360,8 @@ impl Built {
             let blocked = (start - Duration::minutes(i64::from(buffer))).max(lo);
             let end = end.min(hi);
             if end > blocked {
-                out.push((c.id.clone(), blocked, end, item.is_travel_day()));
+                // fork `Item::is_travel_day`'s reading of the flag (R3 deletes that method, README gap 4752)
+                out.push((c.id.clone(), blocked, end, item.has_flag("travel-day")));
             }
         }
         out
@@ -596,7 +597,9 @@ pub fn class_of(b: &Built) -> Class {
     let done = b.replay.blocks_done(b.date());
     let shape = if walls.iter().any(|w| w.3) {
         DayShape::Travel
-    } else if done > 0 && st.budget.is_some_and(|x| capacity::remaining_budget(x, done) == 0) {
+    } else if done > 0 && st.budget.is_some_and(|x| x.saturating_sub(done) == 0) {
+        // §8.1's remaining budget, `budget − blocks_done` never below zero, is spent (fork
+        // `capacity::remaining_budget`'s rule; R3 deletes that function, README gap 4752).
         DayShape::Spent
     } else if st.window.is_none_or(|(from, to)| to <= from) {
         // A late arrival: the evening wall pushes `tm arrive`'s window past midnight

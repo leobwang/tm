@@ -37,10 +37,10 @@ mod tz_table;
 #[path = "../../src/cli/kernel_log.rs"]
 mod kernel_log;
 
-use chrono::{DateTime, NaiveDate};
+use chrono::{DateTime, FixedOffset, NaiveDate};
 use chrono_tz::Tz;
 use serde_json::Value;
-use tm_core::log::{LogEntry, Replay};
+use tm_core::log::{LogEntry, OpenBlock, Replay};
 
 /// A day later than every line of `text`, so no line is future-dated and every
 /// day of the log is a day that has ended — which is what makes the `All` scope
@@ -78,6 +78,16 @@ fn kernel_read(text: &str, tz: Tz) -> kernel_log::Read {
         None,
     )
     .unwrap_or_else(|e| panic!("the kernel could not replay this log: {e:?}"))
+}
+
+/// **The open block's worked minutes as of `now`**, read off the reader's facts: its closed
+/// sub-segments (`worked_min`) and the stretch running since `since`, which accrues nothing while
+/// the block is paused or interrupted (`since` is then `None`).  It is the reading tm-core's
+/// `OpenBlock::worked_min_at` made — the kernel replay's `Replay.openOf` is what fills the two
+/// fields — and lives here since stage 6 W-46 track C because R3 leaves that method with no
+/// caller outside the tests and deletes it (README gap 4752, the class).
+pub fn open_worked_min_at(b: &OpenBlock, now: DateTime<FixedOffset>) -> u32 {
+    b.worked_min + b.since.map_or(0, |s| now.signed_duration_since(s).num_minutes().max(0) as u32)
 }
 
 /// The replay of the log `text` (JSONL, one entry per line) in `tz`, over

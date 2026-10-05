@@ -1,0 +1,47 @@
+# **The tests R3 deletes with the class** (stage 6 W-46 track C): each a test of a deleted
+# function's OWN behaviour that compares nothing with the kernel and asserts nothing the binary
+# keeps; and the helpers only they used.  Every other test that called the class reads fork
+# 4748911's answer by value since W-46 (tm/tests/support/forkcap.rs) and stays.
+#
+# tm-core/src's own (the switch's: tm-core/src is not track C's to edit)
+tm-core/src/capacity.rs test:free_intervals_merge_overlapping_walls
+tm-core/src/capacity.rs test:reserve_takes_the_best_levels_earliest
+# §7's own rules, hysteresis and batching
+tm/tests/priority_rules.rs test:p_is_clamped_to_seven
+tm/tests/priority_rules.rs test:hysteresis_limits_improvement_to_one_step
+tm/tests/priority_rules.rs test:an_unreachable_floor_is_impossible
+tm/tests/priority_rules.rs test:batching_groups_small_equal_ci_items
+tm/tests/priority_rules.rs test:due
+tm/tests/priority_regressions.rs test:an_instance_deadline_without_a_window_enters_the_edf_pass
+tm/tests/priority_regressions.rs test:an_optional_is_never_held_above_p_five_by_hysteresis
+# §7.3's EDF pass and §7.1's bins
+tm-core/tests/priority_edf.rs test:jointly_infeasible_deadlines_flag_the_later_one
+tm-core/tests/priority_edf.rs test:edf_reserves_by_energy_level
+tm-core/tests/priority_edf.rs test:bins_at_the_edges
+tm-core/tests/priority_edf.rs test:bin_of_matches_the_spec_table
+tm-core/tests/priority_edf.rs test:zero_capacity_is_infinite_utilization
+# §8.4's lookahead
+tm-core/tests/capacity_lookahead.rs test:lookahead_week_grid_snapshot
+tm-core/tests/capacity_lookahead.rs test:lookahead_uses_todays_slots_and_the_budget_for_later_days
+tm-core/tests/capacity_lookahead.rs test:lookahead_follows_the_learned_arrival_and_location
+tm-core/tests/capacity_lookahead.rs test:lookahead_uses_the_learned_energy_curve
+tm-core/tests/capacity_lookahead.rs test:available_until_and_reserve
+tm-core/tests/capacity_lookahead.rs test:empty_and_degenerate_inputs
+tm-core/tests/capacity_lookahead.rs test:today_is_taken_as_given_and_later_days_are_simulated
+tm-core/tests/capacity_lookahead.rs test:today_slots
+tm-core/tests/capacity_lookahead.rs test:week
+# §8.2 step 3's slot cut and energy
+tm-core/tests/capacity_slots.rs test:cut_slots_on_the_spec_day
+tm-core/tests/capacity_slots.rs test:a_routine_passed_as_a_wall_does_not_pay_off_the_break
+tm-core/tests/capacity_slots.rs test:cut_slots_around_a_placed_routine
+tm-core/tests/capacity_slots.rs test:cut_slots_from_a_pending_break
+tm-core/tests/capacity_slots.rs test:a_cut_never_ends_on_a_break
+tm-core/tests/capacity_slots.rs test:a_tail_shorter_than_the_floor_is_dropped
+tm-core/tests/capacity_slots.rs test:overlapping_walls_are_merged
+tm-core/tests/capacity_slots.rs test:energize_follows_the_prior_curve
+tm-core/tests/capacity_slots.rs test:energize_applies_the_home_cap_and_the_posterior
+tm-core/tests/capacity_slots.rs test:energize_counts_blocks_and_break_gaps
+tm-core/tests/capacity_slots.rs test:slots_cross_a_dst_boundary_correctly
+tm-core/tests/capacity_slots.rs test:breaks_and_slots_are_disjoint_and_ordered
+tm-core/tests/capacity_slots.rs test:layout
+tm-core/tests/capacity_slots.rs test:slots

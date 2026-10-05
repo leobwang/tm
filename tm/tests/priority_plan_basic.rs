@@ -9,10 +9,24 @@
 //! (30/30/60/60 minutes at energy 2/3/4/5 = 3 blocks) and every later day a
 //! whole one (60/60/120/120 = 6 blocks), for as many days as the furthest
 //! deadline needs (`priority::lookahead_days` → 2026-11-20, 75 days).
+//!
+//! **§7's arithmetic and §7.5's batches are fork 4748911's, by value** (stage 6 W-46
+//! track C; README gap 4752, the class): fork `priority::compute` and `priority::batches`
+//! answer from this binary's frozen file (`forkcap::FROZEN`, `support/forkcap.rs`) and
+//! from `tm-oracle capacity` under `TM_ORACLE`.  Until W-46 they were tm-core's in-tree
+//! copies, which R3 leaves with no shipped caller and deletes; what this file tests of the
+//! binary — `sorted`, `sorted_candidates`, `blocked`, `priorities_for_state`,
+//! `deadline_health`, `explain` and the candidates `collect_candidates` gives — reads the
+//! fork's grants as before.
 
 #[path = "support/replay.rs"]
 #[allow(dead_code)]
 mod chokepoint;
+
+/// Fork 4748911's answers, by value (W-46 track C).
+#[allow(dead_code)]
+#[path = "support/forkcap.rs"]
+mod forkcap;
 
 /// The shared planner fixtures: `DayPlanner`, and the kernel planning a day
 /// through the host's codec (W-36 track H, README gap 2872).
@@ -67,16 +81,16 @@ fn plan_basic() -> (Tree, Config, Replay) {
 fn caps(days: u32) -> Vec<DayCapacity> {
     let start = date("2026-09-07");
     (0..days as i64)
-        .map(|i| {
-            let mut d = DayCapacity::empty(start + Duration::days(i));
-            d.minutes_at_level = if i == 0 {
-                [0, 0, 30, 30, 60, 60]
-            } else {
-                [0, 0, 60, 60, 120, 120]
-            };
-            d
+        .map(|i| DayCapacity {
+            date: start + Duration::days(i),
+            minutes_at_level: if i == 0 { [0, 0, 30, 30, 60, 60] } else { [0, 0, 60, 60, 120, 120] },
         })
         .collect()
+}
+
+/// **Fork `priority::compute`'s grants**, by value (`forkcap::rank`).
+fn compute(cands: &[Candidate], caps: &[DayCapacity], cfg: &Config, today: NaiveDate) -> Vec<Prio> {
+    forkcap::rank(forkcap::store(), cands, caps, &BTreeMap::new(), cfg, today).0
 }
 
 fn today_candidates(tree: &Tree, cfg: &Config, replay: &Replay) -> Vec<Candidate> {
@@ -146,7 +160,7 @@ fn plan_basic_priorities_and_order() {
     assert_eq!(days, 75, "the furthest deadline is ^d2 on 2026-11-20");
     let caps = caps(days);
 
-    let prios = priority::compute(&cands, &caps, &BTreeMap::new(), &cfg, date("2026-09-07"));
+    let prios = compute(&cands, &caps, &cfg, date("2026-09-07"));
     insta::assert_snapshot!("plan_basic_priorities", table(&cands, &prios, &cfg));
 
     // `laundry` is `on-miss:persist` and the fixture has no log, so last
@@ -221,7 +235,7 @@ fn plan_basic_priorities_and_order() {
     // §7.5: the batches the planner consumes, in assignment order — all of
     // them, so the snapshot also pins what is *not* merged (§8.2 places the
     // window instances inside their own windows, not in a shared block).
-    let groups = priority::batches(&ranked, &cfg);
+    let groups = forkcap::batches(forkcap::store(), &ranked, &cfg);
     let batched: Vec<String> = groups
         .iter()
         .map(|b| {
@@ -266,7 +280,7 @@ fn explain_d1_matches_the_spec_shape() {
     let (tree, cfg, replay) = plan_basic();
     let cands = today_candidates(&tree, &cfg, &replay);
     let caps = caps(priority::lookahead_days(&cands, date("2026-09-07")));
-    let prios = priority::compute(&cands, &caps, &BTreeMap::new(), &cfg, date("2026-09-07"));
+    let prios = compute(&cands, &caps, &cfg, date("2026-09-07"));
 
     let d1 = Id::new("d1");
     let prio = prios
@@ -314,15 +328,10 @@ fn explain_names_the_shortfall_when_impossible() {
     let cands = today_candidates(&tree, &cfg, &replay);
     let today = date("2026-09-07");
     let days = priority::lookahead_days(&cands, today);
-    let thin: Vec<DayCapacity> = (0..days as i64)
-        .map(|i| {
-            let mut d = DayCapacity::empty(today + Duration::days(i));
-            d.minutes_at_level = [0, 0, 0, 0, 0, 30];
-            d
-        })
-        .collect();
+    let thin: Vec<DayCapacity> =
+        (0..days as i64).map(|i| DayCapacity { date: today + Duration::days(i), minutes_at_level: [0, 0, 0, 0, 0, 30] }).collect();
 
-    let prios = priority::compute(&cands, &thin, &BTreeMap::new(), &cfg, today);
+    let prios = compute(&cands, &thin, &cfg, today);
     // need 6b × 1.3 = 468 min, against 5 × 30 = 150 min through Friday.
     let d1 = prios.iter().find(|p| p.id == Id::new("d1")).expect("^d1");
     assert!(d1.is_impossible());

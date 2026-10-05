@@ -254,7 +254,7 @@ proptest! {
             prop_assert!(host.is_some(), "the host reads no running block before the stop:\n{text}");
             prop_assert_eq!(host, credit, "D94: the stop's credit is not the host's union (P92); the log:\n{}{}", text, stop);
             if all_end_by_stop {
-                let open = running.open_block.as_ref().filter(|b| b.id == "a").map(|b| b.worked_min_at(d.t(d.stop)));
+                let open = running.open_block.as_ref().filter(|b| b.id == "a").map(|b| replay::open_worked_min_at(b, d.t(d.stop)));
                 prop_assert_eq!(host, open, "D94: the open block read at the end of the log is not the host's union (P92); the log:\n{}", text);
                 open_ahead = meets_after_start;
             }
@@ -393,7 +393,7 @@ proptest! {
             prop_assert!(host.is_some(), "the host reads no running block before the stop:\n{text}");
             prop_assert_eq!(host, credit, "D94 + D95: the stop's credit is not the host's union (P92, P93); the log:\n{}{}", text, stop);
             if d.breaks.iter().all(|b| b.from + b.len <= d.stop) {
-                let open = running.open_block.as_ref().filter(|b| b.id == "a").map(|b| b.worked_min_at(d.t(d.stop)));
+                let open = running.open_block.as_ref().filter(|b| b.id == "a").map(|b| replay::open_worked_min_at(b, d.t(d.stop)));
                 prop_assert_eq!(host, open, "D94 + D95: the open block is not the host's union (P92, P93); the log:\n{}", text);
             }
         }

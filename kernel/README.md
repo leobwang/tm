@@ -90867,3 +90867,297 @@ landing commit deletes that banner's entries (they resolve once the code is ther
 * 17:27-18:00 — the archive's three workspace runs (red by the two blockers alone); the call-count rows and property.
 * 17:59-18:33 — this commit's three workspace runs, green; then this block, `check.sh` in a clone, the archive commit,
   the commit.
+
+<!-- =====================================================================
+     APPENDED 2026-10-05: stage 6 (the planner), run **W-46**, **TRACK C**
+     — the class of tm-core functions R3 orphans, re-derived by two
+     instruments; every comparison and every test input that read one moved
+     to fork 4748911's own answer, frozen by value and asked of
+     `tm-oracle capacity`; R3's deletion of the class simulated and written
+     down as the list the switch deletes.  Gaps 4810-4829 are this track's
+     (4810-4817 used); no parity number (no behaviour moved).  Whoever
+     merges renumbers nothing: the range is the track's own.
+     ===================================================================== -->
+
+## Stage 6 — W-46 track C: the class R3 orphans, its comparisons moved to the fork outside the tree, and its deletion simulated
+
+**Status (kept current; a cut is recoverable from this block and the branch `w46-c`).**  Committed on the branch: the
+`capacity` mode of the oracle, `tm/tests/support/forkcap.rs`, eleven frozen files, every caller of the class moved onto
+them, the class's two instruments and the simulation's driver committed under `kernel/tm-kernel-ffi/examples/oracle/r3-class/`.
+R3 is NOT landed by this track (it is the switch's); what it lands is that the switch's deletion of the class is now a
+list a script applies and a simulation measured.
+
+### 0. The brief, measured before it was acted on
+
+* HEAD `16aaafc` (docs D104-D106 over the W-45 repair `a3588b4`), tree clean; worktrees `stage5-lookahead` and this run's
+  `w46-c` (tracks H and K run beside it).  `refs/archive/w45/r3-switch` = `c1e87c9`, parent `a3588b4`; it cherry-picks
+  onto `16aaafc` with no conflict.
+* **The class is not ten, it is 35** (§1) — gap 4752's ten are a subset.  Its "`nm` missed three" is the instrument's
+  OPTIMISATION LEVEL: the dev profile is `opt-level = 1`, which inlines a small function into its caller and drops its
+  symbol; read at opt-level 0 the symbol table misses none of the three and finds 25 more.
+* **T16 (`kernel_unit_reserve`) calls no function of the class.**  The compiler says so: the workspace builds with the 35
+  deleted and T16 untouched.  T16 holds the kernel to `reserve_units`, `available_until_units` and `upto_units`, which R3
+  keeps (gap 4714's Queue "fits") — and of those three `available_until_units` is reached by no shipped path before R3 or
+  after it (gap 4811).
+* **`planner_invariants` does not call `priority::compute`** (gap 4752 names it among seven files): it cites the function
+  in a doc comment; its code calls two other members of the class, `capacity::remaining_budget` and
+  `OpenBlock::worked_min_at`, outside its region (§2).  The six that call `priority::compute`, by the compiler: T13,
+  `tui_queue_common`, `priority_plan_basic`, `priority_rules`, `priority_regressions`, tm-core's `priority_edf`.
+* The oracle was built fresh for the step (`build-oracle.sh` into the scratch directory; `.oracle-ref` `4748911555…
+  2fa866bb… 41561bf9… 037dc302…`), rebuilt after every edit to its source, its usage banner read before it was fed.
+
+### 1. The class, re-derived as a CLASS — two instruments (gap 4752 restated; `r3-class/`)
+
+**The symbol table** (`class.sh`): the `tm` binary of the tree before R3 (`16aaafc`) and of the switched tree
+(`16aaafc` with `c1e87c9` cherry-picked), each built at opt-level 0 twice — as the linker keeps it (`--gc-sections`) and
+with `-C link-dead-code` (every compiled function kept) — and per tree UNREACHED = compiled minus kept.  Measured:
+`tm_core` symbols kept 1,849 before and 1,749 after; compiled 2,998 and 2,887; unreached (closures and trait impls set
+aside) 195 before (fork `planner.rs` aside) and 212 after; **R3 orphans 212 − 177 = 35**, and **177 are unreached on
+both sides** — dead before R3, not R3's (gap 4810).  Re-run from the committed script over the same two trees: the same
+35 (`class.sh`'s output compared with the first run's, line for line).
+
+**The sources** (rsgraph.py, reach_grep.py): a by-name call graph over `tm-core/src` and `tm/src`, rooted at every
+non-test function of the binary crate and every trait-impl method, finds **27** of the 35 and nothing the symbol table
+does not.  The eight it misses are NAME COLLISIONS, each read by hand: `Slot::minutes` and `Break::minutes` (68 bodies
+call some `minutes`), `DayCapacity::empty` (`empty`), `Posterior::none` (`none`), `Prio::wall` (`wall`),
+`priority::sort_key` (`check.rs`' own `sort_key`), `UnitCapacity::from_minutes` (`Dur::from_minutes`) and
+`OpenBlock::worked_min_at` (`day.rs`' own `worked_min_at`, a different function); every caller of each is a deleted
+function, a test, or fork `planner.rs`.
+
+**The class** — `capacity.rs`: `available_until`, `Break::minutes`, `cut_slots`, `cut_slots_around`, `cut_slots_from`,
+`DayCapacity::at_least`, `DayCapacity::empty`, `DayCapacity::from_slots`, `energize`, `EnergyCtx::with_allow_home`,
+`Exact::of_minutes`, `free_intervals`, `limit_to_budget`, `lookahead`, `normalize_walls`, `remaining_budget`, `reserve`,
+`Slot::minutes`, `UnitCapacity::from_minutes`, `upto`; `energy.rs`: `Model::p_lounge_on`, `Posterior::none`; `log.rs`:
+`OpenBlock::worked_min_at`; `model.rs`: `Item::is_travel_day`; `priority.rs`: `apply_hysteresis`, `batches`, `bin_of`,
+`Candidate::cap_left_min`, `Candidate::floor_need_min`, `clamp_p`, `compute`, `floor_pass`, `Prio::wall`, `sort_key`,
+`utilization`.  **Its closure**: three functions unreached before R3 too — `wall_minutes`, `Cut::slot_minutes`,
+`Cut::break_minutes` — call `normalize_walls`, `Slot::minutes` and `Break::minutes`, so the crate does not build without
+deleting them; `struct Edf` (only `compute` built one) is then never constructed, a warning; and `priority.rs`' `use` of
+`available_until` and `DayCapacity`.  **Campaign call, revisable by the owner** (the brief's own call widened from its
+list to its class): the switch deletes all 38 and the struct, as it deletes the ten.
+
+### 2. Every caller, by what it does with the class
+
+Measured by the COMPILER, not a grep: the class deleted in a clone of the switched tree, every test target built with
+`--keep-going`, every error read (170 diagnostic lines in 36 targets, most of them the two support modules that many
+targets include).  Each caller is one of three kinds.
+
+| kind | callers | what they read since this track |
+|---|---|---|
+| **a comparison with the kernel** | T13 `kernel_lookahead_parity` (the lookahead, day-0 slots and their sum, the slot cut, the §7 pass and each grant's `utilization` and `bin_of`) | fork 4748911's answers by value, `forkcap::lookahead`, `today`, `cut`, `rank` |
+| **an input to code the binary keeps** | `tui_queue_common` (the Queue, Necessities and Inbox screens' grants); `priority_plan_basic` (`sorted`, `sorted_candidates`, `blocked`, `priorities_for_state`, `deadline_health`, `explain`); `priority_rules` and `priority_regressions` (the candidates `collect_candidates` gives, eligibility, `done_this_period`, `priorities_for_state`, `deadline_health`, `explain`, `sorted`); tm-core's `priority_edf` (`deadline_health`); tm-core's `capacity_slots` (`window_and_budget` and §8.1's equation, which reads fork `wall_minutes`); `planner_w40_runs` (P64's precondition, which reads fork `batches`) | the same, by value: `rank`, `batches`, `cand_facts` (fork `cap_left_min`, `floor_need_min`), `sort_key`, `wall_minutes` |
+| **a reading of the binary's own facts through a member of the class** | `kernel_break_union`, `support/forkclass.rs`, `planner_invariants` (`OpenBlock::worked_min_at`, `capacity::remaining_budget`, `Item::is_travel_day`); tm-core's `grammar_fixtures`, `ics_sample` (`Item::is_travel_day`), `energy_model` (`Posterior::none`) | the member's own body, spelled where it is read: `support/replay.rs`' `open_worked_min_at` (the open block's two fields), `budget.saturating_sub(done)`, `has_flag("travel-day")`, `Posterior::from_reports(&[], cfg)` — each exactly the value the deleted function returned |
+
+and a fourth kind the switch deletes WITH the class (§5): **a test of a deleted function's own behaviour** — every
+assertion the fork pass's, the fork cut's or the fork lookahead's own, comparing nothing with the kernel and asserting
+nothing the binary keeps: 32 tests, five helpers, one snapshot.  No assertion of a test that stays was weakened or
+removed by this track.  Three edits in a test that stays are the SWITCH's, because each asserts a deleted function's own
+behaviour and the function goes with it: `capacity::remaining_budget`'s two in `window_and_budget_for_the_spec_day`, and
+`Model::p_lounge_on`'s config fallback in `energy_fit.rs` (the kernel's `mkInput?` has been the one reader of that
+fallback since L5).
+
+**Every test that calls each member, by the compiler** (the class deleted over the switched tree, before this track's
+changes): `priority::compute` — T13, `tui_queue_common`, `priority_plan_basic`, `priority_rules`,
+`priority_regressions`, tm-core's `priority_edf`; `priority::batches` — `planner_w40_runs`, `priority_plan_basic`,
+`priority_rules`, `priority_regressions`; `priority::bin_of` and `priority::utilization` — T13, `priority_edf`;
+`Candidate::cap_left_min` — `priority_rules`, `priority_regressions`; `Candidate::floor_need_min` and
+`priority::sort_key` — `priority_rules`; `capacity::lookahead` — T13, tm-core's `capacity_lookahead`;
+`capacity::cut_slots` and `capacity::energize` — T13, `capacity_lookahead`, `capacity_slots`;
+`EnergyCtx::with_allow_home` — T13, `capacity_slots`; `DayCapacity::from_slots` and `Slot::minutes` — T13 (and
+`Slot::minutes` `capacity_lookahead`); `cut_slots_around`, `cut_slots_from`, `wall_minutes` — `capacity_slots`;
+`free_intervals` and `reserve` — `capacity_slots` or `capacity_lookahead` and tm-core/src `capacity.rs`' own tests;
+`available_until`, `DayCapacity::at_least`, `upto` — `capacity_lookahead`; `DayCapacity::empty` — six files, every one
+a synthetic capacity; `UnitCapacity::from_minutes` — `tui_queue_common`; `Posterior::none` — `capacity_lookahead`,
+`capacity_slots`, `energy_model`; `Model::p_lounge_on` — `energy_fit`; `capacity::remaining_budget` —
+`capacity_slots`, `planner_invariants`, `support/forkclass.rs`; `Item::is_travel_day` — `grammar_fixtures`,
+`ics_sample`, `support/forkclass.rs` and tm-core/src `grammar.rs`' and `ics.rs`' own tests;
+`OpenBlock::worked_min_at` — `kernel_break_union`, `planner_invariants`, `support/forkclass.rs` and tm/src
+`tui/mod.rs`' W-44 test.  `normalize_walls`, `limit_to_budget`, `Exact::of_minutes`, `Break::minutes`, `Prio::wall`,
+`floor_pass`, `clamp_p` and `apply_hysteresis` have no test caller: only members of the class call them.  T16
+(`kernel_unit_reserve`) is in no list.
+
+### 3. Fork 4748911 outside the tree: `tm-oracle capacity` and eleven frozen files
+
+* **The oracle's `capacity` mode** (`examples/oracle/src/main.rs`, `capacity_one`): one JSON request a line, `plan`'s
+  protocol; eight ops, each the EXTRACTED fork's own function and no body re-typed — `today` (`cut_slots`, `EnergyCtx`,
+  `energize`, `DayCapacity::from_slots`), `lookahead`, `cut` (and `Cut::slot_minutes`, `Cut::break_minutes`), `rank`
+  (`compute`, and per grant `utilization` and `bin_of`), `batches`, `cand` (`cap_left_min`, `floor_need_min`),
+  `sort_key`, `wall_minutes`.  A double crosses as text and the configuration as `config.toml` text, read by the fork's
+  `Config::parse`: the oracle's serde_json is the fork's, without `float_roundtrip` (P25), and T13's weights carry up to
+  18 decimals.  `forkcap::config_wire` holds every configuration it sends to reading back as itself, and
+  `forkcap::model_wire` refuses a model carrying a learned value the wire does not send.
+* **`tm/tests/support/forkcap.rs`** — one store per test binary, `forkcap::FROZEN` named for the binary
+  (`fork-4748911-capacity-<binary>.jsonl`): a plain run reads the frozen answer, the request compared BY VALUE with the
+  one it was frozen from and a request no line holds FAILING by name; `TM_ORACLE` asks the oracle and holds its answer
+  equal to the frozen one; the bless, `the_frozen_fork_capacity_answers_are_reblessed_from_the_oracle` (one definition,
+  in the module, so every including binary carries it), inert without both `TM_ORACLE` and `TM_FORK_BLESS`, runs its OWN
+  test binary again — every test of it, by no list — recording (`forkcap::RECORD_VAR`), and writes what that run asked.
+  `fork_rebless_history.rs`' gate reads it as the D21 family (three members now).  `Store::ask_live` is the fresh-draw arm:
+  P64's census (`#[ignore]`d, `TM_ORACLE`) asks the fork's batches of its draws live.  T13 had no fresh-draw arm and
+  gains none: its windows are drawn from fixed seeds, so its frozen file holds every request it makes.
+* **The files**, 1,339 answer lines over 164 configuration lines, 2.81 MB, every one written by its binary's bless through
+  the fresh oracle: `kernel_lookahead_parity` 1,286 (lookahead 609, cut 408, rank 138, today 131; 2,355,383 bytes),
+  `tui_queue_screens` 9, `tui_queue_reorder` 3, `tui_queue_capture` 1, `tui_queue_keys` 1, `priority_plan_basic` 3,
+  `priority_rules` 10, `priority_regressions` 15, `planner_w40_runs` 2, `priority_edf` 3, `capacity_slots` 6.
+* **Every frozen answer is the in-tree function's at `16aaafc`**: a scratch test (never committed) read each of the
+  1,339 lines, rebuilt the request with the in-tree types and ran the in-tree function — equal on all (cut 410,
+  lookahead 609, rank 174 with 1,587 grants' exact fields equal to the whole minutes of their integer fields, today 131,
+  batches 6, cand 4, sort key 1, wall minutes 4), and every candidate read back as the in-tree struct's own
+  serialisation.  So the comparisons moved compare what they compared.
+* **T13's census is unchanged**: its four report lines (windows, P27, gaps 85, 104 and 111, day 0's ten counts, the
+  priorities' P2, P3, P7 and the mixture's reach) are byte-identical between the in-tree run at `16aaafc`, the frozen
+  run and the `TM_ORACLE` run.
+* **Bites** (D40; every plant in a clone, porcelain empty before and after each): a missing line fails "no frozen fork
+  answer for this rank request"; a configuration line edited fails at open; a configuration whose TOML does not read
+  back fails `config_wire`; a model with a fourth learned value fails `model_wire`; a grant carrying the graft's
+  `shortfall_positive` fails its reader; the exact shortfall read as 0 fails `a_hot_flag_does_not_hide_an_impossible_deadline`;
+  `open_worked_min_at` plus one fails `kernel_break_union`'s two proptests; a candidate's multiplier doubled on the wire
+  fails all seven `priority_rules` tests that ask the fork; a test failing in the recording run fails the bless, which then
+  writes nothing (the file's digest equal before and after); and the oracle bent twice in a copy — its `rank` op's
+  first grant, its candidate reader dropping `hot` — fails T13, `priority_rules` and `priority_regressions` by name
+  under `TM_ORACLE` ("the frozen rank answer is not fork 4748911's answer today").  **One plant survived**: the exact
+  availability `forkcap::prios_of` derives, bent by one minute, passes `tui_queue_screens` — no test that takes its
+  grants from a frozen file reads `avail_min_exact` (gap 4817).
+
+### 4. R3's deletion of the class, simulated (`r3-class/simulate.py`)
+
+The clone: `16aaafc`, `c1e87c9` cherry-picked, this track's patch applied with `git apply --3way` (it applies with no
+conflict over the switch's deletions in `planner_invariants`, `priority_plan_basic` and `planner_w40_runs`), then
+`simulate.py` — the two lists of §5 and its eleven line edits.  A second clone driven by the committed `simulate.py`
+alone reproduces the first's tree byte for byte.
+
+* **The build**: the whole workspace and every test target, **no warning** (`cargo build --workspace --tests`).
+* **The workspace, one run** (load 19-35, the other tracks beside it; porcelain hashed equal before and after): **153
+  result lines, 2,757 passed, 2 failed, 51 ignored**.  The two are exactly the archived switch's R3 BLOCKERS —
+  `only_the_digest_stands_between_a_changed_offset_and_the_days_minutes` (gap 4621) and
+  `deleting_the_runtime_state_while_a_break_runs_resumes_the_block` (gap 4740).  Against the archive's own three runs
+  (2,789 / 2 / 40): −32 passed, the 32 tests §5 deletes; +11 ignored, the bless every binary including `forkcap`
+  carries (nine in `tm`, two in tm-core).  So nothing else moved.
+* **T13's denominators after the deletion, by value**: its four report lines byte-identical to the in-tree run at
+  `16aaafc` (§3), the store answering 4,408 asks (cut 1,104, lookahead 3,025, rank 148, today 131) from its 1,286
+  frozen lines.
+* **Every moved comparison still compares, after the deletion**: one KERNEL answer bent per kind in T13 —
+  the first lookahead (`out[1].1[5] += capDen`) fails `the_lookahead_is_the_forks_at_each_location_and_mixes_exactly`
+  ("lounge 2026-03-04: kernel [0, 0, 60·capDen, 0, 0, capDen] fork [0, 0, 60, 0, 0, 0]"), the first twin grant's `k`
+  fails `the_twin_priorities_are_the_forks_modulo_p2_p3_p7` — so its fork side is the frozen file, never the kernel
+  (lesson 5).
+* **Every frozen file is read and held to the fork, after the deletion**: one frozen answer corrupted per file — under
+  `TM_ORACLE` **11 of 11** fail by name ("is not fork 4748911's answer today"); in a plain run a corruption fails where a
+  test reads the corrupted value — 8 of 11 files (T13's lookahead, `capacity_slots`' wall minutes, `priority_rules`,
+  `priority_regressions`, and with every line corrupted `planner_w40_runs`' batch members, `priority_edf`,
+  `priority_plan_basic`'s day and `tui_queue_screens`' `p`); `tui_queue_capture`, `tui_queue_keys` and
+  `tui_queue_reorder` read the grants for what the screens show and a uniform `p` shift moves none of it — gap 4813.
+
+### 5. The deletion list — what the switch deletes, exactly (`r3-class/deletion-functions.txt`, `deletion-tests.txt`, `simulate.py`)
+
+**Functions, tm-core/src** (line counts are each function's span with its doc comment and attributes, measured on the
+switched tree): `capacity.rs` — `available_until` 8, `Break::minutes` 4, `cut_slots` 11, `cut_slots_around` 80,
+`cut_slots_from` 11, `DayCapacity::at_least` 10, `DayCapacity::empty` 7, `DayCapacity::from_slots` 8, `energize` 23,
+`EnergyCtx::with_allow_home` 5, `Exact::of_minutes` 4, `free_intervals` 22, `limit_to_budget` 16, `lookahead` 51,
+`normalize_walls` 14, `remaining_budget` 4, `reserve` 23, `Slot::minutes` 4, `UnitCapacity::from_minutes` 7, `upto` 5,
+and the closure `wall_minutes` 8, `Cut::slot_minutes` 4, `Cut::break_minutes` 4 (23 functions, 333 lines); `priority.rs`
+— `compute` 129, `batches` 59, `Prio::wall` 21, `floor_pass` 14, `bin_of` 14, `apply_hysteresis` 11, `utilization` 10,
+`Candidate::floor_need_min` 10, `Candidate::cap_left_min` 6, `sort_key` 5, `clamp_p` 3 (11, 282), and `struct Edf` (9) and
+its `use` line; `energy.rs` — `Model::p_lounge_on` 7, `Posterior::none` 4 (2, 11); `log.rs` — `OpenBlock::worked_min_at`
+10; `model.rs` — `Item::is_travel_day` 4.  **38 functions, 640 lines, and the struct.**
+
+**Tests** (32, and five helpers only they used; 1,035 lines): tm-core/src `capacity.rs`' own
+`free_intervals_merge_overlapping_walls` and `reserve_takes_the_best_levels_earliest` (the switch's: tm-core/src is not
+this track's); `priority_rules` — `p_is_clamped_to_seven`, `hysteresis_limits_improvement_to_one_step`,
+`an_unreachable_floor_is_impossible`, `batching_groups_small_equal_ci_items` and the helper `due`; `priority_regressions` —
+`an_instance_deadline_without_a_window_enters_the_edf_pass`, `an_optional_is_never_held_above_p_five_by_hysteresis`;
+tm-core's `priority_edf` — `jointly_infeasible_deadlines_flag_the_later_one`, `edf_reserves_by_energy_level`,
+`bins_at_the_edges`, `bin_of_matches_the_spec_table`, `zero_capacity_is_infinite_utilization`; tm-core's
+`capacity_lookahead` — every test but `calendar_walls_are_read_from_the_fixture` (seven) and its helpers `today_slots`
+and `week`, and the snapshot `capacity_lookahead__lookahead_plan_basic_week.snap` only the first of them wrote; tm-core's
+`capacity_slots` — the twelve tests of the slot cut and the energy (`cut_slots_on_the_spec_day` …
+`breaks_and_slots_are_disjoint_and_ordered`) and their helpers `layout` and `slots`.
+
+**Edits** (`simulate.py`'s eleven, each failing when its anchor is not there exactly once): `priority.rs`' `Edf` and
+`use`; the `travel-day` flag read as `has_flag` in `grammar.rs`' and `ics.rs`' own tests (three sites) and the open
+block's worked minutes read off its fields in `tm/src/tui/mod.rs`' W-44 test (tm-core/src and tm/src are not this
+track's); the three assertions of §2; four import lines the deleted tests alone used.
+
+**And the switch's prose**: the names the deletion removes are cited by test doc comments and this ledger, so check 8
+will name them on the deleted tree, as it named W-45's 125 — the switch counts them in `kernel/citations-allow.txt`
+(gap 4814).
+
+### 6. Gaps 4810-4817
+
+**Gap 4810 — 177 tm-core functions are reached by no shipped path BEFORE R3 as well as after it.**  1. *What.*  The
+symbol table's other list (§1): unreached in both binaries — `horizon` 34 (fork `close_day`, `close_week`, `close_month`
+and the rest of the fork close the kernel replaced at stage 4), `log` 23, `tree` 18, `config` 15 (most of them serde
+`Serialize` impls of the configuration), `capacity` 14 (`week_grid`, `DayCapacity::total`, `available_until_units`, …),
+`grammar` 13, `energy` 10, `emit` 10, `model` 9, `dayplan` 7, `ics` 6, `store` 5, `priority` 4 (`Candidate::new`,
+`blocked`, …), `review` 3, `recur` 3, `check` 2, `planwire` 1.  2. *Why.*  Not R3's: the brief's class is what R3
+orphans.  3. *Cost.*  Fork code no verb reaches, several of them a test's subject or comparand.  4. *Clears it.*  A
+step after R3 sorts them as this one sorted the 35 (comparand, input, own behaviour) and the owner rules on what stays.
+
+**Gap 4811 — T16 holds the kernel to a function no shipped path reaches.**  1. *What.*  `available_until_units` is
+unreached by the binary before and after R3 (§1); T16 compares it with the kernel's pass beside `reserve_units`, which
+the Queue does call.  2. *Why.*  Pre-existing.  3. *Cost.*  Half of T16's comparand is dead code: it pins a function
+no user reaches.  4. *Clears it.*  Gap 4810's step: T16 restated over what the Queue reads, or the owner keeps it.
+
+**Gap 4812 — the frozen fork answers are one file per test binary, so four TUI binaries freeze one world four
+times.**  `tui_queue_capture` and `tui_queue_keys` hold byte-identical files.  Chosen: a bless re-runs its own binary,
+and one file per binary is what makes that list-free.  Cost: 0.33 MB of duplicated requests.
+
+**Gap 4813 — a plain run reads a frozen answer only through what its tests assert.**  1. *What.*  A corrupted frozen
+answer fails a plain run only where a test reads the corrupted value (§4: 8 of 11 files, `tui_queue_capture`,
+`tui_queue_keys`, `tui_queue_reorder` read their grants for what their screens show); `TM_ORACLE` catches every one
+(11 of 11).  T13's gap-104 census reads a frozen cut's minutes into a count no assertion holds.  2. *Why.*  The D21
+family's shape: the file is trusted on a plain run and checked against the fork under `TM_ORACLE`.  3. *Cost.*  A hand
+edit of an unread field passes until an oracle arm runs.  4. *Clears it.*  The oracle arms run at every land, as the
+W-45 switch ran them.
+
+**Gap 4814 — R3's deletion leaves prose citations dangling.**  The deleted functions are cited by name in test doc
+comments (`forkcap.rs`, T13, the priority suites) and in this ledger; check 8 resolves a name against the tree, so the
+switch counts them in `kernel/citations-allow.txt`, as W-45's switch counted 125.
+
+**Gap 4815 — `no_second_planner`'s cut needle names three functions R3 deletes.**  1. *What.*  The guard calls a file a
+planner when it builds a day AND calls `cut_slots`, `cut_slots_from` or `cut_slots_around`; the class deletes all
+three, so after R3 the cut half can see only a planner that re-adds a function of one of those names.  2. *Why.*  The
+guard was written over the fork's own cut (W-45 track C) and this track does not edit gates outside its comparisons.
+3. *Cost.*  After R3 the guard is close to a check no input can fail (§9.2's disguised gap): a second planner with a cut
+of any other name passes it.  4. *Clears it.*  The switch, or the step after it, restates the cut half as a shape
+(a loop that pushes `Slot`s between free intervals) and bites it.
+
+**Gap 4816 — after the deletion `tm-core/tests/capacity_lookahead.rs` holds one test and a module doc about
+`capacity::lookahead`.**  The surviving `calendar_walls_are_read_from_the_fixture` reads the fixture's walls; the switch
+re-words the doc (or moves the test beside `capacity_slots`' window tests).
+
+**Gap 4817 — the oracle's candidate and model readers are checked only by their answers.**  `cap_cand` and `cap_model`
+rebuild fork types field by field; the first bless held every answer they produced equal to the in-tree function's
+(§3), and two oracle plants show a dropped field is caught under `TM_ORACLE`, but a field neither the in-tree functions
+nor the frozen requests exercise (a candidate field the fork's pass ignores) is unchecked.  And of the three exact fields
+`forkcap::prios_of` derives from the fork's whole minutes, the tests that take their grants from a frozen file read only
+the shortfall (through `Prio::is_impossible`): a wrong exact availability or allocation passes them — the surviving plant
+of §3 — and only the one-time cross-check held them right.
+
+### 7. Acceptance, capped (`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`; 16 GB for the oracle, its arms, the plants and the bends)
+
+* **`cargo test --workspace --no-fail-fast` on this commit's code, THREE runs** (the worktree; 00:40-01:17, load 10-33
+  with tracks H and K beside it, `uptime` at every start and end; porcelain and diff hashed equal at every start and end;
+  no `.proptest-regressions` file moved): **each 153 result lines, 2,872 passed, 0 failed, 53 ignored, 0 compiler
+  warnings** — the W-45 repair's 2,872 passed, and +11 ignored: the bless `forkcap` carries into each of the eleven
+  binaries that include it.
+* **The named suites**, identical in all three runs: T5 `kernel_replay_parity` 48 (4 ignored), the door
+  `kernel_log_door` 42, `cli_switch_acceptance` 16, `cli_latency` 7 (1 ignored), `kernel_call_counts` 3, `one_padder` 9,
+  `one_renderer` 34, `kernel_row_cells` 35, `kernel_item_grammar` 6, `kernel_planner_wire` 27, `planner_classes` 73 (8
+  ignored), `planner_invariants` 48 (2 ignored), `cli_conformance` 7, `cli_json_matrix` 8, `cli_tz_cache_digest` 3; and
+  this track's: T13 4, `tui_queue_capture` 23, `tui_queue_keys` 21, `tui_queue_reorder` 20, `tui_queue_screens` 36,
+  `priority_plan_basic` 33, `priority_rules` 24, `priority_regressions` 25, `planner_w40_runs` 32, tm-core's
+  `priority_edf` 8 and `capacity_slots` 17 (each with its one ignored bless), `kernel_break_union` 18,
+  `fork_rebless_history` 10, `no_second_planner` 3, `harness_one_fnv` 3.  FFI: check 5.
+* **The oracle arms** this track's code reaches, over the fresh oracle: each of the eleven binaries under `TM_ORACLE`
+  green (every frozen answer equal to fork 4748911's answer today); P64's census (`planner_w40_runs`, `#[ignore]`d,
+  93 s) green — 128 draws held, P64's precondition on 2 days, the runs moving the fork's day on 1, the kernel unlike the
+  comparand on 0, the W-40 land's figures, its batches asked of the fork live.
+* **`check.sh`** on this commit's content, in a clone (`scratchpad/w46-c/chk2`, this commit's tree committed locally,
+  never pushed; porcelain hashed empty before and after): **seventeen lines, all ok, exit 0, 33.0 s** — the build;
+  totality; **axiom audit 6,349**; `Negative.lean` rejected; **FFI 95**; corpus **29/37 files and 4/5 plans**; **stage
+  goals 1**; prose citations **61,127 (58,682 resolved, 2,445 allowed — 206 vocabulary, 521 counted), 0 allow entries
+  unused**; check 9 **736** rostered, **0 owed**; parity **P1-P99, `next free P100`**; check 11 **0 UNANSWERED**; check 12
+  **1,518 reachable, 1,099 exempt**; check 13 17/17, 33 of 37, sent 169, written 220, 0 UNANSWERED; check 14 **95
+  modules**.  No Lean changed, so checks 1-4, 7, 9 and 11-14 are the W-45 repair's figures.  This paragraph's own words:
+  checks 8 and 10 re-run on the final text in the worktree, ok.
