@@ -1806,6 +1806,19 @@ pub fn take_break(g: &Globals, args: &super::BreakArgs) -> Result<i32, CliError>
         ended
     } else {
         let planned = asked.unwrap_or(ctx.cfg.day.break_min);
+        // **The break's START is logged** — the owner's **D105** (README "Stage 6 —
+        // W-46 track K", gaps 1034, 1085 and 4740, parity **P100**): a `break_start`
+        // at `now`, its planned minutes and its place, written by the kernel (D16)
+        // and read back by its replay as the running break, so `.tm/state.json`'s
+        // `break` (and the pause it sets) is derivable and deleting the file
+        // mid-break changes nothing (D42). The log first, then its cache. Fork
+        // 4748911 wrote no line until the break ENDED, so a running break lived in
+        // the cache alone; the line that ends it (`end_break_at`) keeps the fork's
+        // shape.
+        ctx.append_event(Event::BreakStart {
+            planned_min: planned,
+            r#where: place.clone(),
+        })?;
         ctx.state.break_ = Some(BreakState {
             started: Some(ctx.now_tz.time()),
             planned_min: planned,

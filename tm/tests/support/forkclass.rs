@@ -132,14 +132,15 @@
 //! The class of a world is read the way the binary reads it: the running block
 //! and the open interruption are the LOG's (D42's reconcile, `tm/src/cli/
 //! ctx.rs`' `derived_state`: the log wins on what is open), and a running
-//! break is `.tm/state.json`'s alone (`HOST_ONLY_STATE`: a break is logged when
-//! it ENDS) — [`running`]. [`binary_holds`] is the property every stored world
-//! is held to: the cache and the log agree on what is open, a running break
-//! began after the last `start`/`done`/`stop` (each ends one), and the cache is
-//! what the binary rebuilds from the log — the block's pause included, asked of
-//! the binary with the running break it cannot log (clause 5, since W-39: until
-//! then a hand copy of `tm start`'s pause rule, clause 4, answered for it —
-//! README gap 3536). Until W-37 twelve
+//! break is read off `.tm/state.json`, as the planner request carries it — since
+//! the owner's D105 (parity P100) the log's too, `tm break` logging a
+//! `break_start`, and clause 5 holds the two equal — [`running`]. [`binary_holds`]
+//! is the property every stored world is held to: the cache and the log agree on
+//! what is open, a running break began after the last `start`/`done`/`stop`
+//! (each ends one), and the cache is what the binary rebuilds from the log — the
+//! block's pause included (clause 5, since W-39: until then a hand copy of `tm
+//! start`'s pause rule, clause 4, answered for it — README gap 3536; until D105
+//! the binary was asked with the running break it could not log). Until W-37 twelve
 //! lines failed it — the ten interruptions set in `state.json` alone and two
 //! breaks begun before the block under them — and all twelve were re-drawn
 //! under D64(b) by the generator that now logs the one and orders the other.
@@ -526,8 +527,10 @@ pub fn class_space() -> Vec<Class> {
 /// D64(b), README gap 3138) — D42's reconcile (`tm/src/cli/ctx.rs`'
 /// `derived_state` / `reconcile_state`): the running block and the open
 /// interruption are the LOG's, and the log wins against `.tm/state.json` on
-/// what is open; a running break is the cache's alone, because a break is
-/// logged when it ENDS (`HOST_ONLY_STATE`).
+/// what is open; a running break is read off the cache — until the owner's D105
+/// it was the cache's alone, a break being logged when it ENDED, and since D105
+/// (parity P100) the log holds its `break_start` and [`binary_holds`]' clause 5
+/// holds the two equal.
 pub struct Running<'a> {
     /// `Replay::open_block` — the block the log has started and not closed.
     pub block: Option<&'a OpenBlock>,
@@ -696,14 +699,17 @@ pub fn host_only_state() -> Vec<String> {
 ///    deleted, `tm now` rebuilds it (D42), and every field outside the binary's own
 ///    `HOST_ONLY_STATE` table must equal the stored one — **and the running block's
 ///    `paused` must be the one the binary derives** (W-39, README gap 3536: until then
-///    clause 4 restated `tm start`'s pause rule by hand). `active.paused` is in the
-///    table because a RUNNING break pauses the block and logs nothing until it ends, so
-///    a rebuild from the log alone cannot see that pause; so the binary is asked with
-///    `.tm/state.json` holding the table's top-level fields ALONE — the running break
-///    among them — and no block: the reconcile then takes the block from the log and
-///    derives its pause from every writer the log records and the break the cache still
-///    holds (`ctx::derived_state`'s `running_break`, `ctx::logged_pause`), and `tm --json
-///    now` reports it;
+///    clause 4 restated `tm start`'s pause rule by hand). The binary is asked with
+///    `.tm/state.json` holding the table's top-level fields ALONE and no block: the
+///    reconcile then takes the block from the log and derives its pause from every
+///    writer the log records (`ctx::logged_pause`) and the running break
+///    (`ctx::derived_state`), and `tm --json now` reports it. Until the owner's D105
+///    (parity P100; W-46 track K) `break` and `active.paused` were in the table, because
+///    a RUNNING break paused the block and logged nothing until it ended, so the running
+///    break went to the binary among the table's fields; since D105 `tm break` logs a
+///    `break_start`, both are derived, and a world whose cache holds a running break its
+///    log does not is one this clause refuses — the frozen worlds drawn with one were
+///    re-drawn under D64(b);
 /// 6. **The world is at rest**: `tm now` over the stored world appends nothing to
 ///    the log — no housekeeping (D61's meeting pause, §6.3's automatic close) is
 ///    owed, so the world the binary PLANS is the world stored.

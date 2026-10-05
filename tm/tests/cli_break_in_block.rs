@@ -46,9 +46,10 @@ fn heat_09(week: &Value) -> Vec<u64> {
 fn a_stopped_block_with_a_break_inside_counts_its_worked_minutes_everywhere() {
     let (tm, said) = the_day("stop");
     assert!(said.contains("after 40m"), "`tm stop` no longer says forty minutes: {said}");
-    // The log holds the break inside the block, exactly as the binary writes it.
+    // The log holds the break inside the block, exactly as the binary writes it: since the owner's
+    // D105 (parity P100) `tm break` logs its `break_start` when it begins, then the `break` that ends it.
     let events = tm.events();
-    assert_eq!(events[events.len() - 3..], ["start", "break", "stop"], "{events:?}");
+    assert_eq!(events[events.len() - 4..], ["start", "break_start", "break", "stop"], "{events:?}");
 
     let day = tm.json_at(AFTER, &["review", "day"]);
     let r = &day["review"];
@@ -110,10 +111,11 @@ fn a_break_inside_a_typed_pause_leaves_the_block_held_and_every_surface_reads_on
     assert_eq!(mid["active"]["elapsed_min"], 25, "`tm now`'s header at 10:05: {mid}");
     let said = tm.ok_at("2026-09-07T10:10:00-05:00", &["stop"]).stdout;
     assert!(said.contains("after 30m"), "`tm stop` subtracted the break inside the pause twice: {said}");
+    // `tm break` logs its `break_start` when it begins (the owner's D105, parity P100).
     let events = tm.events();
     assert_eq!(
-        events[events.len() - 5..],
-        ["start", "pause", "break", "unpause", "stop"],
+        events[events.len() - 6..],
+        ["start", "pause", "break_start", "break", "unpause", "stop"],
         "{events:?}"
     );
     let day = tm.json_at("2026-09-07T10:11:00-05:00", &["review", "day"]);

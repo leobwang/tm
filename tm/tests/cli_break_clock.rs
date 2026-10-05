@@ -2,16 +2,20 @@
 //! before `now` with its clock** — the campaign's D81 call on README gap 3820,
 //! parity P73, stage 6 W-41 track T.
 //!
-//! `.tm/state.json`'s `break.started` is a bare `HH:MM`, and the log holds no
-//! line for a running break (its `break` entry is appended when it ends), so
-//! the cache's clock is all there is. Fork 4748911 placed it on TODAY's date at
-//! every site: after midnight a break begun at 23:50 began TONIGHT, so `tm
-//! done` netted none of it out of the block (`actual_min: 70` where fifty were
-//! worked), `tm break`'s end logged it tonight with `actual_min: 0`, and `tm
-//! now` read the break as worked. One function reads it now
-//! (`BreakState::started_at`), at every site: the worked minutes, `end_break`,
-//! `since_break_min`, D61's walls request, the week cut's, `tm pause`'s, and the
-//! TUI's timer and break-overrun prompt (`break_clock_timer.rs`).
+//! `.tm/state.json`'s `break.started` is a bare `HH:MM`, and until the owner's
+//! D105 the log held no line for a running break (its `break` entry is appended
+//! when it ends), so the cache's clock was all there was. Fork 4748911 placed it
+//! on TODAY's date at every site: after midnight a break begun at 23:50 began
+//! TONIGHT, so `tm done` netted none of it out of the block (`actual_min: 70`
+//! where fifty were worked), `tm break`'s end logged it tonight with
+//! `actual_min: 0`, and `tm now` read the break as worked. One function reads
+//! it now, at every site: the worked minutes, `end_break`, `since_break_min`,
+//! D61's walls request, the week cut's, `tm pause`'s, the planner request's and
+//! the TUI's timer and break-overrun prompt (`break_clock_timer.rs`) — since
+//! D105 (parity P100) `BreakState::started_at_logged`, the instant the break's
+//! `break_start` was logged at, and for a break the log holds no `break_start`
+//! for (one a binary before D105 began) the cache's clock read by
+//! `BreakState::started_at`, the latest instant at or before `now` with it.
 
 mod cli_common;
 
@@ -118,11 +122,18 @@ fn functions(text: &str) -> Vec<(String, usize, String)> {
 /// **The class, not a list** (README gap 3820's own body shapes): a function of
 /// the host or of `tm-core` that touches a running break (`.break_`), reads a
 /// `.started` and places a clock (`ctx.at(`, `self.local(`, `local_dt(`,
-/// `clock_sec(`, the codec's `cache`) reads the break's start through
-/// `BreakState::started_at` — or is the one named below. Driven: on `122e153`
-/// this finds the nine sites P73 moved (eight in `tm/src`, and the planner
-/// request's `state_json`, moved at W-41's land step, README gap 4001) and
-/// `reconcile_state`.
+/// `clock_sec(`, the codec's `cache`) reads the break's start through the ONE
+/// reading — or is the one named below. Driven: on `122e153` this finds the nine
+/// sites P73 moved (eight in `tm/src`, and the planner request's `state_json`,
+/// moved at W-41's land step, README gap 4001) and `reconcile_state`. **Since
+/// the owner's D105** (parity P100; W-46 track K) the one reading is
+/// `BreakState::started_at_logged` — the logged `break_start` first, the cache's
+/// clock (`BreakState::started_at`) for a break the log holds none for — and a
+/// reader that calls the cache's reading directly reads the minute where the
+/// others read the second, so it is no longer accepted here
+/// (`kernel_break_start.rs`' `a_running_breaks_start_has_one_reading` is the
+/// same class read from the other side: the one call to the cache's reading is
+/// the logged reading's fallback).
 #[test]
 fn every_reader_of_a_running_breaks_start_reads_one_function() {
     let exempt = [
@@ -151,7 +162,7 @@ fn every_reader_of_a_running_breaks_start_reads_one_function() {
             for (name, line, body) in functions(&text) {
                 let clock = [".at(", ".local(", "local_dt(", "clock_sec("].iter().any(|c| body.contains(c))
                     || has_word(&body, "cache");
-                if has_word(&body, ".break_") && has_word(&body, ".started") && clock && !body.contains("started_at(") {
+                if has_word(&body, ".break_") && has_word(&body, ".started") && clock && !body.contains("started_at_logged(") {
                     found.push((rel.clone(), name, line));
                 }
             }
@@ -161,5 +172,5 @@ fn every_reader_of_a_running_breaks_start_reads_one_function() {
     let names: Vec<(&str, &str)> = found.iter().map(|(f, n, _)| (f.as_str(), n.as_str())).collect();
     let mut want = exempt.to_vec();
     want.sort();
-    assert_eq!(names, want, "a reader of a running break's start that is not `BreakState::started_at`: {found:?}");
+    assert_eq!(names, want, "a reader of a running break's start that is not `BreakState::started_at_logged`: {found:?}");
 }

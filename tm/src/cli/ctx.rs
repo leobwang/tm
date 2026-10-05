@@ -147,33 +147,21 @@ fn roll_day(state: &mut RuntimeState, today: NaiveDate) -> bool {
 /// Each one is host-only for a reason the log module's own conventions state,
 /// not for a reason this file decided.
 ///
-/// * **`break`** — "`break.t` is when the break began; the entry is appended
-///   when the break **ends**" (`tm_core::log`'s event conventions, and
-///   `day::end_break` is the only caller that writes an `Event::Break`). A
-///   break that is *running* has left no line in the log at all, so neither
-///   its start, its planned length nor its `where` can be recovered. The
-///   `active.paused` it set goes with it (`tm break` pauses the block without
-///   an `Event::Pause`), which is why [`derived_state`] ORs the cache's own
-///   running break back into the derived `paused`.
-///
-///   **And when the file is MISSING there is no cache to OR from, so the block
-///   comes back RUNNING.** That is the one place a deletion moves an answer,
-///   and it is named in the notice rather than left to be found: `tm --json
-///   now`'s `active.paused` goes `true` -> `false` across the deletion, driven
-///   at the W-21 repair step on `energy-14d`
-///   (`deleting_the_runtime_state_while_a_break_runs_resumes_the_block`), where
-///   it is the ONLY spelling of eleven that moves and `.tm/log.jsonl` stays at
-///   162 lines. On a tree whose plan depends on the pause it reaches further —
-///   a re-laid afternoon, a moved plan hash and a second `Event::Plan` — which
-///   is a derivable cache's deletion writing to the authority; README gap 1085.
-///
-///   **The log can answer for one since the owner's D105** (README "Stage 6 —
-///   W-46 track K", gaps 1034, 1085 and 4740, parity **P100**): a `break_start`
-///   line — the break's start, its planned minutes and its place — is read by
-///   the kernel's replay as the running break
-///   ([`tm_core::log::Replay::open_break`]), and [`derived_state`] restores
-///   `break` and the pause from it. A break the log holds no `break_start` for
-///   is still gone with the file.
+/// **`break` and the `active.paused` a break sets are NOT here any more** — the
+/// owner's **D105** (README "Stage 6 — W-46 track K", gaps 1034, 1085 and 4740,
+/// parity **P100**). Until then a break's only line was the `break` appended
+/// when it ENDED, so a running break left nothing to rebuild from: deleting the
+/// file mid-break brought the block back RUNNING (README gap 1085, driven at the
+/// W-21 repair step on `energy-14d`), and once R3's planner drew the running
+/// break (P45) the deletion moved `tm plan` and appended a `plan` event — a
+/// derived cache's deletion writing to its authority (gap 4740). `tm break` now
+/// logs a `break_start` when the break begins, the kernel's replay pairs it with
+/// the `break` that ends it ([`tm_core::log::Replay::open_break`]), and
+/// [`derived_state`] rebuilds `break` and the pause from it. The one break the
+/// log still cannot answer for is one a binary BEFORE D105 began (no
+/// `break_start` line): the cache's copy is kept while the file exists
+/// ([`Ctx::reconcile_state`]'s cached branch), and it is gone with the file —
+/// README gap 4760.
 /// * **`active.est_min`** — `Event::Start` carries `pred`, `hsw`, `slept_min`,
 ///   `loc`, `blocks_done` and `since_break_min`, and **no estimate**; `tm
 ///   extend` then adds its minutes to the cached number, so two `extend`s and
@@ -195,12 +183,6 @@ fn roll_day(state: &mut RuntimeState, today: NaiveDate) -> bool {
 /// What is true of each field is what it is *derived from*, not that it is
 /// lost, so the entries below say that and the notice computes the rest.
 pub const HOST_ONLY_STATE: &[(&str, &str)] = &[
-    ("`break`",
-     "a running break is logged only when it ends, so one that was running left \
-      no line to rebuild from"),
-    ("`active.paused`",
-     "restored when a `tm pause` set it, because `Event::Pause` is in the log, \
-      and gone when a running `break` set it, because that writes nothing"),
     ("`active.est_min`",
      "recomputed by `Ctx::planned_block` from the item's line — no `start` event \
       carries an estimate — so a `tm extend` that ran before the file was \
@@ -241,7 +223,7 @@ fn host_only(field: &str) -> &'static str {
 /// | `active` | `Replay::open_block` — id, `started`, `paused`; **not** `est_min` |
 /// | `interrupt` | `Replay::open_interrupt` — `started`, `id` |
 /// | `last_plan_hash` | `DayReplay::last_plan_hash` (`Event::Plan`) |
-/// | `break` | `Replay::open_break` when the log holds the break's `break_start` (the owner's **D105**, parity P100): its start's `HH:MM`, `planned_min` and `where`, and the `active.paused` it sets; otherwise **nothing** ([`HOST_ONLY_STATE`]) — a `tm pause`'s pause survives, because `Event::Pause` is in the log |
+/// | `break` | `Replay::open_break` — the `break_start` no `break` has ended (the owner's **D105**, parity P100): its start's `HH:MM`, `planned_min` and `where`, and the `active.paused` it sets; a break a binary before D105 began logged no `break_start` and is kept from the cache while the file exists (README gap 4760) |
 /// | `priorities_yesterday`, `closed` | **nothing** ([`HOST_ONLY_STATE`]); both come back empty, and `closed`'s emptiness is load-bearing in the safe direction |
 ///
 /// **The one residue inside a derivable field, measured rather than waved at.**
@@ -1276,18 +1258,15 @@ impl Ctx {
     /// produced, and the three claims are kept apart because they are three
     /// different claims:
     ///
-    /// * **Gone.** `break`. Nothing in the log says a break was running (the
-    ///   entry is appended when it *ends*), so one that was is not recoverable —
-    ///   the only field of §10.2 for which that is true. The pause it had set
-    ///   goes with it, and whether that happened is **visible**: a block that
-    ///   comes back running was either never paused or was paused by the break,
-    ///   and a block that comes back paused was paused by an `Event::Pause`,
-    ///   which the log does carry. The old parenthetical asserted the first case
-    ///   unconditionally and was false in the second.
-    ///
-    ///   **Restored instead when the log holds its `break_start`** (the owner's
-    ///   D105, parity P100): the replay reads the running break from that line,
-    ///   so the rebuild puts it back with the pause it sets, and says so.
+    /// * **Restored.** `break`, since the owner's **D105** (parity P100): the
+    ///   `break_start` `tm break` logs is the running break's line, so the
+    ///   rebuild puts it back with the pause it sets, and says so; and a block a
+    ///   `pause` or an interruption holds comes back paused from the log's own
+    ///   line, said too. Until D105 this clause read *"Gone"* — nothing in the
+    ///   log said a break was running (its entry was appended when it *ended*),
+    ///   and the block came back running (README gaps 1034 and 1085). A break a
+    ///   binary before D105 began is still gone with the file, and nothing can
+    ///   say so: the file that held it is the one deleted (README gap 4760).
     /// * **Recomputed.** `active.est_min`, from [`Ctx::planned_block`] — the
     ///   item's estimate *now*, not the one the block was started with. That is
     ///   a different source, not an absence, and the number is printed so the
@@ -1314,22 +1293,15 @@ impl Ctx {
                 b.place.as_ref().map(|p| format!(", {p}")).unwrap_or_default(),
                 if self.state.active.is_some() { ", and the `active.paused` it sets" } else { "" }
             ));
-        } else {
-            let pause_note = match self.state.active.as_ref() {
-                Some(a) if a.paused => {
-                    " — this block's `active.paused` came back from the log's own \
-                     `pause` event, so only the break itself is gone"
-                }
-                Some(_) => {
-                    " — and if one was running, the `active.paused` it had set is \
-                     gone with it and the block is running again"
-                }
-                None => "",
-            };
-            out.push(format!(
-                "GONE, and the log cannot answer for it: `break` — {}{pause_note}.",
-                host_only("`break`")
-            ));
+        } else if self.state.active.as_ref().is_some_and(|a| a.paused) {
+            // A block paused with no break running: the pause is the log's own
+            // `pause` (or `interrupt`) line's, and the notice says so rather than
+            // leaving the reader to wonder whether it was lost (gap 1192's rule).
+            out.push(
+                "RESTORED from the log: `active.paused` — this block's pause came back from the \
+                 log's own `pause` or `interrupt` line."
+                    .to_string(),
+            );
         }
         if let Some(a) = self.state.active.as_ref() {
             out.push(format!(
@@ -1984,11 +1956,10 @@ impl Ctx {
     /// local midnight is the evening's after it. `None` with no break running,
     /// or one with no `started`.
     pub fn running_break(&self) -> Option<DateTime<Tz>> {
-        let cached = self.state.break_.as_ref()?;
-        match self.replay.open_break.as_ref() {
-            Some(b) => Some(b.started.with_timezone(&self.cfg.tz)),
-            None => cached.started_at(self.cfg.tz, self.now_tz),
-        }
+        self.state
+            .break_
+            .as_ref()?
+            .started_at_logged(self.replay.open_break.as_ref(), self.cfg.tz, self.now_tz)
     }
 
     /// **§8.1's working window and block budget from one arrival** — the ONE
@@ -2174,17 +2145,18 @@ mod tests {
     /// rebuilt file came back byte-identical on all four — and stayed the
     /// *documentation* of which §10.2 fields the log cannot answer for.
     /// [`Ctx::rebuild_notice`] computes the sentence instead. This is what still
-    /// ties the two together: five entries, each leading with the field it is
-    /// about, in the spelling the notice uses.
+    /// ties the two together: three entries since the owner's D105 (five before
+    /// it; `break` and `active.paused` became derivable), each leading with the
+    /// field it is about, in the spelling the notice uses.
     ///
     /// **What it cannot check**: that the notice still *prints* each of them.
     /// That needs a `Ctx`, and it is what the two T9 cases in
     /// `cli_switch_acceptance.rs` are for.
     #[test]
     fn every_host_only_field_leads_its_own_entry() {
+        // `break` and `active.paused` left the table with the owner's D105 (parity P100):
+        // the `break_start` `tm break` logs makes both derivable.
         let fields = [
-            "`break`",
-            "`active.paused`",
             "`active.est_min`",
             "`priorities_yesterday`",
             "`closed`",

@@ -1201,15 +1201,20 @@ fn clock_sec(tz: Tz, date: NaiveDate, t: NaiveTime) -> i64 {
 /// ([`crate::log::Replay::open_interruption`]). `.tm/state.json`'s `started` is a
 /// bare `HH:MM`, a cache of those instants (D42), and fork `Planner::active_run`
 /// put it on the plan's date — so after local midnight a block begun before it
-/// was sent as starting TONIGHT, after `now`. Only the BREAK keeps the cache's
-/// clock, because the log holds no line for a running break (README gap 3820):
-/// since W-41's land step (README gap 4001, closing it beside track T's P73) it
-/// is placed by [`crate::store::BreakState::started_at`] — the latest instant at
-/// or before `now` whose local clock is the cache's, the one reading every host
-/// site of a running break's start shares — where until then it was the cache's
-/// clock on the plan's date, tonight's after midnight, which the kernel refused
-/// (`badBreak wf`). A record the log does not hold keeps the cache's clock on the
-/// plan's date (unreachable after D42's reconcile).
+/// was sent as starting TONIGHT, after `now`. And since the owner's **D105**
+/// (parity P100) the BREAK's is the instant of its `break_start` line too
+/// ([`crate::log::Replay::open_break`]), read by
+/// [`crate::store::BreakState::started_at_logged`], the one reading every host
+/// site of a running break's start shares. Until D105 the log held no line for a
+/// running break (README gap 3820), so the break alone kept the cache's clock:
+/// since W-41's land step (README gap 4001, closing it beside track T's P73)
+/// placed by [`crate::store::BreakState::started_at`] — the latest instant at or
+/// before `now` whose local clock is the cache's, which is still the reading for
+/// a break the log holds no `break_start` for (one a binary before D105 began) —
+/// where until then it was the cache's clock on the plan's date, tonight's after
+/// midnight, which the kernel refused (`badBreak wf`). A record the log does not
+/// hold keeps the cache's clock on the plan's date (unreachable after D42's
+/// reconcile).
 ///
 /// **No start is moved** (README gap 3952). From W-40 track E until the repair a
 /// start after `now` was sent AS `now` — a reading no owner decision names (P68
@@ -1236,9 +1241,11 @@ pub fn state_json(state: &RuntimeState, logged: &LoggedStarts, date: NaiveDate, 
         );
     }
     if let Some(b) = &state.break_ {
+        // The ONE reading of a running break's start (the owner's D105, parity
+        // P100): the logged `break_start`'s instant, else the cache's clock.
         o.insert(
             "break".to_string(),
-            json!({"started": b.started_at(tz, now).map(kernel_sec),
+            json!({"started": b.started_at_logged(logged.brk.as_ref(), tz, now).map(kernel_sec),
                    "plannedMin": b.planned_min, "place": b.place}),
         );
     }
@@ -1256,22 +1263,28 @@ pub fn state_json(state: &RuntimeState, logged: &LoggedStarts, date: NaiveDate, 
 /// **The instants the log holds for §9's running records** — what
 /// [`state_json`] reads a start from before it falls back to the cache's clock:
 /// the open block's own `start` line (with its item, so a cache naming another
-/// block is not given it) and the open interruption's `interrupt` line. The log
-/// holds no line for a running break (README gap 3820), so there is no third.
+/// block is not given it), the open interruption's `interrupt` line, and — since
+/// the owner's D105 (parity P100) — the running break's `break_start` line.
+/// Until D105 the log held no line for a running break (README gap 3820), so
+/// there was no third.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct LoggedStarts {
     /// [`crate::log::OpenBlock`]'s `(id, started)`.
     pub block: Option<(String, DateTime<chrono::FixedOffset>)>,
     /// [`crate::log::Replay::open_interruption`]'s `start`.
     pub interrupt: Option<DateTime<chrono::FixedOffset>>,
+    /// [`crate::log::Replay::open_break`]: the running break's logged start, its
+    /// planned minutes, place and day.
+    pub brk: Option<crate::log::OpenBreak>,
 }
 
 impl LoggedStarts {
-    /// The two instants, read off the replay.
+    /// The three instants, read off the replay.
     pub fn of(replay: &crate::log::Replay) -> LoggedStarts {
         LoggedStarts {
             block: replay.open_block.as_ref().map(|b| (b.id.clone(), b.started)),
             interrupt: replay.open_interruption().and_then(|i| i.start),
+            brk: replay.open_break.clone(),
         }
     }
 }
@@ -2459,6 +2472,7 @@ mod tests {
         let logged = LoggedStarts {
             block: Some(("t4".to_string(), yesterday(23, 0).fixed_offset())),
             interrupt: Some(yesterday(23, 40).fixed_offset()),
+            brk: None,
         };
         let now = at(0, 40);
         let v = state_json(&state, &logged, date, now, tz());
@@ -2469,10 +2483,28 @@ mod tests {
         let v = state_json(&state, &logged, date, at(23, 55), tz());
         assert_eq!(v["break"]["started"], json!(kernel_sec(at(23, 50))), "this evening's 23:50");
         // A log open block for ANOTHER item is not this one's start.
-        let other = LoggedStarts { block: Some(("m1".to_string(), yesterday(23, 0).fixed_offset())), interrupt: None };
+        let other = LoggedStarts { block: Some(("m1".to_string(), yesterday(23, 0).fixed_offset())), interrupt: None, brk: None };
         let v = state_json(&state, &other, date, now, tz());
         assert_eq!(v["active"]["started"], json!(kernel_sec(at(23, 0))), "the cache's clock");
         assert_eq!(v["interrupt"]["started"], json!(kernel_sec(at(23, 40))), "the cache's clock");
+        // **A break the log holds a `break_start` for is the log's, to the second** (the owner's
+        // D105, parity P100): the cache says 23:50 and the line 23:50:37 — the line's instant is
+        // the one reading `tm stop` and the TUI's timer net from, so the planner is sent it too.
+        let logged_break = LoggedStarts {
+            brk: Some(crate::log::OpenBreak {
+                started: (yesterday(23, 50) + Duration::seconds(37)).fixed_offset(),
+                planned_min: 20,
+                r#where: None,
+                day: date - Duration::days(1),
+            }),
+            ..logged.clone()
+        };
+        let v = state_json(&state, &logged_break, date, now, tz());
+        assert_eq!(
+            v["break"]["started"],
+            json!(kernel_sec(yesterday(23, 50) + Duration::seconds(37))),
+            "the logged `break_start`, not the cache's minute"
+        );
         // Nothing is moved: `state_json` takes no `now`, so a start after it is
         // sent as read and the kernel refuses it by name (`kernel_plan_codec.rs`).
     }

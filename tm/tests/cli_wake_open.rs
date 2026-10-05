@@ -115,6 +115,12 @@ fn tm_wake_over_a_running_break_is_refused() {
 /// has no instant, and P74's refusal asked for the instant — so the wake went
 /// through and cleared the record with no `break` line. The refusal reads the
 /// RECORD, writes nothing, and `tm break` still ends it.
+///
+/// **Since the owner's D105 (parity P100) the start is the log's**: `tm break`
+/// logged a `break_start`, so the refusal names that instant whatever the
+/// cache's clock says. The record with no instant the W-41 repair was about is
+/// a break the log holds no start for — one a binary before D105 began — and
+/// that is the second half: the `break_start` line taken out as well.
 #[test]
 fn tm_wake_over_a_break_with_no_start_is_refused() {
     let tm = left_open("2026-09-08T23:50:00-05:00", &["break", "20m"]);
@@ -123,6 +129,20 @@ fn tm_wake_over_a_break_with_no_start_is_refused() {
     let mut state: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path).expect("state")).expect("JSON");
     state["break"]["started"] = serde_json::Value::Null;
     fs::write(&path, serde_json::to_string(&state).expect("JSON")).expect("write the hand edit");
+    // D105: the logged start names the break whatever the cache says.
+    let out = tm.run_at(MORNING, &["wake", "06:30", "--slept", "7h"]);
+    assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
+    assert!(
+        out.stderr.contains("a break is still running since 2026-09-08 23:50 — end it (`tm break`) before `tm wake`"),
+        "the refusal did not name the start `tm break` logged: {}",
+        out.stderr
+    );
+    // A break a binary before D105 began: its log holds no `break_start`.
+    let log = tm.read(".tm/log.jsonl");
+    let stripped: String =
+        log.lines().filter(|l| !l.contains("\"ev\":\"break_start\"")).map(|l| format!("{l}\n")).collect();
+    assert_ne!(stripped, log, "`tm break` logged no `break_start`, so this half would prove nothing");
+    fs::write(tm.plan.join(".tm/log.jsonl"), &stripped).expect("a log as a binary before D105 wrote it");
     let before = files(&tm.plan);
     let out = tm.run_at(MORNING, &["wake", "06:30", "--slept", "7h"]);
     assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);

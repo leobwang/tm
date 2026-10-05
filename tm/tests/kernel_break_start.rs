@@ -20,8 +20,11 @@
 //! * a log with no `break_start` — every corpus log, every log fork 4748911 ever wrote — has no
 //!   running break, so the reader changes nothing about them.
 //!
-//! The D42 half — the binary rebuilding `.tm/state.json`'s `break` from the line — is the last
-//! test here and `cli_switch_acceptance.rs`' running-break tests.
+//! The D42 half — the binary rebuilding `.tm/state.json`'s `break` from the line — is
+//! [`the_rebuild_restores_a_logged_break_and_its_pause`] and `cli_switch_acceptance.rs`'
+//! running-break tests. And since the writer's commit — `tm break` logs the line — the start has
+//! ONE reading in the host, the logged second over the cache's minute
+//! ([`a_running_breaks_start_has_one_reading`], read off the code as a class).
 
 #![allow(clippy::needless_raw_string_hashes)]
 
@@ -275,4 +278,90 @@ fn the_rebuild_restores_a_logged_break_and_its_pause() {
     assert_eq!(after["break"], before["break"], "the break did not come back as `tm break` cached it");
     assert_eq!(after["active"]["paused"], true, "the pause the break set did not come back: {after}");
     assert_eq!(after["active"]["id"], before["active"]["id"]);
+}
+
+/// **The lines of a Rust file that are not a `#[cfg(test)]` item** — a column-zero
+/// `#[cfg(test)]` gates the item after it (and any attributes between), which runs to the next
+/// column-zero `}` (rustfmt's shape for a top-level item's close), or is that one line when it
+/// ends in `;` or opens and closes its braces on it. Test code calls `BreakState::started_at`
+/// on purpose, to pin it; the class below is the binary's readers.
+fn non_test_lines(text: &str) -> Vec<&str> {
+    let (mut out, mut pending, mut skip) = (Vec::new(), false, false);
+    for line in text.lines() {
+        if skip {
+            skip = line != "}";
+            continue;
+        }
+        if line == "#[cfg(test)]" {
+            pending = true;
+            continue;
+        }
+        if pending {
+            if line.starts_with("#[") {
+                continue;
+            }
+            pending = false;
+            let opens = line.matches('{').count();
+            let one_line = line.ends_with(';') || (opens > 0 && opens == line.matches('}').count());
+            skip = !one_line;
+            continue;
+        }
+        out.push(line);
+    }
+    out
+}
+
+/// Every `.rs` file under `dir`, recursively, in path order.
+fn rust_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+    let mut entries: Vec<_> = fs::read_dir(dir).expect("a source directory").map(|e| e.expect("an entry").path()).collect();
+    entries.sort();
+    for p in entries {
+        if p.is_dir() {
+            rust_files(&p, out);
+        } else if p.extension().and_then(|e| e.to_str()) == Some("rs") {
+            out.push(p);
+        }
+    }
+}
+
+/// **A running break's start has ONE reading** (the owner's D105, parity P100; AGENTS §5.3) —
+/// read off the code as a CLASS, never as a list of the readers somebody remembered. The cache
+/// stores the start as `HH:MM` and a `break_start` line to the second, so a reader left on the
+/// cache's clock would disagree with one on the log's by the start's seconds: before D105 every
+/// reader read the cache, and the writer's commit moved the CLI to the log. So: the only call to
+/// the cache's reading (`BreakState::started_at`) in `tm/src` and `tm-core/src` is the logged
+/// reading's own fallback (`BreakState::started_at_logged`), and the logged reading is called by
+/// the three readers there are — `Ctx::running_break` (every CLI verb), `App::running_break` (the
+/// TUI's timer and break-overrun prompt) and `planwire::state_json` (the planner request).
+#[test]
+fn a_running_breaks_start_has_one_reading() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let mut files = Vec::new();
+    for dir in ["tm/src", "tm-core/src"] {
+        rust_files(&root.join(dir), &mut files);
+    }
+    let (mut cache, mut logged) = (Vec::new(), Vec::new());
+    for f in &files {
+        let text = fs::read_to_string(f).expect("a source file");
+        let rel = f.strip_prefix(&root).expect("under the root").display().to_string();
+        for line in non_test_lines(&text).into_iter().map(str::trim).filter(|l| !l.starts_with("//")) {
+            if line.contains(".started_at(") {
+                cache.push(format!("{rel}: {line}"));
+            }
+            if line.contains(".started_at_logged(") {
+                logged.push(rel.clone());
+            }
+        }
+    }
+    assert_eq!(
+        cache,
+        vec!["tm-core/src/store.rs: None => self.started_at(tz, now),".to_string()],
+        "a reader of a running break's start reads the cache's clock and not the ONE reading"
+    );
+    logged.sort();
+    assert_eq!(
+        logged,
+        vec!["tm-core/src/planwire.rs", "tm/src/cli/ctx.rs", "tm/src/tui/app.rs"],
+        "the readers of a running break's start are not the three there are"
+    );
 }

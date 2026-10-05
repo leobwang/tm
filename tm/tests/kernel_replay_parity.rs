@@ -3158,8 +3158,64 @@ fn frozen_class_inputs() -> Vec<(&'static str, String, Tz, String)> {
     for c in zone_cases() {
         out.push((ZONE_CASE_CLASS, c.name.clone(), c.tz, c.text.clone()));
     }
+    // Parity P100's class (the owner's D105), appended so every row frozen before it keeps its
+    // place and its bytes.
+    for (name, text) in d105_logs() {
+        out.push((D105_CLASS, name, chrono_tz::America::Chicago, text));
+    }
     out
 }
+
+/// **Parity P100's class** (the owner's D105, README "Stage 6 — W-46 track K"): the corpus's
+/// `energy-14d` as a binary since D105 writes it — each `break` line preceded by the
+/// `break_start` `tm break` logged when the break began, at the same instant (the line that
+/// ends a break is stamped at its logged start), the lines written by the binary's own writer —
+/// then with a break still RUNNING at the end, then with that running break undone (`tm undo`
+/// of `tm break` appends `undo{of: "break_start"}`). Fork 4748911 reads every surviving
+/// `break_start` as an unknown event; the kernel reads it as the running break.
+fn d105_logs() -> Vec<(String, String)> {
+    let energy = corpus_logs()
+        .into_iter()
+        .find(|(n, _)| n == "logs/energy-14d.jsonl")
+        .expect("the corpus's energy-14d")
+        .1;
+    let line_of = |t: DateTime<FixedOffset>, ev: Event| -> String {
+        let mut l = LogEntry::new(t, ev).to_json().expect("the binary's writer writes it");
+        l.push('\n');
+        l
+    };
+    let mut every = String::new();
+    let mut last: Option<DateTime<FixedOffset>> = None;
+    for line in energy.split_inclusive('\n') {
+        if let Ok(v) = serde_json::from_str::<Value>(line.trim_end()) {
+            let t = v["t"].as_str().and_then(|t| DateTime::parse_from_rfc3339(t).ok());
+            if let (Some(t), true) = (t, v["ev"] == "break") {
+                let planned_min = u32::try_from(v["planned_min"].as_u64().expect("a break's planned minutes"))
+                    .expect("a u32");
+                let r#where = v["where"].as_str().map(str::to_string);
+                every.push_str(&line_of(t, Event::BreakStart { planned_min, r#where }));
+            }
+            last = t.or(last);
+        }
+        every.push_str(line);
+    }
+    let at = last.expect("the corpus log is dated");
+    let running = format!(
+        "{every}{}",
+        line_of(at, Event::BreakStart { planned_min: 20, r#where: Some("walk".into()) })
+    );
+    let undone = format!("{running}{}", line_of(at, ev_undo("break_start", None)));
+    vec![
+        (D105_EVERY.to_string(), every),
+        (D105_RUNNING.to_string(), running),
+        (D105_UNDONE.to_string(), undone),
+    ]
+}
+
+const D105_CLASS: &str = "P100's class: the corpus's energy-14d as a binary since D105 writes it";
+const D105_EVERY: &str = "d105: energy-14d, every break begun with a break_start";
+const D105_RUNNING: &str = "d105: energy-14d, a break running at the end";
+const D105_UNDONE: &str = "d105: energy-14d, the running break undone";
 
 const GENERATED_MONTH_CLASS: &str = "the generated 1-month log (40 a day)";
 const ZONE_CASE_CLASS: &str = "\u{a7}6.4's zone cases";
@@ -3222,6 +3278,13 @@ fn classes() -> Vec<Class> {
             reach: Reach::Frozen,
             inputs: zones.len(),
             names: zones,
+            why: fork::FROZEN_CLASSES,
+        },
+        Class {
+            class: D105_CLASS,
+            reach: Reach::Frozen,
+            inputs: 3,
+            names: vec![D105_EVERY.to_string(), D105_RUNNING.to_string(), D105_UNDONE.to_string()],
             why: fork::FROZEN_CLASSES,
         },
         Class {
@@ -3468,7 +3531,8 @@ fn compare_frozen_class(class: &str, inputs: &[(&'static str, String, Tz, String
     eprintln!(
         "T5 frozen fork (4748911) — {class}: {} inputs, {} Replay keys ({} of the fork's 20 each), \
          {} scalar values, {} entry counts, {} refused lines, {} event-name sets compared; \
-         parity P21 {} day records, every one displaying the same load; 0 other exceptions",
+         parity P21 {} day records, every one displaying the same load; parity P100 {} `break_start` \
+         lines carried onto `unknown`; 0 other exceptions",
         t.logs,
         t.keys,
         fork::FORK_REPLAY_KEYS.len(),
@@ -3476,7 +3540,8 @@ fn compare_frozen_class(class: &str, inputs: &[(&'static str, String, Tz, String
         t.entries,
         t.warning_lines,
         t.event_names,
-        t.p21
+        t.p21,
+        t.p100
     );
     assert!(
         findings.is_empty(),
@@ -3709,6 +3774,87 @@ fn the_clock_model_starts_a_stretch_where_the_kernels_machine_does() {
 fn t5_the_frozen_zone_cases_replay_as_the_fork_point_does() {
     let inputs = frozen_class_inputs();
     compare_frozen_class(ZONE_CASE_CLASS, &inputs);
+}
+
+/// **P100's class against the fork's frozen answers** (the owner's D105): the corpus's
+/// `energy-14d` with its breaks begun by `break_start` lines, a running one, and an undone one
+/// — every `Replay` key the fork serialises, with P100 carried onto `unknown` by value
+/// (`fork::p100_starts`) and nothing else excepted.
+#[test]
+fn t5_the_frozen_d105_logs_replay_as_the_fork_point_does() {
+    let inputs = frozen_class_inputs();
+    compare_frozen_class(D105_CLASS, &inputs);
+}
+
+/// **Parity P100 is carried by value, and it bites** (the owner's D105, README "Stage 6 —
+/// W-46 track K").
+///
+/// `energy-14d` with every break begun by its `break_start` and one left running: fork point
+/// 4748911 counts each surviving `break_start` as an unknown event and holds no running
+/// break; the kernel counts none and holds the running one. Four things are asserted, each by
+/// value:
+///
+/// 1. the kernel's answer agrees with the fork's once P100's rule is applied, and P100 moved
+///    exactly the 20 surviving lines (19 begun breaks and the running one) — not vacuous;
+/// 2. without the rule the two disagree at `unknown`, by exactly that many — not the identity;
+/// 3. a kernel answer that counted one more unknown event, or that cancelled one of its own
+///    `break_start` rows, fails by name at `unknown`;
+/// 4. the running break the kernel holds is the log's last `break_start`, and the undone log
+///    holds none — the half of P100 the fork has no key for, asked of the log's own line.
+#[test]
+fn p100_is_carried_by_value_and_a_corrupted_kernel_answer_fails_by_name() {
+    let tz = chrono_tz::America::Chicago;
+    let logs = d105_logs();
+    let frozen = fork::frozen_fork_answers();
+    let (_, running) = &logs[1];
+    let fork_answer = frozen.get(D105_RUNNING).expect("the frozen D105 log");
+    let answer = kernel_answer(running, tz);
+    let kf = kernel_view(&answer);
+    let kr = kernel_replay(&answer, tz);
+
+    let starts = fork::p100_starts(&kr);
+    assert_eq!(starts, 20, "P100 counts a different number of surviving `break_start` lines");
+    let mut t = fork::ForkTally::default();
+    let carried = fork::compare_replay_with_fork(D105_RUNNING, &kr, kf.counts.0, &kf.warnings, fork_answer, &mut t);
+    assert!(carried.is_empty(), "the kernel disagrees with the fork under P100:\n  {}", carried.join("\n  "));
+    assert_eq!(t.p100, 20, "the comparison carried a different number");
+
+    let fork_unknown = fork_answer["replay"]["unknown"].as_u64().expect("the fork's unknown count");
+    assert_eq!(kr.unknown, 0, "the kernel read a `break_start` as an unknown event");
+    assert_eq!(fork_unknown, u64::from(kr.unknown) + starts, "the fork's unknown is not the kernel's moved by P100");
+
+    let mut bent = kr.clone();
+    bent.unknown += 1;
+    let mut t = fork::ForkTally::default();
+    let caught = fork::compare_replay_with_fork(D105_RUNNING, &bent, kf.counts.0, &kf.warnings, fork_answer, &mut t);
+    assert!(caught.iter().any(|f| f.contains("`unknown`")), "one more unknown event passed the P100 comparison: {caught:?}");
+    let mut bent = kr.clone();
+    let row = bent.rows.iter_mut().find(|r| r.tag == "break_start").expect("a `break_start` row");
+    row.cancelled = true;
+    let mut t = fork::ForkTally::default();
+    let caught = fork::compare_replay_with_fork(D105_RUNNING, &bent, kf.counts.0, &kf.warnings, fork_answer, &mut t);
+    assert!(caught.iter().any(|f| f.contains("`unknown`")), "a cancelled `break_start` row passed the P100 comparison: {caught:?}");
+
+    let last_start = running
+        .lines()
+        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+        .filter(|v| v["ev"] == "break_start")
+        .last()
+        .expect("the running break's line");
+    let b = kr.open_break.as_ref().expect("the kernel holds no running break");
+    let logged = DateTime::parse_from_rfc3339(last_start["t"].as_str().expect("t")).expect("a stamp");
+    assert_eq!(b.started, logged, "the running break's start is not its line's instant");
+    assert_eq!((b.planned_min, b.r#where.as_deref()), (20, Some("walk")), "the running break's planned minutes and place");
+    let every = kernel_replay(&kernel_answer(&logs[0].1, tz), tz);
+    assert_eq!(every.open_break, None, "every break was ended, so none runs");
+    let undone = kernel_replay(&kernel_answer(&logs[2].1, tz), tz);
+    assert_eq!(undone.open_break, None, "the running break was undone");
+    eprintln!(
+        "P100 by value: {starts} surviving `break_start` lines carried onto `unknown` (fork {fork_unknown}, kernel {}); \
+         one more unknown event and one cancelled row are each caught at `unknown`; the running break is the log's last \
+         `break_start`",
+        kr.unknown
+    );
 }
 
 /// **The frozen comparand is read at full precision** (W-12, README gap 235).

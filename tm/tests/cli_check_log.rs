@@ -612,6 +612,47 @@ fn an_interruption_never_resumed_is_named_beside_its_block() {
     assert!(out.stdout.contains("`tm done`"), "{}", out.stdout);
 }
 
+/// **The third stall cause, since the owner's D105** (parity P100): a break `tm break` began and
+/// nothing ended holds the ledger day as an open interruption does — the `break` line that ends
+/// it is stamped at its start, so its day is one the machine can still write (`Seal.machineDays`)
+/// — and `tm check` names it at its `break_start`'s own line, with the verb that ends it. Both
+/// directions, as for the other two causes: the same days with the break ENDED name nothing.
+#[test]
+fn a_break_never_ended_is_named_as_a_stall_and_an_ended_one_is_not() {
+    const LATE: &str = "2026-10-10T09:00:00-05:00";
+    const BETWEEN: &[&str] = &["2026-09-12", "2026-09-21", "2026-09-30"];
+
+    let tm = Tm::new();
+    tm.ok(&["wake", "06:05", "--slept", "8h10m"]);
+    tm.ok_at("2026-09-07T10:00:00-05:00", &["break", "20m", "--where", "walk"]);
+    for day in BETWEEN {
+        tm.ok_at(&format!("{day}T09:00:00-05:00"), &["now"]);
+    }
+    let line = tm.log().iter().position(|e| e["ev"] == "break_start").expect("a `break_start` (D105)") as u64 + 1;
+    let out = tm.run_at(LATE, &["check"]);
+    assert_eq!(out.code, 0, "a stall is a warning, not an error: {}{}", out.stdout, out.stderr);
+    assert!(out.stdout.contains("a break has been running since 2026-09-07 10:00"), "the break is not named: {}", out.stdout);
+    assert!(out.stdout.contains("`tm break`"), "the stall does not name the verb that ends it: {}", out.stdout);
+    let stalls: Vec<_> = problems_at(&tm, LATE).into_iter().filter(|p| p.0 == "log-stall").collect();
+    assert_eq!(
+        stalls,
+        vec![("log-stall".to_string(), "warning".to_string(), ".tm/log.jsonl".to_string(), line)],
+        "the stall is not at the `break_start`'s own line {line}"
+    );
+
+    // The control: the break ended twenty minutes in, the same days after.
+    let tm = Tm::new();
+    tm.ok(&["wake", "06:05", "--slept", "8h10m"]);
+    tm.ok_at("2026-09-07T10:00:00-05:00", &["break", "20m", "--where", "walk"]);
+    tm.ok_at("2026-09-07T10:20:00-05:00", &["break"]);
+    for day in BETWEEN {
+        tm.ok_at(&format!("{day}T09:00:00-05:00"), &["now"]);
+    }
+    let out = tm.run_at(LATE, &["check"]);
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    assert!(!out.stdout.contains("log-stall"), "an ended break was named as stalled: {}", out.stdout);
+}
+
 /// **D18 survives D32**: the one verb that loads tolerantly still does.
 ///
 /// D32 (gap 476) gave `tm check` sight of a kernel **load** refusal, and gap

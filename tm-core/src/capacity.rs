@@ -229,9 +229,10 @@ pub fn local_dt(tz: Tz, date: NaiveDate, time: NaiveTime) -> DateTime<Tz> {
 /// night (the owner's **D79**, README gap 3823), and `.tm/state.json`'s
 /// `break.started` of a break begun at 23:50 is still the evening's after
 /// midnight (the campaign's **D81** call on README gap 3820, parity **P73** —
-/// the log holds no line for a running break, so its cache's clock is all
-/// there is). [`local_dt`] is the other rule, a clock on a GIVEN date, and
-/// what fork 4748911 read both on (today's).
+/// for a break the log holds no `break_start` for, one a binary before the
+/// owner's D105 began, the cache's clock is all there is). [`local_dt`] is the
+/// other rule, a clock on a GIVEN date, and what fork 4748911 read both on
+/// (today's).
 ///
 /// Today's instants with that clock, then the day before's, then the day
 /// before that's, each latest first — an ambiguous local time (a fall-back

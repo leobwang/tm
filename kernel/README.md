@@ -90878,10 +90878,11 @@ landing commit deletes that banner's entries (they resolve once the code is ther
 
 ## Stage 6 — W-46 track K: the break's start is logged (D105), and the replay holds the running break
 
-**Status.**  Landed in two commits on the track's branch `w46-k`, the first the READER and the second the WRITER — the
-instrument before the change (D21): the kernel reads a `break_start` and holds the running break before any verb writes
-one, so the first commit moves no answer of any log the binary has ever written.  This block is kept current while the
-step runs; §9 is its clock.
+**Status.**  Landed in two commits on the track's branch `w46-k`: the READER (`7c78864`) and the WRITER (the commit
+after it) — the instrument before the change (D21): the kernel reads a `break_start` and holds the running break before
+any verb writes one, so the first commit moves no answer of any log the binary has ever written; the second makes `tm
+break` write it, gives a running break's start ONE reading in the host, and moves the comparands the line moves, each by
+name (§4).  This block is kept current while the step runs; §9 is its clock.
 
 ### 0. The brief, measured
 
@@ -90896,6 +90897,27 @@ step runs; §9 is its clock.
 * "a codec change rebuilds an old checkpoint by the kernel-id/digest rules": true as stated, and nothing extra is owed —
   `kernel_log::kernel_id` is the FNV-1a-64 of the linked archive (`tm-kernel-ffi/build.rs`), so a checkpoint any other
   kernel wrote goes to genesis whatever its format; `Seal.ckptVersion` stays 1, as D94's machine change left it.
+* **The brief's file list does not reach every comparison the line moves** (measured at the writer, gap 4767).  It gives
+  this track "the log fixtures and T1-T5/door comparisons a new event moves" and track C "`tm/tests/**` comparison files
+  and support, `tm/tests/fixtures/*`".  The writer also moves three planner comparands — 18 frozen class worlds, 12
+  seeded-batch draws and both P85 worlds hold a running break or run `tm break`, so each world gains the `break_start`
+  the binary now writes — and their files are C's: `tm/tests/planner_classes.rs`, `tm/tests/planner_p85_days.rs`,
+  `tm/tests/support/plangen.rs` and the fixtures `fork-4748911-planner-classes.jsonl`, `-planner-batch.jsonl` and
+  `-planner-p85.jsonl` — and three doc comments of `tm/tests/support/forkclass.rs` that said a running break is the
+  cache's alone.  A writer that does not move them is not green, so they are edited here and NAMED FOR THE LAND; C's
+  committed tip (`029cffd`, `git diff --stat 16aaafc w46-c`) touches none of the six and other lines of the seventh,
+  and §7 records the trial merge of the three tracks.
+* **"introduces them on frozen lines only under D70 with P100"**: the gate does not read it that way, and it is right
+  not to.  D70 governs a line's ANSWERS (`forkclass::d64_allows`: "(a) and an introduction move the comparand's answers
+  … never its world or provenance (a moved world is D64(b)'s re-draw)"), and here the WORLD moves while every answer
+  stays byte for byte.  The planner comparands are D64(b) re-draws (§4); the log comparands gain new frozen lines (new
+  inputs), and no frozen line of theirs moves.
+* **`end_break_first` needed nothing.**  The line that ends a break has ONE writer, `day::end_break_at`, which every verb
+  that ends a break reaches (D97's class), and it stamps the line at `Ctx::running_break` — the logged start since the
+  reader.  What the brief did not name, and the writer needed, is every OTHER reader of a running break's start: the
+  TUI's timer and break-overrun prompt (`App::running_break`) and the planner request (`planwire::state_json`) read the
+  cache's `HH:MM`, so the writer would have split them from the CLI by the start's seconds (gap 4768, closed in the
+  step).
 
 ### 1. The class: what `.tm/state.json` holds while it runs that no log line holds (step 1)
 
@@ -91008,16 +91030,113 @@ replay of [wake, start p1, break_start]: unknown: 1, open_block p1 running since
 
 **Parity P100 taken**: a `break_start` line -- `tm break` logs it when a break BEGINS, `t` its start, `planned_min` and `where` (the owner's D105) -- is a known event to the kernel: its replay holds the running break until a `break` line ends it (`Replay.Machine.brkOpen`, the `log` answer's `open.break`, `tm_core::log::Replay::open_break`), counts no unknown event, and names a malformed one (`badField planned_min`); D42's rebuild restores `.tm/state.json`'s `break` and the pause it sets from it, and the `break` line that ends a break is stamped at the logged start; fork 4748911 writes no such line, and reads one as an unknown event (`Replay.unknown` + 1, no running break, a malformed one an entry) (the owner's D105, W-46 track K, README gaps 4740, 1034 and 1085)
 
-### 4. The comparands (step 4) — the writer's commit
+### 4. The comparands (step 4)
 
 The reader's commit moves no comparand: no log fork 4748911 ever wrote holds a `break_start`
 (`kernel_break_start.rs`' `a_log_with_no_break_start_has_no_running_break`, over the four corpus logs and a generated
-month at both rates), and the kernel's reading of every other line is unchanged.  What the writer's commit owes the
-comparands is §4 of its own update below.
+month at both rates), and the kernel's reading of every other line is unchanged.  The writer's commit moves these, and
+nothing else (the whole workspace, three runs, §7):
 
-### 5. D42's acceptance on both binaries (step 5) — the writer's commit
+* **T1-T3** (`kernel_log_grammar.rs`): `fork-4748911-log-lines.jsonl` GAINS a source, `d105`, of 13 lines — the fork's
+  verdicts asked of `tm-oracle parse-entry` and frozen by the file's own re-bless (`TM_ORACLE` with `TM_FORK_BLESS`):
+  **13 insertions, 0 deletions**, so no earlier verdict moved (12 sources, 8,286 per-line verdicts, 7 whole-file
+  readings, 1,950,356 bytes).  Five agree byte for byte (the fork sorts an unknown event's keys and `planned_min` sorts
+  before `where`, the kernel's own field order); eight are P100's residue, held BY NAME in `residue`: the kernel refuses
+  six by its field table where the fork reads an entry (`missingField planned_min`, `badField where`, and `badField
+  planned_min` for `"x"`, `-1`, `4294967296` and `20.0`), and both read two that they render differently (a `"where":
+  null` and an extra key: the fork renders every key back, the kernel its table's).  The fork read-back arm
+  (`TM_ORACLE`) holds those two by count instead of comparing what cannot agree: **1,380** kernel renderings read back
+  to the fork's own entry (1,375 before, + the five), 2 rendering-residue lines.
+* **T5** (`kernel_replay_parity.rs`): `fork-4748911-classes-replay.jsonl` GAINS P100's class, three inputs and three
+  lines (3 insertions, 0 deletions): the corpus's `energy-14d` with each of its 19 breaks begun by the `break_start` the
+  binary writes (written by the binary's own writer, at the `break` line's instant), then with a 20th left running, then
+  with that one undone.  **P100 is carried by value, never by skipping a key** (`support/fork.rs`): `p100_starts` counts
+  the kernel's OWN surviving `break_start` rows, adds them to the kernel's `unknown` — the fork reads each as an unknown
+  event — and the comparison then runs key for key as for every input; 58 lines carried over the class
+  (`parity P100 58`), `0 other exceptions`.  **A corrupted kernel answer fails by name**
+  (`p100_is_carried_by_value_and_a_corrupted_kernel_answer_fails_by_name`): one more unknown event, and one of the
+  kernel's `break_start` rows marked cancelled, each fail at `unknown`; the comparison carries exactly 20 on the running
+  log, and without the rule the two disagree by exactly that many.
+* **The door** (`kernel_log_door.rs`): the running break joins the scalar facts a scope may not narrow (`Hot` must hold
+  the `All` scope's `open_break`); its `All` reads go through the same P100-aware comparison.  No door input holds a
+  `break_start`, so no door figure moved (16 reads, 32,982 values).
+* **The log generator is unchanged** (`support/loggen.rs`): it writes `break` lines without starts, a log as a binary
+  before D105 wrote it, so the frozen generated month keeps its bytes and its answers; P100's class is where the line is
+  compared.
+* **The planner comparands — track C's files, named for the Land (gap 4767)** — re-drawn under **D64(b)**, every one
+  checked by value: **18** class lines (`fork-4748911-planner-classes.jsonl`: `break`, `break-block` × lounge, home,
+  late, primary and `window` and `overrun`), **12** seeded-batch draws (`-planner-batch.jsonl`: 19, 31, 32, 34, 37, 40,
+  52, 63, 67, 86, 92, 94) and **both** P85 worlds (`-planner-p85.jsonl`).  Each world gained exactly ONE line — its
+  `break_start`, at the cache's start, planned minutes and place — and lost none; no other key of any world moved; and
+  every answer (both fork days, the comparand, the what-ifs) is byte for byte the committed one.  The classes and the
+  batch are re-drawn by `forkclass::redrawn_since`, the classes' own rule: the committed world now FAILS clause 5 of
+  `binary_holds` (`.tm/state.json`'s `break` is the cache's and the binary rebuilds none from the log), the re-drawn one
+  holds, same class; the batch's bless, which until now refused every moved world by name, admits it on that same rule
+  (`planner_classes.rs`).  The P85 worlds are a different case and get a narrower gate: their committed world is still
+  one the binary HOLDS — its break ended, and a log a binary before D105 wrote holds exactly that — so `redrawn_since`
+  would rightly refuse it; what moved is that the world's own verbs now write one more line.  `moved_only_by_p100`
+  admits exactly that — the committed world is the new one with its `break_start` lines taken out, every other key byte
+  for byte, both fork days the committed ones — and `the_p100_redraw_gate_admits_p100s_line_and_nothing_else` holds it
+  in both directions (a second new line, a moved state, a moved shipped day and a world with no `break_start` are each
+  refused by name).  The reason every line carries (`d64b`): "2026-10-05 D64(b): the owner's D105 -- tm break logs a
+  break_start when the break begins, so a running break .tm/state.json holds and the log does not is a world the
+  shipped binary can no longer build (W-46 track K, parity P100)" (the P85 lines' reason says the same of their verbs).
+  Every bless was run as a dry run first (`…_OUT`) and the in-place run compared byte for byte with it; the oracle arms
+  of all three suites are green against the re-drawn lines (`planner_classes` 81, `planner_p85_days` 22, with
+  `--include-ignored` and `TM_ORACLE`).
 
-### 6. The reader's own tests
+### 5. D42's acceptance on both binaries (step 5)
+
+**The unswitched binary — this commit's.**  `cli_switch_acceptance`'s two running-break tests assert what D105 makes
+true (§6): `deleting_the_runtime_state_while_a_break_runs_changes_nothing` — "running-break deletion: 0 of 11 `--json`
+spellings moved, 164 log lines before and after" — and `a_break_running_with_no_block_is_restored_and_named`; green in
+all three workspace runs (§7).  The behaviour rows below drive the same deletion by hand, and through the TUI.
+
+**The switched binary — the W-45 switch over this commit.**  In a clone (`scratchpad/w46-k/c4`): this commit's tree,
+then `git cherry-pick refs/archive/w45/r3-switch` (`c1e87c9`).  One conflict, `kernel/citations-allow.txt` — this
+track's banner and the switch's, which deletes the W-45 repair's banner as its own text says the landing commit must —
+resolved by keeping both; every other file merged by itself, `ctx.rs`, `app.rs`, `planwire.rs` and `lifecycle.rs`
+among them.  Built with no warning; the tree's porcelain identical before and after the runs.  **`cli_switch_acceptance`
+16 passed, 0 failed** — the running-break test that kept the switch red (W-45's
+deleting_the_runtime_state_while_a_break_runs_resumes_the_block, gap 4740) is this one now, and on the switched binary
+"running-break deletion: 0 of 11 `--json` spellings moved, 165 log lines before and after": the planner draws the
+running break the rebuild restored, so `tm plan`, the three `tm log` views and `tm review day` no longer move and no
+`plan` event is appended.  **Gap 4740 is closed on both binaries.**  `cli_tz_cache_digest`'s
+`only_the_digest_stands_between_a_changed_offset_and_the_days_minutes` is still red there (`kernel fault: planner
+response: plan.hash: the kernel digested … and the decoded day digests …`) — gap 4621, the owner's D104, track H's.
+
+### 6. The tests
+
+**The writer's** (each named with P100; every expectation of the binary's own output that moved is here):
+
+* `cli_switch_acceptance.rs`: `deleting_the_runtime_state_while_a_break_runs_changes_nothing` replaces the test that
+  asserted the deletion moved exactly the pause (deleting_the_runtime_state_while_a_break_runs_resumes_the_block, gap
+  1085): the bite first (a break RUNNING, a block PAUSED, ONE `break_start` in the log), then across the deletion NO
+  spelling of the eleven moves, the rebuilt `break`, `active`, `interrupt`, `date`, `wake` and `loc` are the deleted
+  file's, the notice says the break was RESTORED and nothing was GONE, and the log keeps its line count.
+  `a_break_running_with_no_block_is_restored_and_named` replaces the gap-1191 test (a_break_lost_with_no_block_running_is_still_named):
+  the break comes back, named, with nothing written.  The doc comment of `deleting_the_runtime_state_changes_nothing`
+  that pointed at the old test now says why that state moves nothing either.
+* `cli_break_in_block.rs` (two event sequences), `cli_interrupt_break.rs` (the break's two lines, one instant, before the
+  interruption's), `kernel_call_counts.rs` (`tm break 20m`: `emit` 0 → 1, `log` 2 → 3, measured), `cli_wake_open.rs`
+  (the refusal names the LOGGED start; its no-start half is a log with the `break_start` taken out — a break a binary
+  before D105 began), `cli_check_log.rs`' new `a_break_never_ended_is_named_as_a_stall_and_an_ended_one_is_not` (the
+  third stall cause, both directions).
+* `kernel_break_start.rs`' `a_running_breaks_start_has_one_reading` — read off the code as a CLASS: the one call to the
+  cache's reading outside a `#[cfg(test)]` item is the logged reading's own fallback, and the logged reading is called
+  by exactly the three readers there are (`tm/src/cli/ctx.rs`, `tm/src/tui/app.rs`, `tm-core/src/planwire.rs`).
+  **Driven in a clone** (`scratchpad/w46-k/c3`, porcelain and diff hashed identical after): `App::running_break` put
+  back on the cache's clock fails it by name (`left: ["tm/src/tui/app.rs: …started_at(self.cfg.tz, self.now))", …]`).
+  `planwire.rs`' `a_running_record_starts_where_the_log_says_and_is_never_moved` gains the logged break: the cache says
+  23:50, the line 23:50:37, and the planner is sent the line's second.  And W-41's class test of the same readers
+  (`cli_break_clock.rs`' `every_reader_of_a_running_breaks_start_reads_one_function`), which accepted a function that
+  called `BreakState::started_at`, now accepts one that calls `started_at_logged`: it FAILED on the switched clone's
+  first whole run (`planwire.rs`' `state_json`, the reader the writer moved), which is the class reading itself, and its
+  rule follows the one reading.
+* The comparands' own (§4): `p100_is_carried_by_value_and_a_corrupted_kernel_answer_fails_by_name`,
+  `t5_the_frozen_d105_logs_replay_as_the_fork_point_does`, `the_p100_redraw_gate_admits_p100s_line_and_nothing_else`.
+
+**The reader's:**
 
 `tm/tests/kernel_break_start.rs` (new; six tests, through the FFI and the host's own decoder `kernel_log::decode_facts`,
 never a twin): a `break_start` is the running break on the wire (`open.break`, four elements) and decoded (its start,
@@ -91073,6 +91192,23 @@ drives).  Baseline: `a3588b4`'s, run by the orchestrator — `check.sh` 17 ok (a
   `build-oracle.sh` refreshed into this track's scratch, a no-op): `cli_latency` 8, `cli_switch_acceptance` 16, the door
   42 (16 `All` reads against the frozen fork, 32,982 values), T1-T3 26 (1,375 kernel renderings read back to the fork's
   own entry), T5 52.
+
+### Behaviour rows
+
+Driven on both binaries — HEAD's (`a3588b4`'s build, which `16aaafc` does not change) and the writer's — over
+`kernel/corpus/plan-basic` with `logs/energy-14d.jsonl` (`scratchpad/w46-k/drive/d105.sh`, every verb capped; the TUI
+through a pty, `drive/d105-tui.sh`, 120×40, `--now` fixed):
+
+| what | HEAD | the writer |
+|---|---|---|
+| `tm break 20m --where walk` at 2026-09-10 09:00 over `^p1` | appends nothing | appends `{"t":"2026-09-10T09:00:00-05:00","ev":"break_start","planned_min":20,"where":"walk"}` |
+| then `.tm/state.json` deleted, `tm --json now` | `GONE … break`; `active.paused` true → false, `break` → null; 163 = 163 lines | `RESTORED from the log: break — began 09:00, 20m planned, walk … and the active.paused it sets`; nothing moves; 164 = 164 lines |
+| the same deletion, the TUI at 09:10 | the pane loses `· paused` and an Overtime box opens (`elapsed 66h50m`); `tm now` `4000m of 20m · paused` → `4010m of 20m` | the TUI and `tm now` byte-identical across the deletion |
+| `tm break` begun at 09:00:37, ended at 09:15 | `break` stamped `09:00:00`, `actual_min` 15, `break ended · 15m of 20m` | `break_start` and `break` both stamped `09:00:37`, `actual_min` 14, `break ended · 14m of 20m` (the start read to the second, D75's rule; the cache keeps `HH:MM`) |
+| `tm undo` after `tm break` | `undo {"of":"verb:break"}` (the verb wrote no event, P35) | `undo {"of":"break_start"}` — the mask cancels the start |
+| `tm undo` after the `tm break` that ENDED it | (after the deletion above there was no break to end: HEAD's `tm break` began a new one) | `undo {"of":"break"}`; the break runs again and the cache says so |
+| `tm log --tail 3` over a running break | no row for it | `2026-09-10 09:00 break_start planned_min=20 where="walk"` |
+| a break begun 2026-09-07 10:00 and never ended, `tm check` on 09-30 | `no problems` | `warning[log-stall]` at the `break_start`'s line: "a break has been running since 2026-09-07 10:00, 23 days ago (more than 7); it holds the ledger day at 2026-09-07, … — end it with `tm break`" |
 
 ### 8. Gaps 4760-4789 (this track's)
 
@@ -91133,6 +91269,54 @@ is one").  The LITERAL verdict read scalars only.  `mutate.py` now reads an EXAC
 and the body (whitespace aside) as LITERAL — reported, counted, never a fold — and only that: a structure-literal body
 that differs from the synthesised term is mutated as before, and one nothing pins is still SURVIVED.  The row reads
 `unfoldable,literal` (3 literal rows in the gate's summary, 2 before).
+
+**Gap 4767 — the writer edits seven files the brief gave track C, because the line moves them.**  1. *What.*
+`tm/tests/planner_classes.rs` (the batch's bless admits a D64(b) re-draw), `tm/tests/planner_p85_days.rs` (the P100
+gate and its test), `tm/tests/support/plangen.rs` (a drawn running break is logged as `tm break` logs it), the
+fixtures `fork-4748911-planner-classes.jsonl` (18 lines), `-planner-batch.jsonl` (12) and `-planner-p85.jsonl` (2), and
+three doc comments of `tm/tests/support/forkclass.rs` (`binary_holds`' clause 5, `Running`, the module's header).
+2. *Why.*  The brief's list gave this track the log comparands and C the planner's; the line moves both, and a writer
+that moves none of the planner's is red (`every_frozen_world_is_one_the_binary_holds`,
+`the_frozen_batch_is_every_draw_the_binary_holds`, `every_frozen_p85_world_is_the_binarys`).  3. *Cost.*  The Land
+merges an edit of C's files from K: C's committed tip `029cffd` touches none of the six and other lines of
+`forkclass.rs`, and the trial merge of the three tracks in §7 is textual outside the append-only files.  4. *Clears it.*  The Land, by merging; nothing owed if
+C's tip still touches none of them.
+
+**Gap 4768 — CLOSED in the step: the writer would have split a running break's start between three readers.**  The
+CLI read the logged second since the reader (`Ctx::running_break`); the TUI's timer and break-overrun prompt
+(`App::running_break`) and the planner request (`planwire::state_json`, the running break's `started`) read the cache's
+`HH:MM`.  Before the writer every start had zero seconds in both, so nothing could disagree; once `tm break` logs
+`ctx.now` (a clock with seconds), the TUI would net a break 37 seconds longer than `tm now` and the planner would draw it
+from the minute (AGENTS §5.3).  One reading now, `BreakState::started_at_logged` (`tm-core/src/store.rs`), called by all
+three, and a class test reading the code (§6).
+
+**Gap 4769 — a break's start read to the second moves a minute, by design.**  1. *What.*  Ended at 09:15 after a
+`tm break` at 09:00:37, a break is `actual_min` 14 where the cache's minute said 15, and the running block's worked
+minutes are netted from 09:00:37 (`tm now` 4001m where HEAD's says 4000m at 09:10).  2. *Why.*  The end line's `t` is
+the break's start (the fork's shape, kept by D105), and the start is now the log's to the second — D75's rule for a
+block's start; the cache keeps `HH:MM`.  3. *Cost.*  A user who reads minutes off a wall clock may see one fewer;
+nothing reads two ways.  4. *Clears it.*  Nothing owed unless the owner wants a break's start floored to the minute in
+the log.
+
+**Gap 4770 — a hand-edited `.tm/state.json` whose running break disagrees with the log's is kept as the cache says.**
+1. *What.*  The reconcile's cached branch adopts the log's running break only when the cache holds NONE; a cache that
+holds a different break than the log's open `break_start` keeps its own, while `Ctx::running_break` reads the logged
+start.  2. *Why.*  The one break the cache may hold that the log cannot is one a binary before D105 began (gap 4760),
+and a cache break that differs from a logged one is reachable only by a hand edit of the cache: every verb writes the
+log first and the cache after.  3. *Cost.*  On such a tree the cache's place and planned minutes stand beside the
+log's start.  4. *Clears it.*  Replace a cached break whose start disagrees with the log's (at minute precision, the
+cache's), as the block and the interruption are replaced, if the owner wants D42's rule there too.
+
+**Gap 4771 — the test harness reads a running break's start off the cache's clock at ten sites.**  1. *What.*
+`BreakState::started_at` (the cache's minute) where the binary now reads `started_at_logged` (the logged second):
+`support/forkclass.rs` (three), `support/forkplan.rs`, `planner_classes.rs` (three), `planner_invariants.rs`,
+`planner_request_keys.rs` and `planner_w37_rows.rs` — the harness computing what the kernel should answer (P45's rule,
+P67's transformation, gap 4741's request held to the binary's by value).  2. *Why.*  They are track C's files, and on
+every world the harness builds the two readings are one instant: `plangen` writes a drawn break's `break_start` at the
+cache's own minute.  3. *Cost.*  A world drawn with a break begun at a second other than zero would be asked a
+question the binary does not ask; none is drawn.  4. *Clears it.*  Whoever next edits those files reads
+`started_at_logged(world's open_break)`, or a drawn world gains a seconds-precision start and the comparison fails by
+name first.
 
 ### 9. Status notes (kept current while the step ran)
 

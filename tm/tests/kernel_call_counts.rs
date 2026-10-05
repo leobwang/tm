@@ -103,7 +103,10 @@ fn expected_log_calls(verb: &str) -> u32 {
         "pause" => 4,
         "done" => 4,
         "energy" => 5,
-        "break" => 2,
+        // 3 since the owner's D105 (parity P100), measured at W-46 track K: `tm break` now appends
+        // its `break_start` (one `emit`, below), and its `log` column rose by the one an appending
+        // verb's `emit` brings — `drop` reads 3 with its one `emit`, as `break` now does.
+        "break" => 3,
         "drop" => 3,
         "undo" => 2,
         "review day" => 2,
@@ -201,9 +204,10 @@ fn expected_capacity_calls(verb: &str) -> u32 {
 /// One call per event a verb appends, because the kernel now renders every line
 /// the binary writes. Reading the numbers: `arrive` and `energy` make **two**
 /// because each also appends the `plan` event its replan writes (`planning.rs`);
-/// `tm break 20m` makes **none**, because the `break` entry is appended when the
-/// break *ends*, not when it starts; and the three read-only verbs append
-/// nothing at all.
+/// `tm break 20m` makes **one** since the owner's D105 (parity P100) — the
+/// `break_start` it logs when the break begins; it made none before, when the
+/// only line a break wrote was the `break` appended when it *ends* — and the
+/// three read-only verbs append nothing at all.
 ///
 /// Pinned exactly, for the reason the `log` column is: a verb that starts
 /// appending — or quietly stops — is a behaviour change, and this is the column
@@ -217,7 +221,8 @@ fn expected_emit_calls(verb: &str) -> u32 {
         "pause" => 1,
         "done" => 1,
         "energy" => 2,
-        "break" => 0,
+        // 0 until the owner's D105 (parity P100): `tm break` logs its `break_start`.
+        "break" => 1,
         "drop" => 1,
         "undo" => 1,
         "review day" => 0,

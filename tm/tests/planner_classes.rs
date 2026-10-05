@@ -2504,6 +2504,14 @@ fn the_frozen_plan_basic_days_are_blessed() {
 /// a line HEAD holds that the draw no longer writes is refused; `TM_PLANNER_BLESS_HARNESS` names a
 /// corrected harness reading (the owner's D85, D64(c)).
 ///
+/// **A drawn world that MOVED is a D64(b) re-draw, held to the classes' own rule** (W-46 track K,
+/// the owner's D105): until then this refused every moved world by name and no step could re-draw a
+/// batch line at all. A moved world is admitted only with `TM_PLANNER_DRAW_BECAUSE` a D64(b) reason
+/// (dated, naming D64(b)), the committed world one the shipped binary cannot build and the drawn one
+/// one it can, of the same class — `forkclass::redrawn_since`, the very check a re-drawn class line
+/// meets — and the line then carries the reason and the clauses the committed world failed (`d64b`),
+/// as a class line does, kept on every later bless of an unmoved world.
+///
 /// **It asks fork 4748911 OUT of the tree and sits outside the fork region** (W-45 track C, README
 /// gap 4680): every answer is `forkplan::comparand_answers` over `tm-oracle plan` (the classes'
 /// re-bless's shape since W-43, README gap 4462) and the shipped fork's day the oracle's, so the
@@ -2542,9 +2550,21 @@ fn the_frozen_batch_is_blessed() {
         match held.get(&index.to_string()) {
             None => added += 1,
             Some(old) if old["world"] != line["world"] => {
-                refused.push(format!("draw {index}: the generator draws another world — a re-draw, which D64(b) must decide"));
+                // A D64(b) re-draw (the owner's D105 moved the drawn world: `tm break` logs a `break_start`).
+                let why = std::env::var("TM_PLANNER_DRAW_BECAUSE").unwrap_or_default();
+                let was = ClassWorld::of_json(&old["world"], tz()).expect("a committed world");
+                let failed = forkclass::binary_holds(&Built::of(was)).err().unwrap_or_default();
+                line["d64b"] = serde_json::json!({"why": why, "held": failed});
+                match forkclass::redrawn_since(old, &line, tz()) {
+                    Err(e) => refused.push(format!("draw {index}: the generator draws another world, and {e}")),
+                    Ok(()) => changed.push(format!("draw {index} re-drawn under D64(b)")),
+                }
             }
             Some(old) => {
+                // A re-drawn line keeps its D64(b) record while its world stands.
+                if !old["d64b"].is_null() {
+                    line["d64b"] = old["d64b"].clone();
+                }
                 let ask = forkplan::ForkAsk { state: &b.world.state, now: b.world.now, d60: false, p64: false, prios: &prios, extend: None, log_line: None };
                 let shipped_day = forkplan::ForkPlan::plan(&oracle, &b, &ask).unwrap_or_else(|e| panic!("draw {index}: the oracle: {e}")).fork_day;
                 match forkclass::d64_allows(old, &line, &shipped_day, &because, harness.as_deref(), &registered) {

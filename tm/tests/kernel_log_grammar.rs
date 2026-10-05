@@ -379,7 +379,35 @@ fn t1_sources() -> Vec<Source> {
         })
         .collect();
     out.push(Source { name: "crafted".into(), segs: crafted(), terminated: false });
+    out.push(Source { name: "d105".into(), segs: d105_lines(), terminated: true });
     out
+}
+
+/// **Parity P100's lines** (the owner's D105, README "Stage 6 — W-46 track K"): `break_start`,
+/// the event `tm break` logs when a break BEGINS. Fork 4748911 has no such event and reads every
+/// one as an unknown event — an entry whatever its fields, rendered back with every key it
+/// carried; the kernel reads it as its 27th kind. The first five agree byte for byte (the fork
+/// sorts an unknown event's keys, and `planned_min` sorts before `where`, the kernel's field
+/// order); the rest are P100's residue ([`residue`]).
+fn d105_lines() -> Vec<Vec<u8>> {
+    [
+        r#""ev":"break_start","planned_min":20,"where":"walk""#,
+        r#""ev":"break_start","planned_min":20"#,
+        r#""ev":"break_start","planned_min":0,"where":"seat""#,
+        r#""ev":"break_start","planned_min":4294967295"#,
+        r#""ev":"break_start","where":"walk","planned_min":20"#,
+        r#""ev":"break_start","planned_min":"x""#,
+        r#""ev":"break_start""#,
+        r#""ev":"break_start","planned_min":-1"#,
+        r#""ev":"break_start","planned_min":4294967296"#,
+        r#""ev":"break_start","planned_min":20.0"#,
+        r#""ev":"break_start","planned_min":20,"where":5"#,
+        r#""ev":"break_start","planned_min":20,"where":null"#,
+        r#""ev":"break_start","planned_min":20,"where":"walk","x":1"#,
+    ]
+    .iter()
+    .map(|rest| format!("{{{A},{rest}}}").into_bytes())
+    .collect()
 }
 
 /// **T3's source**: one `note` line per timestamp spelling, so that the only
@@ -522,6 +550,25 @@ fn residue(line: &str) -> Option<(&'static str, &'static str)> {
     if line.len() > 65_536 {
         return Some(("P14", "lineTooLong"));
     }
+    // **P100** (the owner's D105): a `break_start` the kernel refuses by its field table, where the
+    // fork read an unknown event — and two it reads, renders without the keys its table does not
+    // carry, where the fork renders every key back ("rendering").
+    if line.contains(r#""ev":"break_start""#) {
+        let p100 = |rest: &str| line == format!("{{{A},{rest}}}");
+        return if p100(r#""ev":"break_start""#) {
+            Some(("P100", "missingField:planned_min"))
+        } else if p100(r#""ev":"break_start","planned_min":20,"where":5"#) {
+            Some(("P100", "badField:where"))
+        } else if p100(r#""ev":"break_start","planned_min":20,"where":null"#)
+            || p100(r#""ev":"break_start","planned_min":20,"where":"walk","x":1"#)
+        {
+            Some(("P100", "rendering"))
+        } else if ["\"x\"", "-1", "4294967296", "20.0"].iter().any(|v| p100(&format!(r#""ev":"break_start","planned_min":{v}"#))) {
+            Some(("P100", "badField:planned_min"))
+        } else {
+            None
+        };
+    }
     match line {
         r#"{"t":"bad","x":1e400}"# => Some(("P15", "numberOutOfRange")),
         "[1,2," => Some(("P15", "notJson")),
@@ -544,6 +591,7 @@ fn residue(line: &str) -> Option<(&'static str, &'static str)> {
 fn kernel_reads_the_corpus_logs_as_the_fork_point_did() {
     let frozen = frozen();
     let (mut lines, mut entries, mut warns, mut blanks, mut identical, mut seen_residue) = (0, 0, 0, 0, 0, 0);
+    let mut seen_p100 = 0;
     let mut not_identical = Vec::new();
     let mut wholes_checked = 0;
     for src in t1_sources() {
@@ -570,12 +618,21 @@ fn kernel_reads_the_corpus_logs_as_the_fork_point_did() {
             }
             if let Some((p, class)) = residue(&text) {
                 seen_residue += 1;
+                if p == "P100" {
+                    seen_p100 += 1;
+                }
                 match (f, k) {
                     (Fork::Warn(fc, _), Kernel::Warn(kc)) => {
                         assert_eq!(kc, class, "{name}:{n} ({p})");
                         assert_ne!(fc, kc, "{name}:{n}: {p} residue no longer differs");
                     }
                     (Fork::Entry(_), Kernel::Warn(kc)) => assert_eq!(kc, class, "{name}:{n} ({p})"),
+                    // P100's "rendering": both read an entry with one tag and no id; the fork
+                    // renders every key back, the kernel its table's.
+                    (Fork::Entry(e), Kernel::Entry(tag, id, rendering, _)) if class == "rendering" => {
+                        assert_eq!((tag.as_str(), id.as_deref()), (e.tag.as_str(), e.id.as_deref()), "{name}:{n} ({p})");
+                        assert_ne!(rendering, &e.json, "{name}:{n}: {p} residue no longer differs");
+                    }
                     other => panic!("{name}:{n}: {p} residue changed shape: {other:?}"),
                 }
                 continue;
@@ -642,7 +699,8 @@ fn kernel_reads_the_corpus_logs_as_the_fork_point_did() {
         let b = numerals_as_f64(serde_json::from_str(serde).expect("json"));
         assert_eq!(a, b, "{text}: {rendering} against {serde}");
     }
-    assert_eq!(seen_residue, 8, "every residue line is in the set");
+    assert_eq!(seen_residue, 16, "every residue line is in the set");
+    assert_eq!(seen_p100, 8, "every P100 residue line is in the set (the owner's D105)");
     assert_eq!(wholes_checked, 7, "every corpus log's whole-file reading was compared");
     eprintln!(
         "T1 (fork 4748911, frozen): {lines} lines, {entries} entries ({identical} byte-identical, {} differ only in hand-written numerals), {warns} warnings, {blanks} blank, {seen_residue} residue, {wholes_checked} whole-file readings",
@@ -1174,7 +1232,7 @@ fn the_fork_reads_back_every_rendering_the_kernel_writes() {
     let frozen = frozen();
     let mut sources = t1_sources();
     sources.push(t3_source());
-    let (mut checked, mut skipped) = (0usize, 0usize);
+    let (mut checked, mut skipped, mut p100) = (0usize, 0usize, 0usize);
     for src in &sources {
         let name = &src.name;
         let segs: Vec<Option<&str>> = src.segs.iter().map(|s| std::str::from_utf8(s).ok()).collect();
@@ -1185,6 +1243,14 @@ fn the_fork_reads_back_every_rendering_the_kernel_writes() {
         let mut want: Vec<(u64, ForkEntry)> = Vec::new();
         for (i, k) in kernel.iter().enumerate() {
             let n = (i + 1) as u64;
+            // **P100's rendering residue** (the owner's D105): a `break_start` both sides read, the
+            // fork as an unknown event that renders every key back and the kernel as its 27th kind
+            // that renders its table's — so the two renderings differ by construction, and T1 holds
+            // that difference by name (`residue`). Read back, they would differ again; counted here.
+            if residue(&String::from_utf8_lossy(&src.segs[i])).is_some_and(|(p, c)| p == "P100" && c == "rendering") {
+                p100 += 1;
+                continue;
+            }
             if let (Fork::Entry(e), Kernel::Entry(_, _, rendering, _)) = (frozen.line(name, n), k) {
                 renderings.push(rendering.clone().into_bytes());
                 want.push((n, e.clone()));
@@ -1226,8 +1292,10 @@ fn the_fork_reads_back_every_rendering_the_kernel_writes() {
     }
     eprintln!(
         "the fork round trip (4748911): {checked} kernel renderings read back to the fork's own entry, \
-         {skipped} lines skipped (blank, refused by either side, or P14/P15 residue)"
+         {skipped} lines skipped (blank, refused by either side, or P14/P15 residue), {p100} P100 rendering \
+         residue lines held by name in T1 instead"
     );
+    assert_eq!(p100, 2, "P100's two rendering-residue lines are the ones the d105 source carries");
 }
 
 // ---------------------------------------------------------------------------
@@ -1351,7 +1419,8 @@ fn the_kernel_writes_the_corpus_and_a_generated_month_as_the_fork_wrote_them() {
                     // sides decide differently (P23-P25); everywhere else a
                     // difference is a defect.
                     if lines[0] != e.json {
-                        assert_eq!(src.name, "crafted", "{}:{n}: the kernel writes it differently", src.name);
+                        let p100 = residue(&String::from_utf8_lossy(seg)).is_some_and(|(p, _)| p == "P100");
+                        assert!(src.name == "crafted" || p100, "{}:{n}: the kernel writes it differently", src.name);
                         refused += 1;
                         continue;
                     }
@@ -1359,7 +1428,8 @@ fn the_kernel_writes_the_corpus_and_a_generated_month_as_the_fork_wrote_them() {
                     compared += 1;
                 }
                 Err(_) => {
-                    assert_eq!(src.name, "crafted", "{}:{n}: the kernel would not write it", src.name);
+                    let p100 = residue(&String::from_utf8_lossy(seg)).is_some_and(|(p, _)| p == "P100");
+                    assert!(src.name == "crafted" || p100, "{}:{n}: the kernel would not write it", src.name);
                     refused += 1;
                 }
             }

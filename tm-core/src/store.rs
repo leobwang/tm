@@ -2074,27 +2074,54 @@ pub struct BreakState {
 }
 
 impl BreakState {
-    /// **When the running break began, as an instant** — the ONE reading of
-    /// `started` (the campaign's **D81** call on README gap 3820, parity
-    /// **P73**, W-41 track T): the latest instant at or before `now` whose
-    /// local clock in `tz` is that `HH:MM`
-    /// ([`crate::capacity::latest_at_or_before`]). The log holds no line for a
-    /// running break — its `break` entry is appended when it ENDS — so the
-    /// cache's clock is all there is, and D75's rule is the reading under which
-    /// the break can still be running: a break begun at 23:50 is still the
-    /// evening's at 00:10. Fork 4748911 put the clock on TODAY's date at every
-    /// site, so after local midnight the break began in the future: `tm done`
-    /// netted none of it out of the block's worked minutes and `tm break`
-    /// logged it tonight with `actual_min: 0`.
-    ///
-    /// Every host reader of a running break's start calls this — `day.rs`'
-    /// worked minutes, `end_break`, `since_break_min`, D61's walls request, the
-    /// week cut's and `tm pause`'s (all through `Ctx::running_break`), and the
-    /// TUI's timer and break-overrun prompt — so none keeps a clock of its own.
+    /// **When the running break began, as an instant, read off the CACHE's
+    /// clock** — the reading for a break the log holds no `break_start` for, one
+    /// a binary before the owner's D105 began (README gap 4760), and the
+    /// fallback of [`BreakState::started_at_logged`], which every host reader
+    /// calls (the campaign's **D81** call on README gap 3820, parity **P73**,
+    /// W-41 track T): the latest instant at or before `now` whose local clock in
+    /// `tz` is that `HH:MM` ([`crate::capacity::latest_at_or_before`]). Until
+    /// D105 the log held no line for a running break — its `break` entry is
+    /// appended when it ENDS — so the cache's clock was all there was, and D75's
+    /// rule is the reading under which the break can still be running: a break
+    /// begun at 23:50 is still the evening's at 00:10. Fork 4748911 put the
+    /// clock on TODAY's date at every site, so after local midnight the break
+    /// began in the future: `tm done` netted none of it out of the block's
+    /// worked minutes and `tm break` logged it tonight with `actual_min: 0`.
     /// `None` when the cache holds no `started`.
     pub fn started_at(&self, tz: Tz, now: DateTime<Tz>) -> Option<DateTime<Tz>> {
         self.started
             .map(|clock| crate::capacity::latest_at_or_before(tz, now, clock))
+    }
+
+    /// **When the running break began — the ONE reading** (the owner's **D105**,
+    /// parity **P100**; D75's rule for a block's start, applied to a break's):
+    /// the instant its `break_start` was logged at, `logged`
+    /// ([`crate::log::Replay::open_break`], the surviving `break_start` no
+    /// `break` line has ended), to the second and on whatever date; and, for a
+    /// break the log holds no `break_start` for, the cache's clock read as
+    /// [`BreakState::started_at`] reads it.
+    ///
+    /// Every host reader of a running break's start calls this — `day.rs`'
+    /// worked minutes, `end_break` (so the `break` line that ends the break is
+    /// stamped where its start was logged), `since_break_min`, D61's walls
+    /// request, the week cut's and `tm pause`'s (all through
+    /// `Ctx::running_break`), the TUI's timer and break-overrun prompt
+    /// (`App::running_break`), and the planner request's `state.break.started`
+    /// ([`crate::planwire::state_json`]) — so none keeps a clock of its own: the
+    /// cache stores `HH:MM` and a `break_start` its second, and before D105 every
+    /// reader read the cache, so a reader left on the cache would now disagree
+    /// with the others by the start's seconds (AGENTS §5.3).
+    pub fn started_at_logged(
+        &self,
+        logged: Option<&crate::log::OpenBreak>,
+        tz: Tz,
+        now: DateTime<Tz>,
+    ) -> Option<DateTime<Tz>> {
+        match logged {
+            Some(b) => Some(b.started.with_timezone(&tz)),
+            None => self.started_at(tz, now),
+        }
     }
 }
 

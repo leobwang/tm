@@ -262,6 +262,10 @@ pub struct ForkTally {
     /// Inputs that had no frozen answer, so the fork did not answer them at all.
     /// The number that must never be read as agreement.
     pub skipped: usize,
+    /// Parity **P100** (the owner's D105): `break_start` lines the fork counted as
+    /// unknown events and the kernel read as the running break's, carried onto the
+    /// kernel's `unknown` by value ([`p100_starts`]).
+    pub p100: usize,
 }
 
 impl ForkTally {
@@ -274,6 +278,7 @@ impl ForkTally {
         self.p21 += o.p21;
         self.event_names += o.event_names;
         self.skipped += o.skipped;
+        self.p100 += o.p100;
     }
 
     /// One line saying what was compared and what was not.
@@ -282,7 +287,8 @@ impl ForkTally {
             "fork point 4748911 — {what}: {} inputs, {} Replay keys ({} of the fork's 20 each, \
              plus `events`' key set), {} scalar values, {} entry counts, {} refused-line lists, \
              {} event-name sets compared; parity P21 {} day records, every one displaying the \
-             same load; {} inputs had no frozen answer; 0 other exceptions",
+             same load; parity P100 {} `break_start` lines carried onto `unknown`; {} inputs had no \
+             frozen answer; 0 other exceptions",
             self.logs,
             self.keys,
             FORK_REPLAY_KEYS.len(),
@@ -291,9 +297,22 @@ impl ForkTally {
             self.warning_lines,
             self.event_names,
             self.p21,
+            self.p100,
             self.skipped
         )
     }
+}
+
+/// **Parity P100, by value** (the owner's D105, README "Stage 6 — W-46 track K"): the
+/// `break_start` lines of `kr`'s log that no `undo` cancelled — read off the kernel's own
+/// rows, never off a count. Fork 4748911 has no such event: it reads each of these lines as
+/// an unknown event and counts it in `unknown`, where the kernel reads it as the running
+/// break's start and counts nothing. So the fork's `unknown` is the kernel's plus this.
+///
+/// The rows are the WHOLE log's only at `All` scope, which is the only scope this
+/// comparison is asked of (T5's answers and the door's `All` reads).
+pub fn p100_starts(kr: &Replay) -> u64 {
+    kr.view().iter().filter(|r| r.tag == "break_start" && !r.cancelled).count() as u64
 }
 
 /// **Compare a `Replay` the kernel produced with fork point 4748911's own.**
@@ -315,6 +334,16 @@ pub fn compare_replay_with_fork(
     let kv_raw = serde_json::to_value(kr).expect("the kernel's replay serialises");
     let mut kv = kv_raw.clone();
     as_fork_shaped(&mut kv);
+    // **Parity P100, carried by value** (the owner's D105): the kernel's `unknown` moved by
+    // P100's rule — every surviving `break_start` is one more unknown event to the fork — and
+    // then compared key for key like any other value, so a kernel that counted one, or
+    // cancelled the wrong one, still fails at `unknown` by name.
+    let p100 = p100_starts(kr);
+    if p100 > 0 {
+        let u = kv["unknown"].as_u64().expect("the kernel's unknown count");
+        kv["unknown"] = serde_json::json!(u + p100);
+        t.p100 += p100 as usize;
+    }
     let fork = &fork_answer["replay"];
     t.logs += 1;
 

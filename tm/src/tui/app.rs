@@ -1343,15 +1343,23 @@ impl App {
     }
 
     /// **When the break `.tm/state.json` holds running began** — the ONE
-    /// reading the CLI takes too ([`tm_core::store::BreakState::started_at`]:
-    /// the latest instant at or before `now` with the cached clock; the
-    /// campaign's D81 call on README gap 3820, parity P73), read by the timer
-    /// and §9's break-overrun prompt. Never [`App::local`]: `state.date` rolls
-    /// at the first verb after local midnight, so a break begun before it read
-    /// as begun tonight — the timer netted none of it out and the overrun
-    /// prompt waited a day.
+    /// reading the CLI takes too
+    /// ([`tm_core::store::BreakState::started_at_logged`]: since the owner's
+    /// D105, parity P100, the instant its `break_start` was logged at, to the
+    /// second; for a break the log holds no `break_start` for, the latest
+    /// instant at or before `now` with the cached clock — the campaign's D81
+    /// call on README gap 3820, parity P73), read by the timer and §9's
+    /// break-overrun prompt. Never [`App::local`]: `state.date` rolls at the
+    /// first verb after local midnight, so a break begun before it read as
+    /// begun tonight — the timer netted none of it out and the overrun prompt
+    /// waited a day. And never the cache's clock alone once the log holds the
+    /// start: `tm now` and `tm stop` net the break from the logged second, and
+    /// the timer read from the cached minute would disagree with them.
     fn running_break(&self) -> Option<DateTime<Tz>> {
-        self.state.break_.as_ref().and_then(|b| b.started_at(self.cfg.tz, self.now))
+        self.state
+            .break_
+            .as_ref()?
+            .started_at_logged(self.replay.open_break.as_ref(), self.cfg.tz, self.now)
     }
 
     /// When the gap started: the last event logged today, else the window

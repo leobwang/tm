@@ -1058,8 +1058,9 @@ fn log_problems(ctx: &Ctx) -> Vec<validate::CheckProblem> {
 /// **A stall, named** — design §9.4's "Stalls" and §18.7 (README gap 119,
 /// design gap 88: "`tm check` names a stall longer than 7 days").
 ///
-/// A block left open, or an interruption never resumed, holds the replay
-/// checkpoint's **ledger day** `L` back. Every day from the stall onward then
+/// A block left open, an interruption never resumed, or — since the owner's
+/// D105 — a break never ended, holds the replay checkpoint's **ledger day** `L`
+/// back. Every day from the stall onward then
 /// stays an *open day* inside the checkpoint instead of going out once as a
 /// sealed record, so the checkpoint grows by about 2.5 KB a stalled day and
 /// every call carries the lot. No answer is wrong and no line is damaged,
@@ -1144,6 +1145,30 @@ fn stall_problems(ctx: &Ctx) -> Vec<validate::CheckProblem> {
                     "{what} has been open since {}, {age} days ago (more than {}){held} \
                      — close it with `tm resume`",
                     began.format("%Y-%m-%d %H:%M"),
+                    validate::LOG_STALL_DAYS,
+                ),
+            ));
+        }
+    }
+    // **A break never ended** — the third cause since the owner's D105 (parity P100):
+    // its `break_start` holds the ledger day as an open interruption does, because
+    // the `break` line that ends it is stamped at its start and filed under that
+    // day (`Seal.machineDays`). A `break_start` with no `break` after it is a
+    // break `tm break` began and nothing ended — a verb cut off, or a break left
+    // running for days.
+    if let Some(b) = ctx.replay.open_break.as_ref() {
+        let age = days_since(b.started);
+        if age > validate::LOG_STALL_DAYS {
+            let tag = tm_core::log::Event::BreakStart { planned_min: 0, r#where: None }.name().to_string();
+            out.push(validate::CheckProblem::warning(
+                validate::LOG_STALL,
+                LOG_PATH,
+                line_of(&tag, None),
+                None,
+                format!(
+                    "a break has been running since {}, {age} days ago (more than {}){held} \
+                     — end it with `tm break`",
+                    b.started.format("%Y-%m-%d %H:%M"),
                     validate::LOG_STALL_DAYS,
                 ),
             ));

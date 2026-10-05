@@ -1373,6 +1373,14 @@ with_minute
 # of W-39 track H.
 1 bless_because
 
+# W-46 TRACK K (README gaps 4740 and 1085; the owner's D105, parity P100).  Two tests of `cli_switch_acceptance` are
+# RENAMED with the statement each makes now that `tm break` logs a `break_start`: with a break running, deleting
+# `.tm/state.json` changes nothing, and a break running with no block comes back and is named.  The old names are cited,
+# as history, by the append-only README blocks of the W-21 and W-22 repairs and of W-45's track D, switch and repair;
+# each is counted at its measured number, and W-46's own prose names them bare.
+5 deleting_the_runtime_state_while_a_break_runs_resumes_the_block
+2 a_break_lost_with_no_block_running_is_still_named
+
 # W-45 REPAIR (README gaps 4753 and 4757).  The W-45 switch's README block is committed verbatim as the record of a
 # refused step, and it cites names that exist only in the switch's ARCHIVED commit (`refs/archive/w45/r3-switch`, never
 # on a branch): the TUI's kernel planner, the tests it added and the request builder's half.  Each is counted at its
