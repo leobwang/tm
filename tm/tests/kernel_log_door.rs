@@ -214,6 +214,8 @@ fn narrowed_fields(a: &tm_core::log::Replay, b: &tm_core::log::Replay) -> Vec<&'
     if a.longest_leak != b.longest_leak { out.push("longest_leak"); }
     if a.open_block != b.open_block { out.push("open_block"); }
     if a.open_interrupt != b.open_interrupt { out.push("open_interrupt"); }
+    // The running break (the owner's D105, parity P100), a scalar fact the checkpoint carries.
+    if a.open_break != b.open_break { out.push("open_break"); }
     if a.unknown != b.unknown { out.push("unknown"); }
     if a.warnings != b.warnings { out.push("warnings"); }
     if a.seams != b.seams { out.push("seams"); }
@@ -767,6 +769,7 @@ fn the_doors_hot_scope_answers_every_all_time_question() {
     assert_eq!(hot.dropped_items, whole.dropped_items, "the dropped ids");
     assert_eq!(hot.open_block, whole.open_block, "the open block");
     assert_eq!(hot.open_interrupt, whole.open_interrupt, "the open interruption");
+    assert_eq!(hot.open_break, whole.open_break, "the running break (D105)");
     assert_eq!(hot.longest_leak, whole.longest_leak, "the longest leak");
     assert_eq!(hot.last_effective_t, whole.last_effective_t, "the last effective `t`");
 

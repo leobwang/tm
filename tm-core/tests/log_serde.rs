@@ -146,6 +146,11 @@ fn every_event_kind_has_the_spec_field_names() {
         (Event::Loc { loc: s("home") }, &["t", "ev", "loc"]),
         (Event::Close { period: s("day"), key: s("2026-09-07") }, &["t", "ev", "period", "key"]),
         (Event::Undo { of: s("done"), id: None }, &["t", "ev", "of"]),
+        // The owner's D105 (parity P100): the line `tm break` writes when a break begins.
+        (
+            Event::BreakStart { planned_min: 20, r#where: Some(s("walk")) },
+            &["t", "ev", "planned_min", "where"],
+        ),
     ];
     let mut seen = BTreeSet::new();
     for (ev, want) in cases {
@@ -159,7 +164,8 @@ fn every_event_kind_has_the_spec_field_names() {
     }
     let all: BTreeSet<String> = EVENT_NAMES.iter().map(|n| n.to_string()).collect();
     assert_eq!(seen, all, "every known event kind is covered");
-    assert_eq!(EVENT_NAMES.len(), 26);
+    // 26 until the owner's D105 added `break_start` (parity P100).
+    assert_eq!(EVENT_NAMES.len(), 27);
 }
 
 

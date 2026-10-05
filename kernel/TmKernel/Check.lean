@@ -8317,3 +8317,78 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -/
 #print axioms Tm.Planner.PlanReq.todayRecord_is_the_answers_reading
 #print axioms Tm.Planner.PlanReq.todayRecord_on_a_resumed_run_is_the_whole_logs
+
+/-
+   APPENDED 2026-10-05: stage 6, run W-46, TRACK K — the owner's D105 (README "Stage 6 — W-46 track K",
+   gaps 1034, 1085, 4740; parity P100): `tm break` logs a `break_start`, the machine holds the running break
+   (`Replay.Machine.brkOpen`) until a `break` line ends it, the facts and the checkpoint carry it, and its day
+   holds the ledger day.
+-/
+#print axioms Tm.Replay.closeSub_brkOpen
+#print axioms Tm.Replay.closePause_brkOpen
+#print axioms Tm.Replay.cut_brkOpen
+#print axioms Tm.Replay.doneClose_brkOpen
+#print axioms Tm.Replay.brkFx_brkOpen
+#print axioms Tm.Replay.the_break_start_arm_opens_the_running_break
+#print axioms Tm.Replay.the_break_start_has_no_completion_arm
+#print axioms Tm.Replay.a_break_start_is_the_running_break
+#print axioms Tm.Replay.a_break_line_ends_the_running_break
+#print axioms Tm.Replay.a_break_line_ends_the_running_break_whatever_its_stamp
+#print axioms Tm.Replay.an_undone_break_start_leaves_no_break_running
+#print axioms Tm.Replay.an_undone_break_line_leaves_the_break_running
+#print axioms Tm.Replay.a_second_break_start_replaces_the_first
+#print axioms Tm.Replay.a_break_start_is_not_an_unknown_event
+#print axioms Tm.Replay.a_running_break_moves_no_clock
+#print axioms Tm.Seal.a_running_break_holds_the_ledger_day
+#print axioms Tm.Seal.openBreak_reads_state
+#print axioms Tm.Seal.answer_openBreak
+#print axioms Tm.Seal.arm_brkOpen
+
+/-
+   APPENDED 2026-10-05: stage 6, run W-46, TRACK H — README gap 4751: three refusals of the planner
+   section no request reaches (`PlanWire.lean`, the section "Three refusals no request reaches"),
+   and the lemmas they stand on.
+-/
+#print axioms Tm.PlanWire.except_mapM_length
+#print axioms Tm.PlanWire.readCands_within_the_cap
+#print axioms Tm.PlanWire.runCapZP_parts
+#print axioms Tm.PlanWire.runRowsP_parts
+#print axioms Tm.PlanWire.mkInput?_keeps_the_zone_the_day_and_the_walls
+#print axioms Tm.PlanWire.readCapacityZ_walls
+#print axioms Tm.PlanWire.readCapacityZ_needs_a_replay
+#print axioms Tm.PlanWire.within53A_ok
+#print axioms Tm.PlanWire.logOpZ_run_iff_facts
+#print axioms Tm.PlanWire.logSectionWith_run_iff_facts
+#print axioms Tm.PlanWire.planReqRefusal_names
+#print axioms Tm.PlanWire.planReqOf_never_refuses_what_the_capacity_section_excludes
+
+/-
+   APPENDED 2026-10-05: stage 6, run W-46, TRACK H, resumed after a cut-off — README gaps 4795 and
+   4793: the assembler asks D80 before it reads the routines (`planReqOf`), so a routine word the two
+   readers key apart is P72's refusal by P72's name; `routineRefused pastTheHorizon` answered to no
+   section the reader accepts; `routineRefused unknownItem` to no request whose routines each name a
+   candidate it carries; and the lemmas they stand on.
+-/
+#print axioms Tm.PlanWire.planReqRefusal_ignores_the_routines
+#print axioms Tm.PlanWire.planReqOf_refuses_only_by_d80_or_a_routine
+#print axioms Tm.PlanWire.except_mapM_mem
+#print axioms Tm.PlanWire.except_mapM_error
+#print axioms Tm.PlanWire.secWithin_ok
+#print axioms Tm.PlanWire.readRoutine_closes_inside_the_calendar
+#print axioms Tm.PlanWire.readPlannerSection_routines_close_inside_the_calendar
+#print axioms Tm.PlanWire.mkRoutines?_past_the_horizon
+#print axioms Tm.PlanWire.mkRoutines?_unknown_item
+#print axioms Tm.PlanWire.planReqOf_never_refuses_past_the_horizon
+#print axioms Tm.PlanWire.planReqOf_never_refuses_an_item_a_candidate_names
+
+/-
+   APPENDED 2026-10-05: stage 6, run W-46, THE REPAIR — README gap 4793 (the W-46 switch's gap 4843, an R3
+   BLOCKER): a planner-section refusal yields to D80 (a), asked of the capacity section's parts (`eveningFirst`), so
+   a day whose evening runs past the calendar reaches the host by P71's name.
+-/
+#print axioms Tm.PlanWire.eveningFirst_names_only_the_evening
+#print axioms Tm.PlanWire.eveningFirst_probe_passes
+#print axioms Tm.PlanWire.eveningFirst_probe_of_a_request_passes
+#print axioms Tm.PlanWire.eveningFirst_passes_what_planReqOf_builds
+#print axioms Tm.PlanWire.an_evening_eveningFirst_refuses_is_never_planned
+#print axioms Tm.PlanWire.runPlanner_names_an_evening_past_the_calendar_over_a_section_refusal

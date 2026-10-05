@@ -238,7 +238,8 @@ fn the_flight_gets_ci_1_and_the_travel_day_buffer() {
     let item = parse_line(flight[0], &ctx).unwrap();
     assert_eq!(item.ci, 1);
     assert_eq!(item.buffer.map(|d| d.to_string()).as_deref(), Some("2h"));
-    assert!(item.is_travel_day());
+    // fork `Item::is_travel_day`'s reading of the flag (R3 deletes that method, README gap 4752)
+    assert!(item.has_flag("travel-day"));
     assert!(item.title.starts_with('✈'), "{}", item.title);
 
     // The lecture shares the shape of the default flight regex (`CS 234`) but
@@ -246,7 +247,7 @@ fn the_flight_gets_ci_1_and_the_travel_day_buffer() {
     let lecture = lines.iter().find(|l| l.contains("CS 234")).unwrap();
     let item = parse_line(lecture, &ctx).unwrap();
     assert_eq!(item.ci, 2);
-    assert!(item.buffer.is_none() && !item.is_travel_day());
+    assert!(item.buffer.is_none() && !item.has_flag("travel-day"));
 
     // A plain meeting is ci 3.
     let meeting = lines

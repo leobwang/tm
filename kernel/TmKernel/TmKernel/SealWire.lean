@@ -163,7 +163,7 @@ theorem resumeRunV_eq (z : Cal.Tz) (T : Nat) (K : Ckpt) (b : List Log.Line) :
 /-! ### The resume builds what its request wants (W4) -/
 
 /-- The answer of a resume whose request asks no facts: the op never reads it (`LogReq.resumedV`). -/
-def blankAnswer : Answer := ⟨0, 0, [], [], [], [], [], none, none, none, none, 0, 0, none, [], [], 0⟩
+def blankAnswer : Answer := ⟨0, 0, [], [], [], [], [], none, none, none, none, none, 0, 0, none, [], [], 0⟩
 
 /-- A run with its answer kept only when facts are wanted, and its headers only when headers or facts are. -/
 def trimRun (wa wh : Bool) (r : Run) : Run :=

@@ -122,6 +122,27 @@ pub fn inner_break_line(t: DateTime<Tz>, len: u32) -> String {
     format!("{{\"t\":\"{}\",\"ev\":\"break\",\"planned_min\":{len},\"actual_min\":{len}}}\n", t.to_rfc3339())
 }
 
+/// **`line`, put into `log` after the last line stamped at or before `t`** — where the verb
+/// that wrote it at `t` appended it, the day's lines being written in time order. A line whose
+/// stamp does not parse is passed over (it cannot be ordered), and the log keeps its final
+/// newline.
+pub fn insert_in_time_order(log: &str, line: &str, t: DateTime<Tz>) -> String {
+    let mut lines: Vec<&str> = log.lines().collect();
+    let at = lines
+        .iter()
+        .rposition(|l| {
+            serde_json::from_str::<Value>(l)
+                .ok()
+                .and_then(|v| v["t"].as_str().and_then(|s| DateTime::parse_from_rfc3339(s).ok()))
+                .is_some_and(|s| s <= t.fixed_offset())
+        })
+        .map_or(0, |i| i + 1);
+    lines.insert(at, line);
+    let mut out = lines.join("\n");
+    out.push('\n');
+    out
+}
+
 /// **A world's documents with the dated window task added** (README gap 3200): the one
 /// widening `forkclass::window_worlds` derives from a stored world. `false`, and nothing
 /// written, when the documents already hold the task's document.
@@ -847,8 +868,16 @@ impl World {
 
     /// **A running break** (the W-35 arm's, parity P45): drawn `ago` minutes before `now`
     /// for `planned` minutes at `place`, on a day with no interruption, pausing a running
-    /// block as `tm break` does (`tm/src/cli/day.rs`' `take_break`). `.tm/state.json`
-    /// alone holds it: a break is logged when it ENDS.
+    /// block as `tm break` does (`tm/src/cli/day.rs`' `take_break`).
+    ///
+    /// **And LOGGED as `tm break` logs it since the owner's D105** (README "Stage 6 — W-46
+    /// track K", parity P100): a `break_start` at its start, its planned minutes and its place,
+    /// written by the binary's own writer (`LogEntry::to_json`, whose bytes the kernel's are,
+    /// T2) and put among the day's lines in time order, as the verbs of the day append them.
+    /// Until D105 `.tm/state.json` alone held it — a break was logged when it ENDED — and since
+    /// D105 a world whose cache holds a running break its log does not is one the binary cannot
+    /// build (`forkclass::binary_holds`' clause 5: the rebuild restores the break from the
+    /// line), so the frozen worlds drawn with one were re-drawn under D64(b).
     ///
     /// **It starts no earlier than a minute after the last `start` or `done` the log
     /// holds** (W-37, owner D64(b)): `tm start`, `tm done` and `tm stop` each END a
@@ -891,6 +920,14 @@ impl World {
         if let Some(a) = self.state.active.as_mut() {
             a.paused = true;
         }
+        let line = LogEntry::new(
+            t.fixed_offset(),
+            Event::BreakStart { planned_min: planned, r#where: Some(place.to_string()) },
+        )
+        .to_json()
+        .expect("a `break_start` line");
+        self.log = insert_in_time_order(&self.log, &line, t);
+        self.replay = chokepoint::replay_of_text(&self.log, tz);
         Some(t)
     }
 

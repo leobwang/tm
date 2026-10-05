@@ -61,10 +61,13 @@ fn tm_interrupt_ends_a_running_break_first_and_every_surface_reads_one_count() {
     let said = tm.ok_at(INTERRUPT, &["interrupt"]).stdout;
     assert_eq!(said.trim(), "break ended · 10m of 20m · interrupted", "{said}");
 
-    // The log: the break's line BEFORE the interruption's, stamped at the break's start, ten minutes.
+    // The log: the break's line BEFORE the interruption's, stamped at the break's start, ten minutes —
+    // and, since the owner's D105 (parity P100), the `break_start` `tm break` logged when it began, at the
+    // same instant.
     let log = tm.log();
-    let tail: Vec<&str> = log[log.len() - 3..].iter().map(|e| e["ev"].as_str().unwrap_or_default()).collect();
-    assert_eq!(tail, ["start", "break", "interrupt"], "{log:?}");
+    let tail: Vec<&str> = log[log.len() - 4..].iter().map(|e| e["ev"].as_str().unwrap_or_default()).collect();
+    assert_eq!(tail, ["start", "break_start", "break", "interrupt"], "{log:?}");
+    assert_eq!(log[log.len() - 3]["t"], log[log.len() - 2]["t"], "the break's two lines carry one instant");
     let brk = &log[log.len() - 2];
     assert_eq!((brk["t"].as_str(), brk["planned_min"].as_u64(), brk["actual_min"].as_u64()), (Some(BREAK_ON), Some(20), Some(10)), "{brk}");
     assert_eq!(log[log.len() - 1]["t"], INTERRUPT);

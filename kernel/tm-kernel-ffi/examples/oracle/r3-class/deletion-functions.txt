@@ -1,0 +1,46 @@
+# **What R3 deletes from tm-core/src: the class it orphans** (stage 6 W-46 track C; README gap
+# 4752, restated as a class).  One line a function, `<file> <Type::name | name>`, read by
+# delete_fns.py.  The first 35 are `class.sh`'s list at W-46 (the switch `refs/archive/w45/r3-switch`
+# over 16aaafc): reached by the `tm` binary before R3 and by nothing after it.  The last three were
+# unreached BEFORE R3 too and go because each calls one of the 35 (the closure): without them the
+# crate does not build.  priority.rs's `struct Edf` and its `use crate::capacity::{.., available_until,
+# DayCapacity, ..}` are simulate.py's edits.
+tm-core/src/capacity.rs available_until
+tm-core/src/capacity.rs Break::minutes
+tm-core/src/capacity.rs cut_slots
+tm-core/src/capacity.rs cut_slots_around
+tm-core/src/capacity.rs cut_slots_from
+tm-core/src/capacity.rs DayCapacity::at_least
+tm-core/src/capacity.rs DayCapacity::empty
+tm-core/src/capacity.rs DayCapacity::from_slots
+tm-core/src/capacity.rs energize
+tm-core/src/capacity.rs EnergyCtx::with_allow_home
+tm-core/src/capacity.rs Exact::of_minutes
+tm-core/src/capacity.rs free_intervals
+tm-core/src/capacity.rs limit_to_budget
+tm-core/src/capacity.rs lookahead
+tm-core/src/capacity.rs normalize_walls
+tm-core/src/capacity.rs remaining_budget
+tm-core/src/capacity.rs reserve
+tm-core/src/capacity.rs Slot::minutes
+tm-core/src/capacity.rs UnitCapacity::from_minutes
+tm-core/src/capacity.rs upto
+tm-core/src/energy.rs Model::p_lounge_on
+tm-core/src/energy.rs Posterior::none
+tm-core/src/log.rs OpenBlock::worked_min_at
+tm-core/src/model.rs Item::is_travel_day
+tm-core/src/priority.rs apply_hysteresis
+tm-core/src/priority.rs batches
+tm-core/src/priority.rs bin_of
+tm-core/src/priority.rs Candidate::cap_left_min
+tm-core/src/priority.rs Candidate::floor_need_min
+tm-core/src/priority.rs clamp_p
+tm-core/src/priority.rs compute
+tm-core/src/priority.rs floor_pass
+tm-core/src/priority.rs Prio::wall
+tm-core/src/priority.rs sort_key
+tm-core/src/priority.rs utilization
+# the closure: unreached before R3, and each calls one of the above
+tm-core/src/capacity.rs wall_minutes
+tm-core/src/capacity.rs Cut::slot_minutes
+tm-core/src/capacity.rs Cut::break_minutes

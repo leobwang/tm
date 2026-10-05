@@ -1373,6 +1373,14 @@ with_minute
 # of W-39 track H.
 1 bless_because
 
+# W-46 TRACK K (README gaps 4740 and 1085; the owner's D105, parity P100).  Two tests of `cli_switch_acceptance` are
+# RENAMED with the statement each makes now that `tm break` logs a `break_start`: with a break running, deleting
+# `.tm/state.json` changes nothing, and a break running with no block comes back and is named.  The old names are cited,
+# as history, by the append-only README blocks of the W-21 and W-22 repairs and of W-45's track D, switch and repair;
+# each is counted at its measured number, and W-46's own prose names them bare.
+9 deleting_the_runtime_state_while_a_break_runs_resumes_the_block
+2 a_break_lost_with_no_block_running_is_still_named
+
 # W-45 REPAIR (README gaps 4753 and 4757).  The W-45 switch's README block is committed verbatim as the record of a
 # refused step, and it cites names that exist only in the switch's ARCHIVED commit (`refs/archive/w45/r3-switch`, never
 # on a branch): the TUI's kernel planner, the tests it added and the request builder's half.  Each is counted at its
@@ -1384,3 +1392,22 @@ with_minute
 1 tui::tests::r3_a_refused_tick_keeps_the_last_day_and_a_fault_is_held_for_the_driver
 1 tui::tests::r3_the_tui_refuses_to_open_on_a_day_the_kernel_refuses
 1 tui::tests::the_overtime_box_names_what_the_kernels_what_if_drops
+
+# W-46 TRACK H (README gaps 4621 and 4661; the owner's D104 and D106).  Two tests are RENAMED with the statement each
+# makes: `cli_tz_cache_digest`'s assertion is restated under D104 (a re-digested table that disagrees with the binary's
+# zone database is rebuilt, never served) and `cli_resume_replan`'s pin is flipped under D106 (`tm resume` plans after
+# its own line).  The old names are cited, as history, by the append-only README blocks of the W-44 repair, W-45 track
+# Q, the W-45 land, switch and repair; each is counted at its measured number, and W-46's own prose names them bare.
+8 only_the_digest_stands_between_a_changed_offset_and_the_days_minutes
+1 cli_tz_cache_digest::only_the_digest_stands_between_a_changed_offset_and_the_days_minutes
+2 the_plan_tm_resume_writes_leaves_the_interruption_it_resumes_undrawn
+
+# W-46 REPAIR (README gaps 4870 and 4842's class).  The land composes the tracks' blocks with the W-46 switch's, so two
+# counts above are the COMPOSITION's (the switch's block cites gap 4740's old test name four more times and track H's
+# renamed test once more; measured, 9 and 8).  Track H's part 2 cites, as history, the name its gap-4795 test had before
+# it was renamed and a scratch log it read; and the W-46 repair renames track H's calendar test with the statement it
+# makes now that a section refusal yields to D80 (a) (gap 4793), which track H's part 2 cites by its old name.  Each is
+# counted at its measured number.
+2 a_routine_word_the_two_readers_key_apart_is_named_by_tm_check_and_planned_by_tm_plan
+1 pw_oldorder.log
+4 the_calendars_last_day_reaches_the_planner_section_by_two_names

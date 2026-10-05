@@ -6,6 +6,14 @@
 //! at energy `level` and nothing anywhere else, so
 //! `available_until(due, ci ≤ level) = minutes × (days up to and including
 //! the due date)`.
+//!
+//! **Two kinds of test, since R3 leaves fork 4748911's §7 pass with no shipped caller** (stage 6
+//! W-46 track C; README gap 4752, the class).  §11's deadline health is the binary's and keeps
+//! its tests: they read the fork's grants BY VALUE (`fork_compute`, the `tm` tests' own
+//! `support/forkcap.rs`: this binary's frozen file, `tm-oracle capacity` under `TM_ORACLE`), as
+//! they read tm-core's in-tree copy of the pass until W-46.  Every other test here is the fork
+//! pass's own behaviour — the EDF reservation, the bins, `bin_of`, `utilization` — still calls
+//! the in-tree copy, and is deleted with it at R3 (README "W-46 track C", the deletion list).
 
 use std::collections::BTreeMap;
 
@@ -14,7 +22,12 @@ use chrono_tz::Tz;
 use tm_core::capacity::{local_dt, DayCapacity};
 use tm_core::config::Config;
 use tm_core::model::Id;
-use tm_core::priority::{self, Candidate, PrioClass};
+use tm_core::priority::{self, Candidate, Prio, PrioClass};
+
+/// Fork 4748911's answers, by value (W-46 track C) — the `tm` tests' module, by path.
+#[allow(dead_code)]
+#[path = "../../tm/tests/support/forkcap.rs"]
+mod forkcap;
 
 const TZ: Tz = Tz::America__Chicago;
 const MONDAY: &str = "2026-09-07";
@@ -36,11 +49,16 @@ fn flat(days: usize, level: usize, minutes: u32) -> Vec<DayCapacity> {
     let start = date(MONDAY);
     (0..days)
         .map(|i| {
-            let mut d = DayCapacity::empty(start + chrono::Duration::days(i as i64));
-            d.minutes_at_level[level] = minutes;
-            d
+            let mut minutes_at_level = [0; 6];
+            minutes_at_level[level] = minutes;
+            DayCapacity { date: start + chrono::Duration::days(i as i64), minutes_at_level }
         })
         .collect()
+}
+
+/// **Fork 4748911's grants** — fork `priority::compute`, by value (`forkcap::rank`).
+fn fork_compute(cands: &[Candidate], caps: &[DayCapacity], yesterday: &BTreeMap<Id, u8>, cfg: &Config, today: NaiveDate) -> Vec<Prio> {
+    forkcap::rank(forkcap::store(), cands, caps, yesterday, cfg, today).0
 }
 
 fn cand(id: &str, ci: u8, k: u8, remaining_min: u32, cfg: &Config) -> Candidate {
@@ -268,7 +286,7 @@ fn deadline_health_counts_and_min_slack() {
     old.own_order = (0, 3);
 
     let cands = vec![ok, imp, old];
-    let prios = priority::compute(&cands, &caps, &empty(), &cfg, today);
+    let prios = fork_compute(&cands, &caps, &empty(), &cfg, today);
     assert_eq!(prios[0].class, PrioClass::Dated);
     assert_eq!(prios[1].class, PrioClass::Impossible);
     assert_eq!(prios[2].class, PrioClass::Overdue);
@@ -286,7 +304,7 @@ fn deadline_health_counts_and_min_slack() {
 
     // Without the impossible one, the comfortable deadline sets the minimum.
     let solo = vec![cands[0].clone()];
-    let solo_prios = priority::compute(&solo, &caps, &empty(), &cfg, today);
+    let solo_prios = fork_compute(&solo, &caps, &empty(), &cfg, today);
     let health = priority::deadline_health(&solo_prios, &solo, today);
     assert_eq!((health.hot, health.impossible, health.overdue), (0, 0, 0));
     let slack = health.min_slack_days.expect("a dated candidate");
@@ -304,7 +322,7 @@ fn hot_when_the_need_exactly_fills_the_window() {
     let mut c = cand("h", 4, 2, 100, &cfg); // need = 130
     c.effective_due = Some(due(MONDAY));
     let cands = vec![c];
-    let prios = priority::compute(&cands, &caps, &empty(), &cfg, date(MONDAY));
+    let prios = fork_compute(&cands, &caps, &empty(), &cfg, date(MONDAY));
     assert_eq!(prios[0].u, Some(1.0));
     assert_eq!(prios[0].class, PrioClass::Hot);
     assert_eq!(prios[0].shortfall_min, 0);

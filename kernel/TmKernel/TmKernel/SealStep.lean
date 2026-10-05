@@ -486,6 +486,11 @@ theorem arm_mi_of_not_brk (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (
         · simpa [machineInstants, blockSince, blockPaused] using hq
         · exact hq
       · exact hq
+  case brkStart pl w =>
+    -- D105: a `break_start`'s machine is the old one with the running break set, which holds no instant.
+    simp only [Effect.machineOf?, List.filterMap_cons, List.filterMap_nil, List.mem_singleton] at hm
+    subst hm
+    exact Or.inl hq
   all_goals rw [(Replay.dayArm_obs dy sl e t d).1] at hm; simp at hm
 
 /-- **A break's machine holds the old machine's instants and the break's end** (D87, D92, D94): `Replay.brkFx` keeps the
@@ -744,6 +749,10 @@ theorem arm_brks (dy : Cal.Instant → Nat) (sl : Nat → Option Nat) (m : Machi
   case brk p a w =>
     rw [List.filterMap_append, (Replay.dayArm_obs dy sl e t d).1, List.append_nil] at hm
     exact Or.inr ⟨_, Replay.brkFx_brk dy m t _ d m' hm⟩
+  case brkStart pl w =>
+    simp only [Effect.machineOf?, List.filterMap_cons, List.filterMap_nil, List.mem_singleton] at hm
+    subst hm
+    exact Or.inl rfl
   all_goals rw [(Replay.dayArm_obs dy sl e t d).1] at hm; simp at hm
 
 /-- **A step keeps the bound**: the machine after it holds the old one's breaks, or what `pruneBrks` keeps. -/
@@ -805,10 +814,10 @@ theorem arm_mi_as_w2_stated_it_is_refuted :
   intro h
   have := h (fun _ => 739865) (fun _ => none)
     ⟨some ⟨['a'], (⟨63924368400, 0⟩, ⟨false, 0⟩), some (⟨63924368400, 0⟩, ⟨false, 0⟩), false, none, 0, none, 739865⟩,
-      none, none, []⟩
+      none, none, [], none⟩
     (Replay.bE 2 63924370200 (.brk 20 (some 20) none)) (⟨63924370200, 0⟩, ⟨false, 0⟩) 739865
     ⟨some ⟨['a'], (⟨63924368400, 0⟩, ⟨false, 0⟩), some (⟨63924371400, 0⟩, ⟨false, 0⟩), false, none, 30, none, 739865⟩,
-      none, none, [⟨(⟨63924370200, 0⟩, ⟨false, 0⟩), (⟨63924371400, 0⟩, ⟨false, 0⟩), 739865⟩]⟩ (by decide)
+      none, none, [⟨(⟨63924370200, 0⟩, ⟨false, 0⟩), (⟨63924371400, 0⟩, ⟨false, 0⟩), 739865⟩], none⟩ (by decide)
     ⟨63924371400, 0⟩ (by decide)
   revert this
   decide
@@ -821,7 +830,7 @@ theorem stepWith_mi_as_w2_stated_it_is_refuted :
   have := h Replay.utcZone (fun _ => 739865) (fun _ => none)
     { Replay.State.init 1 with machine :=
       ⟨some ⟨['a'], (⟨63924368400, 0⟩, ⟨false, 0⟩), some (⟨63924368400, 0⟩, ⟨false, 0⟩), false, none, 0, none, 739865⟩,
-        none, none, []⟩ }
+        none, none, [], none⟩ }
     (Replay.bE 2 63924370200 (.brk 20 (some 20) none)) ⟨63924371400, 0⟩ (by decide)
   revert this
   decide
@@ -830,7 +839,7 @@ theorem stepWith_mi_as_w2_stated_it_is_refuted :
 and the span `[09:30, 09:50]` held, its one instant is 09:50 — where a clock a later step starts inside that break
 begins, and where the step that closes it reads the day index (`Replay.restartAt`). -/
 theorem a_machine_holds_its_last_breaks_end :
-    machineInstants ⟨none, none, none, [⟨(⟨63924370200, 0⟩, ⟨false, 0⟩), (⟨63924371400, 0⟩, ⟨false, 0⟩), 739865⟩]⟩
+    machineInstants ⟨none, none, none, [⟨(⟨63924370200, 0⟩, ⟨false, 0⟩), (⟨63924371400, 0⟩, ⟨false, 0⟩), 739865⟩], none⟩
       = [⟨63924371400, 0⟩] := by
   decide
 
@@ -839,7 +848,7 @@ theorem a_machine_holds_its_last_breaks_end :
 09:30, and a stretch closed across the later one resumes at 09:45. -/
 theorem a_machine_holds_the_end_of_every_break_it_holds :
     machineInstants ⟨none, none, none, [⟨(⟨63924370800, 0⟩, ⟨false, 0⟩), (⟨63924371100, 0⟩, ⟨false, 0⟩), 739865⟩,
-      ⟨(⟨63924368400, 0⟩, ⟨false, 0⟩), (⟨63924370200, 0⟩, ⟨false, 0⟩), 739865⟩]⟩
+      ⟨(⟨63924368400, 0⟩, ⟨false, 0⟩), (⟨63924370200, 0⟩, ⟨false, 0⟩), 739865⟩], none⟩
       = [⟨63924371100, 0⟩, ⟨63924370200, 0⟩] := by
   decide
 

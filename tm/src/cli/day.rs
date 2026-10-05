@@ -210,10 +210,16 @@ fn end_break(ctx: &mut Ctx) -> Result<Option<u32>, CliError> {
 /// [`end_break`] at `end` — `now`, or the end a `tm stop --at`/`tm done --at`
 /// states for the block (D79: the stop is at `end` in every respect, so a
 /// break running then is over then too). The break began at the ONE reading
-/// of its start (`Ctx::running_break`, P73) — the evening's after midnight,
-/// where fork 4748911 read the cache's clock on today's date and logged a
-/// break begun before midnight TONIGHT with `actual_min: 0` (README gap 3820);
-/// a break with no `started` began at `end`.
+/// of its start (`Ctx::running_break`) — since the owner's **D105** (parity
+/// P100) the instant its `break_start` was logged at, so the `break` line this
+/// writes is stamped at exactly that instant and the replay pairs the two;
+/// for a break a binary before D105 began, the cache's clock read as P73 reads
+/// it — the evening's after midnight, where fork 4748911 read the cache's
+/// clock on today's date and logged a break begun before midnight TONIGHT with
+/// `actual_min: 0` (README gap 3820); a break with no `started` began at `end`.
+/// **Every verb that ends a break ends it here** (D97's class: `tm break`,
+/// `tm start`, `tm stop`, `tm done`, `tm interrupt`, `tm resume`), so the line
+/// that ends the running break has one writer.
 fn end_break_at(ctx: &mut Ctx, end: DateTime<chrono_tz::Tz>) -> Result<Option<u32>, CliError> {
     let start_dt = ctx.running_break().unwrap_or(end);
     let Some(br) = ctx.state.break_.take() else {
@@ -1800,6 +1806,19 @@ pub fn take_break(g: &Globals, args: &super::BreakArgs) -> Result<i32, CliError>
         ended
     } else {
         let planned = asked.unwrap_or(ctx.cfg.day.break_min);
+        // **The break's START is logged** — the owner's **D105** (README "Stage 6 —
+        // W-46 track K", gaps 1034, 1085 and 4740, parity **P100**): a `break_start`
+        // at `now`, its planned minutes and its place, written by the kernel (D16)
+        // and read back by its replay as the running break, so `.tm/state.json`'s
+        // `break` (and the pause it sets) is derivable and deleting the file
+        // mid-break changes nothing (D42). The log first, then its cache. Fork
+        // 4748911 wrote no line until the break ENDED, so a running break lived in
+        // the cache alone; the line that ends it (`end_break_at`) keeps the fork's
+        // shape.
+        ctx.append_event(Event::BreakStart {
+            planned_min: planned,
+            r#where: place.clone(),
+        })?;
         ctx.state.break_ = Some(BreakState {
             started: Some(ctx.now_tz.time()),
             planned_min: planned,
@@ -2075,7 +2094,29 @@ pub fn resume(g: &Globals) -> Result<i32, CliError> {
         // it just logged, as the next verb's load will.
         ctx.reload()?;
     }
-    let (plan, prios) = planning::build(&ctx, false)?;
+    // **The replan reads this verb's own `resume` line** (the owner's D106, README
+    // gap 4661; stage 6 W-46 track H, parity **P101**). Fork 4748911 planned
+    // before it appended the line, so the plan it wrote — the day file's
+    // `tm:plan` block, `.tm/last_plan.json` and the `plan` event's hash — had a
+    // hole where the interruption was, and the next planning verb drew the
+    // interruption `lost` there and moved the hash with no time passing: two
+    // readings of one span (AGENTS §5.3). The line records `dropped`, which needs
+    // the plan, so it is HELD in memory while the day is planned — by the one
+    // hold every in-memory housekeeping write goes through (the owner's D96:
+    // `Ctx::hold_begin`, `Ctx::append_event` into the hold, `Ctx::reload` reading
+    // the context as the hold leaves it, `Ctx::release`) — and written after,
+    // with `dropped` read off the plan it is written beside. The held line says
+    // `dropped: []`: the replay keeps `dropped` as a record of the line
+    // (`tm review day`'s), and no fact the planner reads is one of it, so the day
+    // planned beside the held line is the day planned beside the written one —
+    // `cli_resume_replan` holds the next planning verb's hash to it.
+    ctx.hold_begin()?;
+    let held = ctx
+        .append_event(Event::Resume { lost_min: lost, dropped: Vec::new() })
+        .and_then(|()| ctx.reload())
+        .and_then(|()| planning::build(&ctx, false));
+    ctx.release();
+    let (plan, prios) = held?;
     let after: Vec<String> = plan
         .segments
         .iter()

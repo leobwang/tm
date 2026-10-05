@@ -103,7 +103,10 @@ fn expected_log_calls(verb: &str) -> u32 {
         "pause" => 4,
         "done" => 4,
         "energy" => 5,
-        "break" => 2,
+        // 3 since the owner's D105 (parity P100), measured at W-46 track K: `tm break` now appends
+        // its `break_start` (one `emit`, below), and its `log` column rose by the one an appending
+        // verb's `emit` brings — `drop` reads 3 with its one `emit`, as `break` now does.
+        "break" => 3,
         "drop" => 3,
         "undo" => 2,
         "review day" => 2,
@@ -113,8 +116,12 @@ fn expected_log_calls(verb: &str) -> u32 {
         // `log` replay, as every capacity call does (gap 275).
         "check" => 3,
         // `interrupt` and `resume` since the W-45 repair (README gap 4745): `resume` replans.
+        // `resume` 7 since the owner's D106 (W-46 track H, README gap 4661, parity P101): it plans
+        // with its own `resume` line held in memory (D96's hold), and reading the context as the
+        // hold leaves it (`Ctx::settle`, `kernel_log::replay_unsealed`) asks whether the checkpoint
+        // resumes and then replays the held tail — two `log` calls more than the 5 it made.
         "interrupt" => 4,
-        "resume" => 5,
+        "resume" => 7,
         other => panic!("`tm {other}` is not in the measured table"),
     }
 }
@@ -201,9 +208,10 @@ fn expected_capacity_calls(verb: &str) -> u32 {
 /// One call per event a verb appends, because the kernel now renders every line
 /// the binary writes. Reading the numbers: `arrive` and `energy` make **two**
 /// because each also appends the `plan` event its replan writes (`planning.rs`);
-/// `tm break 20m` makes **none**, because the `break` entry is appended when the
-/// break *ends*, not when it starts; and the three read-only verbs append
-/// nothing at all.
+/// `tm break 20m` makes **one** since the owner's D105 (parity P100) — the
+/// `break_start` it logs when the break begins; it made none before, when the
+/// only line a break wrote was the `break` appended when it *ends* — and the
+/// three read-only verbs append nothing at all.
 ///
 /// Pinned exactly, for the reason the `log` column is: a verb that starts
 /// appending — or quietly stops — is a behaviour change, and this is the column
@@ -217,15 +225,18 @@ fn expected_emit_calls(verb: &str) -> u32 {
         "pause" => 1,
         "done" => 1,
         "energy" => 2,
-        "break" => 0,
+        // 0 until the owner's D105 (parity P100): `tm break` logs its `break_start`.
+        "break" => 1,
         "drop" => 1,
         "undo" => 1,
         "review day" => 0,
         "log" => 0,
         "check" => 0,
         // `interrupt` and `resume` since the W-45 repair (README gap 4745): `resume` replans.
+        // `resume` 3 since D106 (W-46 track H, README gap 4661): the `resume` line it holds while it
+        // plans is the kernel's rendering too (D16), and the line it then writes is a second one.
         "interrupt" => 1,
-        "resume" => 2,
+        "resume" => 3,
         other => panic!("`tm {other}` is not in the measured table"),
     }
 }

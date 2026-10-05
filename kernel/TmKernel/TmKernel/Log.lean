@@ -16,8 +16,9 @@ Nothing in the binary calls it yet: B4 puts `log` on the wire, C1–C6 replay it
 
 ## The grammar is a table
 
-The **26** known tags (`EVENT_NAMES`; the design says 25, and `define_events!` has 26: `wake` …
-`undo`) are the constructors of `Event`, plus `unknown tag rest`.  What varies between kinds is
+The **27** known tags (`EVENT_NAMES`; the design says 25, and `define_events!` had 26: `wake` …
+`undo`, and since the owner's **D105** `break_start`, the line `tm break` writes when a break BEGINS — parity
+**P100**, README "Stage 6 — W-46 track K") are the constructors of `Event`, plus `unknown tag rest`.  What varies between kinds is
 data, so it is a table (AGENTS §5.5): `Kind.schema` lists each kind's keys in declaration order with
 serde's type (`FTy`: `u8`, `u32`, a defaulted `u32d`, the `Option`s, `str`, `strs`, `flag`, `num` for
 `hsw`, `pair` for `window`).  There is **one reader** (`readF`) and **one writer** (`renderF`) per
@@ -288,6 +289,10 @@ inductive Event
   | extend (id : Id) (byMin : U32)
   | stop (id : Id) (remainingMin : U32)
   | brk (plannedMin : U32) (actualMin : Option U32) (where_ : Option (List Char))
+  /-- **A break BEGAN** (the owner's **D105**, parity **P100**): `tm break` logs it when the break starts — `t` is
+  the start, with the planned minutes and the place — so a running break is a fact of the log and not of
+  `.tm/state.json` alone.  The line that ends the break is still `brk`, in the fork's shape (`t` the start). -/
+  | brkStart (plannedMin : U32) (where_ : Option (List Char))
   | energy (pred : U8) (rep : U8) (hsw : Num) (loc : List Char)
   | interrupt (id : Option Id)
   | resume (lostMin : U32) (dropped : List Id)
@@ -307,19 +312,19 @@ inductive Event
   | loc (loc : List Char)
   | close (period : List Char) (key : List Char)
   | undo (of_ : List Char) (id : Option Id)
-  /-- Any tag that is not one of the 26: every other key, sorted by key, the last of a repeated
+  /-- Any tag that is not one of the 27: every other key, sorted by key, the last of a repeated
   key kept (serde's `Map<String, Value>`). -/
   | unknown (tag : List Char) (rest : List (List Char × JVal))
 deriving DecidableEq, Repr
 
-/-- The 26 known kinds, in `EVENT_NAMES` order. -/
+/-- The 27 known kinds, in `EVENT_NAMES` order (`brkStart` since D105). -/
 inductive Kind
-  | wake | arrive | start | done | extend | stop | brk | energy | interrupt | resume | pause | unpause | idle | routine | skip | plan | named | demote | readopt | move | drop | edit | note | loc | close | undo
+  | wake | arrive | start | done | extend | stop | brk | brkStart | energy | interrupt | resume | pause | unpause | idle | routine | skip | plan | named | demote | readopt | move | drop | edit | note | loc | close | undo
 deriving DecidableEq, Repr
 
 /-- `EVENT_NAMES`, in order. -/
 def Kind.all : List Kind :=
-  [.wake, .arrive, .start, .done, .extend, .stop, .brk, .energy, .interrupt, .resume, .pause, .unpause, .idle, .routine, .skip, .plan, .named, .demote, .readopt, .move, .drop, .edit, .note, .loc, .close, .undo]
+  [.wake, .arrive, .start, .done, .extend, .stop, .brk, .brkStart, .energy, .interrupt, .resume, .pause, .unpause, .idle, .routine, .skip, .plan, .named, .demote, .readopt, .move, .drop, .edit, .note, .loc, .close, .undo]
 
 /-- The `ev` tag of a known kind. -/
 def Kind.tag : Kind → List Char
@@ -330,6 +335,7 @@ def Kind.tag : Kind → List Char
   | .extend => ['e','x','t','e','n','d']
   | .stop => ['s','t','o','p']
   | .brk => ['b','r','e','a','k']
+  | .brkStart => ['b','r','e','a','k','_','s','t','a','r','t']
   | .energy => ['e','n','e','r','g','y']
   | .interrupt => ['i','n','t','e','r','r','u','p','t']
   | .resume => ['r','e','s','u','m','e']
@@ -361,6 +367,7 @@ def Kind.schema : Kind → List (List Char × FTy)
   | .extend => [(['i','d'], .str), (['b','y','_','m','i','n'], .u32)]
   | .stop => [(['i','d'], .str), (['r','e','m','a','i','n','i','n','g','_','m','i','n'], .u32)]
   | .brk => [(['p','l','a','n','n','e','d','_','m','i','n'], .u32), (['a','c','t','u','a','l','_','m','i','n'], .optU32), (['w','h','e','r','e'], .optStr)]
+  | .brkStart => [(['p','l','a','n','n','e','d','_','m','i','n'], .u32), (['w','h','e','r','e'], .optStr)]
   | .energy => [(['p','r','e','d'], .u8), (['r','e','p'], .u8), (['h','s','w'], .num), (['l','o','c'], .str)]
   | .interrupt => [(['i','d'], .optStr)]
   | .resume => [(['l','o','s','t','_','m','i','n'], .u32), (['d','r','o','p','p','e','d'], .strs)]
@@ -390,6 +397,7 @@ def Kind.build : (k : Kind) → Args k.schema → Event
   | .extend, (x0, x1, ()) => .extend x0 x1
   | .stop, (x0, x1, ()) => .stop x0 x1
   | .brk, (x0, x1, x2, ()) => .brk x0 x1 x2
+  | .brkStart, (x0, x1, ()) => .brkStart x0 x1
   | .energy, (x0, x1, x2, x3, ()) => .energy x0 x1 x2 x3
   | .interrupt, (x0, ()) => .interrupt x0
   | .resume, (x0, x1, ()) => .resume x0 x1
@@ -419,6 +427,7 @@ def Event.split : Event → Option (Σ k : Kind, Args k.schema)
   | .extend x0 x1 => some ⟨.extend, (x0, x1, ())⟩
   | .stop x0 x1 => some ⟨.stop, (x0, x1, ())⟩
   | .brk x0 x1 x2 => some ⟨.brk, (x0, x1, x2, ())⟩
+  | .brkStart x0 x1 => some ⟨.brkStart, (x0, x1, ())⟩
   | .energy x0 x1 x2 x3 => some ⟨.energy, (x0, x1, x2, x3, ())⟩
   | .interrupt x0 => some ⟨.interrupt, (x0, ())⟩
   | .resume x0 x1 => some ⟨.resume, (x0, x1, ())⟩
@@ -449,6 +458,7 @@ def Event.tag : Event → List Char
   | .extend _ _ => Kind.extend.tag
   | .stop _ _ => Kind.stop.tag
   | .brk _ _ _ => Kind.brk.tag
+  | .brkStart _ _ => Kind.brkStart.tag
   | .energy _ _ _ _ => Kind.energy.tag
   | .interrupt _ => Kind.interrupt.tag
   | .resume _ _ => Kind.resume.tag
@@ -480,6 +490,7 @@ def Event.strings : Event → List (List Char)
   | .extend x0 _ => [x0]
   | .stop x0 _ => [x0]
   | .brk _ _ x2 => x2.toList
+  | .brkStart _ x1 => x1.toList
   | .energy _ _ _ x3 => [x3]
   | .interrupt x0 => x0.toList
   | .resume _ x1 => x1
@@ -668,7 +679,7 @@ def argsFinite : (s : List (List Char × FTy)) → Args s → Bool
 
 /-! ## The known tags -/
 
-/-- The known kind of a tag, if any.  A scan of `EVENT_NAMES` (26 entries; each comparison stops at
+/-- The known kind of a tag, if any.  A scan of `EVENT_NAMES` (27 entries; each comparison stops at
 the first differing character, so a long unknown tag costs at most a few characters each). -/
 def kindOf (tag : List Char) : Option Kind := Kind.all.find? (fun k => k.tag == tag)
 
@@ -1505,7 +1516,7 @@ theorem the_log_reads_what_it_renders (e : Entry) (h : e.canonical = true) :
     | _ => cases hu
 
 /-- **A known event is never read as `unknown`** (design §15, B3; added and discharged in B3):
-a line whose tag is one of the 26 is that kind's event or a warning (cheat 94's claim is false). -/
+a line whose tag is one of the 27 is that kind's event or a warning (cheat 94's claim is false). -/
 theorem a_known_event_is_never_read_as_unknown (n : Nat) (l : List Char) (e : Entry)
     (h : readLine n (some l) = .entry e) (hk : isKnownTag (tagIn l) = true) :
     e.ev.isUnknown = false := by

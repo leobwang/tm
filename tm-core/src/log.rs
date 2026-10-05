@@ -93,7 +93,11 @@
 //!   a no-op.
 //! * `break.t` is when the break began; the entry is appended when the break
 //!   ends with `actual_min` set (a missing `actual_min` counts as
-//!   `planned_min`).
+//!   `planned_min`). Since the owner's **D105** (parity **P100**) `tm break`
+//!   also appends a `break_start` when the break BEGINS (`t` its start,
+//!   `planned_min`, `where`), and the replay pairs the two in file order: a
+//!   `break_start` no `break` has followed is the running break
+//!   ([`Replay::open_break`]).
 //! * `idle{attributed, min}` is appended when the idle prompt is answered:
 //!   the gap `[t − min, t]` was `attributed` to `leak`, `work`, `break`,
 //!   `routine` or `interrupt`; only `leak` feeds the leak ledger.
@@ -340,6 +344,18 @@ define_events! {
         /// Actual length.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         actual_min: Option<u32>,
+        /// Where (`walk`, `seat`, `bed`, `phone`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        r#where: Option<String>,
+    },
+    /// **A break BEGAN** — the owner's **D105** (README "Stage 6 — W-46 track K", parity
+    /// **P100**): `tm break` logs it when the break starts, `t` its start, so a running break is
+    /// a fact of the log and deleting `.tm/state.json` mid-break loses nothing (D42). The line
+    /// that ends the break is still [`Event::Break`], in the fork's shape. Fork 4748911 never
+    /// writes it, and reads it as an unknown event.
+    BreakStart => "break_start" {
+        /// Planned length.
+        planned_min: u32,
         /// Where (`walk`, `seat`, `bed`, `phone`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         r#where: Option<String>,
@@ -1002,6 +1018,21 @@ pub struct LeakRecord {
     pub min: u32,
 }
 
+/// **The break running at the end of the log** — the owner's **D105** (parity **P100**), the
+/// kernel's `Replay.OpenBrk`: the surviving `break_start` no `break` line has ended, in file
+/// order. What `.tm/state.json`'s `break` is rebuilt from (D42).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct OpenBreak {
+    /// When it began: its `break_start`'s `t`.
+    pub started: DateTime<FixedOffset>,
+    /// Planned minutes.
+    pub planned_min: u32,
+    /// Where.
+    pub r#where: Option<String>,
+    /// The day it belongs to (the day the `break` line that ends it will be filed under).
+    pub day: NaiveDate,
+}
+
 /// A block that was started and never closed.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct OpenBlock {
@@ -1462,6 +1493,12 @@ pub struct Replay {
     pub open_block: Option<OpenBlock>,
     /// An interruption not yet resumed.
     pub open_interrupt: Option<Interruption>,
+    /// **A break begun and not yet ended** (the owner's D105, parity P100): the last surviving
+    /// `break_start` with no `break` after it. Fork 4748911's `Replay` has no such key; a log it
+    /// wrote has no `break_start`, so this is `None` on every one — and `None` is not written,
+    /// so a replay with no running break serialises exactly as it did before D105.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub open_break: Option<OpenBreak>,
     /// Number of unknown events seen.
     pub unknown: u32,
     /// Inconsistencies noticed while replaying (a `done` for an item that was
@@ -1540,6 +1577,7 @@ impl PartialEq for Replay {
             longest_leak,
             open_block,
             open_interrupt,
+            open_break,
             unknown,
             warnings,
             seams,
@@ -1567,6 +1605,7 @@ impl PartialEq for Replay {
             && *longest_leak == other.longest_leak
             && *open_block == other.open_block
             && *open_interrupt == other.open_interrupt
+            && *open_break == other.open_break
             && *unknown == other.unknown
             && *warnings == other.warnings
             && *seams == other.seams

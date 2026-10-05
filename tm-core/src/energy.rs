@@ -791,6 +791,33 @@ pub fn duration_multiplier(model: &Model, ci: u8, tags: &[String]) -> f64 {
     model.duration.get(DEFAULT_TAG).copied().unwrap_or(1.0)
 }
 
+/// **How long a ghost block ran for** (§8.5): the item's planned or remaining
+/// estimate × its duration multiplier, falling back to one block and floored at
+/// `MIN_REMAINING_MIN`. The one body both readers call — `cli::ghost`'s ghost
+/// rows and the TUI's (`App::ghost_block_min`): until the W-46 repair the TUI
+/// carried its own copy of it (README gap 4874, AGENTS §5.3), and it lives here
+/// because the TUI's modules are compiled into tests that hold no `cli`.
+pub fn ghost_block_minutes(
+    id: Option<&crate::model::Id>,
+    block_min: u32,
+    model: &Model,
+    tree: &crate::tree::Tree,
+) -> u32 {
+    let Some(id) = id else {
+        return block_min;
+    };
+    let Some(item) = tree.get(id) else {
+        return block_min;
+    };
+    let est = tree
+        .planned_minutes(id)
+        .or_else(|| tree.remaining(id))
+        .filter(|m| *m > 0)
+        .unwrap_or(block_min);
+    let multiplier = duration_multiplier(model, item.ci, &tree.tags_effective(id));
+    planned_minutes(est, multiplier).max(crate::horizon::MIN_REMAINING_MIN)
+}
+
 /// Minutes the planner schedules for an estimate: `round(est × multiplier)`.
 pub fn planned_minutes(est_min: u32, multiplier: f64) -> u32 {
     if !multiplier.is_finite() || multiplier <= 0.0 {

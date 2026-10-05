@@ -23,6 +23,10 @@
 #                                          shipped binary ranks it (owner D72)
 #   <binary> review < requests.jsonl       the fork's week grid, review::week_review's
 #                                          heat over a world (README gap 3718)
+#   <binary> capacity < requests.jsonl     the fork's lookahead, day-0 slots, slot cut,
+#                                          section 7 pass and batches, the class R3
+#                                          deletes from tm-core (README gap 4752, W-46
+#                                          track C; tm/tests/support/forkcap.rs asks it)
 #
 # and feed either to `cargo run --example oracle-compare` in tm-kernel-ffi.
 #

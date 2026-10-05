@@ -40,6 +40,22 @@
 //! is its first caller. Until then the tests, `examples/tzprobe.rs` and
 //! `logbench` (c) include this file by path, so it depends on nothing but chrono,
 //! chrono-tz, serde_json and `tm_core`'s one FNV-1a body (`tm_core::fnv`).
+//!
+//! **A served table is CHECKED against the binary's own zone database first, and a
+//! table that disagrees is rebuilt, never served** (the owner's D104, README gaps
+//! 4621 and 4711; stage 6 W-46 track H). The digest says a file is the one its
+//! writer wrote; it cannot say the writer was this binary, and a hand edit that
+//! recomputes the digest — or a binary whose probe read its zone another way under
+//! the same key — passed until D104 as "trusted as written". The check
+//! ([`agrees`]) covers EVERY second the kernel can read through the table, not
+//! only the day it plans: the kernel attributes every log line to a local day
+//! through it (genesis replays the whole log, a hand-edited line can carry any
+//! instant), so the history, the planned day and the lookahead are all of
+//! `[1900, 2200]`. It is cheaper than the probe it saves because a table that
+//! agrees with chrono-tz at each of its own transitions and on a one-day grid
+//! agrees everywhere, given that every span of every zone outlasts the grid's step
+//! ([`CHECK_STEP`]; measured, and held by `cli_tz_cache_digest`'s sweep of every
+//! zone).
 
 use std::path::Path;
 
@@ -57,6 +73,16 @@ pub const SPAN: &str = "1900-2200";
 pub const STEP: i64 = 3600;
 /// The cache file's name inside the replay cache directory (D13).
 pub const CACHE_FILE: &str = "tz.json";
+/// **The step of [`agrees`]' grid: one day** (the owner's D104). A table that reads chrono-tz's
+/// offset at each of its own transitions (both sides of each) and at every point of this grid reads
+/// it at every second of the span, PROVIDED every span of the zone — the time between two of its
+/// changes, or between a change and an end of the span — is longer than this step: a change the
+/// table lacks then opens a span that holds a grid point, where the two disagree. Measured over
+/// every zone of the binary's chrono-tz (0.10.4, tzdb 2025b, 597 zones): the shortest span is
+/// 601,200 s (America/Boa_Vista, Noronha and Recife in October 2000; Gaza and Hebron in 2040,
+/// 2054 and 2072), so the step has a margin of seven, and `cli_tz_cache_digest`'s sweep of every
+/// zone fails the day a chrono-tz upgrade brings a span that does not outlast it.
+pub const CHECK_STEP: i64 = 86_400;
 
 /// A zone as the kernel reads it: the offset in force at [`SPAN_FROM`] and every
 /// change after it, strictly increasing. Offsets are seconds **east** of UTC
@@ -137,6 +163,94 @@ impl ZoneTable {
             self.transitions.iter().map(|&(t, o)| json!([fmt_instant(t), fmt_offset(o)])).collect();
         json!({ "key": self.key, "base": fmt_offset(self.base), "then": then })
     }
+
+    /// **The table a wire value holds, when the value is exactly what [`ZoneTable::to_wire`] writes
+    /// for one** — else `None` (the owner's D104). The kernel is the zone wire's reader (`readTz`);
+    /// this is no second grammar for it (AGENTS §5.3): the table read is accepted only when writing it
+    /// back gives the value read — ONE check, which the two field readers do not restate — so nothing
+    /// is read that the one encoder could not have written, and a key, an element or a spelling it
+    /// would not write is a table that disagrees.
+    pub fn from_wire(v: &Value) -> Option<ZoneTable> {
+        let o = v.as_object()?;
+        let base = offset_of(o.get("base")?.as_str()?)?;
+        let mut transitions = Vec::new();
+        for p in o.get("then")?.as_array()? {
+            match p.as_array()?.as_slice() {
+                [t, off] => transitions.push((instant_of(t.as_str()?)?, offset_of(off.as_str()?)?)),
+                _ => return None,
+            }
+        }
+        let table = ZoneTable { key: o.get("key")?.as_str()?.to_string(), base, transitions };
+        (table.to_wire() == *v).then_some(table)
+    }
+}
+
+/// [`fmt_offset`] read back: the seconds east `±HH:MM:SS` spells. Whether the text is the encoder's own spelling is
+/// [`ZoneTable::from_wire`]'s one check (the table written back must be the value read), not restated here.
+fn offset_of(s: &str) -> Option<i32> {
+    let (neg, rest) = match s.as_bytes().first()? {
+        b'+' => (false, &s[1..]),
+        b'-' => (true, &s[1..]),
+        _ => return None,
+    };
+    let mut parts = rest.split(':').map(|p| p.parse::<i32>().ok());
+    let (h, m, sec) = (parts.next()??, parts.next()??, parts.next()??);
+    let east = h.checked_mul(3600)?.checked_add(m.checked_mul(60)?)?.checked_add(sec)?;
+    let east = if neg { east.checked_neg()? } else { east };
+    Some(east)
+}
+
+/// [`fmt_instant`] read back: the Unix second `YYYY-MM-DDTHH:MM:SSZ` spells — the encoder's spelling is
+/// [`ZoneTable::from_wire`]'s check, as for [`offset_of`].
+fn instant_of(s: &str) -> Option<i64> {
+    Some(chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%SZ").ok()?.and_utc().timestamp())
+}
+
+/// **Whether `table` reads, at every second of `[1900, 2200]`, the offset the binary's own zone
+/// database reads for `tz`** — the owner's D104's check, which a served table must pass. The kernel
+/// reads the table at every instant a log line carries (its whole history at a genesis, and a
+/// hand-edited line can carry any instant), at the day it plans, at every day of the lookahead and
+/// at the walls of each, so the check is the whole span, not the planned day. Three things are
+/// asked, each of chrono-tz at a Unix second ([`offset_at`], the probe's own question):
+///
+/// * the key is [`key_of`]`(tz)` and the base is the offset at [`SPAN_FROM`];
+/// * every transition is a change of the zone at that very second, inside the span and in order —
+///   the second before reads the offset the table had, the second itself reads the new one, and the
+///   two differ;
+/// * on a grid of [`CHECK_STEP`] from `SPAN_FROM`, and at [`SPAN_TO`], the table reads the zone's
+///   offset.
+///
+/// The first two say every change the table holds is a change of the zone; the third, with every
+/// span of the zone longer than the step, says the table lacks none: a change the table lacks opens
+/// a span of the zone that holds a grid point, and the table reads its old offset there. So a table
+/// this accepts is the probe's table ([`probe`]) — the same transitions, and the same key — and a
+/// table it refuses disagrees with the zone at a second the kernel may read. 109,574 grid points
+/// and two questions a transition, where the probe asks 2,629,752 and bisects.
+pub fn agrees(tz: Tz, table: &ZoneTable) -> bool {
+    if table.key != key_of(tz) || table.base != offset_at(tz, SPAN_FROM) {
+        return false;
+    }
+    let (mut before, mut lo) = (table.base, SPAN_FROM);
+    for &(t, o) in &table.transitions {
+        if t <= lo || t > SPAN_TO || o == before || offset_at(tz, t - 1) != before || offset_at(tz, t) != o {
+            return false;
+        }
+        (before, lo) = (o, t);
+    }
+    let (mut next, mut reads) = (0, table.base);
+    let mut at = SPAN_FROM;
+    loop {
+        while let Some(&(_, o)) = table.transitions.get(next).filter(|&&(t, _)| t <= at) {
+            (reads, next) = (o, next + 1);
+        }
+        if reads != offset_at(tz, at) {
+            return false;
+        }
+        if at == SPAN_TO {
+            return true;
+        }
+        at = (at + CHECK_STEP).min(SPAN_TO);
+    }
 }
 
 /// What the cached `tz.json` opens with since the W-44 repair: the digest of the rest of its text.
@@ -168,25 +282,51 @@ pub fn from_cache_text(text: &str) -> Option<Value> {
     serde_json::from_str::<Value>(&format!("{{{body}")).ok()
 }
 
-/// **The wire value for `tz`, from the cache when its key matches, else probed.**
+/// **The last `tz.json` text this process found to be its own table, and the value served for it** (the
+/// owner's D104). The zone database a binary carries does not change while it runs, so a text the check
+/// accepted for a zone is accepted again without being checked again: a verb that reads the zone table
+/// three or four times (its load's replay, its capacity or planner request, a reload) and the TUI at every
+/// reload pay the check once. Keyed by the zone and the WHOLE text, so a byte changed on disk is a text
+/// this has not seen, and is checked.
+static SERVED: std::sync::Mutex<Option<(Tz, String, Value)>> = std::sync::Mutex::new(None);
+
+/// **The value `text` serves for `tz`, when it serves one**: its digest matches the rest of it
+/// ([`from_cache_text`]), it is exactly what the one encoder writes for a table ([`ZoneTable::from_wire`]),
+/// and that table is the binary's ([`agrees`]) — else `None`, and [`wire_for`] probes.
+fn served(tz: Tz, text: &str) -> Option<Value> {
+    let mut last = SERVED.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some((_, _, v)) = last.as_ref().filter(|(z, t, _)| *z == tz && t == text) {
+        return Some(v.clone());
+    }
+    let table = from_cache_text(text).and_then(|v| ZoneTable::from_wire(&v)).filter(|t| agrees(tz, t))?;
+    let wire = table.to_wire();
+    *last = Some((tz, text.to_string(), wire.clone()));
+    Some(wire)
+}
+
+/// **The wire value for `tz`, from the cache when it is this binary's table, else probed.**
 ///
 /// `cache_dir` is `.tm/cache/replay/` (D13); `None` never touches the disk. A
 /// cached file whose key is not [`key_of`]`(tz)` — another zone, another tzdb, or
 /// a file that does not parse — is probed afresh and overwritten, and since the
 /// W-44 repair so is one whose text does not match the digest it opens with
 /// ([`from_cache_text`], README gap 4613: D93's rule for the replay cache's
-/// other files). The file is written to a temporary name and renamed into place;
-/// a write that fails leaves the answer unchanged (the probe is the source, the
-/// file only saves it). The cached value is passed on as read, never decoded: the
-/// kernel validates every table it is sent (`readTz`, `Cal.mkTz?`).
+/// other files). **Since the owner's D104 so is one whose table disagrees with the
+/// binary's own zone database at any second of the span** ([`agrees`], README gaps
+/// 4621 and 4711): a digest says the file is what its writer wrote, never that the
+/// writer read the zone as this binary does, so a hand edit with its digest
+/// recomputed is rebuilt and not served — and every request reaches its table
+/// through this one function (the capacity and planner request, the walls request,
+/// every replay, `tm check`'s log sweep), so one check covers them all. The file is
+/// written to a temporary name and renamed into place; a write that fails leaves
+/// the answer unchanged (the probe is the source, the file only saves it), so an
+/// unwritable cache is rebuilt in memory and never served either (D93's path). The
+/// value served is the checked table written back ([`ZoneTable::to_wire`]), which
+/// is the value read: the kernel still validates every table it is sent (`readTz`,
+/// `Cal.mkTz?`).
 pub fn wire_for(cache_dir: Option<&Path>, tz: Tz) -> Value {
-    let key = key_of(tz);
     if let Some(dir) = cache_dir {
-        let cached = std::fs::read_to_string(dir.join(CACHE_FILE))
-            .ok()
-            .and_then(|t| from_cache_text(&t))
-            .filter(|v| v.get("key").and_then(Value::as_str) == Some(key.as_str()));
-        if let Some(v) = cached {
+        if let Some(v) = std::fs::read_to_string(dir.join(CACHE_FILE)).ok().and_then(|t| served(tz, &t)) {
             return v;
         }
     }

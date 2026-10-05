@@ -141,12 +141,19 @@ fn the_wire_table_is_spelled_as_the_kernel_reads_it() {
 }
 
 /// The cache (D13): a first call probes and writes the wire value — since the W-44 repair as a text
-/// opening with the digest of the rest of itself (`cache_text`, README gap 4613); a file with the right
-/// key and a matching digest is passed on as read; a file with another key, one that does not parse, one
-/// written before the digest and one whose digest does not match its text are probed afresh and
-/// overwritten; no directory touches no disk.
+/// opening with the digest of the rest of itself (`cache_text`, README gap 4613); a file whose table is
+/// the binary's is read and not re-probed — the file is never rewritten, so it keeps its inode (a probe
+/// renames a new file into place); a file with another key, one that does not parse, one written before
+/// the digest and one whose digest does not match its text are probed afresh and overwritten; no
+/// directory touches no disk. **Since the owner's D104** (stage 6 W-46 track H, README gaps 4621 and
+/// 4711) a file with the right key and a matching digest whose table the binary's own zone database
+/// does not read — the doctored table below, Kolkata with no transitions — is probed afresh and
+/// overwritten too. Until W-46 this test asserted the opposite of that one ("a matching key and digest
+/// is read, not re-probed", served as written): the sentence D104 withdraws, and this test's other
+/// assertions are unchanged.
 #[test]
 fn the_cache_keeps_the_wire_value_under_its_key() {
+    use std::os::unix::fs::MetadataExt;
     let tz = chrono_tz::Asia::Kolkata;
     let dir = tempfile::tempdir().expect("tempdir");
     let cache = dir.path().join("cache/replay");
@@ -156,9 +163,17 @@ fn the_cache_keeps_the_wire_value_under_its_key() {
     let on_disk = std::fs::read_to_string(&file).expect("written");
     assert_eq!(on_disk, tz_table::cache_text(&fresh));
     assert_eq!(tz_table::from_cache_text(&on_disk), Some(fresh.clone()));
+    let inode = std::fs::metadata(&file).expect("the file").ino();
+    assert_eq!(tz_table::wire_for(Some(&cache), tz), fresh);
+    assert_eq!(std::fs::metadata(&file).expect("the file").ino(), inode, "the binary's own table is read, not re-probed");
     let doctored = json!({"key": tz_table::key_of(tz), "base": "+05:30:00", "then": []});
     std::fs::write(&file, tz_table::cache_text(&doctored)).expect("write");
-    assert_eq!(tz_table::wire_for(Some(&cache), tz), doctored, "a matching key and digest is read, not re-probed");
+    assert_eq!(
+        tz_table::wire_for(Some(&cache), tz),
+        fresh,
+        "a matching key and digest whose table disagrees with the zone is probed afresh (D104)"
+    );
+    assert_eq!(std::fs::read_to_string(&file).expect("rewritten"), tz_table::cache_text(&fresh));
     std::fs::write(&file, doctored.to_string()).expect("write");
     assert_eq!(tz_table::wire_for(Some(&cache), tz), fresh, "a file with no digest is probed afresh");
     let flipped = tz_table::cache_text(&doctored).replace("+05:30:00", "+05:31:00");

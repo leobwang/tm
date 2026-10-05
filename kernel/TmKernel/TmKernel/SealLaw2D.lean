@@ -28,6 +28,7 @@ theorem answer_ckptOfEntries : answer (ckptOfEntries z T₀ L cut es er ws) =
      (daysFrom (foldedState z es er) (foldedHeaders z es er) L).map (OpenDay.finish (foldedState z es er).machine),
      Replay.openOf (foldedState z es er).machine,
      (foldedState z es er).machine.interrupt.map (fun i => ⟨0, some i.1, none, i.2.1, i.2.2, 0, []⟩),
+     (foldedState z es er).machine.brkOpen,
      Replay.maxDay? ((foldedState z es er).days.pairs.map Prod.fst), (foldedState z es er).global.lastEffective,
      es.length, (foldedState z es er).unknown, (foldedState z es er).longestLeak, (foldedState z es er).rwarns.reverse,
      ws.take maxWarnings, ws.length - maxWarnings⟩ := by
@@ -280,7 +281,7 @@ theorem resume_answer_eq (z : Cal.Tz) (T₀ T L : Nat) (a r b : List Log.Line) (
   simp only [Seal.Answer.mk.injEq]
   refine ⟨hKL, by rw [hKL], ?_, by rw [hKL]; exact windowsFrom_eq hx hy hAgree, instOtherOf_eq hx hy hAgree,
     namedOf_eq hx hy hAgree, by rw [hKL]; exact daysFrom_eq hx hy hAgree _ _ hhs, by rw [hAgree.machine],
-    by rw [hAgree.machine], ?_, hAgree.lastEff, by rw [hKcount]; simp only [List.length_append], hAgree.unknown,
+    by rw [hAgree.machine], by rw [hAgree.machine], ?_, hAgree.lastEff, by rw [hKcount]; simp only [List.length_append], hAgree.unknown,
     hAgree.longestLeak, by rw [hAgree.rwarns], by rw [hKwarn]; exact take_take_append _ _ _, ?_⟩
   · exact items_merged_eq K hp hx hy hKitems hKwin hAgree hbdd hki hkl hkdr hkdd hRdd
   · rw [hKlast]

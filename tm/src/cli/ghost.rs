@@ -30,7 +30,6 @@ use chrono_tz::Tz;
 use tm_core::capacity;
 use tm_core::config::Config;
 use tm_core::energy::{self, Model};
-use tm_core::horizon::MIN_REMAINING_MIN;
 use tm_core::model::Id;
 use tm_core::dayplan::{DayPlan, SegFlags, SegKind, Segment};
 use tm_core::store::{RuntimeState, Store};
@@ -130,20 +129,8 @@ pub fn plan(
 }
 
 /// How long a ghost block ran for: `est × multiplier`, the way §8.5 sizes a
-/// block, falling back to one block.
+/// block, falling back to one block — `energy::ghost_block_minutes`, the one
+/// body the TUI's ghost row reads too (README gap 4874).
 fn block_minutes(id: Option<&Id>, cfg: &Config, model: &Model, tree: &Tree) -> u32 {
-    let block_min = cfg.block_min();
-    let Some(id) = id else {
-        return block_min;
-    };
-    let Some(item) = tree.get(id) else {
-        return block_min;
-    };
-    let est = tree
-        .planned_minutes(id)
-        .or_else(|| tree.remaining(id))
-        .filter(|m| *m > 0)
-        .unwrap_or(block_min);
-    let multiplier = energy::duration_multiplier(model, item.ci, &tree.tags_effective(id));
-    energy::planned_minutes(est, multiplier).max(MIN_REMAINING_MIN)
+    energy::ghost_block_minutes(id, cfg.block_min(), model, tree)
 }

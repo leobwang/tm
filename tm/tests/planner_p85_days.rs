@@ -294,6 +294,51 @@ fn the_p85_comparison_bites_a_bent_day() {
     }
 }
 
+/// **The P100 re-draw gate admits P100's line and nothing else** (W-46 track K, the owner's D105;
+/// AGENTS §5.8, both directions). Every frozen world holds the `break_start` line `tm break` logs
+/// since D105; the committed world it was re-drawn from is that world without it. The gate admits
+/// exactly that move, and refuses each of four bent ones by name: a world that ALSO gained another
+/// line, a world whose state moved, a shipped day that moved with it, and a "moved" world that
+/// holds no `break_start` at all.
+#[test]
+fn the_p100_redraw_gate_admits_p100s_line_and_nothing_else() {
+    let without = |l: &Value| -> Value {
+        let mut w = l.clone();
+        let log: String = l["world"]["log"]
+            .as_str()
+            .expect("a log")
+            .split_inclusive('\n')
+            .filter(|x| !x.contains("\"ev\":\"break_start\""))
+            .collect();
+        w["world"]["log"] = Value::String(log);
+        w
+    };
+    for l in frozen() {
+        let name = l["name"].as_str().unwrap_or("?").to_string();
+        let log = l["world"]["log"].as_str().expect("a log");
+        assert!(log.contains("\"ev\":\"break_start\""), "{name}: the frozen world holds no `break_start` (D105)");
+        let old = without(&l);
+        assert_eq!(moved_only_by_p100(&old, &l), None, "{name}: P100's own move was refused");
+
+        let mut more = l.clone();
+        more["world"]["log"] = Value::String(format!("{log}{{\"t\":\"2026-09-07T09:59:00-05:00\",\"ev\":\"note\",\"text\":\"x\"}}\n"));
+        assert!(moved_only_by_p100(&old, &more).is_some_and(|d| d.contains("world.log")), "{name}: a second new line passed");
+
+        let mut state = l.clone();
+        state["world"]["state"]["loc"] = json!("home");
+        assert!(moved_only_by_p100(&old, &state).is_some_and(|d| d.contains("world.state")), "{name}: a moved state passed");
+
+        let mut day = l.clone();
+        day["shipped"]["hash"] = json!("0000000000000000");
+        assert!(moved_only_by_p100(&old, &day).is_some_and(|d| d.contains("shipped")), "{name}: a moved shipped day passed");
+
+        assert!(
+            moved_only_by_p100(&l, &old).is_some_and(|d| d.contains("no `break_start`")),
+            "{name}: a world with no `break_start` passed as P100's move"
+        );
+    }
+}
+
 /// **A frozen P85 name carried twice is refused** (AGENTS §5.8).
 #[test]
 #[should_panic(expected = "two frozen P85 lines for")]
@@ -325,6 +370,32 @@ fn the_frozen_p85_days_are_the_forks_oracle_answer_today() {
     println!("tm-oracle plan asked {} time(s)", *oracle.asked.lock().expect("census"));
 }
 
+/// **A committed line whose world moved by parity P100's line and nothing else** (the owner's D105,
+/// W-46 track K): `None` when the committed world is `new`'s with every `break_start` line taken out
+/// of its log — the line `tm break` logs when a break begins since D105 — every other key of the
+/// world byte for byte, and both fork days (`shipped`, `p85`) the committed ones by value; the first
+/// difference otherwise. A world that also lost or gained any OTHER line, or whose state, documents
+/// or instant moved, or whose fork days moved with it, is not this re-draw.
+fn moved_only_by_p100(old: &Value, new: &Value) -> Option<String> {
+    let without = |w: &Value| -> Value {
+        let mut w = w.clone();
+        let log: String = w["log"]
+            .as_str()
+            .unwrap_or_default()
+            .split_inclusive('\n')
+            .filter(|l| serde_json::from_str::<Value>(l.trim_end()).map_or(true, |v| v["ev"] != "break_start"))
+            .collect();
+        w["log"] = Value::String(log);
+        w
+    };
+    if !new["world"]["log"].as_str().unwrap_or_default().contains("\"ev\":\"break_start\"") {
+        return Some("the moved world holds no `break_start` line".to_string());
+    }
+    forkplan::first_difference("world", &old["world"], &without(&new["world"]))
+        .or_else(|| forkplan::first_difference("shipped", &old["shipped"], &new["shipped"]))
+        .or_else(|| forkplan::first_difference("p85", &old["p85"], &new["p85"]))
+}
+
 /// **Freeze the P85 days** — inert without `TM_P85_BLESS`; it asks `TM_ORACLE`, fork 4748911 out of
 /// the tree, so it outlives R3. Every [`WORLDS`] entry is run ([`build`]) and written with the two
 /// fork days on it ([`fork_days`]). **What a line is held against is the file's COMMITTED history**
@@ -332,6 +403,16 @@ fn the_frozen_p85_days_are_the_forks_oracle_answer_today() {
 /// re-draw (D64(b)'s, decided elsewhere), and its shipped day moving over the same world is the
 /// SHIPPED fork's day moving (D64, clause 2). A line HEAD holds that no world builds is refused.
 /// `TM_P85_BLESS_OUT` writes elsewhere, for a dry run.
+///
+/// **One re-draw is decided here, and only one** (W-46 track K, the owner's D105, parity P100):
+/// `tm break` logs a `break_start` when a break begins, so the verbs that wrote a committed world
+/// write it with that line now and the binary can no longer build the committed one from them —
+/// D64(b). A moved world is admitted only with `TM_PLANNER_DRAW_BECAUSE` a D64(b) reason (dated,
+/// naming D64(b); the classes' and the batch's own variable) and only when it moved by P100's line
+/// and nothing else ([`moved_only_by_p100`]): the verbs ran as committed, the committed world is the
+/// new one with its `break_start` lines taken out, every other key byte for byte, and BOTH fork days
+/// are the committed ones by value — so the comparison the line holds did not move. The line then
+/// carries the reason (`d64b`), kept on every later bless of an unmoved world.
 #[test]
 #[ignore]
 fn the_frozen_p85_days_are_blessed() {
@@ -344,13 +425,31 @@ fn the_frozen_p85_days_are_blessed() {
     let held = frozenhist::held(&path, frozenhist::key_of("name")).unwrap_or_else(|e| panic!("{e}"));
     eprintln!("{}", held.census(FROZEN_P85));
     let (mut out, mut refused, mut added) = (String::new(), Vec::new(), 0usize);
+    let mut redrawn: Vec<&str> = Vec::new();
+    let draw_because = std::env::var("TM_PLANNER_DRAW_BECAUSE").ok();
+    if let Some(why) = draw_because.as_deref() {
+        assert!(forkclass::is_d64b_reason(why), "TM_PLANNER_DRAW_BECAUSE: `{why}` is not a D64(b) reason — dated (20…), naming D64(b)");
+    }
     for w in &WORLDS {
         let (world, ran) = build(w).unwrap_or_else(|e| panic!("{}: {e}", w.name));
         assert!(ran.iter().all(|s| s.to_json()["code"] == 0), "{}: a verb failed: {:?}", w.name, ran.iter().map(forkgrid::Step::to_json).collect::<Vec<_>>());
         let (shipped, p85) = fork_days(&Built::of(world.clone()), &oracle).unwrap_or_else(|e| panic!("{}: {e}", w.name));
-        let l = line_of(w, &ran, &world, &shipped, &p85);
+        let mut l = line_of(w, &ran, &world, &shipped, &p85);
         match held.get(w.name) {
             None => added += 1,
+            Some(old) if old["world"] != l["world"] && old["steps"] == l["steps"] && draw_because.is_some() => {
+                // D64(b), held to P100's line alone (the owner's D105).
+                match moved_only_by_p100(old, &l) {
+                    None => {
+                        l["d64b"] = json!({
+                            "why": draw_because.as_deref().unwrap_or_default(),
+                            "moved": "the `break_start` line `tm break` logs since the owner's D105 (parity P100), and nothing else"
+                        });
+                        redrawn.push(w.name);
+                    }
+                    Some(d) => refused.push(format!("{}: the verbs build another world now, and not by P100's line alone: {d}", w.name)),
+                }
+            }
             Some(old) if old["world"] != l["world"] || old["steps"] != l["steps"] => {
                 refused.push(format!("{}: the verbs build another world now — a re-draw, which D64(b) must decide", w.name))
             }
@@ -364,7 +463,12 @@ fn the_frozen_p85_days_are_blessed() {
                 w.name,
                 forkplan::first_difference("p85", &old["p85"], &l["p85"]).unwrap_or_default()
             )),
-            Some(_) => {}
+            Some(old) => {
+                // A re-drawn line keeps its D64(b) record while its world stands.
+                if !old["d64b"].is_null() {
+                    l["d64b"] = old["d64b"].clone();
+                }
+            }
         }
         out.push_str(&serde_json::to_string(&l).expect("a line serialises"));
         out.push('\n');
@@ -374,7 +478,7 @@ fn the_frozen_p85_days_are_blessed() {
             refused.push(format!("{k}: a frozen line no world builds any more"));
         }
     }
-    eprintln!("P85 days: {added} line(s) added, {} refused", refused.len());
+    eprintln!("P85 days: {added} line(s) added, {} re-drawn under D64(b) ({}), {} refused", redrawn.len(), redrawn.join("; "), refused.len());
     assert!(refused.is_empty(), "the P85 bless is refused and wrote nothing:\n  {}", refused.join("\n  "));
     let out_path = std::env::var_os("TM_P85_BLESS_OUT").map(PathBuf::from).unwrap_or(path);
     std::fs::write(out_path, out).expect("the frozen P85 days are written");

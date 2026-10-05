@@ -69,8 +69,12 @@ mod plangen;
 #[path = "support/forkplan.rs"]
 mod forkplan;
 
+/// Fork 4748911's §7.5 batches, by value (W-46 track C; README gap 4752, the class).
+#[allow(dead_code)]
+#[path = "support/forkcap.rs"]
+mod forkcap;
+
 use chrono::NaiveTime;
-use tm_core::config::Config;
 use tm_core::dayplan::{DayPlan, SegKind};
 use tm_core::model::Id;
 use forkclass::Built;
@@ -174,13 +178,18 @@ fn the_kernel_batches_across_a_ci_on_the_riding_day() {
 }
 
 /// **P64's precondition over one ranked order, by its property**: a batch §7.5 forms
-/// over `ranked` (fork `priority::batches`) whose plain members — the ones fork
+/// over `ranked` (fork `priority::batches`, `groups`) whose plain members — the ones fork
 /// `build_groups` keeps — keyed as fork `split_by_filters` keys them (`loc:`,
 /// splittability, the running block), show one key AGAIN after another key. That is
 /// the one shape on which the fork's group-by and D74's runs split a batch
 /// differently; on every other batch the two are the same buckets in the same order.
-fn a_key_reappears(ranked: &[&Candidate], cfg: &Config, active: Option<&Id>) -> bool {
-    priority::batches(ranked, cfg).iter().any(|batch| {
+///
+/// **`groups` is fork 4748911's own answer, out of the tree since W-46 track C**
+/// (`forkcap::batches`, frozen by value; `forkcap::batches_live` for the census's fresh
+/// draws): until then it was tm-core's in-tree copy of `batches`, which R3 leaves with no
+/// shipped caller and deletes.
+fn a_key_reappears(ranked: &[&Candidate], groups: &[forkcap::ForkBatch], active: Option<&Id>) -> bool {
+    groups.iter().any(|batch| {
         let keys: Vec<_> = batch
             .ids
             .iter()
@@ -206,7 +215,9 @@ fn a_key_reappears(ranked: &[&Candidate], cfg: &Config, active: Option<&Id>) -> 
 /// one; the same three with `^t1` written last, `[^t3, ^t2, ^t1]`, do not — the group-by
 /// and the runs are then the same two buckets. **It reads no fork** — the kernel's ranking and
 /// `tm_core::priority`'s batches — so it sits outside the region since W-45 track C (README gap
-/// 4682), with the precondition and the census that reads it.
+/// 4682), with the precondition and the census that reads it.  Since W-46 track C those batches
+/// are fork 4748911's own, frozen by value (`forkcap::batches`), because R3 deletes the in-tree
+/// copy (README gap 4752, the class).
 #[test]
 fn p64s_precondition_sees_a_key_again_and_only_then() {
     let mut lines = vec![("t3", ""), ("t1", " atomic"), ("t2", "")];
@@ -236,7 +247,8 @@ fn p64s_precondition_sees_a_key_again_and_only_then() {
         let ranked = priority::sorted_candidates(&ans.prios, &cands);
         let order_seen: Vec<&str> = ranked.iter().map(|c| c.id.as_str()).collect();
         assert_eq!(order_seen.join(" "), order, "the ranked order of the {order} world");
-        assert_eq!(a_key_reappears(&ranked, &fx.cfg, None), expect, "the {order} world");
+        let groups = forkcap::batches(forkcap::store(), &ranked, &fx.cfg);
+        assert_eq!(a_key_reappears(&ranked, &groups, None), expect, "the {order} world");
     }
 }
 
@@ -255,7 +267,10 @@ fn p64_precondition(b: &Built, prios: &[Prio]) -> bool {
         let d60 = forkclass::d60_cands(&b.cands, ps);
         [&b.cands, &d60]
             .iter()
-            .any(|cs| a_key_reappears(&priority::sorted_candidates(ps, cs), &b.cfg, active))
+            .any(|cs| {
+                let ranked = priority::sorted_candidates(ps, cs);
+                a_key_reappears(&ranked, &forkcap::batches_live(forkcap::store(), &ranked, &b.cfg), active)
+            })
     })
 }
 

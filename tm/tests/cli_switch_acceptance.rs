@@ -386,10 +386,11 @@ fn deleting_the_replay_cache_changes_nothing() {
 /// would make every line below vacuously true.
 ///
 /// **What it does NOT warm, named here because the title does not say it** (W-21 repair step):
-/// a RUNNING BREAK. `tm break` sets `active.paused` and appends nothing, so in that state the
-/// deletion does move an answer, and "changes nothing" is true of this warm-up and not of every
-/// one. [`deleting_the_runtime_state_while_a_break_runs_resumes_the_block`] is that state,
-/// asserted to move exactly the pause and no log line.
+/// a RUNNING BREAK. Until the owner's D105 `tm break` set `active.paused` and appended nothing,
+/// so in that state the deletion did move an answer — the pause — and the test that held that
+/// state asserted exactly that move and no log line. Since D105 (parity P100) `tm break` logs a
+/// `break_start` and the rebuild restores the break and its pause from it, so that state moves
+/// nothing either: [`deleting_the_runtime_state_while_a_break_runs_changes_nothing`] is it.
 #[test]
 fn deleting_the_runtime_state_changes_nothing() {
     let tm = plan_with_log("energy-14d");
@@ -735,39 +736,36 @@ fn a_calendar_item_added_after_the_arrival_does_not_move_the_rebuilt_window() {
     );
 }
 
-/// **T9's third half, and the state the two above do not warm**: with a break RUNNING,
-/// deleting `.tm/state.json` DOES move an answer — the block comes back un-paused — and this
-/// test is where that is stated, measured and bounded (the owner's **D42**, README gap 1085).
+/// **T9 with a break RUNNING: deleting `.tm/state.json` changes NOTHING** — the owner's **D105**
+/// (README "Stage 6 — W-46 track K", gaps 1034, 1085 and 4740; parity **P100**), D42's
+/// acceptance asserted for the one running state it could not answer for until now.
 ///
-/// **Why it exists.** [`deleting_the_runtime_state_changes_nothing`] warms with a wake, an
-/// arrival and a running block and never with a break, so its name promised more than its
-/// coverage: `tm break` writes `state.break_` and sets `active.paused` **without appending any
-/// event** — `tm_core::log`'s convention is that the `Event::Break` is written when the break
-/// *ends*, because its `t` is the start — so a running break has left no line in the log, and
-/// neither has the pause it caused. [`Ctx::reconcile_state`] ORs the cache's own running break
-/// back into the derived `paused`; when the FILE IS GONE there is no cache to OR from.
+/// **What it was, and why it changed.** Until D105 `tm break` wrote `state.break_` and set
+/// `active.paused` **without appending any event** — the `Event::Break` was written when the
+/// break *ended*, stamped at its start — so a running break left no line in the log, and the
+/// deletion brought the block back un-paused: this test asserted that move, bounded to exactly
+/// one spelling and the pause (README gap 1085). Once R3's planner draws a running break (P45),
+/// that same deletion moved `tm plan`, the three `tm log` views and `tm review day` and wrote a
+/// `plan` event — a derived cache's deletion writing to its own authority, R3's second blocker
+/// (gap 4740). D105 removes the second source of truth rather than restating the acceptance
+/// around it: `tm break` logs a `break_start` when the break begins, the kernel's replay holds the
+/// running break (`tm_core::log::Replay::open_break`), and the rebuild restores `break` and the
+/// pause it sets from that line.
 ///
-/// **What it asserts, and the two halves are different claims.**
-///
-/// 1. The move is EXACTLY ONE spelling and EXACTLY the pause. `tm --json now`'s
-///    `active.paused` goes `true` -> `false` and nothing else in it moves; the other ten
-///    spellings are byte-identical. Asserted as an equality after substituting the pause back,
-///    so a future change that moves a SECOND thing fails here rather than widening quietly.
-/// 2. **Nothing was written to the authority.** `.tm/log.jsonl` has the same number of lines
-///    after the deletion as before. That is the claim that matters: a *derivable cache* whose
-///    deletion appends to the log it is derived from is not a cache. On a tree whose plan
-///    depends on the pause the re-laid plan moves the plan hash and `tm plan` appends a second
-///    `Event::Plan` — gap 1085 records that, and this fixture does not reach it.
-/// 3. The notice NAMES the pause, not only the break. D42's rule is that a field the log cannot
-///    carry is named rather than regenerated in silence, and `active.paused` was being
-///    regenerated as `false` while the sentence spoke only of `break`.
+/// **What it asserts.** The bite first — a break RUNNING and a block PAUSED in the file, and the
+/// `break_start` line in the log. Then, across the deletion: **no spelling of the eleven moves**;
+/// the rebuilt file's running break, block and interruption are the deleted file's; the notice
+/// says the break was RESTORED and nothing was GONE; and `.tm/log.jsonl` keeps its line count —
+/// a derived cache's deletion costs no line of its authority.
 #[test]
-fn deleting_the_runtime_state_while_a_break_runs_resumes_the_block() {
+fn deleting_the_runtime_state_while_a_break_runs_changes_nothing() {
     let tm = plan_with_log("energy-14d");
     tm.ok_at(INSIDE, &["wake", "06:05"]);
     tm.ok_at(INSIDE, &["arrive", "lounge"]);
     tm.ok_at(INSIDE, &["start", "^p1"]);
     tm.ok_at(LATER, &["break", "20m", "--where", "walk"]);
+    let started: Vec<String> = log_lines(&tm).into_iter().filter(|l| l.contains("\"ev\":\"break_start\"")).collect();
+    assert_eq!(started.len(), 1, "`tm break` logged no `break_start` (D105): {started:?}");
 
     let before = answers(&tm, LATER, JSON_SPELLINGS);
     let before_lines = log_lines(&tm).len();
@@ -790,28 +788,19 @@ fn deleting_the_runtime_state_while_a_break_runs_resumes_the_block() {
     let first = tm.run_at(LATER, &["--json", "now"]);
     assert_eq!(first.code, 0, "the first verb after the deletion failed: {}{}", first.stdout, first.stderr);
     assert!(
-        first.stderr.contains("active.paused"),
-        "the rebuild named the break but not the pause it silently cleared: {:?}",
+        first.stderr.contains("RESTORED from the log: `break`"),
+        "the rebuild did not say the running break came back: {:?}",
         first.stderr
     );
+    assert!(!first.stderr.contains("GONE"), "the rebuild said something was gone: {:?}", first.stderr);
 
     let after = answers(&tm, LATER, JSON_SPELLINGS);
     assert_eq!(
         moved(&before, &after),
-        vec!["now".to_string()],
-        "the running break moved something other than `tm now`"
+        Vec::<String>::new(),
+        "deleting the runtime state while a break runs moved an answer (D42, D105)"
     );
-    // And within `now`, exactly the pause. Substituting it back must make the two identical.
-    let (_, now_before) = before.iter().find(|(n, _)| n == "now").expect("`now` was asked");
-    let (_, now_after) = after.iter().find(|(n, _)| n == "now").expect("`now` was asked");
-    assert_eq!(
-        now_after.replace("\"paused\": false", "\"paused\": true"),
-        *now_before,
-        "the deletion moved more of `tm now` than the pause:\nBEFORE {now_before}\nAFTER  {now_after}"
-    );
-
-    // **The authority was not written to.** A derived cache's deletion may cost an answer; it
-    // may not cost a log line.
+    // **The authority was not written to.** A derived cache's deletion may not cost a log line.
     assert_eq!(
         log_lines(&tm).len(),
         before_lines,
@@ -821,31 +810,29 @@ fn deleting_the_runtime_state_while_a_break_runs_resumes_the_block() {
     let after_state: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(state_path(&tm)).expect("rebuilt state"))
             .expect("the rebuilt .tm/state.json is not JSON");
-    assert!(after_state["break"].is_null(), "a running break came back out of the log");
-    assert_eq!(after_state["active"]["paused"], false, "the pause came back from nowhere");
+    for field in ["break", "active", "interrupt", "date", "wake", "loc"] {
+        assert_eq!(
+            after_state[field], before_state[field],
+            "`{field}` did not come back out of the log:\nBEFORE {before_bytes}\nAFTER  {after_state}"
+        );
+    }
 
     eprintln!(
-        "running-break deletion: 1 of {} `--json` spellings moved (`now`, and only \
-         `active.paused` within it), {} log lines before and after",
+        "running-break deletion: 0 of {} `--json` spellings moved, {} log lines before and after",
         before.len(),
         before_lines
     );
 }
 
-/// **D42's notice fires when the ONLY thing lost is the break** — README gap **1191**,
-/// repaired at the W-22 repair step.
-///
-/// `break` is the one field of §10.2 that genuinely cannot be derived, and it was the one
-/// whose loss was silent. The notice was gated on there being a running block or a running
-/// interruption *to name*, so with a break running and nothing started, deleting
-/// `.tm/state.json` discarded the break and printed **no `tm:` line at all** — the exact
-/// inverse of D42's rule that a field which cannot be derived *fails LOUDLY rather than
-/// regenerating as null*. Reproduced by both of W-22's auditors independently.
+/// **A running break with no block is RESTORED and named** — README gap **1191** (W-22: the
+/// break was discarded with no `tm:` line at all, the inverse of D42's rule that a field which
+/// cannot be derived fails LOUDLY), and since the owner's **D105** (parity P100) the stronger
+/// claim: the break CAN be derived, so it comes back, and the notice says so by name.
 ///
 /// The bite is the second assertion: without a running break and **no** active block in the
-/// file, this is [`deleting_the_runtime_state_while_a_break_runs_resumes_the_block`] again.
+/// file, this is [`deleting_the_runtime_state_while_a_break_runs_changes_nothing`] again.
 #[test]
-fn a_break_lost_with_no_block_running_is_still_named() {
+fn a_break_running_with_no_block_is_restored_and_named() {
     let tm = plan_with_log("energy-14d");
     tm.ok_at(INSIDE, &["wake", "06:05"]);
     tm.ok_at(INSIDE, &["break", "20m", "--where", "walk"]);
@@ -868,8 +855,8 @@ fn a_break_lost_with_no_block_running_is_still_named() {
     let first = tm.run_at(INSIDE, &["--json", "now"]);
     assert_eq!(first.code, 0, "the first verb after the deletion failed: {}{}", first.stdout, first.stderr);
     assert!(
-        first.stderr.contains("`break`"),
-        "the running break was discarded in silence (gap 1191): {:?}",
+        first.stderr.contains("RESTORED from the log: `break`"),
+        "the running break was not named as restored (gap 1191, D105): {:?}",
         first.stderr
     );
     assert!(
@@ -878,12 +865,11 @@ fn a_break_lost_with_no_block_running_is_still_named() {
         first.stderr
     );
 
-    // The notice is the remedy; the break really is gone, and nothing was written to the
-    // authority to pretend otherwise.
+    // The break came back, and nothing was written to the authority to bring it.
     let after: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(state_path(&tm)).expect("rebuilt state"))
             .expect("the rebuilt .tm/state.json is not JSON");
-    assert!(after["break"].is_null(), "a running break came back out of the log");
+    assert_eq!(after["break"], before_state["break"], "the running break did not come back out of the log");
     assert_eq!(
         log_lines(&tm).len(),
         before_lines,

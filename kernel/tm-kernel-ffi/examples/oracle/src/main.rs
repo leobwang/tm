@@ -70,6 +70,13 @@
 //!   (`PlanOverrides::extending`); `runs` is D74's split of a batch into its runs (parity P64,
 //!   `p64-runs.patch`, the W-40 land step), the comparand's departure for P64. A request the fork cannot answer is answered
 //!   `{"error": ...}`, by name, and the process keeps reading.
+//! * `capacity` — **the fork's §7 pass and §8.4 lookahead, out of the tree** (stage 6
+//!   W-46 track C; README gap 4752 restated as a class): R3 leaves tm-core's in-tree
+//!   `capacity::lookahead`, `cut_slots`, `energize`, `priority::compute`, `batches` and the
+//!   rest of that class with no shipped caller and deletes them, so every comparison that
+//!   read them reads the fork's answers from here (D72's shape). Ops `today`, `lookahead`,
+//!   `cut`, `rank`, `batches`, `cand`, `sort_key`, `wall_minutes`; `capacity_one`'s doc gives
+//!   the wire.
 //! * `review` — **the fork's WEEK GRID, out of the tree** (stage 6 W-40 track H,
 //!   README gap 3718; D23's shape, as `plan` is for the planner): one JSON request
 //!   per line of stdin, one answer per line of stdout. Until W-40 every test of the
@@ -613,6 +620,357 @@ fn worked_one(req: &Value) -> Result<Value, String> {
     Ok(json!({ "worked": planner::active_worked(&input), "read_by": "planner::active_worked" }))
 }
 
+// ---------------------------------------------------------------------------
+// `capacity`: the fork's §7 pass and §8.4 lookahead, out of the tree (W-46 track C)
+// ---------------------------------------------------------------------------
+//
+// R3 leaves tm-core's in-tree copies of these functions with no shipped caller (README
+// gap 4752, restated as a CLASS by W-46 track C), and the switch deletes them.  Every
+// comparison that read them in-tree reads fork 4748911's own answers from here instead
+// (D72's shape): frozen by value in `tm/tests/fixtures/`, re-blessed through this mode,
+// and asked live under `TM_ORACLE`.  Each op calls the EXTRACTED fork's own function and
+// nothing re-types its body: `today` is `cut_slots` + `EnergyCtx` + `energize` (and
+// `DayCapacity::from_slots`), `lookahead` is `capacity::lookahead`, `cut` is `cut_slots`
+// (and `Cut::slot_minutes`, `Cut::break_minutes`), `rank` is `priority::compute` (and, per
+// grant, `utilization` and `bin_of` over its need and availability), `batches` is
+// `priority::batches`, `cand` is `Candidate::cap_left_min` and `Candidate::floor_need_min`,
+// `sort_key` is `priority::sort_key`, `wall_minutes` is `capacity::wall_minutes`.
+//
+// A double crosses as its shortest TEXT and is read by `str::parse` (exact): this
+// build's serde_json is the fork's, without `float_roundtrip` (parity P25), so a JSON
+// number of seventeen significant digits could come back one ULP away.  The config
+// crosses as `config.toml` TEXT for the same reason — `Config::parse`, the fork's own
+// reader of it.
+
+/// A `config.toml` text, read by the fork's own `Config::parse`.
+fn cap_config(v: &Value) -> Result<tm_core::config::Config, String> {
+    let text = v.as_str().ok_or_else(|| format!("`config` is {v}, not a config.toml's text"))?;
+    tm_core::config::Config::parse(text).map_err(|e| format!("config: {e}"))
+}
+
+/// A weekday as the wire names it (`Mon` .. `Sun`).
+fn cap_weekday(k: &str) -> Result<chrono::Weekday, String> {
+    use chrono::Weekday::*;
+    Ok(match k {
+        "Mon" => Mon,
+        "Tue" => Tue,
+        "Wed" => Wed,
+        "Thu" => Thu,
+        "Fri" => Fri,
+        "Sat" => Sat,
+        "Sun" => Sun,
+        other => return Err(format!("a weekday {other:?}")),
+    })
+}
+
+/// A model: the default one with its learned `energy` curves, `p_lounge` (each weight a
+/// double's text) and `expected_arrival` (`HH:MM`) set — the three a capacity reads.
+fn cap_model(v: &Value) -> Result<tm_core::energy::Model, String> {
+    let mut m = tm_core::energy::Model::default();
+    if let Some(e) = v.get("energy").filter(|e| !e.is_null()) {
+        m.energy = serde_json::from_value(e.clone()).map_err(|e| format!("model.energy: {e}"))?;
+    }
+    for (k, x) in v["p_lounge"].as_object().into_iter().flatten() {
+        let t = x.as_str().ok_or_else(|| format!("model.p_lounge.{k} is {x}, not a double's text"))?;
+        m.p_lounge.set(cap_weekday(k)?, t.parse::<f64>().map_err(|e| format!("model.p_lounge.{k} {t:?}: {e}"))?);
+    }
+    for (k, x) in v["expected_arrival"].as_object().into_iter().flatten() {
+        let t = x.as_str().ok_or_else(|| format!("model.expected_arrival.{k} is {x}"))?;
+        let at = chrono::NaiveTime::parse_from_str(t, "%H:%M").map_err(|e| format!("model.expected_arrival.{k} {t:?}: {e}"))?;
+        m.expected_arrival.set(cap_weekday(k)?, tm_core::energy::Hhmm(at));
+    }
+    Ok(m)
+}
+
+/// `[[start, end], …]` — walls as instants, in the configuration's zone.
+fn cap_walls(v: &Value, tz: chrono_tz::Tz, what: &str) -> Result<Vec<tm_core::capacity::Wall>, String> {
+    v.as_array()
+        .ok_or_else(|| format!("`{what}` is not an array"))?
+        .iter()
+        .map(|w| Ok((instant(&w[0], tz, what)?, instant(&w[1], tz, what)?)))
+        .collect()
+}
+
+/// A slot as the wire spells it: `[start, end, energy, "block"|"short"]`.
+fn cap_slot_json(s: &tm_core::capacity::Slot) -> Value {
+    use tm_core::capacity::SlotKind;
+    let kind = match s.kind {
+        SlotKind::Block => "block",
+        SlotKind::ShortBlock => "short",
+    };
+    json!([s.start.to_rfc3339(), s.end.to_rfc3339(), s.energy, kind])
+}
+
+fn cap_slots(v: &Value, tz: chrono_tz::Tz) -> Result<Vec<tm_core::capacity::Slot>, String> {
+    use tm_core::capacity::{Slot, SlotKind};
+    v.as_array()
+        .ok_or("`slots` is not an array")?
+        .iter()
+        .map(|s| {
+            Ok(Slot {
+                start: instant(&s[0], tz, "a slot's start")?,
+                end: instant(&s[1], tz, "a slot's end")?,
+                energy: s[2].as_u64().and_then(|e| u8::try_from(e).ok()).ok_or_else(|| format!("a slot's energy {}", s[2]))?,
+                kind: match s[3].as_str() {
+                    Some("block") => SlotKind::Block,
+                    Some("short") => SlotKind::ShortBlock,
+                    other => return Err(format!("a slot's kind {other:?}")),
+                },
+            })
+        })
+        .collect()
+}
+
+/// A day of capacity: `[date, [m0 .. m5]]`.
+fn cap_day_json(d: &tm_core::capacity::DayCapacity) -> Value {
+    json!([d.date.to_string(), d.minutes_at_level])
+}
+
+fn cap_days(v: &Value) -> Result<Vec<tm_core::capacity::DayCapacity>, String> {
+    v.as_array()
+        .ok_or("`caps` is not an array")?
+        .iter()
+        .map(|d| {
+            Ok(tm_core::capacity::DayCapacity {
+                date: chrono::NaiveDate::parse_from_str(d[0].as_str().ok_or("a day's date")?, "%Y-%m-%d").map_err(|e| e.to_string())?,
+                minutes_at_level: serde_json::from_value(d[1].clone()).map_err(|e| format!("a day's minutes: {e}"))?,
+            })
+        })
+        .collect()
+}
+
+fn cap_date(v: &Value, what: &str) -> Result<chrono::NaiveDate, String> {
+    let t = v.as_str().ok_or_else(|| format!("`{what}` is {v}, not a date"))?;
+    chrono::NaiveDate::parse_from_str(t, "%Y-%m-%d").map_err(|e| format!("`{what}` {t:?}: {e}"))
+}
+
+/// **A candidate, field by field** — fork 4748911's `Candidate` (`priority.rs`), which
+/// derives no `Deserialize`: the in-tree struct's own `Serialize` output, its `multiplier`
+/// as the double's text; each leaf type through its own `Deserialize`, an instant into the
+/// configuration's zone.
+fn cap_cand(v: &Value, tz: chrono_tz::Tz) -> Result<tm_core::priority::Candidate, String> {
+    let leaf = |k: &str| v.get(k).cloned().ok_or_else(|| format!("a candidate with no `{k}`"));
+    macro_rules! field {
+        ($k:literal) => {
+            serde_json::from_value(leaf($k)?).map_err(|e| format!("a candidate's `{}`: {e}", $k))?
+        };
+    }
+    let opt_instant = |k: &str| -> Result<Option<chrono::DateTime<chrono_tz::Tz>>, String> {
+        match leaf(k)? {
+            Value::Null => Ok(None),
+            x => Ok(Some(instant(&x, tz, k)?)),
+        }
+    };
+    let window = match leaf("window")? {
+        Value::Null => None,
+        w => Some((instant(&w[0], tz, "window")?, instant(&w[1], tz, "window")?)),
+    };
+    let mult = leaf("multiplier")?;
+    let mult = mult.as_str().ok_or_else(|| format!("a candidate's `multiplier` is {mult}, not a double's text"))?;
+    Ok(tm_core::priority::Candidate {
+        id: tm_core::model::Id::new(v["id"].as_str().ok_or("a candidate with no id")?),
+        title: field!("title"),
+        ci: field!("ci"),
+        k: field!("k"),
+        remaining_min: field!("remaining_min"),
+        planned_min: field!("planned_min"),
+        need_min: field!("need_min"),
+        multiplier: mult.parse::<f64>().map_err(|e| format!("a candidate's `multiplier` {mult:?}: {e}"))?,
+        effective_due: opt_instant("effective_due")?,
+        window,
+        scope: field!("scope"),
+        floor: field!("floor"),
+        floor_done_min: field!("floor_done_min"),
+        cap: field!("cap"),
+        cap_done_min: field!("cap_done_min"),
+        state: field!("state"),
+        blocked_by: field!("blocked_by"),
+        waiting: field!("waiting"),
+        loc: field!("loc"),
+        splittable: field!("splittable"),
+        hot: field!("hot"),
+        overdue: field!("overdue"),
+        mandatory: field!("mandatory"),
+        is_optional: field!("is_optional"),
+        is_wall: field!("is_wall"),
+        wall_today: field!("wall_today"),
+        instance: field!("instance"),
+        root_order: field!("root_order"),
+        own_order: field!("own_order"),
+        tags: field!("tags"),
+    })
+}
+
+/// A grant as fork `compute` returns it, with `u` as the double's shortest text (`inf`,
+/// `null` when the pass gave none): JSON has no infinity, and serde would write `null`.
+fn cap_prio_json(p: &tm_core::priority::Prio) -> Value {
+    let class = serde_json::to_value(p.class).unwrap_or(Value::Null);
+    json!({
+        "id": p.id.as_str(), "p": p.p, "class": class, "k": p.k,
+        "u": p.u.map(|u| u.to_string()), "bin": p.bin,
+        "need_min": p.need_min, "avail_min": p.avail_min, "allocation_min": p.allocation_min,
+        "shortfall_min": p.shortfall_min, "shortfall_positive": p.shortfall_positive,
+        "until": p.until.map(|d| d.to_string()), "hysteresis_applied": p.hysteresis_applied, "raw_p": p.raw_p,
+    })
+}
+
+/// **One `capacity` op** (W-46 track C):
+///
+/// ```text
+/// {"op":"today", "config":<toml>, "model":{..}, "from":t, "end":t, "walls":[[a,b]..],
+///  "reports":[[t,pred,rep]..], "wake":t, "loc":"lounge", "slept":n|null, "blocks_done":n,
+///  "allow_home":bool, "date":"YYYY-MM-DD"}
+///   -> {"slots":[[start,end,energy,kind]..], "day0":[6]}        cut_slots, EnergyCtx, energize, DayCapacity::from_slots
+/// {"op":"lookahead", "config":<toml>, "model":{..}, "walls":{date:[[a,b]..]}, "slots":[..],
+///  "from":"YYYY-MM-DD", "days":n, "wake":"HH:MM:SS[.f]"}
+///   -> {"days":[[date,[6]]..]}                                  capacity::lookahead
+/// {"op":"cut", "config":<toml>, "from":t, "end":t, "walls":[[a,b]..]}
+///   -> {"slots":[..], "breaks":[[a,b]..], "slot_minutes":n, "break_minutes":n}
+///                                                                cut_slots, Cut::slot_minutes, Cut::break_minutes
+/// {"op":"rank", "config":<toml>, "cands":[..], "caps":[[date,[6]]..], "yesterday":{id:p}, "today":"YYYY-MM-DD"}
+///   -> {"prios":[..], "pass":[[u, bin]..]}                       priority::compute; utilization, bin_of
+/// {"op":"batches", "config":<toml>, "ranked":[cand..]}
+///   -> {"batches":[{ids,ci,total_min,total_remaining_min}..]}    priority::batches
+/// {"op":"cand", "config":<toml>, "cands":[cand..]}
+///   -> {"cands":[{"cap_left_min":n|null,"floor_need_min":n|null}..]}
+///                                                                Candidate::cap_left_min, Candidate::floor_need_min
+/// {"op":"sort_key", "config":<toml>, "cand":cand, "prio":grant}
+///   -> {"key":[p,[r,r],[o,o]]}                                   priority::sort_key
+/// {"op":"wall_minutes", "config":<toml>, "from":t, "to":t, "walls":[[a,b]..]}
+///   -> {"minutes":n}                                             capacity::wall_minutes (§8.1's Σ walls inside)
+/// ```
+fn capacity_one(req: &Value) -> Result<Value, String> {
+    use tm_core::capacity;
+    use tm_core::priority;
+    let cfg = cap_config(&req["config"])?;
+    let tz = cfg.tz;
+    match req["op"].as_str() {
+        Some("today") => {
+            let model = cap_model(&req["model"])?;
+            let from = instant(&req["from"], tz, "from")?;
+            let end = instant(&req["end"], tz, "end")?;
+            let walls = cap_walls(&req["walls"], tz, "walls")?;
+            let reports: Vec<(chrono::DateTime<chrono_tz::Tz>, u8, u8)> = req["reports"]
+                .as_array()
+                .ok_or("`reports` is not an array")?
+                .iter()
+                .map(|r| {
+                    let small = |x: &Value| x.as_u64().and_then(|n| u8::try_from(n).ok()).ok_or_else(|| format!("a report's level {x}"));
+                    Ok((instant(&r[0], tz, "a report")?, small(&r[1])?, small(&r[2])?))
+                })
+                .collect::<Result<_, String>>()?;
+            let posterior = tm_core::energy::Posterior::from_reports(&reports, &cfg);
+            let wake = instant(&req["wake"], tz, "wake")?;
+            let loc_text = req["loc"].as_str().ok_or("`loc` is not a string")?;
+            let loc = tm_core::model::Loc::parse(loc_text).map_err(|e| format!("loc {loc_text:?}: {e}"))?;
+            let slept = match &req["slept"] {
+                Value::Null => None,
+                x => Some(x.as_u64().and_then(|n| u32::try_from(n).ok()).ok_or_else(|| format!("`slept` {x}"))?),
+            };
+            let blocks_done = req["blocks_done"].as_u64().and_then(|n| u32::try_from(n).ok()).ok_or("`blocks_done`")?;
+            let allow_home = req["allow_home"].as_bool().ok_or("`allow_home`")?;
+            let date = cap_date(&req["date"], "date")?;
+            let cut = capacity::cut_slots(from, end, &walls, &cfg);
+            let ectx = capacity::EnergyCtx::new(&model, &cfg, &posterior, wake, loc)
+                .with_slept(slept)
+                .with_blocks_done(blocks_done)
+                .with_allow_home(allow_home);
+            let slots = capacity::energize(&cut.slots, &ectx);
+            let day0 = capacity::DayCapacity::from_slots(date, &slots);
+            Ok(json!({ "slots": slots.iter().map(cap_slot_json).collect::<Vec<_>>(), "day0": day0.minutes_at_level }))
+        }
+        Some("lookahead") => {
+            let model = cap_model(&req["model"])?;
+            let mut walls = capacity::WallsByDate::new();
+            for (d, ws) in req["walls"].as_object().ok_or("`walls` is not an object")? {
+                walls.insert(cap_date(&json!(d), "a walls date")?, cap_walls(ws, tz, "walls")?);
+            }
+            let slots = cap_slots(&req["slots"], tz)?;
+            let from = cap_date(&req["from"], "from")?;
+            let days = req["days"].as_u64().and_then(|n| u32::try_from(n).ok()).ok_or("`days`")?;
+            let wake_text = req["wake"].as_str().ok_or("`wake` is not a clock")?;
+            let wake = chrono::NaiveTime::parse_from_str(wake_text, "%H:%M:%S%.f").map_err(|e| format!("wake {wake_text:?}: {e}"))?;
+            let caps = capacity::lookahead(&walls, &cfg, &model, &slots, from, days, wake);
+            Ok(json!({ "days": caps.iter().map(cap_day_json).collect::<Vec<_>>() }))
+        }
+        Some("cut") => {
+            let from = instant(&req["from"], tz, "from")?;
+            let end = instant(&req["end"], tz, "end")?;
+            let walls = cap_walls(&req["walls"], tz, "walls")?;
+            let cut = capacity::cut_slots(from, end, &walls, &cfg);
+            let breaks: Vec<Value> = cut.breaks.iter().map(|b| json!([b.start.to_rfc3339(), b.end.to_rfc3339()])).collect();
+            Ok(json!({
+                "slots": cut.slots.iter().map(cap_slot_json).collect::<Vec<_>>(), "breaks": breaks,
+                "slot_minutes": cut.slot_minutes(), "break_minutes": cut.break_minutes(),
+            }))
+        }
+        Some("rank") => {
+            let cands: Vec<priority::Candidate> = req["cands"]
+                .as_array()
+                .ok_or("`cands` is not an array")?
+                .iter()
+                .map(|c| cap_cand(c, tz))
+                .collect::<Result<_, _>>()?;
+            let caps = cap_days(&req["caps"])?;
+            let mut yesterday: BTreeMap<tm_core::model::Id, u8> = BTreeMap::new();
+            for (id, p) in req["yesterday"].as_object().ok_or("`yesterday` is not an object")? {
+                yesterday.insert(tm_core::model::Id::new(id), p.as_u64().and_then(|n| u8::try_from(n).ok()).ok_or("a yesterday's p")?);
+            }
+            let today = cap_date(&req["today"], "today")?;
+            let prios = priority::compute(&cands, &caps, &yesterday, &cfg, today);
+            let pass: Vec<Value> = prios
+                .iter()
+                .map(|p| {
+                    let u = priority::utilization(p.need_min, p.avail_min);
+                    json!([u.to_string(), priority::bin_of(u, &cfg.priority.bins)])
+                })
+                .collect();
+            Ok(json!({ "prios": prios.iter().map(cap_prio_json).collect::<Vec<_>>(), "pass": pass }))
+        }
+        Some("batches") => {
+            let ranked: Vec<priority::Candidate> = req["ranked"]
+                .as_array()
+                .ok_or("`ranked` is not an array")?
+                .iter()
+                .map(|c| cap_cand(c, tz))
+                .collect::<Result<_, _>>()?;
+            let refs: Vec<&priority::Candidate> = ranked.iter().collect();
+            let batches = priority::batches(&refs, &cfg);
+            Ok(json!({ "batches": serde_json::to_value(&batches).map_err(|e| e.to_string())? }))
+        }
+        Some("cand") => {
+            let cands: Vec<Value> = req["cands"]
+                .as_array()
+                .ok_or("`cands` is not an array")?
+                .iter()
+                .map(|c| {
+                    let c = cap_cand(c, tz)?;
+                    Ok(json!({ "cap_left_min": c.cap_left_min(), "floor_need_min": c.floor_need_min(&cfg) }))
+                })
+                .collect::<Result<_, String>>()?;
+            Ok(json!({ "cands": cands }))
+        }
+        Some("wall_minutes") => {
+            let from = instant(&req["from"], tz, "from")?;
+            let to = instant(&req["to"], tz, "to")?;
+            let walls = cap_walls(&req["walls"], tz, "walls")?;
+            Ok(json!({ "minutes": capacity::wall_minutes(from, to, &walls) }))
+        }
+        Some("sort_key") => {
+            let cand = cap_cand(&req["cand"], tz)?;
+            let prio = prio_of(&req["prio"])?;
+            let (p, root, own) = priority::sort_key(&prio, &cand);
+            Ok(json!({ "key": [p, [root.0, root.1], [own.0, own.1]] }))
+        }
+        other => Err(format!("unknown op {other:?}")),
+    }
+}
+
+/// A `capacity` request, answered — or refused `{"error": …}` by name.
+fn observe_capacity(req: &Value) -> Value {
+    capacity_one(req).unwrap_or_else(|e| json!({ "error": e }))
+}
+
 /// A request, answered — or refused `{"error": …}` by name, so the caller sees why.
 fn observe_plan(req: &Value) -> Value {
     let answer = match req["op"].as_str() {
@@ -730,6 +1088,21 @@ fn main() {
                 w.flush().unwrap();
             }
         }
+        Some("capacity") => {
+            // `plan`'s protocol: one request, one answer, FLUSHED (W-46 track C).
+            for l in std::io::stdin().lock().lines() {
+                let l = l.unwrap();
+                if l.trim().is_empty() {
+                    continue;
+                }
+                let answer = match serde_json::from_str::<Value>(&l) {
+                    Ok(req) => observe_capacity(&req),
+                    Err(e) => json!({ "error": format!("a request is one JSON object per line: {e}") }),
+                };
+                writeln!(w, "{answer}").unwrap();
+                w.flush().unwrap();
+            }
+        }
         Some("fit") => {
             let tz: chrono_tz::Tz = args
                 .get(2)
@@ -759,7 +1132,10 @@ fn main() {
                  \x20      tm-oracle fit <tz> <today>  (the same, fitted: `tm model --fit`)\n\
                  \x20      tm-oracle plan  (one planning request per line: the fork's planner, ranked as the binary ranks it;\n\
                  \x20                       ops plan, diff, worked)\n\
-                 \x20      tm-oracle review  (one week-grid request per line: the fork's review::week_review heat over a world)"
+                 \x20      tm-oracle review  (one week-grid request per line: the fork's review::week_review heat over a world)\n\
+                 \x20      tm-oracle capacity  (one request per line: the fork's lookahead, day-0 slots, slot cut, §7 pass and\n\
+                 \x20                           §7.5 batches; ops today, lookahead, cut, rank, batches, cand, sort_key,\n\
+                 \x20                           wall_minutes)"
             );
             std::process::exit(2);
         }

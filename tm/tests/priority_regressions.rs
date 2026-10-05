@@ -4,10 +4,26 @@
 //! The capacity vectors are synthetic (`flat(days, level, minutes)`: `days`
 //! consecutive days from Monday 2026-09-07 with `minutes` at energy `level`
 //! and nothing else), so every number in the assertions is computed by hand.
+//!
+//! **Two kinds of test, since R3 leaves fork 4748911's §7 pass with no shipped caller** (stage 6
+//! W-46 track C; README gap 4752, the class).  A test that also asserts what the binary keeps —
+//! the candidates `collect_candidates` gives, `lookahead_days`, `priorities_for_state`,
+//! `deadline_health`, `explain`, `sorted`, eligibility — reads the fork's grants, batches and cap
+//! readings BY VALUE (`fork_compute`, `support/forkcap.rs`: this binary's frozen file,
+//! `tm-oracle capacity` under `TM_ORACLE`), as it read tm-core's in-tree copies until W-46.  A
+//! test whose every assertion is the fork pass's own behaviour still calls the in-tree copy and is
+//! deleted with it at R3 (README "W-46 track C", the deletion list):
+//! `an_instance_deadline_without_a_window_enters_the_edf_pass` and
+//! `an_optional_is_never_held_above_p_five_by_hysteresis`.
 
 #[path = "support/replay.rs"]
 #[allow(dead_code)]
 mod chokepoint;
+
+/// Fork 4748911's answers, by value (W-46 track C).
+#[allow(dead_code)]
+#[path = "support/forkcap.rs"]
+mod forkcap;
 
 use std::collections::BTreeMap;
 
@@ -45,11 +61,16 @@ fn flat(days: usize, level: usize, minutes: u32) -> Vec<DayCapacity> {
     let start = date(MONDAY);
     (0..days)
         .map(|i| {
-            let mut d = DayCapacity::empty(start + Duration::days(i as i64));
-            d.minutes_at_level[level] = minutes;
-            d
+            let mut minutes_at_level = [0; 6];
+            minutes_at_level[level] = minutes;
+            DayCapacity { date: start + Duration::days(i as i64), minutes_at_level }
         })
         .collect()
+}
+
+/// **Fork 4748911's grants** — fork `priority::compute`, by value (`forkcap::rank`).
+fn fork_compute(cands: &[Candidate], caps: &[DayCapacity], yesterday: &BTreeMap<Id, u8>, cfg: &Config, today: NaiveDate) -> Vec<Prio> {
+    forkcap::rank(forkcap::store(), cands, caps, yesterday, cfg, today).0
 }
 
 fn empty() -> BTreeMap<Id, u8> {
@@ -126,7 +147,7 @@ fn the_lookahead_reaches_the_end_of_a_floor_period() {
     assert_eq!(days, 24, "2026-09-07 through 2026-09-30 inclusive");
 
     // 24 days × 240 min = 5760 against a need of 30b × 1.3 = 2340.
-    let prios = priority::compute(&cands, &flat(days as usize, 5, 240), &empty(), &cfg, today);
+    let prios = fork_compute(&cands, &flat(days as usize, 5, 240), &empty(), &cfg, today);
     let f1 = prio(&prios, "f1");
     assert_eq!(f1.class, PrioClass::Floor);
     assert_eq!(f1.need_min, 2340);
@@ -250,7 +271,7 @@ fn an_interval_in_another_week_is_not_todays_wall() {
     let w0 = find(&cands, "w0");
     assert!(w0.is_wall && w0.wall_today);
 
-    let prios = priority::compute(&cands, &flat(75, 5, 240), &empty(), &cfg, date(MONDAY));
+    let prios = fork_compute(&cands, &flat(75, 5, 240), &empty(), &cfg, date(MONDAY));
     assert_eq!(prio(&prios, "x1").class, PrioClass::Wall);
     // Only today's wall leads the assignment order; the October one is gone.
     let queue = priority::sorted(&prios, &cands);
@@ -396,7 +417,7 @@ fn routine_minutes_count_towards_a_max_cap() {
     let cands = candidates_on(&t, &replay, "2026-09-06");
     let f = find(&cands, "Factorio");
     assert_eq!(f.cap_done_min, 240);
-    assert_eq!(f.cap_left_min(), Some(0));
+    assert_eq!(forkcap::cand_facts(forkcap::store(), &[f], &Config::default())[0].cap_left_min, Some(0));
     assert!(!f.eligible(), "the 4h/w quota binds");
     assert!(matches!(
         f.ineligible_reason(),
@@ -427,7 +448,7 @@ fn batching_never_overtakes_an_equal_key_candidate() {
     )]);
     let replay = no_log();
     let cands = candidates(&t, &replay);
-    let prios = priority::compute(&cands, &flat(7, 5, 240), &empty(), &cfg, date(MONDAY));
+    let prios = fork_compute(&cands, &flat(7, 5, 240), &empty(), &cfg, date(MONDAY));
     let order = priority::sorted_candidates(&prios, &cands);
     assert_eq!(
         order.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(),
@@ -435,7 +456,7 @@ fn batching_never_overtakes_an_equal_key_candidate() {
     );
     // All three share (p, ci), so nothing may be gathered across `^b1`.
     assert!(order.iter().all(|c| c.ci == 2));
-    let groups = priority::batches(&order, &cfg);
+    let groups = forkcap::batches(forkcap::store(), &order, &cfg);
     assert_eq!(
         groups
             .iter()
@@ -453,8 +474,8 @@ fn batching_never_overtakes_an_equal_key_candidate() {
          - [ ] 2 20m Small two ^s2\n",
     )]);
     let cands = candidates(&t, &replay);
-    let prios = priority::compute(&cands, &flat(7, 5, 240), &empty(), &cfg, date(MONDAY));
-    let groups = priority::batches(&priority::sorted_candidates(&prios, &cands), &cfg);
+    let prios = fork_compute(&cands, &flat(7, 5, 240), &empty(), &cfg, date(MONDAY));
+    let groups = forkcap::batches(forkcap::store(), &priority::sorted_candidates(&prios, &cands), &cfg);
     assert_eq!(
         groups
             .iter()
@@ -487,8 +508,8 @@ fn window_instances_are_never_batched_together() {
     assert_eq!(ids(&cands), vec!["vitamins", "meds"]);
     assert!(cands.iter().all(|c| c.window.is_some() && c.ci == 1));
 
-    let prios = priority::compute(&cands, &flat(7, 5, 240), &empty(), &cfg, date(MONDAY));
-    let groups = priority::batches(&priority::sorted_candidates(&prios, &cands), &cfg);
+    let prios = fork_compute(&cands, &flat(7, 5, 240), &empty(), &cfg, date(MONDAY));
+    let groups = forkcap::batches(forkcap::store(), &priority::sorted_candidates(&prios, &cands), &cfg);
     assert!(
         groups.iter().all(|b| !b.is_batch()),
         "disjoint windows cannot share a block: {groups:?}"
@@ -519,7 +540,7 @@ fn priorities_for_state_keeps_the_most_urgent_of_two_instances() {
     let cands = candidates(&t, &replay);
     assert_eq!(ids(&cands), vec!["laundry"], "one instance, not two");
 
-    let prios = priority::compute(&cands, &flat(7, 5, 240), &empty(), &cfg, date(MONDAY));
+    let prios = fork_compute(&cands, &flat(7, 5, 240), &empty(), &cfg, date(MONDAY));
     let ps: Vec<u8> = prios.iter().map(|p| p.p).collect();
     // Never logged, so last week's window is still owed: overdue and
     // mandatory, §7.2's `p = 0`. The one candidate is keyed on *this* week's
@@ -558,7 +579,7 @@ fn a_hot_flag_does_not_hide_an_impossible_deadline() {
     c.effective_due = Some(due("2026-09-09"));
     c.hot = true;
     let cands = vec![c.clone()];
-    let prios = priority::compute(&cands, &caps, &empty(), &cfg, today);
+    let prios = fork_compute(&cands, &caps, &empty(), &cfg, today);
 
     assert_eq!(prios[0].class, PrioClass::HotFlag);
     assert_eq!(prios[0].p, 0);
@@ -581,7 +602,7 @@ fn a_hot_flag_does_not_hide_an_impossible_deadline() {
         hot: false,
         ..c.clone()
     }];
-    let prios = priority::compute(&plain, &caps, &empty(), &cfg, today);
+    let prios = fork_compute(&plain, &caps, &empty(), &cfg, today);
     assert_eq!(prios[0].class, PrioClass::Impossible);
     assert_eq!(
         priority::deadline_health(&prios, &plain, today).impossible,
@@ -594,7 +615,7 @@ fn a_hot_flag_does_not_hide_an_impossible_deadline() {
     old.effective_due = Some(due("2026-09-04"));
     old.overdue = true;
     let old = vec![old];
-    let prios = priority::compute(&old, &caps, &empty(), &cfg, today);
+    let prios = fork_compute(&old, &caps, &empty(), &cfg, today);
     assert_eq!(prios[0].class, PrioClass::Overdue);
     assert!(prios[0].is_impossible(), "nothing can be done by Friday now");
     let health = priority::deadline_health(&prios, &old, today);
@@ -609,7 +630,7 @@ fn a_hot_flag_does_not_hide_an_impossible_deadline() {
     fits.effective_due = Some(due("2026-09-09"));
     fits.hot = true;
     let fits = vec![fits];
-    let prios = priority::compute(&fits, &caps, &empty(), &cfg, today);
+    let prios = fork_compute(&fits, &caps, &empty(), &cfg, today);
     assert!(prios[0].is_hot() && !prios[0].is_impossible());
     let health = priority::deadline_health(&prios, &fits, today);
     assert_eq!((health.hot, health.impossible), (1, 0));
@@ -667,7 +688,7 @@ fn a_waiting_item_is_a_candidate_with_a_reason() {
     assert_eq!(waiting, vec!["a4", "wq"]);
 
     // They take no slot.
-    let prios = priority::compute(&cands, &flat(7, 5, 240), &empty(), &cfg, date(MONDAY));
+    let prios = fork_compute(&cands, &flat(7, 5, 240), &empty(), &cfg, date(MONDAY));
     let queue = priority::sorted(&prios, &cands);
     assert_eq!(queue.iter().map(Id::as_str).collect::<Vec<_>>(), vec!["a1"]);
 }
