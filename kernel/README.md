@@ -90906,8 +90906,8 @@ uncommitted work (§0).  §9 is this block's clock.
 * **Track H** — committed `f2cb71b` on `w46-h` (part 1: D104 and D106, its parity number issued on that branch only);
   **part 2 UNCOMMITTED** in its worktree: 6 modified files and 1 new — `kernel/README.md`, `kernel/TmKernel/Check.lean`,
   `kernel/TmKernel/TmKernel/PlanWire.lean`, `kernel/mutations.txt`, `kernel/parity.txt`, `tm/src/cli/tz_table.rs` and a
-  new test file, tests/kernel_planner_refusals.rs (+1,636 / −45).  Its own status notes say it was cut off twice (about
-  02:32, resumed 06:44; the worktree's last write 07:35).  Its uncommitted README names a **third R3 BLOCKER**, by name
+  new test file, tests/kernel_planner_refusals.rs (+1,636 / −45).  Its own status notes record one cut-off (about
+  02:32, resumed by a second agent at 06:44); the worktree's last write is 07:35, and no report followed it.  Its uncommitted README names a **third R3 BLOCKER**, by name
   only (it numbers it gap 4793 there): §1.
 * **Track K** — committed `7c78864` on `w46-k` (the READER of D105: the kernel reads a break-start line and holds the
   running break; its parity number issued on that branch only); **the WRITER UNCOMMITTED** in its worktree: 31
@@ -90993,12 +90993,13 @@ D104 and D105 are the tracks' changes, which D19 keeps out of the switch commit;
      and a dated D64(b) reason naming R3 on the composed binary): **0 added, 18 changed, 0 refused** — `cli/week`,
      `cli/week-sealed`, week draws 1 3 5 10 11 12 14 16 18 19 20 22 24 26 31 and midnight draw 0, the W-45 switch's
      eighteen; on each only `world` and `d64b` moved, and the fork's answer is unchanged on all 46 lines.  Then
-     `fork_week_grid` 22 (3 ignored), `fork_rebless_history` 10, and under `TM_ORACLE` the frozen grids **46 of 46**
-     the fork's answer today and the fresh draws compared.
+     `fork_week_grid` 22 (3 ignored), `fork_rebless_history` 10, and under `TM_ORACLE` both arms green: the frozen
+     grids **46 of 46** the fork's answer today, and **16** fresh weeks compared with fork 4748911's grid (33 named
+     cells).
   6. **Check 8's names** (README gap 4814): **49** names the deletion leaves dangling — fork 4748911's own functions
      cited by the Lean notes that port them, by `Check.lean`'s and `Negative.lean`'s notes and by append-only README
      blocks, and the deleted tests' names those blocks cite — COUNTED in `kernel/citations-allow.txt` under a W-46
-     SWITCH banner at their measured numbers (252 citations).
+     SWITCH banner at their measured numbers (253 citations).
 * Not in it: track K's writer and track H's part 2 (uncommitted on their tracks), D105 therefore, and the order the
   third ground needs.
 
@@ -91156,4 +91157,15 @@ step.
   17); the grid re-drawn and its oracle arms; check 8's names counted, and gap 4842 found; the prose; the guard
   restated and bitten.
 * 08:10-08:47 — the calendar drive on both binaries; the base's `check.sh` and workspace run; the switch's.
-* 08:50-09:04 — the archive refs written from the measured trees; this block; its acceptance (§6); the commit.
+* 08:50-09:04 — the archive refs written from the measured trees; this block; its acceptance (§6); the commit
+  (`69ac046`).
+* 09:05-09:38 — re-read against its sources: two sentences corrected in place (track H's cut-offs: its notes record
+  one; the counted citations: 253, not 252 — the deleted snapshot's one) and the grid's fresh-draw arm re-run to
+  completion (16 weeks; the first run's printout had been cut short by the step's own filter).  §6's acceptance re-run
+  on the corrected tree, capped: `check.sh` **seventeen lines, all ok, 34 s** (§6's figures, prose citations 60,648);
+  a workspace run at load 11 → 16 RED on one `cli_latency` row (`tm drop ^z15` on the three-year tree still running
+  after its 1 s), and `cli_latency` alone at load 6 → 24 red on three rows of the same kind (a first verb at 4.25 s, a
+  later verb at 252 ms) — the tree's code is `a3588b4`'s, green in §6's run, so a load threshold on a machine shared
+  with other projects' Lean jobs (README gap 1333), measured and not a bound to move; then, once the load stood below 8
+  for a minute, a second workspace run, **153 result lines, 2,872 passed, 0 failed, 42 ignored** (09:27-09:38, load 5 →
+  8).  A second commit.
