@@ -166,11 +166,10 @@ impl ZoneTable {
 
     /// **The table a wire value holds, when the value is exactly what [`ZoneTable::to_wire`] writes
     /// for one** — else `None` (the owner's D104). The kernel is the zone wire's reader (`readTz`);
-    /// this is no second grammar for it (AGENTS §5.3): each offset and instant is taken back only
-    /// when [`fmt_offset`] or [`fmt_instant`] spells it exactly so, and the table read is accepted
-    /// only when writing it back gives the value read — so nothing is read that the one encoder
-    /// could not have written, and a key, an element or a spelling it would not write is a table
-    /// that disagrees.
+    /// this is no second grammar for it (AGENTS §5.3): the table read is accepted only when writing it
+    /// back gives the value read — ONE check, which the two field readers do not restate — so nothing
+    /// is read that the one encoder could not have written, and a key, an element or a spelling it
+    /// would not write is a table that disagrees.
     pub fn from_wire(v: &Value) -> Option<ZoneTable> {
         let o = v.as_object()?;
         let base = offset_of(o.get("base")?.as_str()?)?;
@@ -186,7 +185,8 @@ impl ZoneTable {
     }
 }
 
-/// [`fmt_offset`] read back: the seconds east it spells, when it spells them exactly so.
+/// [`fmt_offset`] read back: the seconds east `±HH:MM:SS` spells. Whether the text is the encoder's own spelling is
+/// [`ZoneTable::from_wire`]'s one check (the table written back must be the value read), not restated here.
 fn offset_of(s: &str) -> Option<i32> {
     let (neg, rest) = match s.as_bytes().first()? {
         b'+' => (false, &s[1..]),
@@ -197,13 +197,13 @@ fn offset_of(s: &str) -> Option<i32> {
     let (h, m, sec) = (parts.next()??, parts.next()??, parts.next()??);
     let east = h.checked_mul(3600)?.checked_add(m.checked_mul(60)?)?.checked_add(sec)?;
     let east = if neg { east.checked_neg()? } else { east };
-    (parts.next().is_none() && fmt_offset(east) == s).then_some(east)
+    Some(east)
 }
 
-/// [`fmt_instant`] read back: the Unix second it spells, when it spells it exactly so.
+/// [`fmt_instant`] read back: the Unix second `YYYY-MM-DDTHH:MM:SSZ` spells — the encoder's spelling is
+/// [`ZoneTable::from_wire`]'s check, as for [`offset_of`].
 fn instant_of(s: &str) -> Option<i64> {
-    let t = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%SZ").ok()?.and_utc().timestamp();
-    (fmt_instant(t) == s).then_some(t)
+    Some(chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%SZ").ok()?.and_utc().timestamp())
 }
 
 /// **Whether `table` reads, at every second of `[1900, 2200]`, the offset the binary's own zone

@@ -1129,7 +1129,7 @@ def planReqRefusal (r : Planner.PlanReq) : Option PlannerRefusal :=
 /-- **`Planner.PlanReq`, from the values this call's own readers produced** — README gaps 1667-1669.  Gap **1668**:
 `PlannerWit.mkPlanReq?` is a witness leaf (`mutate.py`'s `WITNESS_MODULES`), so the eight fields are decoded values
 handed over, never decoded again (a second `loadPlan`, `Look.mkInput?` or `Seal.resumeRun` is gap 1325's defect).  It
-obliges the **walls agreement** (gap 346, `wallsDisagree`), and since W-41 D80's two (`planReqRefusal`). -/
+obliges the **walls agreement** (gap 346, `wallsDisagree`), then D80's two (`planReqRefusal`) — BEFORE the routines (gap 4795). -/
 def planReqOf (parts : CapParts) (bm : Nat) (q : PlannerIn) :
     Except PlannerRefusal Planner.PlanReq :=
   match parts.lg.bind LogAnswer.run with
@@ -1138,20 +1138,20 @@ def planReqOf (parts : CapParts) (bm : Nat) (q : PlannerIn) :
     match Capped.ofList? (match parts.cands with | none => [] | some c => c.items) with
     | none => .error PlannerRefusal.candsPastCap
     | some cs =>
-      match Planner.mkRoutines? parts.plan.val q.routines with
-      | .error e => .error (PlannerRefusal.routineRefused e)
-      | .ok rs =>
-        if parts.cap.look.walls ≠
-            Look.wallIndex parts.cap.look.tz parts.cap.look.day.cut.blockMin parts.plan.val then
-          .error PlannerRefusal.wallsDisagree
-        else
-          let req : Planner.PlanReq := ⟨parts.plan, run, parts.cap.look, q.state, cs,
-            ⟨parts.cap.bins, parts.cap.safety, parts.cap.dflt,
-              (match parts.cands with | none => false | some c => c.hysteresis), bm⟩,
-            rs, q.overrides⟩
-          match planReqRefusal req with
-          | some x => .error x
-          | none => .ok req
+      if parts.cap.look.walls ≠
+          Look.wallIndex parts.cap.look.tz parts.cap.look.day.cut.blockMin parts.plan.val then
+        .error PlannerRefusal.wallsDisagree
+      else
+        let req : Planner.PlanReq := ⟨parts.plan, run, parts.cap.look, q.state, cs,
+          ⟨parts.cap.bins, parts.cap.safety, parts.cap.dflt,
+            (match parts.cands with | none => false | some c => c.hysteresis), bm⟩,
+          Capped.nil, q.overrides⟩
+        match planReqRefusal req with
+        | some x => .error x
+        | none =>
+          match Planner.mkRoutines? parts.plan.val q.routines with
+          | .error e => .error (PlannerRefusal.routineRefused e)
+          | .ok rs => .ok { req with routines := rs }
 
 /-! ## `overtime` — §9.1's "x extend +N block", answered by the kernel (W-34, README gap 2682)
 
@@ -2171,15 +2171,15 @@ theorem planReqRefusal_eq_none_pays_both (r : Planner.PlanReq) (h : planReqRefus
       exact ⟨rfl, rfl⟩
 
 /-- **Every request the decoder hands the planner pays D80's two clauses** — the hypothesis
-`plan_places_no_demanding_block_after_wind_down` is discharged over (`PlannerWit`'s W-41 block): the assembler's
-every successful path ends at `planReqRefusal` answering `none`. -/
+`plan_places_no_demanding_block_after_wind_down` is discharged over (`PlannerWit`'s W-41 block): the assembler's every
+successful path passes `planReqRefusal` answering `none`, asked but for the routines (`planReqRefusal_ignores_the_routines`). -/
 theorem planReqOf_pays_the_evening_and_the_ci (parts : CapParts) (bm : Nat) (q : PlannerIn) (r : Planner.PlanReq)
     (h : planReqOf parts bm q = .ok r) : r.eveningInsideTheCalendar = true ∧ r.ciDisagreement = none := by
   unfold planReqOf at h
-  repeat' split at h
-  all_goals first
-    | (simp at h; done)
-    | (dsimp only at h; split at h <;> first | (simp at h; done) | (have he := Except.ok.inj h; subst he; exact planReqRefusal_eq_none_pays_both _ (by assumption)))
+  split at h; · cases h
+  cases hc : parts.cands <;> simp only [hc] at h <;> (split at h; · cases h) <;> (split at h; · cases h) <;>
+    (split at h; · cases h) <;> (rename_i hnone; split at h; · cases h) <;>
+    (cases h; have hpay := planReqRefusal_eq_none_pays_both _ hnone; exact hpay)
 
 /-- **The two refusals spell themselves** — the texts a host reads (`tm_core::planwire::planner_refusal`). -/
 theorem the_d80_refusals_spell_themselves :
@@ -2195,6 +2195,611 @@ theorem readOptInterrupt_reads_the_interruption :
     (match readOptInterrupt (.obj [("interrupt".toList, .obj [("started".toList, .num 1001),
         ("id".toList, .str "m1".toList)])]) with
       | .ok (some x) => decide (x = ⟨some ⟨1001, 0⟩, some "m1".toList⟩) | _ => false) = true := by decide
+
+/-! ## Three refusals no request reaches (README gap 4751; stage 6 W-46 track H)
+
+R3 swaps the shipped planner for `Planner.dayPlan`, and this section can REFUSE a request where fork 4748911's
+planner was total.  Gap 4751 asked, for every refusal, why the binary's request never meets it on a tree the fork
+planned.  Three of them are answered here for EVERY request, not only the binary's: `planReqOf` checks a run, the
+candidate cap and the walls' agreement, and each is already settled by the sections `EmitWire.runRowsP` reads first
+— the capacity section refuses `day0WithoutLog` without a replay (D24) and a `log` answer carries its run exactly
+when it carries its facts; `CapWire.readCands` refuses `tooManyCandidates` past `CapWire.maxCandidates`, which is
+`Planner.maxCands` (`the_two_candidate_caps_are_one_number`); and an answered capacity section holds the walls of
+the plan it was read against, indexed in its own zone at its own blocks.  The rest of the class is classified, with
+its evidence, by `tm/tests/kernel_planner_refusals.rs`. -/
+
+/-- A `mapM` in `Except` that answers keeps the list's length. -/
+theorem except_mapM_length {ε α β : Type} (f : α → Except ε β) :
+    ∀ (xs : List α) (ys : List β), xs.mapM f = .ok ys → ys.length = xs.length
+  | [], ys, h => by
+    simp only [List.mapM_nil] at h
+    cases h; rfl
+  | x :: xs, ys, h => by
+    rw [List.mapM_cons] at h
+    cases hx : f x with
+    | error e => rw [hx] at h; cases h
+    | ok y =>
+      rw [hx] at h
+      cases hxs : xs.mapM f with
+      | error e => simp [hxs] at h; cases h
+      | ok zs =>
+        simp only [hxs] at h
+        cases h
+        simp [except_mapM_length f xs zs hxs]
+
+/-- **A candidate list the capacity section accepts holds at most `CapWire.maxCandidates` records.** -/
+theorem readCands_within_the_cap {cap : JVal} {c : CapWire.CandReq}
+    (h : CapWire.readCands cap = .ok (some c)) : c.items.length ≤ CapWire.maxCandidates := by
+  unfold CapWire.readCands at h
+  split at h
+  · cases h
+  · cases h
+  · split at h
+    · cases h
+    · split at h
+      · cases h
+      · rename_i xs _
+        split at h
+        · cases h
+        · rename_i hle
+          cases hl : CapWire.readCandList xs with
+          | error e => rw [hl] at h; cases h
+          | ok cs =>
+            rw [hl] at h
+            simp only [Except.map, Except.ok.injEq, Option.some.injEq] at h
+            subst h
+            have := except_mapM_length _ _ _ hl
+            simp only [List.length_zipIdx] at this
+            simp only [this]
+            omega
+
+/-- **What a capacity request kept, read back** (`runCapZP`'s `CapParts`). -/
+theorem runCapZP_parts {j cap : JVal} {zo : Option Cal.Tz} {v : JVal} {p : CapParts}
+    (h : runCapZP j cap zo = .ok (v, p)) :
+    logSectionWith j zo = .ok p.lg ∧
+      CapWire.readCapacityZ p.plan.val p.clock zo (p.lg.bind LogAnswer.facts) p.sec = .ok p.cap ∧
+      CapWire.readCands p.sec = .ok p.cands := by
+  unfold runCapZP at h
+  cases hlg : logSectionWith j zo with
+  | error e => rw [hlg] at h; cases h
+  | ok lg =>
+    rw [hlg] at h
+    cases hl : runLoad j with
+    | error e => rw [hl] at h; cases h
+    | ok t =>
+      obtain ⟨plan, cmds, clock⟩ := t
+      rw [hl] at h
+      simp only at h
+      cases hc : CapWire.readCapacityZ plan.val clock zo (lg.bind LogAnswer.facts) cap with
+      | error r => rw [hc] at h; cases h
+      | ok c =>
+        rw [hc] at h
+        simp only at h
+        cases hq : CapWire.readCands cap with
+        | error r => rw [hq] at h; cases h
+        | ok q =>
+          rw [hq] at h
+          simp only at h
+          cases cmds with
+          | cons _ _ => cases h
+          | nil =>
+            simp only at h
+            cases hr : runPlan plan [] with
+            | error e => rw [hr] at h; cases h
+            | ok r =>
+              rw [hr] at h
+              simp only [Except.ok.injEq, Prod.mk.injEq] at h
+              obtain ⟨-, rfl⟩ := h
+              exact ⟨rfl, hc, hq⟩
+
+/-- **The parts the rows hand the planner are a capacity request's.** -/
+theorem runRowsP_parts {j r : JVal} {p : CapParts} (h : EmitWire.runRowsP j = .ok (r, some p)) :
+    ∃ cap zo v, runCapZP j cap zo = .ok (v, p) := by
+  have hcap : ∀ v, runCapP j = .ok (v, some p) → ∃ cap zo v, runCapZP j cap zo = .ok (v, p) := by
+    intro v hv
+    unfold runCapP at hv
+    cases hc : jget j "capacity" with
+    | error e => rw [hc] at hv; cases hv
+    | ok o =>
+      rw [hc] at hv
+      cases o with
+      | none =>
+        simp only at hv
+        cases hw : runWithEmit j with
+        | error e => rw [hw] at hv; cases hv
+        | ok w => rw [hw] at hv; cases hv
+      | some cap =>
+        simp only at hv
+        cases hz : zoneOf j with
+        | error e => rw [hz] at hv; cases hv
+        | ok zo =>
+          rw [hz] at hv
+          simp only at hv
+          cases hp : runCapZP j cap zo with
+          | error e => rw [hp] at hv; cases hv
+          | ok vp =>
+            obtain ⟨v', p'⟩ := vp
+            rw [hp] at hv
+            simp only [Except.ok.injEq, Prod.mk.injEq, Option.some.injEq] at hv
+            obtain ⟨-, rfl⟩ := hv
+            exact ⟨cap, zo, v', hp⟩
+  unfold EmitWire.runRowsP at h
+  cases hplan : jget j "plan" with
+  | error e => rw [hplan] at h; cases h
+  | ok o =>
+    rw [hplan] at h
+    cases o with
+    | none => exact hcap r h
+    | some sec =>
+      simp only at h
+      cases hc : runCapP j with
+      | error e => rw [hc] at h; cases h
+      | ok vp =>
+        obtain ⟨v, parts⟩ := vp
+        rw [hc] at h
+        simp only at h
+        cases hz : zoneOf j with
+        | error e => rw [hz] at h; cases h
+        | ok zo =>
+          rw [hz] at h
+          cases zo with
+          | none => cases h
+          | some z =>
+            simp only at h
+            cases hl : runLoad j with
+            | error e => rw [hl] at h; cases h
+            | ok t =>
+              obtain ⟨pl, cmds, clock⟩ := t
+              rw [hl] at h
+              simp only at h
+              cases cmds with
+              | cons _ _ => cases h
+              | nil =>
+                simp only at h
+                cases hb : clock.blockMin with
+                | none => rw [hb] at h; cases h
+                | some bm =>
+                  rw [hb] at h
+                  simp only at h
+                  cases hs : EmitWire.readRowSection sec with
+                  | error x => rw [hs] at h; cases h
+                  | ok q =>
+                    rw [hs] at h
+                    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+                    obtain ⟨-, rfl⟩ := h
+                    exact hcap v hc
+
+/-- `Look.mkInput?` hands its input's zone, day and walls through unchanged. -/
+theorem mkInput?_keeps_the_zone_the_day_and_the_walls {x : Look.InputIn} {I : Look.Input}
+    (h : Look.mkInput? x = .ok I) : I.walls = x.walls ∧ I.tz = x.tz ∧ I.day = x.day := by
+  unfold Look.mkInput? at h
+  split at h
+  · cases h
+  · split at h
+    · cases h
+    · split at h
+      · cases h
+      · split at h
+        · cases h
+        · cases h; exact ⟨rfl, rfl, rfl⟩
+
+/-- **A capacity section that answers holds the walls of the plan it was read against**, indexed in
+its own zone at its own blocks — the condition `planReqOf` checks before it assembles a request. -/
+theorem readCapacityZ_walls {plan : PlanCore} {clock : ReqClock} {zo : Option Cal.Tz}
+    {rep : Option Seal.Answer} {cap : JVal} {c : CapWire.CapReq}
+    (h : CapWire.readCapacityZ plan clock zo rep cap = .ok c) :
+    c.look.walls = Look.wallIndex c.look.tz c.look.day.cut.blockMin plan := by
+  unfold CapWire.readCapacityZ at h
+  obtain ⟨today, -, h⟩ := capBind_ok_elim h
+  obtain ⟨bm, -, h⟩ := capBind_ok_elim h
+  obtain ⟨z, -, h⟩ := capBind_ok_elim h
+  obtain ⟨s, hs, h⟩ := capBind_ok_elim h
+  obtain ⟨w, -, h⟩ := capBind_ok_elim h
+  obtain ⟨T, -, h⟩ := capBind_ok_elim h
+  obtain ⟨I, hI, h⟩ := capBind_ok_elim h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  cases h
+  obtain ⟨hw, ht, hd⟩ := mkInput?_keeps_the_zone_the_day_and_the_walls (CapWire.mapError_ok hI)
+  obtain ⟨-, -, -, hdb, -⟩ := CapWire.readSection_ok hs
+  show I.walls = Look.wallIndex I.tz I.day.cut.blockMin plan
+  rw [hw, ht, hd]
+  simp only [CapWire.Section.input, hdb]
+
+/-- **Without a replay a capacity section never answers**: day 0 is the replay's (D24), and a
+section handed none is refused before it is built. -/
+theorem readCapacityZ_needs_a_replay {plan : PlanCore} {clock : ReqClock} {zo : Option Cal.Tz}
+    {cap : JVal} {c : CapWire.CapReq} :
+    CapWire.readCapacityZ plan clock zo none cap ≠ .ok c := by
+  intro h
+  unfold CapWire.readCapacityZ at h
+  obtain ⟨today, -, h⟩ := capBind_ok_elim h
+  obtain ⟨bm, -, h⟩ := capBind_ok_elim h
+  obtain ⟨z, -, h⟩ := capBind_ok_elim h
+  obtain ⟨s, -, h⟩ := capBind_ok_elim h
+  obtain ⟨w, -, h⟩ := capBind_ok_elim h
+  obtain ⟨T, hT, -⟩ := capBind_ok_elim h
+  simp [CapWire.Section.today0] at hT
+
+/-- Law 13's check passes the seam's two values through untouched. -/
+theorem within53A_ok {f : Option Seal.Answer} {rn : Option Seal.Run} {v : JVal} {a : LogAnswer}
+    (h : within53A f rn v = .ok a) : a.facts = f ∧ a.run = rn := by
+  unfold within53A at h
+  cases hw : within53 v with
+  | error e => rw [hw] at h; cases h
+  | ok w => rw [hw] at h; cases h; exact ⟨rfl, rfl⟩
+
+/-- **A `log` op that answers carries its run exactly when it carries its facts.** -/
+theorem logOpZ_run_iff_facts {r : VLogReq} {a : LogAnswer} (h : logOpZ r = .ok a) :
+    a.run.isSome = a.facts.isSome := by
+  unfold logOpZ at h
+  dsimp only at h
+  split at h
+  · obtain ⟨hf, hr⟩ := within53A_ok h
+    rw [hf, hr]; rfl
+  · split at h
+    · cases h
+    · split at h
+      · cases h
+      · split at h
+        · cases h
+        · rename_i run _
+          split at h
+          · cases h
+          · obtain ⟨hf, hr⟩ := within53A_ok h
+            rw [hf, hr]
+            exact (the_seam_carries_its_run_exactly_when_it_carries_its_facts r.val run).symm
+
+/-- **A `log` section that answers carries its run exactly when it carries its facts.** -/
+theorem logSectionWith_run_iff_facts {j : JVal} {zo : Option Cal.Tz} {a : LogAnswer}
+    (h : logSectionWith j zo = .ok (some a)) : a.run.isSome = a.facts.isSome := by
+  unfold logSectionWith at h
+  split at h
+  · cases h
+  · split at h
+    · cases h
+    · obtain ⟨r, -, hop, -⟩ := logAnswerOf_carries_the_op _ _ _ a h
+      exact logOpZ_run_iff_facts hop
+  · cases h
+
+/-- **D80's two refusals are the only ones the finished request can carry** (`planReqRefusal`). -/
+theorem planReqRefusal_names {r : Planner.PlanReq} {y : PlannerRefusal} (h : planReqRefusal r = some y) :
+    y = .eveningPastTheCalendar ∨ ∃ i w p, y = .ciDisagrees i w p := by
+  unfold planReqRefusal at h
+  split at h
+  · simp only [Option.some.injEq] at h; exact .inl h.symm
+  · cases hd : r.ciDisagreement with
+    | none => rw [hd] at h; cases h
+    | some d =>
+      rw [hd] at h
+      simp only [Option.map, Option.some.injEq] at h
+      exact .inr ⟨d.1, d.2.1, d.2.2, h.symm⟩
+
+/-- **Once the run is there, the candidates are within the cap and the walls agree, `planReqOf` refuses only by D80's
+two or by a routine's refusal** — in that order since W-46 (README gap 4795): `planReqRefusal` is asked of the
+request before `Planner.mkRoutines?` reads the routines. -/
+theorem planReqOf_refuses_only_by_d80_or_a_routine {parts : CapParts} {bm : Nat} {q : PlannerIn} {run : Seal.Run}
+    (hrun : parts.lg.bind LogAnswer.run = some run)
+    (hcap : (match parts.cands with | none => [] | some c => c.items).length ≤ Planner.maxCands)
+    (hw : parts.cap.look.walls =
+      Look.wallIndex parts.cap.look.tz parts.cap.look.day.cut.blockMin parts.plan.val)
+    {x : PlannerRefusal} (hx : planReqOf parts bm q = .error x) :
+    (x = .eveningPastTheCalendar ∨ ∃ i w p, x = .ciDisagrees i w p) ∨ ∃ e, x = .routineRefused e := by
+  unfold planReqOf at hx
+  rw [hrun] at hx
+  simp only at hx
+  rw [show Capped.ofList? (match parts.cands with | none => [] | some c => c.items)
+      = some ⟨_, hcap⟩ from dif_pos hcap] at hx
+  simp only at hx
+  rw [if_neg (fun hne => hne hw)] at hx
+  split at hx
+  · rename_i y hy
+    cases hx
+    exact .inl (planReqRefusal_names hy)
+  · split at hx
+    · cases hx
+      exact .inr ⟨_, rfl⟩
+    · cases hx
+
+/-- **Three of the planner section's refusals name a state no request reaches** (README gap 4751, stage 6 W-46
+track H).  Whenever the rows and the capacity section have answered (`EmitWire.runRowsP` hands the parts over),
+the assembler is never the one to refuse: the replay is there (`runAbsent` — the capacity section refuses
+`day0WithoutLog` before it answers without one, and a `log` answer carries its run exactly when it carries its
+facts), the candidates are within the cap (`candsPastCap` — `CapWire.readCands` refuses `tooManyCandidates` past
+the same number, `the_two_candidate_caps_are_one_number`), and the capacity section's walls are the loaded plan's
+in its own zone at its own blocks (`wallsDisagree`).  So for EVERY request, and not only the binary's, these three
+come from nothing — a stronger statement than the encoder's bound, and the one gap 4751 asked a proof for. -/
+theorem planReqOf_never_refuses_what_the_capacity_section_excludes {j r : JVal} {parts : CapParts}
+    (hr : EmitWire.runRowsP j = .ok (r, some parts)) (bm : Nat) (q : PlannerIn) :
+    planReqOf parts bm q ≠ .error .runAbsent ∧ planReqOf parts bm q ≠ .error .candsPastCap ∧
+      planReqOf parts bm q ≠ .error .wallsDisagree := by
+  obtain ⟨cap, zo, v, hz⟩ := runRowsP_parts hr
+  obtain ⟨hlg, hcz, hcands⟩ := runCapZP_parts hz
+  obtain ⟨run, hrun⟩ : ∃ run, parts.lg.bind LogAnswer.run = some run := by
+    cases hl : parts.lg with
+    | none => rw [hl] at hcz; exact absurd hcz readCapacityZ_needs_a_replay
+    | some a =>
+      cases hf : a.facts with
+      | none =>
+        rw [hl] at hcz
+        simp only [Option.bind, hf] at hcz
+        exact absurd hcz readCapacityZ_needs_a_replay
+      | some _ =>
+        have hi := logSectionWith_run_iff_facts (hl ▸ hlg)
+        rw [hf] at hi
+        cases hra : a.run with
+        | none => rw [hra] at hi; cases hi
+        | some rn => exact ⟨rn, by simp [Option.bind, hra]⟩
+  have hw := readCapacityZ_walls hcz
+  have hcap : (match parts.cands with | none => [] | some c => c.items).length ≤ Planner.maxCands := by
+    cases hc : parts.cands with
+    | none => simp [Planner.maxCands]
+    | some c =>
+      rw [hc] at hcands
+      rw [← the_two_candidate_caps_are_one_number]
+      exact readCands_within_the_cap hcands
+  have hall : ∀ x, planReqOf parts bm q = .error x →
+      x ≠ .runAbsent ∧ x ≠ .candsPastCap ∧ x ≠ .wallsDisagree := by
+    intro x hx
+    rcases planReqOf_refuses_only_by_d80_or_a_routine hrun hcap hw hx with (h | ⟨i, w, p, h⟩) | ⟨e, h⟩ <;>
+      subst h <;> exact ⟨by simp, by simp, by simp⟩
+  refine ⟨fun h => (hall _ h).1 rfl, fun h => (hall _ h).2.1 rfl, fun h => (hall _ h).2.2 rfl⟩
+
+/-! ### Two refusals of a routine no section the reader accepts, or no request the host's encoder builds, reaches
+(README gaps 4793 and 4795; stage 6 W-46 track H)
+
+`Planner.mkRoutine?` refuses an instance by five names.  Two of them are now shadowed for good: `pastTheHorizon` by the
+section's own reader, which bounds every `winHi` by the very bound `mkRoutine?` refuses past; and `unknownItem` by D80's
+`ci` clause, asked first since W-46, on every request whose routines each name a candidate it carries — which the host's
+encoder pays by construction, reading every instance off a candidate it sends. -/
+
+/-- **D80's two clauses read no routine** (README gap 4795): the evening reads the lookahead input, the day and the run,
+and the `ci` clause the candidates and the plan, so a request and the same request with other routines are refused alike
+— which is what lets `planReqOf` ask D80 before it reads the routines. -/
+theorem planReqRefusal_ignores_the_routines (r : Planner.PlanReq) (rs : Capped RoutineIn) :
+    planReqRefusal { r with routines := rs } = planReqRefusal r := rfl
+
+/-- An answer of a `mapM` in `Except` is the image of members of the list. -/
+theorem except_mapM_mem {ε α β : Type} (f : α → Except ε β) :
+    ∀ (xs : List α) (ys : List β), xs.mapM f = .ok ys → ∀ y ∈ ys, ∃ x ∈ xs, f x = .ok y
+  | [], ys, h, y, hy => by
+    simp only [List.mapM_nil] at h
+    cases h; cases hy
+  | x :: xs, ys, h, y, hy => by
+    rw [List.mapM_cons] at h
+    cases hx : f x with
+    | error e => rw [hx] at h; cases h
+    | ok b =>
+      rw [hx] at h
+      cases hxs : xs.mapM f with
+      | error e => simp [hxs] at h; cases h
+      | ok zs =>
+        simp only [hxs] at h
+        cases h
+        rcases List.mem_cons.1 hy with rfl | hz
+        · exact ⟨x, List.mem_cons.2 (.inl rfl), hx⟩
+        · obtain ⟨w, hw, hfw⟩ := except_mapM_mem f xs zs hxs y hz
+          exact ⟨w, List.mem_cons.2 (.inr hw), hfw⟩
+
+/-- A refusal of a `mapM` in `Except` is a member's refusal. -/
+theorem except_mapM_error {ε α β : Type} (f : α → Except ε β) :
+    ∀ (xs : List α) (e : ε), xs.mapM f = .error e → ∃ x ∈ xs, f x = .error e
+  | [], e, h => by
+    simp only [List.mapM_nil] at h
+    cases h
+  | x :: xs, e, h => by
+    rw [List.mapM_cons] at h
+    cases hx : f x with
+    | error e' =>
+      rw [hx] at h
+      cases h
+      exact ⟨x, List.mem_cons.2 (.inl rfl), hx⟩
+    | ok b =>
+      rw [hx] at h
+      cases hxs : xs.mapM f with
+      | error e' =>
+        simp only [hxs] at h
+        cases h
+        obtain ⟨w, hw, hfw⟩ := except_mapM_error f xs _ hxs
+        exact ⟨w, List.mem_cons.2 (.inr hw), hfw⟩
+      | ok zs => simp [hxs] at h; cases h
+
+/-- **A second `EmitWire.secWithin` accepts is the second it read, and inside the calendar.** -/
+theorem secWithin_ok {ρ : Type} {r : ρ} {sec s : Nat} (h : EmitWire.secWithin r sec = .ok s) :
+    s = sec ∧ sec < LogStamp.yearEnd := by
+  unfold EmitWire.secWithin Cal.mkInstant? at h
+  by_cases hw : Cal.Instant.wf ⟨sec, 0⟩ = true
+  · rw [dif_pos hw] at h
+    cases h
+    refine ⟨rfl, ?_⟩
+    have h2 : sec < 315537897600 := by
+      simp [Cal.Instant.wf] at hw
+      omega
+    exact h2
+  · rw [dif_neg hw] at h
+    cases h
+
+/-- **A routine the reader accepts closes inside the calendar** — its `winHi` is `EmitWire.secWithin`'s answer. -/
+theorem readRoutine_closes_inside_the_calendar {i : Nat} {v : JVal} {x : RoutineIn} (h : readRoutine i v = .ok x) :
+    x.winHi < LogStamp.yearEnd := by
+  unfold readRoutine at h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  dsimp only at h
+  split at h <;>
+  · obtain ⟨_, -, h⟩ := capBind_ok_elim h
+    obtain ⟨_, -, h⟩ := capBind_ok_elim h
+    obtain ⟨_, -, h⟩ := capBind_ok_elim h
+    obtain ⟨_, -, h⟩ := capBind_ok_elim h
+    obtain ⟨_, hhi, h⟩ := capBind_ok_elim h
+    obtain ⟨_, -, h⟩ := capBind_ok_elim h
+    obtain ⟨_, -, h⟩ := capBind_ok_elim h
+    obtain ⟨_, -, h⟩ := capBind_ok_elim h
+    cases h
+    obtain ⟨rfl, hlt⟩ := secWithin_ok hhi
+    exact hlt
+
+/-- **Every routine the section's reader accepts closes inside the calendar.** -/
+theorem readPlannerSection_routines_close_inside_the_calendar {now : Cal.Instant} {sec : JVal} {q : PlannerIn}
+    (h : readPlannerSection now sec = .ok q) : ∀ x ∈ q.routines, x.winHi < LogStamp.yearEnd := by
+  unfold readPlannerSection at h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  dsimp only at h
+  split at h <;>
+  · obtain ⟨_, -, h⟩ := capBind_ok_elim h
+    obtain ⟨_, -, h⟩ := capBind_ok_elim h
+    split at h
+    · obtain ⟨rs, hrs, h⟩ := capBind_ok_elim h
+      obtain ⟨_, -, h⟩ := capBind_ok_elim h
+      cases h; cases hrs
+      intro x hx; cases hx
+    · obtain ⟨rs, hrs, h⟩ := capBind_ok_elim h
+      obtain ⟨_, -, h⟩ := capBind_ok_elim h
+      cases h
+      intro x hx
+      unfold readRoutines at hrs
+      obtain ⟨p, -, hp⟩ := except_mapM_mem _ _ _ hrs x hx
+      exact readRoutine_closes_inside_the_calendar hp
+    · obtain ⟨rs, hrs, h⟩ := capBind_ok_elim h
+      cases hrs
+
+/-- **`Planner.mkRoutines?` answers `pastTheHorizon` only for an instance that closes outside the calendar.** -/
+theorem mkRoutines?_past_the_horizon {p : PlanCore} {xs : List RoutineIn} {i : Id}
+    (h : Planner.mkRoutines? p xs = .error (.pastTheHorizon i)) : ∃ x ∈ xs, LogStamp.yearEnd ≤ x.winHi := by
+  unfold Planner.mkRoutines? at h
+  split at h
+  · cases h
+  · split at h
+    · rename_i e he
+      cases h
+      obtain ⟨x, hx, hxe⟩ := except_mapM_error _ _ _ he
+      refine ⟨x, hx, ?_⟩
+      unfold Planner.mkRoutine? at hxe
+      split at hxe
+      · cases hxe
+      · split at hxe
+        · cases hxe
+        · split at hxe
+          · cases hxe
+          · split at hxe
+            · assumption
+            · split at hxe <;> cases hxe
+    · split at h <;> cases h
+
+/-- **And `unknownItem` only for an instance whose item its plan does not hold.** -/
+theorem mkRoutines?_unknown_item {p : PlanCore} {xs : List RoutineIn} {i : Id}
+    (h : Planner.mkRoutines? p xs = .error (.unknownItem i)) : ∃ x ∈ xs, p.store.get x.id = none := by
+  unfold Planner.mkRoutines? at h
+  split at h
+  · cases h
+  · split at h
+    · rename_i e he
+      cases h
+      obtain ⟨x, hx, hxe⟩ := except_mapM_error _ _ _ he
+      refine ⟨x, hx, ?_⟩
+      unfold Planner.mkRoutine? at hxe
+      split at hxe
+      · rename_i hn
+        exact Option.isNone_iff_eq_none.1 hn
+      · split at hxe
+        · cases hxe
+        · split at hxe
+          · cases hxe
+          · split at hxe
+            · cases hxe
+            · split at hxe <;> cases hxe
+    · split at h <;> cases h
+
+/-- **`routineRefused pastTheHorizon` is answered to no section the reader accepts** (README gap 4793, narrowed): the
+reader bounds every `winHi` by `EmitWire.secWithin` — `Cal.mkInstant?`'s bound, the very bound `Planner.mkRoutine?`
+refuses past — so an instance closing outside the calendar is refused by the reader, `badRoutine <i> winHi`, before
+the assembler sees it.  For EVERY request, not only the binary's. -/
+theorem planReqOf_never_refuses_past_the_horizon {now : Cal.Instant} {sec : JVal} {q : PlannerIn}
+    (hq : readPlannerSection now sec = .ok q) (parts : CapParts) (bm : Nat) (i : Id) :
+    planReqOf parts bm q ≠ .error (.routineRefused (.pastTheHorizon i)) := by
+  intro h
+  have hwin := readPlannerSection_routines_close_inside_the_calendar hq
+  unfold planReqOf at h
+  split at h
+  · cases h
+  · cases hc : parts.cands <;> simp only [hc] at h <;>
+    · split at h
+      · cases h
+      · split at h
+        · cases h
+        · split at h
+          · rename_i y hy
+            cases h
+            rcases planReqRefusal_names hy with h1 | ⟨_, _, _, h1⟩ <;> cases h1
+          · split at h
+            · rename_i e he
+              cases h
+              obtain ⟨x, hx, hle⟩ := mkRoutines?_past_the_horizon he
+              exact absurd (hwin x hx) (Nat.not_lt.2 hle)
+            · cases h
+
+/-- **`routineRefused unknownItem` is answered to no request whose every routine names a candidate it carries**
+(README gap 4795): D80 is asked first (`planReqOf`), and a request that passes it holds every candidate's item —
+`ciDisagreement` is none, and a candidate its plan does not hold disagrees, `plan none` — so a routine named by one
+is held too.  The host's encoder reads every instance off a candidate it sends in the same request
+(`tm_core::planwire::routine_instances` over the very list `planwire::capacity_json` sends), so on its requests the
+routine's `unknownItem` is unreachable, and what such a request meets is P72's `ciDisagrees … plan none`. -/
+theorem planReqOf_never_refuses_an_item_a_candidate_names (parts : CapParts) (bm : Nat) (q : PlannerIn)
+    (hq : ∀ x ∈ q.routines, ∃ c, parts.cands = some c ∧ ∃ p ∈ c.items, p.1.id = x.id) (i : Id) :
+    planReqOf parts bm q ≠ .error (.routineRefused (.unknownItem i)) := by
+  intro h
+  unfold planReqOf at h
+  split at h
+  · cases h
+  · cases hc : parts.cands with
+    | none =>
+      simp only [hc] at h
+      split at h
+      · cases h
+      · split at h
+        · cases h
+        · split at h
+          · rename_i y hy
+            cases h
+            rcases planReqRefusal_names hy with h1 | ⟨_, _, _, h1⟩ <;> cases h1
+          · split at h
+            · rename_i e he
+              cases h
+              obtain ⟨x, hx, -⟩ := mkRoutines?_unknown_item he
+              obtain ⟨c, hc', -⟩ := hq x hx
+              rw [hc] at hc'
+              cases hc'
+            · cases h
+    | some c =>
+      simp only [hc] at h
+      split at h
+      · cases h
+      · rename_i cs hcs
+        split at h
+        · cases h
+        · split at h
+          · rename_i y hy
+            cases h
+            rcases planReqRefusal_names hy with h1 | ⟨_, _, _, h1⟩ <;> cases h1
+          · rename_i hnone
+            split at h
+            · rename_i e he
+              cases h
+              obtain ⟨x, hx, hnx⟩ := mkRoutines?_unknown_item he
+              obtain ⟨c', hc', p, hp, hpid⟩ := hq x hx
+              rw [hc] at hc'
+              cases hc'
+              have hci := (planReqRefusal_eq_none_pays_both _ hnone).2
+              have hmem : p ∈ cs.val := by
+                unfold Capped.ofList? at hcs
+                split at hcs
+                · cases hcs; exact hp
+                · cases hcs
+              have hagree := (Planner.PlanReq.ciDisagreement_eq_none_iff _).1 hci p hmem
+              unfold Planner.PlanReq.planCi at hagree
+              rw [hpid] at hagree
+              simp [hnx] at hagree
+            · cases h
 
 end PlanWire
 end Tm

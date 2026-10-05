@@ -8317,3 +8317,40 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -/
 #print axioms Tm.Planner.PlanReq.todayRecord_is_the_answers_reading
 #print axioms Tm.Planner.PlanReq.todayRecord_on_a_resumed_run_is_the_whole_logs
+
+/-
+   APPENDED 2026-10-05: stage 6, run W-46, TRACK H — README gap 4751: three refusals of the planner
+   section no request reaches (`PlanWire.lean`, the section "Three refusals no request reaches"),
+   and the lemmas they stand on.
+-/
+#print axioms Tm.PlanWire.except_mapM_length
+#print axioms Tm.PlanWire.readCands_within_the_cap
+#print axioms Tm.PlanWire.runCapZP_parts
+#print axioms Tm.PlanWire.runRowsP_parts
+#print axioms Tm.PlanWire.mkInput?_keeps_the_zone_the_day_and_the_walls
+#print axioms Tm.PlanWire.readCapacityZ_walls
+#print axioms Tm.PlanWire.readCapacityZ_needs_a_replay
+#print axioms Tm.PlanWire.within53A_ok
+#print axioms Tm.PlanWire.logOpZ_run_iff_facts
+#print axioms Tm.PlanWire.logSectionWith_run_iff_facts
+#print axioms Tm.PlanWire.planReqRefusal_names
+#print axioms Tm.PlanWire.planReqOf_never_refuses_what_the_capacity_section_excludes
+
+/-
+   APPENDED 2026-10-05: stage 6, run W-46, TRACK H, resumed after a cut-off — README gaps 4795 and
+   4793: the assembler asks D80 before it reads the routines (`planReqOf`), so a routine word the two
+   readers key apart is P72's refusal by P72's name; `routineRefused pastTheHorizon` answered to no
+   section the reader accepts; `routineRefused unknownItem` to no request whose routines each name a
+   candidate it carries; and the lemmas they stand on.
+-/
+#print axioms Tm.PlanWire.planReqRefusal_ignores_the_routines
+#print axioms Tm.PlanWire.planReqOf_refuses_only_by_d80_or_a_routine
+#print axioms Tm.PlanWire.except_mapM_mem
+#print axioms Tm.PlanWire.except_mapM_error
+#print axioms Tm.PlanWire.secWithin_ok
+#print axioms Tm.PlanWire.readRoutine_closes_inside_the_calendar
+#print axioms Tm.PlanWire.readPlannerSection_routines_close_inside_the_calendar
+#print axioms Tm.PlanWire.mkRoutines?_past_the_horizon
+#print axioms Tm.PlanWire.mkRoutines?_unknown_item
+#print axioms Tm.PlanWire.planReqOf_never_refuses_past_the_horizon
+#print axioms Tm.PlanWire.planReqOf_never_refuses_an_item_a_candidate_names

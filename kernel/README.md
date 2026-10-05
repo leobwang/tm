@@ -90884,20 +90884,26 @@ landing commit deletes that banner's entries (they resolve once the code is ther
 
 **Status.**  D104 and D106 are built on the unswitched binary and measured on both binaries (§1, §2); gap 4751 is
 §3.  The first R3 BLOCKER, gap 4621, is CLOSED here (with gap 4711); the second, gap 4740, is track K's (D105).
+**Part 1 is `f2cb71b`; this step was cut off by a usage limit during part 2's acceptance and RESUMED by a second
+agent (§6), which re-measured part 2, closed gap 4795 by an order (§3.7), and found gap 4793 to be a third R3
+BLOCKER, by name only (§5).**
 
 ### 0. The brief, measured
 
 * **HEAD `16aaafc`** (the owner's D104-D106, docs only), tree clean; worktrees `stage5-lookahead` and this track's
   `w46-h`.  **Correction:** the brief says `16aaafc` was "pushed to origin"; `git status` on `rebuild-on-lean` said
-  *"ahead of 'origin/rebuild-on-lean' by 1 commit"* when this track began — `origin` stood at `a3588b4`.
+  *"ahead of 'origin/rebuild-on-lean' by 1 commit"* when this track began — `origin` stood at `a3588b4`.  The user's
+  request that opened this run asked for a push of the partial work, so this track pushed `rebuild-on-lean`
+  (`a3588b4..16aaafc`, a fast-forward, 01:3x) and nothing else: its own branch `w46-h` is the Land's to merge.
 * `tm/src/cli/tz_table.rs`' `wire_for` is the ONE function that reads `.tm/cache/replay/tz.json` (§1.1); its
   production callers are four (`Ctx::tz_wire`, `kernel_capacity::reads`, `day::call_the_walls`,
   `lifecycle::line_warnings`), as measured below.
 * The zone probe at opt-level 1 (the test profile), America/Chicago: **61.1 ms** best of 3 at load 2.7
   (93.6 ms at load 59, `examples/tzprobe.rs`); chrono-tz **0.10.4**, its IANA_TZDB_VERSION **2025b**, **597** zones.
-* Two tests outside this track's file list assert the sentence D104 withdraws or a count D106 moves, so D104 and
-  D106 move them, each named for the Land (§1.4, §2.4): `tm/tests/kernel_tz_table.rs`'
-  `the_cache_keeps_the_wire_value_under_its_key` and `tm/tests/kernel_call_counts.rs`' `resume` row.
+* Three files outside this track's file list hold a sentence D104 withdraws, a count D106 moves or a world D106's
+  binary no longer builds, so the decisions move them, each named for the Land (§7): `tm/tests/kernel_tz_table.rs`'
+  `the_cache_keeps_the_wire_value_under_its_key`, `tm/tests/kernel_call_counts.rs`' `resume` row and eleven lines
+  of `tm/tests/fixtures/fork-4748911-week-grid.jsonl`.
 
 ### 1. D104 — a served zone table is checked against the binary's zone database, and rebuilt when it disagrees (gaps 4621, 4711 closed)
 
@@ -90924,9 +90930,9 @@ of every lookahead day (`windowOn`, `wakeInstantOf`, `wallsOn`); at the planned 
 That is any second of `[1900, 2200]`, so the check is the whole table — and it is cheaper than the probe it saves:
 
 **1.3 The check** (`tz_table::agrees`, behind `ZoneTable::from_wire`).  A cached text is served only when its digest
-matches (W-44), it is exactly what the one encoder writes for a table (`from_wire`: every offset and instant taken
-back only when `fmt_offset`/`fmt_instant` spell it so, and the table accepted only when `to_wire` gives the value
-read — no second grammar of the zone wire), and the table agrees with chrono-tz: the key is `key_of(tz)`, the base is
+matches (W-44), it is exactly what the one encoder writes for a table (`from_wire`: the table read is accepted only
+when `to_wire` gives the value read — ONE check, which its two field readers do not restate; no second grammar of the
+zone wire), and the table agrees with chrono-tz: the key is `key_of(tz)`, the base is
 the offset at 1900-01-01, every transition is a change of the zone at that very second (the second before reads the
 old offset, the second itself the new, and they differ), and on a grid of one day (`CHECK_STEP`) from 1900 to 2200
 the table reads the zone's offset.  A change the table lacks opens a span of the zone; every span outlasts the step,
@@ -91056,9 +91062,173 @@ Cost, driven on both binaries (`scratchpad/w46-h/time_resume.py`, §4.3's tree w
 wakes, three fresh trees each, load 4.3): `tm resume` **41-45 ms** on the binary of `16aaafc`, **45-51 ms** on this
 track's — the hold's mirror and replay with D104's check, about 6 ms.
 
-### 3. Gap 4751 — the planner refusals as a class
+### 3. Gap 4751 — every planner refusal, classified (closed here as a class, with gaps 4791-4795 for what it found)
 
-Not in this commit: the next commit on this branch (§5's status notes say where it stands).
+R3 swaps the shipped planner for the kernel's, and the kernel can REFUSE a request where fork 4748911's planner was
+total.  The W-45 repair recorded that only `eveningPastTheCalendar` (P71) and `ciDisagrees` (P72) are licensed and
+that "no driven tree reached another" is a sample.  This track makes it a CLASS, held three ways.
+
+**3.1 The class, read off the source** (`tm/tests/kernel_planner_refusals.rs`' `every_planner_refusal_is_classified`).
+The test reads `inductive PlannerRefusal` (20 constructors) and every `(constructor, key)` a `def` of `PlanWire.lean`
+throws (the key named at the site; a family whose key is a variable is one row), and `Planner.RoutineErr`'s six; a
+constructor or a thrown pair no row classifies FAILS, and so does a row nothing throws (a stale row, W-27's shape).
+The class at this commit, by reason (the test prints it):
+
+| reason | rows | the refusals |
+|---|---:|---|
+| proved unreachable for every request (§3.2, §3.7) | 4 | `runAbsent`, `wallsDisagree`, `candsPastCap`; `routineRefused pastTheHorizon` |
+| proved unreachable on every request whose routines each name a candidate it carries — which the encoder pays, tested (§3.7) | 1 | `routineRefused unknownItem` (gap 4795, closed) |
+| the encoder never writes the key (§3.3) | 7 | `badState lastHash`, `badState yesterday`, `badHash`, `badYesterday`, `badYesterdayList`, `badOverride` (every key), `tooManyOverrides` |
+| the encoder builds the container as JSON with unique keys | 6 | `badState state`, `badState active`, `badState brk`, `badState interrupt`, `badRoutine routines`, `badOvertime overtime` |
+| the host type's every value is accepted (§3.3) | 15 | `badActive estMin`, `badActive paused`, `badActive wf`, `badActive workedMin`; `badBreak started`, `badBreak plannedMin`, `badBreak wf`; `badRoutine inst`, `badRoutine durMin`, `badRoutine mandatory`; `badBatchMaxMin`; `badOvertime blocks`, `badOvertime grown`, `badOvertime remaining`, `badOvertime plannedMin` |
+| the encoder filters or builds around it | 3 | `capacityAbsent`, `routineRefused emptyWindow`, `routineRefused noMinutes` |
+| the capacity section refuses the same tree first (§3.4) | 5 | `badActive id`, `badInterrupt id`, `badRoutine id`, `badOvertime id` (gap 4792), `routineRefused tooManyRoutines` |
+| licensed (D80, P71 and P72) | 2 | `eveningPastTheCalendar`, `ciDisagrees` |
+| reachable only from bytes the binary never writes | 4 | `badActive started`, `badInterrupt started` (gap 4793: the kernel's `emit` refuses a line stamped past the calendar, driven); `badBreak place` (gap 4794); `routineRefused undeclaredWindow` (gap 4795's window-side twin) |
+| **reachable on a tree the fork plans, under a name no register row gives: an R3 BLOCKER** (§3.8) | 2 | `badRoutine winLo`, `badRoutine winHi` (gap 4793) |
+| thrown nowhere | 1 | `shape` (gap 4791) |
+
+**20 constructors, 46 thrown pairs, 50 rows.**  *(Re-measured on the resumed tree, `kernel_planner_refusals`'
+printout; until the resumption the first two rows were three and none, `unknownItem` was "a request P72 refuses, named
+by an earlier check", `pastTheHorizon`, `winLo` and `winHi` were filed as reachable only from bytes the binary never
+writes — the first is proved unreachable for every request, the other two are reached by `--now`, §3.8.)*
+
+**3.2 Three refusals no request reaches — PROVED** (`PlanWire.lean`, the section "Three refusals no request reaches";
+twelve theorems, each audited in `Check.lean`): `planReqOf_never_refuses_what_the_capacity_section_excludes` — for
+every request whose rows and capacity section answered (`EmitWire.runRowsP` hands the parts over), the assembler never
+answers `runAbsent`, `candsPastCap` or `wallsDisagree`.  Its lemmas: `runRowsP_parts` and `runCapZP_parts` (the parts
+are a capacity request's own readings); `readCapacityZ_needs_a_replay` (no day 0 without a replay, D24);
+`logSectionWith_run_iff_facts`, `logOpZ_run_iff_facts`, `within53A_ok` (a `log` answer carries its run exactly when
+it carries its facts); `readCands_within_the_cap` with `except_mapM_length` (an accepted candidate list is within
+`CapWire.maxCandidates`); `readCapacityZ_walls` with `mkInput?_keeps_the_zone_the_day_and_the_walls` (the walls are
+the loaded plan's, in the section's own zone at its own blocks); `planReqRefusal_names` (D80's two are all the
+finished request can carry).  Stronger than the encoder's bound: no request at all reaches the three.
+
+**3.3 The binary's encoder**: `the_encoder_writes_only_the_keys_the_class_admits` (256 cases: over arbitrary host
+values, `planwire::planner_json` with `add_worked_min` and a what-if writes its records as objects and arrays and
+never `lastHash`, `yesterday` or `overrides`, though the state it is handed holds the first two) and
+`every_value_the_host_types_hold_is_answered` (256 generated days: the request with every `u32` the host types hold at
+`u32::MAX` — the running estimate, the worked minutes, a break's planned minutes, every routine's duration, a what-if's
+blocks and grown facts, §16's `batch_max_min` — and every mark flipped is a planned day or a licensed refusal, never
+another).
+
+**3.4 The binary itself**: `an_id_past_the_bound_is_refused_by_the_capacity_section_first` (a 1,100-character routine
+title and a 1,100-character `^id`: `tm check` names the capacity section's `badCandidate <i> id`, never the planner's,
+and `tm plan` is refused by the same name today) and `a_routine_word_the_two_readers_key_apart_is_named_by_tm_check_and_planned_by_tm_plan`
+(gap 4795's tree, both binaries' answers today pinned).  Driven besides, on §4.3's tree with `--now` at the calendar's
+end: `9999-12-30T12:00` and `9999-12-31T12:00` — `tm check` and `tm plan` are refused by the capacity section
+(`badCandidate 5 due` / `badCandidate 7 due`, a routine's due past the calendar) before the planner section is read;
+at `0001-01-02T12:00`, no problems.  Seven misspelt windows in a week file (`win:7:00-21:00`, `…-21:00:00`, `0700-2100`,
+an en dash, `24:00`, `07:60`, `07h-21h`) — the host refuses each as `bad-value` itself and no planner refusal appears;
+a routines.md line whose window the kernel cannot read refuses the whole tree at load (`itemCheck fileKindShape`), on
+the binary of `16aaafc` too.
+
+**3.5 Every new test bites** (a clone, `scratchpad/w46-h/plant`, reset to this track's tree; `git status --porcelain`
+hashed before and after each plant, `plant4751.log`): deleting the `shape` row → "`shape` is a constructor no row
+classifies"; deleting `badActive estMin`'s row → "`badActive estMin` is thrown and no row classifies it"; a stale row
+`badActive blocks` → "classified and nothing throws it: a stale row"; `shape` reclassified as thrown → stale; a
+`RoutineErr` row deleted → "`routineRefused noMinutes` is not classified"; the extremes test sending a duration one
+past `u32::MAX` → "the kernel refused a host-typed value by a name no decision licenses: badRoutine 0 durMin";
+`planwire::state_json` made to write `lastHash` → "the encoder wrote a key the class does not admit:
+["state.lastHash"]"; the long id shortened to 1,000 characters → `an_id_past_the_bound…` fails.  Each FAILED by name,
+each restored.  And the source half: a `def` added to `PlanWire.lean` that throws `badActive blocks` (`plant4751-lean.log`)
+— "`badActive blocks` is thrown and no row classifies it": the class is read off the source, not a list (one rebuild
+of `PlannerWit.lean`; the clone's `PlanWire.lean` then restored).
+
+**3.6 Every new Rust definition, mutated** (D40's discipline for the host's code; a clone, `scratchpad/w46-h/chk`,
+porcelain hashed before and after each, `mutate-rust.log` and `mutate-rust2.log`).  `tz_table::agrees` answering
+true (4 of `cli_tz_cache_digest`'s 8 fail, the plants among them), answering false (2 fail), skipping its grid (2),
+skipping its transitions' check (1); `ZoneTable::from_wire` reading nothing (3), skipping its write-back check (1);
+`offset_of` answering `None` (3) or a second off (3); `instant_of` answering `None` (3); `tz_table::served`
+answering `None` (`kernel_tz_table`'s inode assertion: the binary's own table re-probed) and remembering a text for
+another zone (1); `CHECK_STEP` ten years (3, the sweep among them); `kernel_log::zone_id` the key alone (its unit test);
+`day::resume` back in the fork's order (`cli_resume_replan`'s binary pin).  **Every one FAILED by name but one, and
+that one was a finding:** `offset_of` skipping its own round trip (`fmt_offset(east) == s`) left every test green,
+because `from_wire`'s write-back check already refuses every spelling the encoder would not write — the readers
+restated the one check.  The restatement is deleted (`offset_of` and `instant_of` parse, and `from_wire` alone says
+what the encoder writes), and the constant-fold mutations above are of the readers as they now stand.
+
+**3.7 Gap 4795, closed by an ORDER: the assembler asks D80 before it reads the routines** (the resumed step; parity
+P72's row unchanged, because it already names this request's refusal).  P72's row says a request carrying a candidate
+whose item the plan does not hold is refused BY NAME, `ciDisagrees <id> wire <w> plan none`.  On gap 4795's tree —
+`- stretch ^é1  win:07:00-21:00 dur:10m  every:day`, whose `^é1` the host reads as title text and the kernel as an id —
+the request carries exactly such a candidate (`stretch ^é1`, routine instances being read off the candidates the same
+request sends), and the kernel answered `routineRefused unknownItem stretch ^é1` instead, because `planReqOf` read the
+routines (`Planner.mkRoutines?`) before D80's checks: the code disagreed with the register, and one disagreement had
+two names (AGENTS §5.3).  Neither D80 clause reads a routine (`planReqRefusal_ignores_the_routines`, by `rfl`), so
+`planReqOf` now asks `planReqRefusal` of the request with its routines aside and reads the routines after; the request
+it answers with is the one D80 was asked of, routines added.  Driven on this tree, on the unswitched binary: `tm check`
+names `ciDisagrees stretch ^é1 wire 1 plan none` with P72's own message (exit 2), and `tm plan` plans the routine on
+fork 4748911's planner (exit 0) — at R3 `tm plan` meets P72's refusal by P72's name.  Pinned by
+`a_routine_word_the_two_readers_key_apart_is_p72s_refusal_by_name` (renamed from
+a_routine_word_the_two_readers_key_apart_is_named_by_tm_check_and_planned_by_tm_plan, which pinned the second name).
+The laws, each audited in `Check.lean` under the resumed banner:
+
+* `planReqOf_refuses_only_by_d80_or_a_routine` — once the run is there, the candidates are within the cap and the
+  walls agree, the assembler refuses only by D80's two or by a routine's refusal; `planReqOf_pays_the_evening_and_the_ci`
+  (used by `PlannerWit`'s wind-down theorem) and `planReqOf_never_refuses_what_the_capacity_section_excludes` are
+  RE-PROVED over the new order with their statements unchanged (D5);
+* `planReqOf_never_refuses_an_item_a_candidate_names` — `routineRefused unknownItem` is answered to no request whose
+  every routine names a candidate it carries: passing D80 means every candidate's item is held (`ciDisagreement` is
+  none, and a candidate the plan does not hold disagrees, `plan none`).  The encoder pays the hypothesis by
+  construction (`planwire::routine_instances` iterates the very candidates `planwire::capacity_json` sends), and
+  `every_routine_instance_is_a_candidate_the_request_sends` (256 generated days) with
+  `the_routine_instance_property_meets_instances` (64 deterministic days: **61 send instances, 122 in all**) hold it;
+  without the hypothesis the refusal stands, `kernel_planner_wire`'s
+  `a_routine_the_plan_does_not_hold_is_refused_by_its_id` (no candidates sent) still answers `routineRefused
+  unknownItem lunch`, unchanged;
+* `planReqOf_never_refuses_past_the_horizon` — `routineRefused pastTheHorizon` is answered to no section the reader
+  accepts, for EVERY request: the reader bounds `winHi` by `EmitWire.secWithin`, which is `Cal.mkInstant?`'s bound,
+  `sec < 315537897600`, the very `LogStamp.yearEnd` `Planner.mkRoutine?` refuses at — so an instance closing outside
+  the calendar is refused by the reader (`badRoutine <i> winHi`) before the assembler sees it.  Until the resumption the
+  class filed it as reachable from `--now` at the calendar's end; it is reachable from nothing.
+* and the lemmas they stand on: `except_mapM_mem`, `except_mapM_error`, `secWithin_ok`,
+  `readRoutine_closes_inside_the_calendar`, `readPlannerSection_routines_close_inside_the_calendar`,
+  `mkRoutines?_past_the_horizon`, `mkRoutines?_unknown_item`.
+
+**3.8 What the binary meets at the calendar's ends — driven, and one more R3 BLOCKER** (the resumed step;
+`scratchpad/w46-h/r2/cal/`, the binary of this tree).  At the END, in America/Chicago, the calendar's last second is
+9999-12-31T17:59:59-06:00, so on 9999-12-31 the day's evening runs past it — the day the owner's D80 (a) refuses, which
+P71's row names `eveningPastTheCalendar`:
+
+| tree, at `--now 9999-12-31T12:00:00-06:00` | `tm check` (P78) | `tm plan` today (fork 4748911's planner) |
+|---|---|---|
+| bare `tm init`, a backlog task | `eveningPastTheCalendar` (P71), exit 2 | plans, exit 0 |
+| the same, the task running since 09:00 | `eveningPastTheCalendar` (P71), exit 2 | plans, exit 0 |
+| bare, `- wind win:20:00-23:00 dur:30m every:day` | **`badRoutine 0 winLo`**, exit 2 | plans, exit 0 |
+| bare, `- wind win:17:00-18:30 …` | **`badRoutine 0 winHi`**, exit 2 | plans, exit 0 |
+| bare, `- sleep win:22:00-08:00 …` | the capacity section first: `badCandidate 0 due`, exit 2 | refused by the same, exit 1 (today's binary already) |
+
+So an evening routine on the calendar's last local day reaches the planner section's READER before the assembler asks
+D80, and the switch would meet `badRoutine <i> winLo|winHi` on a tree the fork plans where P71's row names
+`eveningPastTheCalendar`: **an R3 BLOCKER by name only** (gap 4793) — the divergence, refusing that day, is D80 (a)'s.
+Pinned by `the_calendars_last_day_reaches_the_planner_section_by_two_names`, whose `tm plan` lines move at R3.  And the
+binary cannot log a running block or an interruption past the calendar: `tm start` and `tm interrupt` at
+9999-12-31T18:30:00-06:00 are refused by the kernel's `emit` (`{"emit":{"badAt":{"item":0}}}`), which is why
+`badActive started` and `badInterrupt started` are a hand edit's (the same test pins the start's refusal).  At the
+START, in Pacific/Kiritimati (+14:00): from 0001-01-02 both verbs answer; on 0001-01-01 `tm check` is refused by the
+log section (`badLogReq`) and `tm plan` PANICS in the host (`kernel_bridge::region_of`, `12 * (y - 1)` on a year-0
+month path, exit 101 — gap 4796, pre-existing, the same at `16aaafc`); `tm init` itself, run at that instant in
+Chicago, writes `month/0000-12.md` and `week/0000-W52.md` and every verb then panics.  No planner refusal is met at the
+start.  Two pre-existing host defects found on the way are gaps 4796 and 4797.
+
+**3.9 The resumed step's bite and D40** (each plant in a clone; `scratchpad/w46-h/r2/`).
+* **The order, against the OLD order.**  In a scratch copy of this `PlanWire.lean` with `planReqOf` put back in the
+  routines-first order, four of the new theorems no longer elaborate — `planReqOf_pays_the_evening_and_the_ci`,
+  `planReqOf_refuses_only_by_d80_or_a_routine`, `planReqOf_never_refuses_past_the_horizon`,
+  `planReqOf_never_refuses_an_item_a_candidate_names` (`pw_oldorder.log`), so the build refuses the old order; and the
+  binary built in the old order (the `sw` clone, §8) FAILS `a_routine_word_the_two_readers_key_apart_is_p72s_refusal_by_name`
+  by name (its `tm check` names `routineRefused unknownItem stretch ^é1`, `sw-oldorder.log`).
+* **D40 for the changed definition.**  `planReqOf`'s body changed, so check 9 owed it a row: `mutate.py --since
+  86c4dc6 --write` in the clone writes it `unfoldable` (`Except PlannerRefusal Planner.PlanReq` has no `Inhabited`), as
+  its old row was; its distinguishing evidence is the two bullets above.  **And check 9 shaped the layout**: a first
+  layout of this step added seventeen lines above existing pinned theorems (a longer docstring, a longer proof, a lemma
+  in the middle), and `mutate.py --write` refused it before writing anything, naming twenty roster rows whose pin site
+  (`PlanWire.lean:<line> <theorem>`) no longer lay in its theorem (`mutate-write.log`).  Re-verifying them would cost a
+  kernel build per constant; instead the edits were laid out so no recorded line moves — `planReqOf`'s docstring kept
+  its four lines, `planReqOf_pays_the_evening_and_the_ci` its three-line docstring and five-line proof, and
+  `planReqRefusal_ignores_the_routines` went to the file's end — checked by mapping every line of the previous file
+  before the end section onto the new one (no equal block moved).
 
 ### 4. Acceptance, capped (`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`; 16 GB for the drives and the latency rows)
 
@@ -91119,6 +91289,101 @@ archived switch's run of the restated test is §2.5 / §6.
 
 **Gap 4661 — CLOSED here, by the owner's D106** (§2).
 
+**Gap 4751 — CLOSED here, as a class** (§3): every refusal the planner section can answer is classified, by a test
+read off the source that fails on a new one; three are proved unreachable for every request; the encoder's bounds
+are tested over arbitrary host values; and what the class found the binary CAN meet is named below.
+
+**Gap 4791 — `PlannerRefusal.shape` is thrown nowhere.**  1. *What.*  No definition of `PlanWire.lean` throws
+`shape` ("the section is not an object, or a key is carried twice"); every reader names the key it could not read
+instead (`badState state`, …).  2. *Why not removed here.*  Deleting a constructor rewrites `PlannerRefusal.text`, two
+theorems that name it (`the_refusals_spell_themselves`, `the_two_refusal_families_do_not_share_a_key`) and their audit
+lines — a step of its own, and the class test holds it at "thrown nowhere" meanwhile (a definition that starts
+throwing it fails `every_planner_refusal_is_classified`).  3. *Cost.*  None to a request; a dead name on the wire's
+list.  4. *Clears it.*  The constructor deleted with those two clauses, or given the reader it was declared for.
+
+**Gap 4792 — an id past `CapWire.maxCandId` reaches the planner section only by hand, and the capacity section
+refuses it first.**  1. *What.*  `badActive id`, `badInterrupt id`, `badRoutine <i> id` and `badOvertime id` bound an
+id at 1,024 characters, as `Boundary.readCand` bounds a candidate's.  The running item, the interrupted one, a
+routine instance and the what-if's item are candidates the same request sends, so the capacity section refuses the
+tree first (`badCandidate <i> id`) — driven, for a 1,100-character routine title and a 1,100-character `^id`, on the
+binary of this commit, whose `tm plan` refuses those trees today (§3.4).  No verb mints such an id (`freshId`; D33's
+writer).  2. *Why open.*  An item that is NOT a candidate (a settled one) can be running only through a hand-edited
+`.tm/state.json` or log, and that case is not driven.  3. *Cost.*  On such a tree R3's `tm plan` would answer the
+planner section's refusal where today's plans.  4. *Clears it.*  A drive of a settled item made running by a hand
+edit, or the owner's word that a hand-edited cache naming a settled item is out of scope.
+
+**Gap 4793 — R3 BLOCKER, BY NAME ONLY: an evening routine on the calendar's last local day reaches the planner
+section's reader before the assembler asks D80 (a)** (restated at the resumption; it read "instants outside the
+calendar", filed five refusals as reachable only from bytes the binary never writes, and left the end undriven).
+1. *What.*  On 9999-12-31 in a zone west of UTC the calendar's last second falls inside the local day (17:59:59 in
+Chicago), so the day's evening runs past it: the day D80 (a) refuses, which P71's row names `eveningPastTheCalendar`.
+A routine instance whose window opens or closes past that second is refused by the section's own reader first,
+`badRoutine <i> winLo|winHi` (`EmitWire.secWithin`, read in `readPlannerSection` before `planReqOf`).  Driven (§3.8): a
+bare tree with `- wind win:20:00-23:00 dur:30m every:day` at `--now 9999-12-31T12:00:00-06:00` — `tm check` names
+`badRoutine 0 winLo` where the same tree without the routine names `eveningPastTheCalendar`; `tm plan` plans both on
+fork 4748911's planner.  The rest of what this gap held is settled: `routineRefused pastTheHorizon` is reached by no
+request (`planReqOf_never_refuses_past_the_horizon`, §3.7), and `badActive started` and `badInterrupt started` need a
+start or an interruption stamped past the calendar, which the binary cannot log — the kernel's `emit` refuses the line
+(`badAt`, driven) — so they are a hand edit's.  2. *Why a blocker and why not fixed here.*  The refusal of that day is
+D80 (a)'s and so is the divergence; its NAME is not P71's, and RULE M lets an expectation move at R3 only where a
+registered number's row accounts for the moved line — `the_calendars_last_day_reaches_the_planner_section_by_two_names`
+pins today's `tm plan`, which at R3 moves to `badRoutine 0 winLo`.  The fix is an order one stage earlier than
+§3.7's: `runPlanner` asks D80 (a) of the capacity section's parts before it reads the section.  Its price, measured
+here: a definition (the evening read off the parts: it reads the lookahead input, the day and the run, nothing the
+section carries), and two of `runPlanner`'s eight laws — `runPlanner_refuses_a_section_the_decoder_refuses` and
+`runPlanner_refuses_a_batch_max_min_the_decoder_refuses` — become false as stated (on the calendar's last day the
+evening is named first) and must be restated with the other subdomain proved beside them (AGENTS §3.1 item 4, D5),
+while the other six re-prove as stated (`runPlanner_answers_the_day` from `planReqOf_pays_the_evening_and_the_ci`).
+The campaign's practice for a law a deliberate change falsifies is to prove its old form false as well (as
+`a_dropped_child_and_its_filed_parent_part_ways` did for `close_keeps_source_order`), and here that needs a concrete
+request evaluated through the plan loader, the `log` and `capacity` sections and the planner section at year 9999 — a
+`decide` over the whole pipeline, which AGENTS §5.10a warns against — or the owner's word that this test is the
+witness.  That choice is decision-shaped, so this track did not take it.
+3. *Cost, until cleared.*  A user on the calendar's last day with an evening routine sees the routine's window named
+where the day is the cause; nothing is silent and nothing is planned wrong.  4. *Clears it.*  That order and its laws
+(this track's file, `PlanWire.lean`, a step of its own), or the owner's word that P71's row covers the readers' names
+on that day, or that the calendar's last day is out of scope.
+
+**Gap 4794 — a break's place outside `BreakPlace`'s four words comes only from a hand-edited `.tm/state.json`.**
+1. *What.*  `badBreak place` refuses a word `PlanWire.placeOf?` does not read; `.tm/state.json`'s `where` is a String,
+and `tm break --where` writes only the host table's four (D81, gap 3903; `tm/tests/cli_break_place.rs`).  2. *Why
+open.*  The cache is the user's to edit, and D42 rebuilds it from the log, which (until track K's D105) holds no
+running break.  3. *Cost.*  After R3, a hand-edited place refuses `tm plan` where the fork planned.  4. *Clears it.*
+D105 (track K): a running break's start, place included, is the log's.
+
+**Gap 4795 — CLOSED at the resumption, by an order (§3.7): a routine line the two readers key apart was refused as
+`routineRefused unknownItem`, a request P72's row names `ciDisagrees`.**  1. *What it was.*  `- stretch ^é1
+win:07:00-21:00 dur:10m  every:day`: the host keys the routine `stretch ^é1`, the kernel reads an id `é1`; the request
+carries the routine's candidate, which the plan does not hold — P72's `plan none` — and `planReqOf` read the routines
+before D80, so the kernel named the routine's refusal instead.  2. *Cleared by* `planReqOf` asking D80 first
+(`planReqRefusal_ignores_the_routines`), with `planReqOf_never_refuses_an_item_a_candidate_names` and its encoder test
+— so on every request the binary builds the refusal is P72's, by P72's name; `tm check` says so on this tree (P78).
+3. *What it leaves.*  `routineRefused undeclaredWindow` is its window-side twin, filed as a hand edit's: a routines.md
+line with neither a window nor `after-done:` refuses the whole tree at load (`fileKindShape`, today too), seven
+misspelt windows in a week file are refused by the host itself (§3.4), and no spelling the host reads as a window
+and the kernel does not was found — a sample, which gap 33 (the two readers of a `^` word) and D83's one separator
+rule bound from the grammar side.  4. Nothing owed.
+
+**Gap 4796 — at the calendar's start the host PANICS reading a year-0 path** (found at the resumption, §3.8;
+pre-existing, the same at `16aaafc`).  1. *What.*  `kernel_bridge::region_of` computes a month's region as
+`12 * (y - 1) + (mo - 1)` in `u64`, and `month/0000-12.md` has `y = 0`: in a debug build the subtraction panics
+(`attempt to subtract with overflow`, exit 101 — every test of `cargo test` is such a build); in a build without
+overflow checks it wraps and sends the kernel a region no path has.  `tm init` at `--now 0001-01-01T12:00:00+14:00` in
+Chicago writes `month/0000-12.md` and `week/0000-W52.md` itself, and every verb then panics; in Pacific/Kiritimati on
+0001-01-01, `tm plan` panics while `tm check` is refused by the log section (`badLogReq`).  2. *Why not fixed here.*
+`kernel_bridge.rs` is no file of this track's.  3. *Cost.*  None on any date after 0001-01-02 (driven: both verbs
+answer); a panic, not a refusal, at the calendar's first day.  4. *Clears it.*  `region_of` refusing a year before 1
+by name (the kernel's calendar starts at 0001-01-01, `Day := Nat`), and `tm init` creating no file for one.
+
+**Gap 4797 — a `tm start` the kernel's `emit` refuses still writes `.tm/state.json`** (found at the resumption,
+§3.8; pre-existing).  1. *What.*  `tm start ^w1` at `--now 9999-12-31T18:30:00-06:00` exits 1 with `the kernel
+refused a line to append: {"emit":{"badAt":{"item":0}}}`, and `.tm/state.json` then holds `active: w1, started
+18:30`; the next verb reconciles from the log (D42) and says so (".tm/state.json said ^w1 is running and
+.tm/log.jsonl says nothing is running — the log decides").  2. *Why not fixed here.*  `tm start`'s path is no
+function of this track's.  3. *Cost.*  A refused verb writes the cache, contrary to D35's "nothing was written" — on
+any refusal of the line's append, which this step reached only past the calendar's end.  4. *Clears it.*  The cache
+written after the log line, as D42's ordering has it.
+
 ### 6. Status notes (kept current while the step runs)
 
 * 23:27 — worktree `w46-h` at `16aaafc`; the build cache copied from the main checkout (`lake build` a no-op).
@@ -91127,7 +91392,19 @@ archived switch's run of the restated test is §2.5 / §6.
 * 23:46-23:50 — the latency rows on both binaries, twice.
 * 23:55-00:05 — D106 built; both binaries driven; gap 4790 found driving the class and closed.
 * 00:05-00:54 — three workspace runs (§4); the week grid's re-draw between runs 1 and 2 (§2); the latency control.
-* 00:55 — gap 4751's laws proved in a scratch module (§3, the next commit on this branch); this commit's `check.sh`.
+* 00:55 — gap 4751's laws proved in a scratch module; part 1's `check.sh`; part 1 committed (`f2cb71b`).
+* 01:01-01:08 — the laws moved into `PlanWire.lean` (one rebuild of `PlannerWit.lean`, 424 s); the archived switch
+  cherry-picked onto part 1 in a clone and run (§8).
+* 01:10-01:20 — the class test and its eight plants in a clone (§3.5); this part's README.
+* 01:26-02:22 — part 2's acceptance: three workspace runs green on an earlier diff (`ws-s1..3`, 154 result lines);
+  `offset_of`'s restated round trip deleted (§3.6), `check.sh` green on the final diff (`check5.log`, 02:07); a fourth
+  run red on one `cli_latency` row at load 13 → 43 (`ws-t1`); a fifth cut off by a usage limit mid-run (`ws-t2`).
+* **06:44 — RESUMED by a second agent** (cut off at ~02:32, the worktree and its uncommitted part 2 intact).  The tree
+  hashed to the t-runs' (`porcelain 0e6b4a4dfebd`, `diff 286ccdf16d56`); the Lean build current; the class test 19/19.
+* 06:50-07:05 — gap 4795: `planReqOf` asks D80 first, proved and rebuilt (6.5 min, `PlannerWit.lean` among it); the
+  binary names P72's refusal on its tree (§3.7).
+* 07:05-07:16 — the calendar's ends driven (§3.8): gap 4793 found to be an R3 BLOCKER by name; gaps 4796, 4797; the
+  pin test and the R3Blocker class.
 
 ### 7. For the Land step
 
@@ -91140,5 +91417,42 @@ archived switch's run of the restated test is §2.5 / §6.
   this track or K re-drew to its branch's version by value).
 * **`kernel/parity.txt`**: `hole P100` is this branch's stand-in for track K's number — delete it when K's row lands;
   `P101` is this track's; `P102` was not taken (§1.6), so the switch's numbers renumber down into it.
-* **The archived switch** (`refs/archive/w45/r3-switch`): cherry-picked onto this track in a clone, §8 (the next
-  commit's block records it).
+* **The archived switch** (`refs/archive/w45/r3-switch`): cherry-picked onto this track in a clone, §8 — two
+  conflicts, both resolvable by taking both sides (`citations-allow.txt`) or by re-drawing (the week grid).
+* **Gap 4793 is an R3 BLOCKER this track found and did not clear** (by name only; §3.8, §5): the switch's
+  `the_calendars_last_day_reaches_the_planner_section_by_two_names` moves on a line no register row names unless the
+  order is fixed first or the owner rules.  Gaps 4796 and 4797 are host defects in files outside this track's list.
+* **`kernel/mutations.txt`**: `planReqOf`'s body changed (the order), so check 9 owed a row; it is `unfoldable`, as
+  the old one, written by `mutate.py --since 86c4dc6 --write` in a clone (§3.6).
+
+### 8. The archived switch, with this track — gap 4621 no longer reproduces
+
+`refs/archive/w45/r3-switch` (`c1e87c9`) cherry-picked onto part 1 (`f2cb71b`) in a clone (`scratchpad/w46-h/sw`;
+two conflicts, both in append-only files or a fixture: `kernel/citations-allow.txt`, both blocks kept, and the week
+grid's fixture, the archive's taken — so `fork_week_grid` is not part of this evidence), built, and run
+(`sw-run1.log`, `sw-refusals.log`):
+
+* `cli_tz_cache_digest` **8 of 8** — `a_changed_offset_never_reaches_the_days_minutes_whether_or_not_its_digest_matches`,
+  the test the switch was refused on (gap 4621), passes on the switched binary, and so does
+  `tm_check_reads_the_day_with_the_decoder_tm_plan_reads_it_with`: both verbs answer;
+* `cli_resume_replan` **17 of 17** — D106 holds on the switched binary (its planner is the kernel's);
+* `kernel_call_counts` **3 of 3** — the archive's `resume` planner row (1) and this track's `log`/`emit` rows (7/3)
+  merged and hold together; `kernel_tz_table` 5 (2 ignored);
+* `kernel_planner_refusals` 18 of 19 — the one failure is the instrument doing its job:
+  `a_routine_word_the_two_readers_key_apart_is_named_by_tm_check_and_planned_by_tm_plan`, because on the switched
+  binary `tm plan` answers `routineRefused unknownItem stretch ^é1` at exit 1 (gap 4795);
+* `cli_switch_acceptance` 15 of 16 — the one failure is `deleting_the_runtime_state_while_a_break_runs_resumes_the_block`,
+  gap 4740, the second R3 BLOCKER, whose ruling (D105) is track K's.
+
+So of the two R3 BLOCKERS the W-45 repair named, this track's (gap 4621) is cleared on the switched binary; gap 4740
+is K's; and gap 4795 is a naming question this track puts to the owner, not a blocker by its reading (§5).
+*(Superseded at the resumption: gap 4795 is closed by an order, §3.7; gap 4793 is an R3 BLOCKER by name, §3.8.)*
+
+**At the resumption, the same clone (`scratchpad/w46-h/sw`, the archive on part 1, its `planReqOf` in the OLD order)
+with this part's `kernel_planner_refusals.rs`** (`r2/sw-oldorder.log`; porcelain `ec894565cd93` before and after):
+20 passed, **2 failed, each the instrument doing its job** — `a_routine_word_the_two_readers_key_apart_is_p72s_refusal_by_name`
+(the old order names `routineRefused unknownItem stretch ^é1`) and `the_calendars_last_day_reaches_the_planner_section_by_two_names`
+(the switched `tm plan` refuses the calendar's last day, exit 1, where the fork plans it).  Driven on that binary at
+`--now 9999-12-31T12:00:00-06:00`: the plain tree — `tm check` and `tm plan` both `eveningPastTheCalendar` (exit 2,
+1), a line P71 licenses; the evening-routine tree — both **`badRoutine 0 winLo`**, gap 4793's blocker on the switched
+binary itself; gap 4795's tree at 10:00 — both `routineRefused unknownItem stretch ^é1`, the name the order removes.
