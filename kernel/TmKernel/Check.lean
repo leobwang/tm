@@ -8392,3 +8392,10 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanWire.eveningFirst_passes_what_planReqOf_builds
 #print axioms Tm.PlanWire.an_evening_eveningFirst_refuses_is_never_planned
 #print axioms Tm.PlanWire.runPlanner_names_an_evening_past_the_calendar_over_a_section_refusal
+
+/-
+   APPENDED 2026-10-05: stage 6, run W-46, THE AUDIT'S REPAIR — README gap 4905: the narrowed law's old
+   statement (`runPlanner_refuses_a_section_the_decoder_refuses` before the W-46 repair) refuted wherever the
+   order fires, so the narrowing is a pair of theorems and not an FFI test alone (D5).
+-/
+#print axioms Tm.PlanWire.runPlanner_refuses_a_section_the_decoder_refuses_as_written_fails_where_the_order_fires

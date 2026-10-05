@@ -39,7 +39,7 @@
 //!   fixture and compared by value, and one the shipped binary holds.
 //!
 //! The bless and the oracle arm ask fork 4748911 out of the tree; the in-tree fork is asked only in
-//! the one region below, which R3 deletes.
+//! the one region below, which R3 deleted.
 
 #[path = "support/replay.rs"]
 #[allow(dead_code)]

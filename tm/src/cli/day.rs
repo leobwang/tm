@@ -1203,6 +1203,12 @@ pub struct StartOut {
     pub multiplier: f64,
     /// Hours since wake.
     pub hsw: f64,
+    /// **The break this verb ended first** — `tm break`'s own report of its ending, `action`
+    /// `ended` (the owner's **D101**, README gap 4551, parity **P102**: D97's one rule reaching
+    /// the terminal and `--json`, as `tm interrupt` and `tm resume` carry it); absent when no
+    /// break was running.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub break_ended: Option<BreakOut>,
 }
 
 /// `tm start ^id`.
@@ -1305,11 +1311,12 @@ pub fn start(g: &Globals, args: &super::StartArgs) -> Result<i32, CliError> {
         est_min,
         multiplier,
         hsw: f.hsw,
+        break_ended: ended_break,
     };
     emit(
         ctx.json,
         || {
-            format!(
+            said_after_break(out.break_ended.as_ref(), format!(
                 "▶ {} {} · {} · pred {}{}{}",
                 out.id.token(),
                 out.title,
@@ -1317,7 +1324,7 @@ pub fn start(g: &Globals, args: &super::StartArgs) -> Result<i32, CliError> {
                 out.pred,
                 out.rep.map(|r| format!(" rep {r}")).unwrap_or_default(),
                 if paused { " · paused: an interruption is open (`tm resume` starts the timer)" } else { "" }
-            )
+            ))
         },
         &out,
     )?;
@@ -1345,6 +1352,12 @@ pub struct DoneOut {
     /// otherwise: the block ended now.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ended: Option<String>,
+    /// **The break this verb ended first** — `tm break`'s own report of its ending, `action`
+    /// `ended` (the owner's **D101**, README gap 4551, parity **P102**: D97's one rule reaching
+    /// the terminal and `--json`, as `tm interrupt` and `tm resume` carry it); absent when no
+    /// break was running.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub break_ended: Option<BreakOut>,
 }
 
 /// `tm done [--partial] [--at HH:MM] [^id]`.
@@ -1522,11 +1535,12 @@ pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
         state,
         remaining_min,
         ended: stated.map(|e| when(&ctx, e)),
+        break_ended: ended_break,
     };
     emit(
         ctx.json,
         || {
-            format!(
+            said_after_break(out.break_ended.as_ref(), format!(
                 "✓ {} {} · {}m/{}m{}{}",
                 out.id.token(),
                 out.title,
@@ -1536,7 +1550,7 @@ pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
                     .map(|r| format!(" · {r}m left"))
                     .unwrap_or_default(),
                 out.ended.as_ref().map(|e| format!(" · ended {e}")).unwrap_or_default()
-            )
+            ))
         },
         &out,
     )?;
@@ -1642,6 +1656,12 @@ pub struct StopOut {
     /// otherwise: the block ended now.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ended: Option<String>,
+    /// **The break this verb ended first** — `tm break`'s own report of its ending, `action`
+    /// `ended` (the owner's **D101**, README gap 4551, parity **P102**: D97's one rule reaching
+    /// the terminal and `--json`, as `tm interrupt` and `tm resume` carry it); absent when no
+    /// break was running.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub break_ended: Option<BreakOut>,
 }
 
 /// `tm stop [--at HH:MM]`.
@@ -1726,17 +1746,18 @@ pub fn stop(g: &Globals, args: &super::StopArgs) -> Result<i32, CliError> {
         worked_min: worked,
         remaining_min: remaining,
         ended: stated.map(|e| when(&ctx, e)),
+        break_ended: ended_break,
     };
     emit(
         ctx.json,
         || {
-            format!(
+            said_after_break(out.break_ended.as_ref(), format!(
                 "stopped {} after {}m · {}m left{}",
                 out.id.token(),
                 out.worked_min,
                 out.remaining_min,
                 out.ended.as_ref().map(|e| format!(" · ended {e}")).unwrap_or_default()
-            )
+            ))
         },
         &out,
     )?;
@@ -1880,6 +1901,18 @@ fn break_ended_line(actual: u32, planned: u32) -> String {
     format!("break ended · {actual}m of {planned}m")
 }
 
+/// **A verb's human line after the break it ended first** — [`break_ended_line`]'s clause, then
+/// the verb's own words (`break ended · 10m of 20m · stopped ^t3 …`); the line alone when no
+/// break was running. The ONE spelling every verb that ends a break prints (the owner's D90 for
+/// `tm interrupt`, README gap 4501 for `tm resume`, and **D101** for `tm start`, `tm stop` and
+/// `tm done` — README gap 4551, parity **P102**).
+fn said_after_break(ended: Option<&BreakOut>, rest: String) -> String {
+    match ended {
+        Some(b) => format!("{} · {rest}", break_ended_line(b.actual_min.unwrap_or(0), b.planned_min)),
+        None => rest,
+    }
+}
+
 /// `tm interrupt --json` / `tm resume --json`.
 #[derive(Debug, Serialize)]
 pub struct InterruptOut {
@@ -2009,7 +2042,7 @@ pub fn interrupt(g: &Globals) -> Result<i32, CliError> {
     emit(
         ctx.json,
         || match &out.break_ended {
-            Some(b) => format!("{} · interrupted", break_ended_line(b.actual_min.unwrap_or(0), b.planned_min)),
+            Some(_) => said_after_break(out.break_ended.as_ref(), "interrupted".to_string()),
             None => "interrupted".to_string(),
         },
         &out,
@@ -2164,13 +2197,7 @@ pub fn resume(g: &Globals) -> Result<i32, CliError> {
     emit(
         ctx.json,
         || {
-            let said = match &out.break_ended {
-                Some(b) => format!(
-                    "{} · resumed · lost {lost}m",
-                    break_ended_line(b.actual_min.unwrap_or(0), b.planned_min)
-                ),
-                None => format!("resumed · lost {lost}m"),
-            };
+            let said = said_after_break(out.break_ended.as_ref(), format!("resumed · lost {lost}m"));
             match &out.still_paused {
                 Some(id) => format!("{said} · ^{id} still paused — `tm pause` resumes it"),
                 None => said,

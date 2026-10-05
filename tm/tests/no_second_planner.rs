@@ -45,7 +45,7 @@ mod srcwalk;
 
 use std::path::Path;
 
-/// The fork's planner, the file R3 deletes.
+/// The fork's planner, the file R3 deleted.
 const FORK: &str = "tm-core/src/planner.rs";
 
 /// The cuts of §8.2 step 3 a planner assigns work into — fork 4748911's three cutters, which R3
@@ -204,7 +204,7 @@ fn fork_exists() -> bool {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(FORK).exists()
 }
 
-/// **There is one planner, and it is the fork's own file until R3 deletes it** — then none. A file
+/// **There is one planner, and it is the fork's own file until R3 deleted it** — then none. A file
 /// that builds a day and cuts slots (the planner's shape) anywhere else is a second planner.
 #[test]
 fn there_is_one_planner_and_it_is_the_forks_until_r3_deletes_it() {

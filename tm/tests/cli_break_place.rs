@@ -89,8 +89,13 @@ fn the_help_lists_the_tables_words() {
 /// 4145). `tm check` asks the kernel for the day R3's `tm plan` sends
 /// (`kernel_capacity::planner_request`, P78), whose `planner.state.break.place`
 /// is the cache's word: for each of the table's words, with the break running,
-/// the day is planned (`no problems`). And it bites: the same cache hand-edited
-/// to a word outside the table is named `badBreak place` at exit 2.
+/// the day is planned (`no problems`). And it bites: a break the log holds no
+/// `break_start` for (one a binary before the owner's D105 began, which the cache
+/// alone holds), hand-edited to a word outside the table, is named `badBreak place`
+/// at exit 2. **Since the W-46 audit (README gap 4903) a cache hand-edit does not
+/// reach the planner while the log holds the break's `break_start`**: the log
+/// decides the running break both ways (D42, D105), so the same edit over D105's
+/// line plans the log's word, `no problems` — the second arm below.
 #[test]
 fn every_place_of_the_table_is_one_the_planner_reads() {
     let at = "2026-09-08T10:05:00-05:00";
@@ -100,13 +105,24 @@ fn every_place_of_the_table_is_one_the_planner_reads() {
         let out = tm.run_at(at, &["check"]);
         assert_eq!((out.code, out.stdout.trim()), (0, "no problems"), "`{}`: {}{}", place.as_str(), out.stdout, out.stderr);
     }
-    let tm = woken();
-    tm.ok_at(AT, &["break", "20m", "--where", "walk"]);
-    let path = tm.plan.join(".tm/state.json");
-    let mut state: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).expect("state")).expect("JSON");
-    state["break"]["where"] = serde_json::Value::from("hammock");
-    std::fs::write(&path, serde_json::to_string(&state).expect("JSON")).expect("the hand edit");
-    let out = tm.run_at(at, &["check"]);
+    let hand_edited = |keep_the_logged_start: bool| {
+        let tm = woken();
+        tm.ok_at(AT, &["break", "20m", "--where", "walk"]);
+        if !keep_the_logged_start {
+            let log = tm.plan.join(".tm/log.jsonl");
+            let text = std::fs::read_to_string(&log).expect("log");
+            let kept: String = text.lines().filter(|l| !l.contains("\"break_start\"")).map(|l| format!("{l}\n")).collect();
+            std::fs::write(&log, kept).expect("the log a binary before D105 wrote");
+        }
+        let path = tm.plan.join(".tm/state.json");
+        let mut state: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).expect("state")).expect("JSON");
+        state["break"]["where"] = serde_json::Value::from("hammock");
+        std::fs::write(&path, serde_json::to_string(&state).expect("JSON")).expect("the hand edit");
+        tm.run_at(at, &["check"])
+    };
+    let out = hand_edited(false);
     assert_eq!(out.code, 2, "{}{}", out.stdout, out.stderr);
     assert!(out.stdout.contains("error[planner-refusal]: kernel refusal: badBreak place"), "{}", out.stdout);
+    let out = hand_edited(true);
+    assert_eq!((out.code, out.stdout.trim()), (0, "no problems"), "the log's word decides: {}{}", out.stdout, out.stderr);
 }

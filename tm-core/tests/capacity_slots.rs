@@ -81,7 +81,7 @@ fn a_long_wall_extends_the_window_by_its_whole_duration() {
         let (end, _) = window_and_budget(at(7, 0), &[wall], &cfg);
         assert_eq!(hm(end), want, "wall {}-{}", hm(wall.0), hm(wall.1));
         // The §8.1 equation itself: end = 15:00 + Σ walls inside [07:00, end) — the Σ read by
-        // fork 4748911's `wall_minutes`, by value (R3 deletes the in-tree copy).
+        // fork 4748911's `wall_minutes`, by value (R3 deleted the in-tree copy).
         assert_eq!(
             end,
             at(15, 0) + chrono::Duration::minutes(forkcap::wall_minutes(forkcap::store(), &cfg, at(7, 0), end, &[wall])),

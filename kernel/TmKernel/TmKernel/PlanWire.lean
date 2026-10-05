@@ -2871,5 +2871,26 @@ theorem runPlanner_names_an_evening_past_the_calendar_over_a_section_refusal (j 
   rw [eveningFirst_names_only_the_evening parts y hg] at hg
   simp only [runPlanner, hp, hr, hs, hg, Option.getD]
 
+/-- **`runPlanner_refuses_a_section_the_decoder_refuses` as it was written before the W-46 repair is FALSE wherever the
+order fires** (the W-46 audit, README gap 4905; D5): the old statement, with no hypothesis on the evening, concluded that
+a section the reader refuses refuses the call by the READER's name; on a request whose evening `eveningFirst` refuses and
+whose reader refuses by any other name, the call answers by P71's name instead, so the old conclusion fails there.  That
+such a request exists is driven, not decided (`kernel_planner_refusals.rs`' calendar test, through the FFI: a routine
+window past the calendar's last second, `badRoutine 0 winLo`, on 9999-12-31 in Chicago) — a Lean witness would decide a
+whole calendar-end request, which §5.10a rules out.  With `runPlanner_names_an_evening_past_the_calendar_over_a_section_refusal`
+this is the pair the narrowing owes: the new law, the case it leaves out, and the old law's failure on that case. -/
+theorem runPlanner_refuses_a_section_the_decoder_refuses_as_written_fails_where_the_order_fires (j sec r : JVal)
+    (parts : CapParts) (x y : PlannerRefusal)
+    (hp : jget j "planner" = .ok (some sec)) (hr : EmitWire.runRowsP j = .ok (r, some parts))
+    (hs : readPlannerSection parts.cap.look.today0.now sec = .error x) (hg : eveningFirst parts = some y)
+    (hx : x.text ≠ PlannerRefusal.eveningPastTheCalendar.text) :
+    runPlanner j ≠ .error (plannerRefusalJson x) := by
+  rw [runPlanner_names_an_evening_past_the_calendar_over_a_section_refusal j sec r parts x y hp hr hs hg]
+  intro h
+  apply hx
+  simp only [Except.error.injEq, plannerRefusalJson, jone, JVal.obj.injEq, JVal.str.injEq, List.cons.injEq,
+    Prod.mk.injEq, true_and, and_true] at h
+  exact (String.toList_inj.mp h).symm
+
 end PlanWire
 end Tm

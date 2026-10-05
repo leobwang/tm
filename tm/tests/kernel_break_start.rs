@@ -280,6 +280,68 @@ fn the_rebuild_restores_a_logged_break_and_its_pause() {
     assert_eq!(after["active"]["id"], before["active"]["id"]);
 }
 
+/// **The log decides the running break BOTH ways while `.tm/state.json` exists** (the W-46 audit,
+/// README gap 4903). The reconcile read one direction: a cache with no break under a log holding
+/// one. A cache that still held a break the log had ended — a verb cut off between its log append
+/// and its state save, or a hand edit — or one a later `break_start` contradicts, was served while
+/// the file existed, and the day moved the moment it was deleted. Each case below plans, with the
+/// file, the day the rebuild plans without it, and says the log decided. A cached break the log
+/// holds no line for — one a binary before D105 began — is still kept (P73): the third case.
+#[test]
+fn the_log_decides_the_running_break_both_ways_while_the_cache_exists() {
+    let begun = || {
+        let tm = Tm::empty();
+        assert_eq!(tm.run(&["init", "--example"]).code, 0);
+        tm.ok_at("2026-09-07T08:30:00-05:00", &["arrive", "lounge"]);
+        tm.ok_at("2026-09-07T09:30:00-05:00", &["break", "20m"]);
+        tm
+    };
+    let log_of = |tm: &Tm| tm.plan.join(".tm/log.jsonl");
+    let day = |tm: &Tm, at: &str| tm.json_at(at, &["plan"])["segments"].clone();
+    let deleted = |tm: &Tm, at: &str| {
+        let copy = Tm::empty();
+        let status = std::process::Command::new("cp").arg("-a").arg(tm.plan.join(".")).arg(&copy.plan).status().expect("cp");
+        assert!(status.success());
+        fs::remove_file(copy.plan.join(".tm/state.json")).expect("delete the runtime state");
+        day(&copy, at)
+    };
+
+    // 1. The log ended it (the `break` line an ending verb appends), the cache did not hear.
+    let tm = begun();
+    let ended = begun();
+    ended.ok_at("2026-09-07T09:45:00-05:00", &["break"]);
+    let last = fs::read_to_string(log_of(&ended)).expect("log").lines().last().expect("a line").to_string();
+    assert!(last.contains("\"ev\":\"break\""), "{last}");
+    fs::write(log_of(&tm), format!("{}{last}\n", fs::read_to_string(log_of(&tm)).expect("log"))).expect("append");
+    let at = "2026-09-07T09:46:00-05:00";
+    let out = tm.run_at(at, &["now"]);
+    assert!(out.stderr.contains(".tm/log.jsonl ended it — the log decides"), "{}", out.stderr);
+    assert!(!out.stdout.contains("break 20m"), "the ended break is not drawn: {}", out.stdout);
+    assert_eq!(day(&tm, at), deleted(&tm, at), "with the cache, the day the rebuild plans");
+
+    // 2. A later `break_start` the cache never saw.
+    let tm = begun();
+    let text = fs::read_to_string(log_of(&tm)).expect("log");
+    let bs = text.lines().filter(|l| l.contains("\"break_start\"")).last().expect("the break_start").to_string();
+    let later = bs.replace("09:30:00", "10:00:00").replace("\"planned_min\":20", "\"planned_min\":15");
+    assert_ne!(later, bs);
+    fs::write(log_of(&tm), format!("{text}{later}\n")).expect("append");
+    let at = "2026-09-07T10:05:00-05:00";
+    let out = tm.run_at(at, &["now"]);
+    assert!(out.stderr.contains("says one began at 10:00 (15m) — the log decides"), "{}", out.stderr);
+    assert!(out.stdout.contains("break 15m"), "{}", out.stdout);
+    assert_eq!(day(&tm, at), deleted(&tm, at), "with the cache, the day the rebuild plans");
+
+    // 3. No over-bite: a cached break the log holds no line for (a binary before D105) is kept.
+    let tm = begun();
+    let text = fs::read_to_string(log_of(&tm)).expect("log");
+    let kept: String = text.lines().filter(|l| !l.contains("\"break_start\"")).map(|l| format!("{l}\n")).collect();
+    fs::write(log_of(&tm), kept).expect("the log a binary before D105 wrote");
+    let out = tm.run_at("2026-09-07T09:40:00-05:00", &["now"]);
+    assert!(out.stdout.contains("break 20m"), "the cache's break is drawn: {}", out.stdout);
+    assert!(!out.stderr.contains("the log decides"), "{}", out.stderr);
+}
+
 /// **The lines of a Rust file that are not a `#[cfg(test)]` item** — a column-zero
 /// `#[cfg(test)]` gates the item after it (and any attributes between), which runs to the next
 /// column-zero `}` (rustfmt's shape for a top-level item's close), or is that one line when it

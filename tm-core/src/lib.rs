@@ -15,6 +15,7 @@ pub mod capacity;
 pub mod priority;
 pub mod dayplan;
 pub mod planwire;
+pub mod plansection;
 pub mod emit;
 pub mod review;
 pub mod ics;

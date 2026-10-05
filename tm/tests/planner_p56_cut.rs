@@ -202,7 +202,7 @@ proptest::proptest! {
     /// held to P56 by the rule the comparand applies (the part of a replayed pause a wall covers is
     /// not drawn: no `paused` row of the kernel's day overlaps a wall's blocked span). The region's
     /// meeting arm (`planner_invariants`' the_kernel_cuts_a_meeting_out_of_a_pause_as_the_fork_does)
-    /// asserted the kernel PLANS such a day beside its fork comparison, and R3 deletes it; the fork's
+    /// asserted the kernel PLANS such a day beside its fork comparison, and R3 deleted it; the fork's
     /// half meets fresh P56 days only under `TM_ORACLE` after R3 (the arm below), and this keeps the
     /// kernel's half in every `cargo test` run.
     #[test]
@@ -290,7 +290,7 @@ fn shipped_ask<'a>(b: &'a Built, prios: &'a [tm_core::priority::Prio]) -> forkpl
 ///
 /// **Out of the tree and outside the fork region since W-45 track C** (README gap 4680): until then
 /// the bless computed every answer by BOTH backends and `cut` by the in-tree fork's `cut_out`, in the
-/// region R3 deletes, so the file was final at R3 (gap 4463). The two backends' agreement is the
+/// region R3 deleted, so the file was final at R3 (gap 4463). The two backends' agreement is the
 /// region's cross-check, the_oracle_draws_every_seeded_p56_day_as_the_in_tree_fork, while both exist.
 /// **`cut` is never recomputed**: it is the in-tree fork's own drawing, and
 /// `p56_cut_is_the_in_tree_cut_on_every_frozen_p56_day` holds `forkplan::p56_cut` to it — a `cut`

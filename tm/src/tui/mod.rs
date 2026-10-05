@@ -1731,6 +1731,61 @@ mod tests {
         );
     }
 
+    /// **The overtime box asks the kernel for EXACTLY the extension it offers, and the binary's
+    /// request carries the what-if the one builder builds for it** (the W-46 audit, README gap 4890).
+    /// The what-if was one body (`planwire::whatif_json`) called by three compositions, and the
+    /// binary's CALL was compared with nothing: driven by the audit's reuse critic,
+    /// `blocks + 1` at `kernel_capacity::planner_ask_from` passed the whole workspace while the
+    /// shipped box named a drop fork 4748911's did not. Since the audit the section is composed
+    /// once (`plansection::planner_section`), and this holds the two arguments a caller still spells:
+    /// the box's ask is one block on the running item (what `x` — `tm extend`, one block by default
+    /// — does), and the request `planner_ask_from` builds for it carries `whatif_json` of exactly that,
+    /// which differs from two blocks' (or the check would be vacuous).
+    #[test]
+    fn the_overtime_box_asks_for_the_one_block_it_offers_and_the_request_carries_it() {
+        let _env = kernel_env();
+        let (_tmp, g) = fixture();
+        for (when, args) in [
+            ("2026-09-07T06:05:00-05:00", &["wake", "06:05", "--slept", "8h10m"][..]),
+            ("2026-09-07T07:00:00-05:00", &["arrive", "lounge"][..]),
+            ("2026-09-07T09:00:00-05:00", &["start", "^t3", "--energy", "4"][..]),
+        ] {
+            let argv: Vec<String> = args.iter().map(|a| (*a).to_string()).collect();
+            let said = verb(&at_str(&g, when), &argv).expect("a verb of the world");
+            assert!(said.ends_with(": ok"), "`tm {}`: {said}", args.join(" "));
+        }
+        let at = at_str(&g, "2026-09-07T09:59:00-05:00");
+        let mut read = Ctx::load_scoped(&at, true, |state, today| tui_scope(Screen::default(), state, today)).expect("the TUI's read");
+        let mut data = data_of(&read, PauseCut::default());
+        let asked: std::sync::Arc<std::sync::Mutex<Vec<Option<(String, u32)>>>> = std::sync::Arc::default();
+        let seen = asked.clone();
+        let real = std::mem::replace(&mut data.planner, Box::new(|_: &app::Ask<'_>| unreachable!()));
+        data.planner = Box::new(move |ask: &app::Ask<'_>| {
+            seen.lock().expect("the record").push(ask.extend.map(|(id, b)| (id.as_str().to_string(), b)));
+            real(ask)
+        });
+        let mut app = App::new(data).unwrap_or_else(|e| panic!("the load plans: {}", e.message));
+        let ten = DateTime::parse_from_rfc3339("2026-09-07T10:00:00-05:00").expect("now").with_timezone(&app.cfg.tz);
+        advance_clock(&mut app, &mut read, ten).expect("the 10:00 tick");
+        assert!(matches!(app.prompt, Some(app::Prompt::Overtime(_))), "§9.1's box is raised at 10:00");
+        let whatifs: Vec<(String, u32)> = asked.lock().expect("the record").iter().flatten().cloned().collect();
+        assert!(!whatifs.is_empty(), "the box asked a what-if");
+        assert!(whatifs.iter().all(|w| *w == ("t3".to_string(), 1)), "the box asks one block on the running item: {whatifs:?}");
+
+        let ctx = Ctx::load(&Globals { dir: g.dir.clone(), now: Some(ten.fixed_offset()), json: false }, true).expect("the load");
+        let t3 = tm_core::model::Id::new("t3");
+        let inputs = crate::cli::kernel_capacity::tick_inputs(&ctx).expect("the inputs");
+        let ask = crate::cli::kernel_capacity::planner_ask_from(&ctx, &inputs, false, Some((&t3, 1))).expect("the request");
+        let sent: serde_json::Value = serde_json::from_str(&ask.request).expect("the request is JSON");
+        let one = tm_core::planwire::whatif_json(&ask.cands, &t3, 1, &ctx.cfg);
+        let two = tm_core::planwire::whatif_json(&ask.cands, &t3, 2, &ctx.cfg);
+        assert_ne!(one, two, "one block and two are different what-ifs, or this proves nothing");
+        assert_eq!(sent["planner"]["overtime"], one, "the binary's request carries the one block's what-if");
+        let none = crate::cli::kernel_capacity::planner_ask_from(&ctx, &inputs, false, None).expect("the request");
+        let plain: serde_json::Value = serde_json::from_str(&none.request).expect("JSON");
+        assert!(plain["planner"].get("overtime").is_none(), "no what-if is sent where none is asked");
+    }
+
     /// **The TUI's world at 09:05 with `^t3` running since 09:00** (wake, arrive, start), and the
     /// App's data read from it — for the planner's refusal and fault paths below.
     fn running_data() -> (tempfile::TempDir, Globals, Ctx, AppData) {

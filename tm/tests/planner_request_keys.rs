@@ -131,31 +131,6 @@ const NAMED: &[Named] = &[
         gap: 3900,
         why: "the region's index, beside `grain` (the same gap)",
     },
-    Named {
-        path: "capacity.pLounge.model.",
-        side: Side::Binary,
-        gap: 3901,
-        why: "the learned model's lounge weights: `planreq` plans with `Model::default()`, whose \
-              tables are empty",
-    },
-    Named {
-        path: "capacity.arrival.model.",
-        side: Side::Binary,
-        gap: 3901,
-        why: "the learned model's expected arrivals (the same gap)",
-    },
-    Named {
-        path: "capacity.energy.",
-        side: Side::Binary,
-        gap: 3901,
-        why: "the learned energy curves (the same gap)",
-    },
-    Named {
-        path: "capacity.sleep.shiftModel.",
-        side: Side::Binary,
-        gap: 3901,
-        why: "the model's fitted sleep-debt shift (the same gap)",
-    },
 ];
 
 /// **R3's own additions to the `planner` section**, applied to the binary's side
@@ -365,6 +340,9 @@ struct Read {
     docs: Vec<(String, String)>,
     log: String,
     now: DateTime<Tz>,
+    /// `.tm/model.json`, as the binary reads it (`Model::default()` where there is none;
+    /// README gap 3901, closed at the W-46 audit).
+    model: Model,
 }
 
 fn read(w: &World) -> Read {
@@ -385,14 +363,18 @@ fn read_dir(w: &World, dir: &Path) -> Read {
     let state = store.load_state().expect("state.json parses");
     let docs = planreq::docs_of_dir(dir);
     let now = DateTime::parse_from_rfc3339(w.now).expect("an instant").with_timezone(&plan.config.tz);
-    Read { tree, cfg: plan.config, replay, state, docs, log, now }
+    let model: Model = std::fs::read_to_string(dir.join(".tm/model.json"))
+        .ok()
+        .map(|t| serde_json::from_str(&t).expect("the model parses"))
+        .unwrap_or_default();
+    Read { tree, cfg: plan.config, replay, state, docs, log, now, model }
 }
 
 /// **The harness's request** on the world: `planreq::request`, the builder every
 /// planning suite calls, over the candidates `planner_common::Fixture` collects.
 fn harness_request(r: &Read) -> Value {
     let date = planwire::plan_date(&r.state, r.now);
-    let cands = priority::collect_candidates(&r.tree, &r.replay, &r.cfg, &Model::default(), date, r.now);
+    let cands = priority::collect_candidates(&r.tree, &r.replay, &r.cfg, &r.model, date, r.now);
     let w = planreq::World {
         docs: &r.docs,
         log: &r.log,
@@ -403,7 +385,7 @@ fn harness_request(r: &Read) -> Value {
         cands: &cands,
         replay: &r.replay,
     };
-    planreq::request(&w, None).0
+    planreq::request_model(&w, &r.model, None).0
 }
 
 /// **The `planner` section the swap will send** beside the binary's capacity
@@ -413,7 +395,7 @@ fn harness_request(r: &Read) -> Value {
 fn swap_planner(r: &Read) -> Value {
     let today = r.now.date_naive();
     let tz = r.cfg.tz;
-    let cands = priority::collect_candidates(&r.tree, &r.replay, &r.cfg, &Model::default(), today, r.now);
+    let cands = priority::collect_candidates(&r.tree, &r.replay, &r.cfg, &r.model, today, r.now);
     let date = planwire::plan_date(&r.state, r.now);
     let routines = planwire::routine_instances(&cands, &r.tree, r.now, date, tz);
     let mut planner = planwire::planner_json(&r.state, &r.replay, r.now, tz, &routines, None);
@@ -554,13 +536,12 @@ struct NamedValue {
 
 /// **Every value difference allowed** — the list only shrinks, and an entry no world shows
 /// fails as STALE ([`NAMED`]'s shape).
-const NAMED_VALUES: &[NamedValue] = &[NamedValue {
-    world: "plan-basic with a learned model",
-    path: "capacity.candidates.items[].plan.",
-    gap: 3901,
-    why: "the binary sizes each candidate's blocks with the learned multipliers of its \
-          `.tm/model.json`; `planreq` collects its candidates with `Model::default()`",
-}];
+// Gap 3901's one entry (the learned model's candidate sizing) is gone since the W-46 audit:
+// the harness reads the world's `.tm/model.json` as the binary does (`Read::model`,
+// `planreq::request_with_model`). Driven by the audit's reuse critic, `+10` on every
+// candidate with a learned multiplier in `planner_ask_from` passed the whole workspace
+// while this entry excused exactly that path.
+const NAMED_VALUES: &[NamedValue] = &[];
 
 /// A path with its array indices erased.
 fn erased(path: &str) -> String {
@@ -585,12 +566,8 @@ fn erased(path: &str) -> String {
 
 /// **The worlds on which the kernel's DAY from the two requests may differ**, each with
 /// the gap that answers it. Only shrinks; STALE fails.
-const NAMED_DAYS: &[(&str, u32, &str)] = &[(
-    "plan-basic with a learned model",
-    3901,
-    "the binary's request carries the learned model's curves, weights and multipliers \
-     (NAMED, NAMED_VALUES); the harness's plans with the defaults, so their days differ",
-)];
+// Gap 3901's day is planned alike from both requests since the W-46 audit.
+const NAMED_DAYS: &[(&str, u32, &str)] = &[];
 
 /// **Gap 4741 (the W-45 repair): the binary's planner request and the harness's agree IN
 /// VALUE, and the kernel plans the same day from both.**
@@ -851,7 +828,7 @@ fn a_running_block_started_after_now_is_planned_from_now_as_the_fork_plans_it() 
     let raw = tm_kernel_ffi::call(&req).expect("the kernel call returns");
     let resp: Value = serde_json::from_str(&raw).expect("the response is JSON");
     assert!(planwire::planner_refusal(&resp).is_none(), "planned from now (D78): {}", &raw[..raw.len().min(300)]);
-    let cands = priority::collect_candidates(&r.tree, &r.replay, &r.cfg, &Model::default(), r.now.date_naive(), r.now);
+    let cands = priority::collect_candidates(&r.tree, &r.replay, &r.cfg, &r.model, r.now.date_naive(), r.now);
     let order = planwire::send_order(&cands);
     let ans = planwire::read_capacity_answer(&resp, &order, true).expect("the grants read back");
     let ctx = planwire::DayCtx { tz, cands: &cands, prios: &ans.prios };
@@ -896,7 +873,7 @@ fn a_block_begun_before_midnight_is_planned_from_the_logs_start_after_it() {
     let resp: Value = serde_json::from_str(&raw).expect("the response is JSON");
     assert!(planwire::planner_refusal(&resp).is_none(), "planned: {}", &raw[..raw.len().min(300)]);
     assert_eq!(resp["ok"]["plan"]["day"].as_str(), Some("2026-09-08"), "the day after");
-    let cands = priority::collect_candidates(&r.tree, &r.replay, &r.cfg, &Model::default(), r.now.date_naive(), r.now);
+    let cands = priority::collect_candidates(&r.tree, &r.replay, &r.cfg, &r.model, r.now.date_naive(), r.now);
     let order = planwire::send_order(&cands);
     let ans = planwire::read_capacity_answer(&resp, &order, true).expect("the grants read back");
     let ctx = planwire::DayCtx { tz, cands: &cands, prios: &ans.prios };

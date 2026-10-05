@@ -30,7 +30,7 @@
 //!   decides `PlanCheck.candsAgree` at, so an edit to one table and not the
 //!   other fails a committed check.
 //!
-//! The fork comparison is one `BEGIN THE FORK PLANNER` region, which R3 deletes.
+//! The fork comparison is one `BEGIN THE FORK PLANNER` region, which R3 deleted.
 
 mod cli_common;
 mod planner_common;

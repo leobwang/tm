@@ -2,13 +2,13 @@
 //! D9 step B4; design `kernel/design/stage5/stage5-D9-D10-design.md` §6.1, §10.1).
 //!
 //! The kernel carries no time-zone database. It attributes instants to local
-//! days through a [`ZoneTable`]: the offset in force at 1900-01-01T00:00:00Z
+//! days through a [`ZoneTable`]: the offset in force at 1800-01-01T00:00:00Z
 //! (`base`) and every change after it up to 2200-01-01T00:00:00Z, each at its
 //! UTC second (`Cal.lean`'s `TzTable`, `offsetAt`, `localDate`). chrono-tz 0.10.4
 //! does not export its spans, so the table is **probed**:
 //!
 //! * sample `tz.offset_from_utc_datetime(t).fix().local_minus_utc()` at every
-//!   UTC hour of `[1900, 2200)` — 2,629,752 samples;
+//!   UTC hour of `[1800, 2200)` — 3,506,328 samples;
 //! * where a sample differs from the offset in force, bisect the hour to the
 //!   second (at most 12 probes), record the change, and look again inside the
 //!   same hour from there, so two changes in one hour (A → B → C) are both kept.
@@ -24,8 +24,8 @@
 //! [`ZoneTable::to_wire`]:
 //!
 //! ```text
-//! {"key": "America/Chicago|2025b|1900-2200", "base": "-06:00:00",
-//!  "then": [["1918-03-31T08:00:00Z", "-05:00:00"], …]}
+//! {"key": "America/Chicago|2025b|1800-2200", "base": "-05:50:36",
+//!  "then": [["1883-11-18T18:00:00Z", "-06:00:00"], …]}
 //! ```
 //!
 //! Offsets are `±HH:MM:SS` with `+` at zero, instants `YYYY-MM-DDTHH:MM:SSZ`;
@@ -51,7 +51,7 @@
 //! only the day it plans: the kernel attributes every log line to a local day
 //! through it (genesis replays the whole log, a hand-edited line can carry any
 //! instant), so the history, the planned day and the lookahead are all of
-//! `[1900, 2200]`. It is cheaper than the probe it saves because a table that
+//! `[1800, 2200]`. It is cheaper than the probe it saves because a table that
 //! agrees with chrono-tz at each of its own transitions and on a one-day grid
 //! agrees everywhere, given that every span of every zone outlasts the grid's step
 //! ([`CHECK_STEP`]; measured, and held by `cli_tz_cache_digest`'s sweep of every
@@ -63,12 +63,21 @@ use chrono::{DateTime, Offset, TimeZone};
 use chrono_tz::Tz;
 use serde_json::{json, Value};
 
-/// 1900-01-01T00:00:00Z as a Unix second: the table's first instant.
-pub const SPAN_FROM: i64 = -2_208_988_800;
+/// 1800-01-01T00:00:00Z as a Unix second: the table's first instant.
+///
+/// **Before every zone's first change** (the W-46 audit, README gap 4902): tzdb's earliest
+/// transition is Asia/Manila's date-line change of 1844, so `base` is each zone's local mean time
+/// and the table reads chrono-tz's offset at EVERY second before [`SPAN_TO`], the kernel's whole
+/// calendar from 0001-01-01 included. Until the audit the span began in 1900, where America/Chicago
+/// had kept CST since 1883: the table read every earlier second at `-06:00:00` while chrono-tz reads
+/// local mean time (`-05:50:36`) before 1883-11-18, so after R3 a `--now` before then planned a
+/// day the host decoded in another offset, and `tm plan`, `tm now`, `tm check` and `tm review day`
+/// faulted (`plan.hash`), where the fork's planner, which never read the table, planned it.
+pub const SPAN_FROM: i64 = -5_364_662_400;
 /// 2200-01-01T00:00:00Z as a Unix second: the end of the probed span.
 pub const SPAN_TO: i64 = 7_258_118_400;
 /// The span as the key spells it.
-pub const SPAN: &str = "1900-2200";
+pub const SPAN: &str = "1800-2200";
 /// The sampling step: one UTC hour.
 pub const STEP: i64 = 3600;
 /// The cache file's name inside the replay cache directory (D13).
@@ -89,9 +98,9 @@ pub const CHECK_STEP: i64 = 86_400;
 /// (chrono's `local_minus_utc`); instants are Unix seconds.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ZoneTable {
-    /// `<zone>|<tzdb version>|1900-2200`.
+    /// `<zone>|<tzdb version>|1800-2200`.
     pub key: String,
-    /// Seconds east of UTC in force at 1900-01-01T00:00:00Z.
+    /// Seconds east of UTC in force at 1800-01-01T00:00:00Z.
     pub base: i32,
     /// `(Unix second, seconds east)`: the offset in force from that second on.
     pub transitions: Vec<(i64, i32)>,
@@ -101,7 +110,7 @@ pub struct ZoneTable {
 fn offset_at(tz: Tz, unix: i64) -> i32 {
     match DateTime::from_timestamp(unix, 0) {
         Some(dt) => tz.offset_from_utc_datetime(&dt.naive_utc()).fix().local_minus_utc(),
-        // Every probed second lies in [1900, 2200], well inside chrono's range.
+        // Every probed second lies in [1800, 2200], well inside chrono's range.
         None => unreachable!("a probed second is outside chrono's range"),
     }
 }
@@ -111,7 +120,7 @@ pub fn key_of(tz: Tz) -> String {
     format!("{}|{}|{}", tz.name(), chrono_tz::IANA_TZDB_VERSION, SPAN)
 }
 
-/// **Probe `tz`** over `[1900, 2200)`, hourly, each change bisected to the second.
+/// **Probe `tz`** over `[1800, 2200)`, hourly, each change bisected to the second.
 pub fn probe(tz: Tz) -> ZoneTable {
     let base = offset_at(tz, SPAN_FROM);
     let mut transitions = Vec::new();
@@ -206,7 +215,7 @@ fn instant_of(s: &str) -> Option<i64> {
     Some(chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%SZ").ok()?.and_utc().timestamp())
 }
 
-/// **Whether `table` reads, at every second of `[1900, 2200]`, the offset the binary's own zone
+/// **Whether `table` reads, at every second of `[1800, 2200]`, the offset the binary's own zone
 /// database reads for `tz`** — the owner's D104's check, which a served table must pass. The kernel
 /// reads the table at every instant a log line carries (its whole history at a genesis, and a
 /// hand-edited line can carry any instant), at the day it plans, at every day of the lookahead and

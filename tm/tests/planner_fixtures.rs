@@ -16,7 +16,7 @@
 //!
 //! **The fork's arm** — its four tests and their timeline and diagnostics
 //! snapshots — plans with `planner::plan` and its own §7 pass. It is one region,
-//! `BEGIN THE FORK PLANNER` … `END THE FORK PLANNER`, and R3 deletes it whole;
+//! `BEGIN THE FORK PLANNER` … `END THE FORK PLANNER`, and R3 deleted it whole;
 //! [`the_fork_half_of_this_suite_is_one_region`] holds this file and
 //! `planner_common` to that. **The re-bless of the frozen days is not in it**
 //! since W-45 track C (README gap 4680): it asks fork 4748911 out of the tree
@@ -398,7 +398,7 @@ fn a_fixture_configuration_the_oracle_would_not_read_is_refused() {
 
 /// **R3's deletion is mechanical here**: every line of this file and of
 /// `planner_common` that reaches the fork's planner sits inside its one
-/// `BEGIN THE FORK PLANNER` … `END THE FORK PLANNER` region, so R3 deletes
+/// `BEGIN THE FORK PLANNER` … `END THE FORK PLANNER` region, so R3 deleted
 /// the two regions and the arm above still builds. With the regions gone, no
 /// reference may remain — this test is then the assertion that the comparand
 /// really moved.

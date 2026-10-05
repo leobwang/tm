@@ -208,7 +208,7 @@ fn p81_rule_unmet(line: &Value) -> Result<Option<bool>, String> {
 
 /// **The kernel plans `plan-basic` at every ten minutes as the shipped fork planned it**
 /// (W-38, README gaps 3200 and 3282) — `planner_w37_rows.rs`' arm, which compared the kernel
-/// with the LIVE fork in a region R3 deletes, against the fork's days frozen by value
+/// with the LIVE fork in a region R3 deleted, against the fork's days frozen by value
 /// (`forkday::FROZEN_BASIC`): §4.3's own tree with its eight weeks of history, both of the
 /// fixture suite's states, every ten minutes to 20:50 — the date, the window, the budget, all
 /// twelve diagnostic fields, the priorities and every row in order, by value, and the hash.
@@ -781,7 +781,7 @@ const OUTSIDE_A_REGION: [(&str, &str); 0] = [];
 /// **Every test that reaches the fork's planner keeps it in ONE region** —
 /// the property `planner_fixtures.rs` holds of two files, held of EVERY `.rs`
 /// file under a `tests/` directory of the repository (`srcwalk`'s walk, its
-/// prune rule): R3 deletes the regions, and nothing else of the fork's may be
+/// prune rule): R3 deleted the regions, and nothing else of the fork's may be
 /// left to find by reading (README gap 2872). A file with no region may name
 /// the fork nowhere in code, which after R3 is the assertion that every
 /// comparand moved.
@@ -839,7 +839,7 @@ fn every_test_that_reaches_the_fork_keeps_it_in_one_region() {
     }
     println!("files with one fork region: {} ({})", regions.len(), regions.join(", "));
     assert!(bad.is_empty(), "{}", bad.join("\n"));
-    // Once R3 deletes `planner.rs`, a region left behind is dead code and none may remain.
+    // Once R3 deleted `planner.rs`, a region left behind is dead code and none may remain.
     //
     // **The scan reads its banners on both sides of R3 without a count** (W-45 track C, README gap
     // 4682). Until W-45 a floor demanded seven regions while `planner.rs` exists, so "a guard that
@@ -857,7 +857,7 @@ fn every_test_that_reaches_the_fork_keeps_it_in_one_region() {
 
 /// **The region guard sees code outside that NEEDS the region** (W-38, README gap 3472;
 /// AGENTS §5.8): a top-level `fn`, `static` or type the region declares, named by a code line
-/// outside it, is an escape — R3 deletes the declaration, so the line would not build — while
+/// outside it, is an escape — R3 deleted the declaration, so the line would not build — while
 /// the same name in a comment, in a string, as part of a longer name, or as a method or local
 /// declared indented inside the region, is not. The banners are spelled in pieces so this file
 /// holds no region of its own here.
@@ -2515,7 +2515,7 @@ fn the_frozen_plan_basic_days_are_blessed() {
 /// **It asks fork 4748911 OUT of the tree and sits outside the fork region** (W-45 track C, README
 /// gap 4680): every answer is `forkplan::comparand_answers` over `tm-oracle plan` (the classes'
 /// re-bless's shape since W-43, README gap 4462) and the shipped fork's day the oracle's, so the
-/// batch stays re-blessable under D64 after R3 deletes the in-tree fork.
+/// batch stays re-blessable under D64 after R3 deleted the in-tree fork.
 #[test]
 #[ignore]
 fn the_frozen_batch_is_blessed() {
@@ -2993,7 +2993,7 @@ fn overrun_witnesses(fp: &dyn forkplan::ForkPlan) -> (usize, Vec<String>) {
 
 /// **P45's reset clause has a witness, out of the tree** — [`overrun_witnesses`] over `tm-oracle
 /// plan`, fork 4748911 (W-45 track C, README gap 4682): the region's
-/// the_overrun_lines_witness_p45s_reset asks the in-tree fork, which R3 deletes; this asks the
+/// the_overrun_lines_witness_p45s_reset asks the in-tree fork, which R3 deleted; this asks the
 /// fork that outlives it. Inert without `TM_ORACLE`.
 #[test]
 #[ignore]

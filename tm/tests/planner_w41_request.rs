@@ -1,4 +1,4 @@
-//! **The request R3 will send: four readings, pinned by value** — stage 6 W-41,
+//! **The request R3 sends: four readings, pinned by value** — stage 6 W-41,
 //! track E (README gaps 4040-4050; parity P76 and P77).
 //!
 //! * **P76** — the campaign's D81 call on README gap 3861. Before a tree's first

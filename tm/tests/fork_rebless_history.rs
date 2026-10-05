@@ -20,7 +20,7 @@
 //!   4285. A pin of the binary's OWN bytes (`tm log`'s, `TM_LOG_BLESS`) names no fork and is a
 //!   snapshot, which is never re-blessed: not a bless here.
 //! * **and since W-45 track C (README gap 4680) the rule that keeps every comparand re-blessable
-//!   after R3, as a CLASS too**: no bless sits inside a `BEGIN THE FORK PLANNER` region (R3 deletes
+//!   after R3, as a CLASS too**: no bless sits inside a `BEGIN THE FORK PLANNER` region (R3 deleted
 //!   the region, and a bless there makes its file final — README gap 4463 found six), every frozen
 //!   comparand file `frozenhist::frozen_files` finds is named by a bless outside every region, and
 //!   every test file that reads a committed snapshot as a frozen answer holds such a bless. Until
@@ -186,7 +186,7 @@ fn every_frozen_comparand_reads_its_committed_history() {
 
 /// **Every committed frozen line kept its world and the shipped fork's answer, in a PLAIN run**
 /// (the W-42 repair, README gap 4341; W-42's reuse critic). Every bless holds its lines against
-/// the committed history (`frozenhist::held`) — but only INSIDE a bless, and R3 deletes eight of
+/// the committed history (`frozenhist::held`) — but only INSIDE a bless, and R3 deleted eight of
 /// the eleven blesses with the fork regions they live in (planner-classes, -batch, -driven,
 /// -basic-days, the classes' re-draw, -days, -conference, -p56). After it a frozen line can change
 /// only by hand, and nothing in `cargo test` compared a committed line with its history: this test
@@ -482,7 +482,7 @@ fn is_d21(body: &str) -> bool {
 ///
 /// 1. every bless-shaped `#[test]` in `tm/tests` calls the history reader (`frozenhist::held`, or
 ///    `frozenhist::held_text` for a whole file), but the D21 family named by its property;
-/// 2. **no bless sits inside a `BEGIN THE FORK PLANNER` region** — R3 deletes the region, so a bless
+/// 2. **no bless sits inside a `BEGIN THE FORK PLANNER` region** — R3 deleted the region, so a bless
 ///    there makes its file final (README gap 4463's six, and the class worlds' re-draw);
 /// 3. **every frozen comparand file** (`frozenhist::frozen_files`, a property of the fixtures
 ///    directory) **is named by a bless outside every region** — by its name, or by a `const` whose
@@ -503,7 +503,7 @@ fn every_bless_holds_its_lines_against_the_committed_history() {
         let (outside, region) = split_at_region(text);
         for (name, body) in test_fns(&region) {
             if is_bless(&body) {
-                bad.push(format!("{label}::{name} sits inside the fork region: R3 deletes it, and its file is final after R3 (README gap 4680)"));
+                bad.push(format!("{label}::{name} sits inside a fork region: R3 deleted the regions, and its file is final after R3 (README gap 4680)"));
             }
         }
         for (name, body) in test_fns(&outside) {

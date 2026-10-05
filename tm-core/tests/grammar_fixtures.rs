@@ -222,7 +222,7 @@ fn calendar_file_snapshot() {
     let (_, f) = load("calendar/2026-W37.md");
     let items: Vec<&Item> = f.items().collect();
     assert_eq!(items.len(), 4);
-    // fork `Item::is_travel_day`'s reading of the flag (R3 deletes that method, README gap 4752)
+    // fork `Item::is_travel_day`'s reading of the flag (R3 deleted that method, README gap 4752)
     assert!(items[2].has_flag("travel-day"));
     assert_eq!(items[2].buffer.unwrap().minutes, 120);
     assert!(items[3].is_manual());

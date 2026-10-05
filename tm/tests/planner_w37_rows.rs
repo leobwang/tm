@@ -34,7 +34,7 @@
 //!   (with drawn multipliers) and the frozen running-state classes.
 //! * Any tree but `plan-basic`: the scheduled window task is `^a3` and `^a3`
 //!   only, `p = 0` because it is due today.
-//! * After R3: the fork's arm is one region, and R3 deletes it; what outlives
+//! * After R3: the fork's arm is one region, and R3 deleted it; what outlives
 //!   it is the frozen comparand, which holds `^a3`'s mark on the four fixture
 //!   days (`planner_fixtures.rs`) and on no generated class (README gap 3200).
 //!

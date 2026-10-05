@@ -12,7 +12,7 @@
 //!
 //! * (a) 10,000 seeded instants over [1970, 2100) in each of five zones;
 //! * (b) every transition of those zones at −1 s, 0 and +1 s;
-//! * (c) `#[ignore]`: the five zones at every minute of [1900, 2200);
+//! * (c) `#[ignore]`: the five zones at every minute of [1900, 2200) (the span is [1800, 2200) since the W-46 audit; this sweep's range is B4's, recorded);
 //! * (d) `#[ignore]`: every chrono-tz zone, its transitions in [1970, 2100) at
 //!   ±1 s, the kernel accepting its table, and B1's scan assumption (below).
 //!
@@ -124,14 +124,17 @@ fn the_table_is_chronos_offset_at_every_transition() {
     assert!(n > 1000, "{n} transitions");
 }
 
-/// The wire spelling (design §10.1): Chicago's base is −06:00:00 (it left LMT in
-/// 1883), its first transition is 1918's, offsets are `±HH:MM:SS` with `+` at
+/// The wire spelling (design §10.1): Chicago's base is its local mean time,
+/// −05:50:36, which it left at 12:09:24 local on 1883-11-18 for −06:00:00 (the span
+/// begins in 1800 since the W-46 audit, README gap 4902: before every zone's first
+/// change); its next transition is 1918's; offsets are `±HH:MM:SS` with `+` at
 /// zero, instants `…Z`.
 #[test]
 fn the_wire_table_is_spelled_as_the_kernel_reads_it() {
     let w = tz_table::probe(chrono_tz::America::Chicago).to_wire();
-    assert_eq!(w["base"], "-06:00:00");
-    assert_eq!(w["then"][0], json!(["1918-03-31T08:00:00Z", "-05:00:00"]));
+    assert_eq!(w["base"], "-05:50:36");
+    assert_eq!(w["then"][0], json!(["1883-11-18T18:00:00Z", "-06:00:00"]));
+    assert_eq!(w["then"][1], json!(["1918-03-31T08:00:00Z", "-05:00:00"]));
     assert_eq!(tz_table::fmt_offset(0), "+00:00:00");
     assert_eq!(tz_table::fmt_offset(-2670), "-00:44:30");
     assert_eq!(tz_table::fmt_offset(45_900), "+12:45:00");

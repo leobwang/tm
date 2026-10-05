@@ -320,7 +320,7 @@ fn posterior_corrects_and_decays() {
     assert_eq!(p.correct(at(12, 0), 4), 4);
     assert_eq!(p.correct(at(10, 0), 5), 3); // between the two, the 09:00 one applies
 
-    // No reports: the posterior corrects nothing.  (`Posterior::none`, which R3 deletes — README
+    // No reports: the posterior corrects nothing.  (`Posterior::none`, which R3 deleted — README
     // gap 4752 — was exactly this value.)
     assert!(Posterior::from_reports(&[], &cfg).is_empty());
     assert_eq!(Posterior::from_reports(&[], &cfg).correct(at(10, 0), 3), 3);

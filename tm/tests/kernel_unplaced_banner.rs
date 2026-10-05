@@ -111,7 +111,7 @@ fn a_budget_the_walk_spends_is_named() {
 /// `unplaced` key on a day that names an item — the name is the one thing that
 /// differs from the fork's day, and it reaches the banner. (The fork's half —
 /// the kernel's day serialises the fork's diagnostics keys, key for key — is in
-/// this file's fork region, which R3 deletes.)
+/// this file's fork region, which R3 deleted.)
 #[test]
 fn the_json_keeps_the_forks_diagnostics_shape() {
     let fx = world();

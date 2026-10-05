@@ -186,7 +186,8 @@ pub const HOST_ONLY_STATE: &[(&str, &str)] = &[
     ("`active.est_min`",
      "recomputed by `Ctx::planned_block` from the item's line — no `start` event \
       carries an estimate — so a `tm extend` that ran before the file was \
-      deleted is not in it"),
+      deleted is in it as the line's new estimate times the learned multiplier, \
+      which can differ from the cached minutes by the rounding (README gap 4876)"),
     ("`priorities_yesterday`",
      "§7.4's hysteresis map, and no event carries a `p`"),
     ("`closed`",
@@ -1160,18 +1161,60 @@ impl Ctx {
             if here != logged {
                 self.state.interrupt = derived.interrupt.clone();
             }
-            if let (None, Some(b)) = (self.state.break_.as_ref(), derived.break_.clone()) {
-                if loud {
-                    eprintln!(
-                        "tm: .tm/state.json said no break is running and .tm/log.jsonl says one began at {} — \
-                         the log decides (§10.2 is a cache of it, D42, D105)",
-                        b.started.map(|t| t.format("%H:%M").to_string()).unwrap_or_default()
-                    );
+            // **The running break, both ways** (the W-46 audit, README gap 4903): the log decides it
+            // as it decides the block and the interruption above. Until the audit this read one
+            // direction only — a cache with no break under a log that holds one — so a cache that
+            // still held a break the log had ENDED (a crash between a verb's log append and its
+            // state save, or a hand edit), or one the log's `break_start` contradicts, was served
+            // while the file existed and changed the day the moment it was deleted (D42). A cached
+            // break the log holds NO line for is still kept: a binary before D105 began it, and the
+            // cache is all there is (P73).
+            let hhmm = |b: &BreakState| b.started.map(|t| t.format("%H:%M").to_string()).unwrap_or_default();
+            match (self.state.break_.clone(), derived.break_.clone()) {
+                (None, Some(b)) => {
+                    if loud {
+                        eprintln!(
+                            "tm: .tm/state.json said no break is running and .tm/log.jsonl says one began at {} — \
+                             the log decides (§10.2 is a cache of it, D42, D105)",
+                            hhmm(&b)
+                        );
+                    }
+                    self.state.break_ = Some(b);
+                    if let Some(a) = self.state.active.as_mut() {
+                        a.paused = true;
+                    }
                 }
-                self.state.break_ = Some(b);
-                if let Some(a) = self.state.active.as_mut() {
-                    a.paused = true;
+                (Some(here), Some(b)) if here != b => {
+                    if loud {
+                        eprintln!(
+                            "tm: .tm/state.json said a break began at {} ({}m) and .tm/log.jsonl says one began at {} \
+                             ({}m) — the log decides (§10.2 is a cache of it, D42, D105)",
+                            hhmm(&here),
+                            here.planned_min,
+                            hhmm(&b),
+                            b.planned_min
+                        );
+                    }
+                    self.state.break_ = Some(b);
                 }
+                (Some(here), None) if self.log_ended() => {
+                    if loud {
+                        eprintln!(
+                            "tm: .tm/state.json said a break began at {} is running and .tm/log.jsonl ended it — \
+                             the log decides (§10.2 is a cache of it, D42, D105)",
+                            hhmm(&here)
+                        );
+                    }
+                    self.state.break_ = None;
+                    // The block's pause is then the log's alone, as a rebuild with no break derives it.
+                    let fresh = derived_state(&self.replay, self.cfg.tz, self.today, false);
+                    if let (Some(a), Some(f)) = (self.state.active.as_mut(), fresh.active.as_ref()) {
+                        if a.id == f.id {
+                            a.paused = f.paused;
+                        }
+                    }
+                }
+                _ => {}
             }
             return;
         }
@@ -1239,6 +1282,22 @@ impl Ctx {
                 eprintln!("tm: {line}");
             }
         }
+    }
+
+    /// **Whether the log ENDED the running break `.tm/state.json` holds** (the W-46 audit, README gap
+    /// 4903): a `break` line the replay closed, begun at the instant the cache's clock places the
+    /// break at ([`Ctx::running_break`]), to the minute — the `break` line that ends a break is
+    /// stamped at its start (D105, P100). A break a binary before D105 began has no such line while
+    /// it runs, so it is not ended here.
+    fn log_ended(&self) -> bool {
+        // The one reading of a running break's start ([`Ctx::running_break`]): the caller's branch
+        // has no open break in the log, so it is the cache's clock.
+        let Some(start) = self.running_break() else {
+            return false;
+        };
+        let minute = |t: DateTime<FixedOffset>| t.timestamp().div_euclid(60);
+        let at = minute(start.fixed_offset());
+        self.replay.days.values().flat_map(|d| d.breaks.iter()).any(|b| minute(b.t) == at)
     }
 
     /// **What the rebuild could not put back — computed, not listed** (README
@@ -1351,8 +1410,10 @@ impl Ctx {
     /// stop having an instance of. It is also the one number in `active` that
     /// the log cannot return: `Event::Start` carries no estimate
     /// ([`HOST_ONLY_STATE`]), so after a rebuild this is the estimate the item
-    /// carries **now**, and a `tm extend` that ran before the file was deleted
-    /// is not in it.
+    /// carries **now**: a `tm extend` that ran before the file was deleted is in
+    /// it through the line the extend rewrote, multiplied — `round((r + by)·m)`
+    /// where the cache held `round(r·m) + by` (README gap 4876, open: the two
+    /// differ by the rounding under a learned multiplier).
     /// Returns the minutes **and** the multiplier they were computed with,
     /// because `tm start --json` prints the multiplier beside them
     /// (`StartOut::multiplier`) and reading it off a second call would be the

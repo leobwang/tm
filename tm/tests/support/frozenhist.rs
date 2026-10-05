@@ -227,7 +227,7 @@ pub fn held_text_since(path: &Path, base: &str) -> Result<Option<(String, String
 /// **Every committed version of the file since the base, oldest first, then the working copy**
 /// (the W-42 repair, README gap 4341): `(sha, {key: line})` per first-parent commit — the walk
 /// [`held_since`] reads — and `("WORKTREE", …)` last, read off the disk. What a PLAIN run holds the
-/// history to, with no fork planner: R3 deletes eight of the eleven blesses that ask the gate, so
+/// history to, with no fork planner: R3 deleted eight of the eleven blesses that ask the gate, so
 /// after it a frozen line can change only by hand, and this is what still sees the change.
 pub fn versions(path: &Path, key: impl Fn(&Value) -> Option<String>) -> Result<Vec<(String, BTreeMap<String, Value>)>, String> {
     versions_since(path, &base()?, key)

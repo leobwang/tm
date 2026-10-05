@@ -8,7 +8,7 @@
 //! `past_segments` to agree with the kernel), the oracle backend from `forkplan::p56_cut` over
 //! fork 4748911's own drawing and `forkclass`' own wall reader. Their cross-check
 //! (`planner_invariants.rs`' region, 43 and 91 fresh draws at W-39) met NO P56 day: the class
-//! draw rarely runs a block across a meeting. R3 deletes the in-tree backend, and then
+//! draw rarely runs a block across a meeting. R3 deleted the in-tree backend, and then
 //! `p56_cut` is the comparand's only P56, held by a few frozen lines whose mutants die only
 //! under `TM_ORACLE`.
 //!

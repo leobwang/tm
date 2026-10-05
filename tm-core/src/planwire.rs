@@ -965,8 +965,10 @@ fn cand_json(
 /// These are what `Planner::build_groups`, `Planner::pick` and
 /// [`priority::sorted_candidates`]' own filter read off a [`Candidate`] and no
 /// kernel call carried before stage 6 P5a. They are **host-collected, exactly
-/// as the twelve above are**: D34 keeps `collect_candidates` alive until R3, so
-/// D27 later changes where they come from, not what they are.
+/// as the twelve above are**: D34 keeps `collect_candidates` alive past R3 — it was
+/// to die with `planner.rs` at R3, and did not (README gap 4879): the kernel may not
+/// derive a candidate fact until D27 lands — so D27 later changes where they come
+/// from, not what they are.
 ///
 /// `waiting` is **not** a tenth: `collect_candidates` sets it to `state ==
 /// State::Waiting`, and the kernel derives it from `state`

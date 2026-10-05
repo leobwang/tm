@@ -37,7 +37,7 @@
 //!   slots, and the kernel plans no row for `^t4`, a box-less item with nothing to do; and
 //!   `the_kernel_plans_the_nbsp_box_day_as_the_fork_does` compares that day with fork 4748911's by
 //!   `forkday::compare_day_with_fork`, the comparator the frozen class lines use, against the
-//!   in-tree fork while it stands (R3 deletes it with its region; the claim then rests on the
+//!   in-tree fork while it stands (R3 deleted it with its region; the claim then rests on the
 //!   reader comparison, README gap 4168).
 //! * P72 still refuses a real disagreement — `ci:+5`, which the host reads `5` (`u8::from_str`
 //!   accepts a leading `+`) and the kernel does not (`Field.parseCi`), falling back to the

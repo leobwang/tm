@@ -18,7 +18,7 @@
 //! So the fork's Wednesday is FROZEN BY VALUE here — three instants, the state
 //! and the instant carried with each day — and
 //! [`the_kernel_plans_the_forks_conference_wednesday`] compares the kernel with
-//! it in plain `cargo test --workspace`, outside the region R3 deletes (D21:
+//! it in plain `cargo test --workspace`, outside the region R3 deleted (D21:
 //! the instrument before the change).  Inside the region the frozen days are
 //! checked against the live fork; the bless asks `tm-oracle plan` and sits
 //! outside it since W-45 track C (README gap 4680), so the file is not final at R3.

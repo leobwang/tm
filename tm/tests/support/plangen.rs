@@ -4,7 +4,7 @@
 //!
 //! # Why it lives in `tests/support/`
 //!
-//! R3 deletes `tm-core/src/planner.rs`, and every differential arm of
+//! R3 deleted `tm-core/src/planner.rs`, and every differential arm of
 //! `planner_invariants.rs` plans with it. The GENERATOR plans with nothing: a
 //! [`Case`] is a tree, a log and a `.tm/state.json`, and [`build`] parses them
 //! with the host's readers. Two things must survive the fork's deletion and

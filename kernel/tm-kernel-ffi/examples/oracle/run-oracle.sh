@@ -44,6 +44,11 @@
 #      are the arms that outlive R3, so this set is the fork's last word on the
 #      planner once `tm-core/src/planner.rs` is gone.
 #
+#   7. every other arm, by the class and not by a list (the W-46 audit, README
+#      gap 4896): the whole workspace under TM_ORACLE — the capacity arms of
+#      track C's targets ask `tm-oracle capacity` live — and every `#[ignore]`d
+#      arm `arms.py` reads off the test sources that sets 3-6 do not name.
+#
 # Nothing is written inside the repository and no Rust is built in this
 # worktree.
 set -euo pipefail
@@ -129,3 +134,24 @@ echo "############ input set 6: the planner, through the plan mode"
 ( cd "$repo" && TM_ORACLE="$oracle" cargo test --quiet -p tm --test planner_w41_starts \
     -- --ignored --exact --nocapture \
     the_frozen_start_days_are_the_forks_oracle_answer_today )
+
+echo
+echo "############ input set 7: every other arm that asks the oracle, read off the sources"
+# Sets 3-6 are lists, and the W-46 audit found them short of the class (README gap 4896):
+# track C moved eleven test targets' comparands to `tm-oracle capacity` and `tm-oracle plan`
+# (`kernel_lookahead_parity`, the `priority_*` files, the `tui_queue_*` binaries, tm-core's
+# `priority_edf` and `capacity_slots`, `planner_w40_runs`, ...), each asking live under
+# TM_ORACLE, and no set ran them.  So the whole workspace runs here with TM_ORACLE set — every
+# arm that is not `#[ignore]`d asks the oracle live — and then every `#[ignore]`d arm the
+# sets above do not name, as `arms.py` reads them off the test sources (no list: a new arm is
+# run by being written).  Blesses do not run (AGENTS §7.2).
+( cd "$repo" && TM_ORACLE="$oracle" cargo test --quiet --workspace --no-fail-fast )
+self="$ffi/examples/oracle/run-oracle.sh"
+python3 "$ffi/examples/oracle/arms.py" | while read -r package target name; do
+  if grep -q "^    ${name}\( \|$\)" "$self"; then
+    continue  # run above, by its set
+  fi
+  echo "-- ${package} ${target} ${name}"
+  ( cd "$repo" && TM_ORACLE="$oracle" cargo test --quiet -p "$package" --test "$target" \
+      -- --ignored --exact --nocapture "$name" ) || echo "FAILED: ${package} ${target} ${name}"
+done

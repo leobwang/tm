@@ -362,7 +362,7 @@ impl Built {
             let blocked = (start - Duration::minutes(i64::from(buffer))).max(lo);
             let end = end.min(hi);
             if end > blocked {
-                // fork `Item::is_travel_day`'s reading of the flag (R3 deletes that method, README gap 4752)
+                // fork `Item::is_travel_day`'s reading of the flag (R3 deleted that method, README gap 4752)
                 out.push((c.id.clone(), blocked, end, item.has_flag("travel-day")));
             }
         }
@@ -603,7 +603,7 @@ pub fn class_of(b: &Built) -> Class {
         DayShape::Travel
     } else if done > 0 && st.budget.is_some_and(|x| x.saturating_sub(done) == 0) {
         // §8.1's remaining budget, `budget − blocks_done` never below zero, is spent (fork
-        // `capacity::remaining_budget`'s rule; R3 deletes that function, README gap 4752).
+        // `capacity::remaining_budget`'s rule; R3 deleted that function, README gap 4752).
         DayShape::Spent
     } else if st.window.is_none_or(|(from, to)| to <= from) {
         // A late arrival: the evening wall pushes `tm arrive`'s window past midnight
@@ -870,7 +870,7 @@ pub fn frozen_lines() -> &'static Vec<Value> {
 /// **Why a batch beside the classes** (D72): the class file holds ONE primary world per
 /// class and the worlds derived from them, so a divergence in a world no frozen line
 /// holds is found only by a comparison that explores; `planner_invariants`' hash arm
-/// explores fresh draws on every run, and R3 deletes the planner it runs. The batch is a
+/// explores fresh draws on every run, and R3 deleted the planner it runs. The batch is a
 /// fixed sample of what the arms draw — many worlds per class, the generator's own mix
 /// of items, walls, routines, logs and widenings — that outlives R3 in plain `cargo test
 /// --workspace`; `tm-oracle plan` (`support/forkplan.rs`) keeps the exploring half.
@@ -2165,10 +2165,11 @@ pub fn whatif_item(st: &RuntimeState) -> Option<&Id> {
 /// TUI's timer show the same rule): `Replay::running_worked_min`, the wall clock
 /// since the INSTANT of the log's own `start` line, net of the pauses,
 /// interruptions and breaks of every day since, the break `.tm/state.json` still
-/// holds running included (at the latest instant at or before `now` whose clock
-/// is its `HH:MM`, `BreakState::started_at`, as `day.rs`' `running_break_at`
-/// places it since track T's P73 — composed here at W-41's land step, where
-/// until then it stood on `now`'s date). It is what R3's `planner` section
+/// holds running included — placed at its LOGGED start since D105
+/// (`BreakState::started_at_logged`, through `planwire::running_worked_min`, README
+/// gap 4875), and at the latest instant at or before `now` whose clock is its
+/// `HH:MM` (`BreakState::started_at`, track T's P73) only for a break the log holds
+/// no `break_start` for. It is what R3's `planner` section
 /// carries as `state.active.workedMin` (README gap 3043, parity P55) and what
 /// [`kernel_answer_with_grants`] sends since W-38.
 ///
@@ -2222,10 +2223,12 @@ pub fn whatif_json(b: &Built) -> Option<Value> {
 /// the open row to the host's minutes.
 pub fn kernel_answer_with_grants(b: &Built) -> Result<(KernelDay, Vec<priority::Prio>), String> {
     let pw = b.request_world();
-    let (mut req, order) = planreq::request(&pw, whatif_json(b));
-    if let Some(worked) = host_worked(b) {
-        planwire::add_worked_min(&mut req["planner"], worked);
-    }
+    // The binary's one composition of the section (README gap 4890): the what-if for one block
+    // on the running item and the worked minutes, as `kernel_capacity::planner_ask_from` sends them.
+    let w = &b.world;
+    let extend = whatif_item(&w.state).map(|id| (id, 1));
+    let planner = tm_core::plansection::planner_section(&w.state, &b.replay, w.now, b.cfg.tz, &b.tree, &b.cands, &b.cfg, extend);
+    let (req, order) = planreq::request_with_section(&pw, planner);
     let resp = planreq::call(&req);
     planreq::kernel_day_of(&resp, &pw, &order).map(|(k, ans)| (k, ans.prios))
 }

@@ -804,7 +804,7 @@ fn t18_row(tm: &Tm, now: &str, label: &str) -> (Duration, Duration, Duration) {
         check.wall,
         check.calls.len()
     );
-    // **The owner's D82, held where R3 will pay it.**  R3's `tm plan` is today's
+    // **The owner's D82, held where R3 pays it.**  R3's `tm plan` is today's
     // `tm plan` with its capacity call carrying the `planner` section, so today's
     // `tm plan` plus the planner call bounds it from above — and that sum must sit
     // inside the band every later verb here is held to, `LATER_VERB`, UNCHANGED.

@@ -127,7 +127,7 @@ pub fn frozen_days() -> &'static BTreeMap<String, Value> {
 /// `planner_w37_rows.rs`' arm — §4.3's own tree, `^a3` "Pick up package" a dated window
 /// task due today, planned at every ten minutes from both of the fixture suite's states, each
 /// day the fork's as the shipped binary plans it (D53) — compared the kernel with the LIVE
-/// fork, in a region R3 deletes. These are those days, by value: one line per `(state,
+/// fork, in a region R3 deleted. These are those days, by value: one line per `(state,
 /// instant)`, `{name, state, now, hash, day}`, the state and the instant carried with the day
 /// so the arm that survives R3 plans exactly what was frozen and needs no definition of either.
 pub const FROZEN_BASIC: &str = "fork-4748911-planner-basic-days.jsonl";
@@ -370,7 +370,7 @@ pub struct ForkScan {
 /// for the planner: every code line that reaches the fork's planner — a
 /// `planner::` path, `tm_core::planner`, `PlanInput`, `with_ranking`, or the
 /// fixture's `input(..)` builder — must sit inside the file's
-/// `BEGIN THE FORK PLANNER` … `END THE FORK PLANNER` region, so R3 deletes the
+/// `BEGIN THE FORK PLANNER` … `END THE FORK PLANNER` region, so R3 deleted the
 /// region and nothing has to be found by reading. With no region left, NO
 /// reference may remain anywhere: after R3 this is the assertion that the
 /// comparand really did move. Comment lines are skipped; the needles live here
@@ -391,7 +391,7 @@ pub fn module_of(label: &str) -> String {
     }
 }
 
-/// **The top-level names a file's fork region declares** — what R3 deletes with it, read as
+/// **The top-level names a file's fork region declares** — what R3 deleted with it, read as
 /// [`fork_scan`] reads its own file's (W-38 land step, README gap 3510).
 pub fn region_names(source: &str) -> Vec<String> {
     let at_line_start = |needle: &str| {
@@ -514,7 +514,7 @@ pub fn use_names_the_fork(stmt: &str) -> bool {
 
 /// **The tests a fork region holds that reach NO fork planner** (stage 6 W-45 track C, README gap
 /// 4682) — the other half of [`fork_scan`]: that guard keeps every reference to the fork INSIDE the
-/// region, and this keeps nothing BUT the fork there. R3 deletes the region whole, so a test in it that
+/// region, and this keeps nothing BUT the fork there. R3 deleted the region whole, so a test in it that
 /// asks the kernel alone, or a harness check, or a bless that reaches no fork (W-45 moved one of each
 /// out: the class worlds' re-draw, `planner_w40_runs.rs`' P64 precondition and the kernel halves of
 /// three other tests) would be deleted for nothing.
@@ -641,7 +641,7 @@ const FORK_NEEDLES: [&str; 6] = ["planner::", "tm_core::planner", "PlanInput", "
 
 /// The name a column-zero code line DECLARES — `fn`, `static`, `const`, `struct`, `enum`,
 /// `type` or `trait`, public or not — or `None`. The keyword must begin the line, so an
-/// indented line (a method, a local, a test inside `proptest!`) declares nothing R3 deletes
+/// indented line (a method, a local, a test inside `proptest!`) declares nothing R3 deleted
 /// at the file's top level.
 pub fn top_level_name(code: &str) -> Option<String> {
     let rest = code.strip_prefix("pub ").unwrap_or(code);

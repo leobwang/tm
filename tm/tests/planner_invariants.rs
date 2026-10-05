@@ -40,7 +40,7 @@
 //!
 //! # What outlives R3, and what leaves with the fork (stage 6 W-37 track H)
 //!
-//! R3 deletes `tm-core/src/planner.rs`. Since W-37 this file is two halves, and
+//! R3 deleted `tm-core/src/planner.rs`. Since W-37 this file is two halves, and
 //! the line between them is the one R3 draws:
 //!
 //! * **Outside the region — the kernel, on every generated case.** The
@@ -158,7 +158,7 @@ fn overlaps(a: &Segment, b: &Segment) -> bool {
 /// **Which planner §8.3's invariants are asked of** (stage 6 W-37 track H,
 /// README gap 3084): the property `day_plan_satisfies_every_invariant`
 /// asserted of the FORK's own-§7 day until W-37 — a day no shipped path plans
-/// (D53) and one R3 deletes — written once, over this, and asked of the
+/// (D53) and one R3 deleted — written once, over this, and asked of the
 /// KERNEL (the planner R3 ships) on every generated case; of the fork, in the
 /// file's one region, until R3.
 trait Planner {
@@ -313,7 +313,7 @@ fn check_day_invariants(p: &dyn Planner, case: &Case, w: &World) -> Result<(), T
     // (that is the state §9.1's overtime prompt runs in); everything the
     // planner *chose* fits the remaining budget.
     // §8.1's remaining budget, `budget − blocks_done` and never below zero (fork
-    // `capacity::remaining_budget`'s rule; R3 deletes that function, README gap 4752).
+    // `capacity::remaining_budget`'s rule; R3 deleted that function, README gap 4752).
     let remaining = w.state.budget.unwrap_or(6).saturating_sub(w.replay.blocks_done(date()));
     prop_assert!(
         day.planned_block_minutes(w.now) - running_min <= remaining * block_min,
@@ -1194,7 +1194,7 @@ const CELL_HOLES: [&str; 2] = ["note", "est"];
 // **W-38 (track H): what the fork region compared that needs no fork, moved out of it**
 // (README gap 3282).
 //
-// R3 deletes the region below whole. Several of its arms asserted things of the KERNEL alone —
+// R3 deleted the region below whole. Several of its arms asserted things of the KERNEL alone —
 // the kernel's rendering of a day through the `plan` section, the projections of step 8's
 // tuples on the kernel's own wire, P45's rule on a generated break day, and the kernel halves
 // of the fixed days — and so would have left with the fork although no fork was needed to
@@ -2061,7 +2061,7 @@ proptest! {
     /// spans); `tm review`'s, the heat grid's and the planner's are the replay's (`OpenBlock::
     /// worked_min_at`); on every generated day where nothing else stops the block's clock they are
     /// one number.  **Outside the fork region** (README gap 4491): this was the D87 arm's own
-    /// assertion, inside a region R3 deletes though it compares no fork; lifted here with its census
+    /// assertion, inside a region R3 deleted though it compares no fork; lifted here with its census
     /// and floors, it outlives the deletion.  **Since W-44 track C (README gap 4509) the clock-starting
     /// member is PLACED on every case** (`clock_starting_case`) as well as drawn, so its count has a
     /// floor no run can miss.

@@ -496,14 +496,10 @@ pub fn planner_ask_from(
     let (days, clamped) = planwire::horizon(ctx.today, want);
     let ranked = Ranked { cands: &cands, yesterday };
     let (request, order) = request_with(ctx, &state, allow_home, days, Some(&ranked), &inputs.reads)?;
-    let tz = ctx.cfg.tz;
-    let date = planwire::plan_date(&state, ctx.now_tz);
-    let routines = planwire::routine_instances(&cands, &ctx.tree, ctx.now_tz, date, tz);
-    let overtime = extend.map(|(id, blocks)| planwire::whatif_json(&cands, id, blocks, &ctx.cfg));
-    let mut planner = planwire::planner_json(&state, &ctx.replay, ctx.now_tz, tz, &routines, overtime);
-    if let Some(worked) = super::day::worked_min(ctx) {
-        planwire::add_worked_min(&mut planner, worked);
-    }
+    // The section composed once, by the body every harness that builds it calls (README gap 4890):
+    // the routines, the what-if, the running block's worked minutes (`day::worked_min`'s reading).
+    let planner =
+        tm_core::plansection::planner_section(&state, &ctx.replay, ctx.now_tz, ctx.cfg.tz, &ctx.tree, &cands, &ctx.cfg, extend);
     Ok(PlannerAsk { request: planwire::with_planner(&request, &planner), cands, order, days, want, clamped })
 }
 

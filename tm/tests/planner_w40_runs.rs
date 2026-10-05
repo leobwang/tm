@@ -25,7 +25,7 @@
 //!   nothing. It is why `PlanCheck.plan_is_monotone_in_rank` needs one `ci` and
 //!   `PlanCheck.plan_puts_hot_before_the_queue` a row of queue items only.
 //!
-//! The fork's half is one `BEGIN THE FORK PLANNER` region, which R3 deletes: the
+//! The fork's half is one `BEGIN THE FORK PLANNER` region, which R3 deleted: the
 //! fork as the shipped binary runs it (kernel-ranked, D53) splits the batch as a
 //! group-by — the behaviour P64 departs from — and batches across a `ci` exactly
 //! as the kernel does, so the riding day is shipped behaviour, not a kernel
@@ -216,7 +216,7 @@ fn a_key_reappears(ranked: &[&Candidate], groups: &[forkcap::ForkBatch], active:
 /// and the runs are then the same two buckets. **It reads no fork** — the kernel's ranking and
 /// `tm_core::priority`'s batches — so it sits outside the region since W-45 track C (README gap
 /// 4682), with the precondition and the census that reads it.  Since W-46 track C those batches
-/// are fork 4748911's own, frozen by value (`forkcap::batches`), because R3 deletes the in-tree
+/// are fork 4748911's own, frozen by value (`forkcap::batches`), because R3 deleted the in-tree
 /// copy (README gap 4752, the class).
 #[test]
 fn p64s_precondition_sees_a_key_again_and_only_then() {

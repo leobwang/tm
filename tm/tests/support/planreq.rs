@@ -22,10 +22,15 @@
 //!
 //! # What it deliberately leaves out
 //!
-//! * The learned model: every caller here plans with `Model::default()`, whose
-//!   tables are empty, so the codec writes `pLounge.model`, `arrival.model` and
-//!   `energy` empty and the kernel falls back to `config` exactly as it does for
-//!   a plan with no `.tm/model.json` (README gap 3901).
+//! * The learned model, but for [`request_with_model`]: every other caller plans
+//!   with `Model::default()`, whose tables are empty, so the codec writes
+//!   `pLounge.model`, `arrival.model` and `energy` empty and the kernel falls back
+//!   to `config` exactly as it does for a plan with no `.tm/model.json`.
+//!   `planner_request_keys.rs` builds its learned-model world through
+//!   [`request_with_model`] since the W-46 audit (README gap 3901, closed), so
+//!   the binary's request and the harness's agree there IN VALUE; no FORK
+//!   comparison plans a learned table but the duration multiplier the class
+//!   worlds draw (README gap 4891).
 //! * The files' literals: `Written::default()`, so every configured decimal is
 //!   sent as its double's shortest text — the codec's own fallback for a key no
 //!   file writes.
@@ -84,12 +89,12 @@ pub use tm_core::planwire::send_order;
 /// world's replay for the location the encoder reads (`planwire::planned_loc`), and the lookahead
 /// `kernel_capacity::rank` asks for (`planwire::horizon` over
 /// `priority::lookahead_days`).
-fn capacity(w: &World<'_>, order: &[usize]) -> Value {
+fn capacity(w: &World<'_>, model: &Model, order: &[usize]) -> Value {
     let today = w.now.date_naive();
-    let (model, written, yesterday) = (Model::default(), Written::default(), BTreeMap::new());
+    let (written, yesterday) = (Written::default(), BTreeMap::new());
     let input = CapacityIn {
         cfg: w.cfg,
-        model: &model,
+        model,
         written: &written,
         tree: w.tree,
         state: w.state,
@@ -112,10 +117,34 @@ fn capacity(w: &World<'_>, order: &[usize]) -> Value {
 /// **The whole request**, with `overtime` in the planner section when given.
 /// Returns the request and the order the candidates were sent in.
 pub fn request(w: &World<'_>, overtime: Option<Value>) -> (Value, Vec<usize>) {
-    let order = send_order(w.cands);
+    request_model(w, &Model::default(), overtime)
+}
+
+/// [`request`] at a learned model ([`request_with_model`]; README gap 3901).
+pub fn request_model(w: &World<'_>, model: &Model, overtime: Option<Value>) -> (Value, Vec<usize>) {
     let tz = w.cfg.tz;
     let date = planwire::plan_date(w.state, w.now);
     let routines: Vec<RoutineInst> = planwire::routine_instances(w.cands, w.tree, w.now, date, tz);
+    request_with_model(w, model, planwire::planner_json(w.state, w.replay, w.now, tz, &routines, overtime))
+}
+
+/// **The whole request around a `planner` section already built** — the binary's own
+/// composition, `plansection::planner_section` (README gap 4890), for the harnesses that
+/// send what the binary sends: the what-if AND the running block's worked minutes,
+/// composed by the one body `kernel_capacity::planner_ask_from` calls.
+pub fn request_with_section(w: &World<'_>, planner: Value) -> (Value, Vec<usize>) {
+    request_with_model(w, &Model::default(), planner)
+}
+
+/// **[`request_with_section`] at the world's own learned model** (the W-46 audit, README gap
+/// 3901 closed): the capacity section carries `.tm/model.json`'s tables — the lounge weights,
+/// the expected arrivals, the energy curves, the fitted sleep shift — as the binary's encoder
+/// writes them, and the caller collects its candidates with the same model, so a world with a
+/// learned model is a request the harness builds as the binary does. Every other caller plans
+/// with `Model::default()` ([`request`]).
+pub fn request_with_model(w: &World<'_>, model: &Model, planner: Value) -> (Value, Vec<usize>) {
+    let order = send_order(w.cands);
+    let tz = w.cfg.tz;
     let req = json!({
         "docs": w.docs.iter()
             .map(|(p, t)| json!({"path": p, "lines": t.lines().collect::<Vec<_>>()}))
@@ -133,8 +162,8 @@ pub fn request(w: &World<'_>, overtime: Option<Value>) -> (Value, Vec<usize>) {
                 "terminated": true, "reseal": null,
                 "want": {"facts": true, "headersFrom": null, "render": []},
                 "sealed": null},
-        "capacity": capacity(w, &order),
-        "planner": planwire::planner_json(w.state, w.replay, w.now, tz, &routines, overtime),
+        "capacity": capacity(w, model, &order),
+        "planner": planner,
     });
     (req, order)
 }

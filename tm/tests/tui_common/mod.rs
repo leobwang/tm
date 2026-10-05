@@ -671,14 +671,10 @@ pub fn world_planner(texts: Vec<(String, String)>, log: String, cfg: Config) -> 
         let model = tm_core::energy::Model::default();
         let cands = tm_core::priority::collect_candidates(&tree, &replay, &cfg, &model, today, ask.now);
         let world = planreq::World { docs: &texts, log: &log, tree: &tree, cfg: &cfg, state: &state, now: ask.now, cands: &cands, replay: &replay };
-        // The binary's one builder and one reading (README gap 4875).
-        let overtime = ask.extend.map(|(id, blocks)| tm_core::planwire::whatif_json(&cands, id, blocks, &cfg));
-        let (mut req, order) = planreq::request(&world, overtime);
-        if let Some(worked) =
-            tm_core::planwire::running_worked_min(&state, &replay, cfg.tz, ask.now, today, ask.now.fixed_offset())
-        {
-            tm_core::planwire::add_worked_min(&mut req["planner"], worked);
-        }
+        // The binary's one composition of the section (README gaps 4875 and 4890).
+        let planner =
+            tm_core::plansection::planner_section(&state, &replay, ask.now, cfg.tz, &tree, &cands, &cfg, ask.extend);
+        let (req, order) = planreq::request_with_section(&world, planner);
         let resp = planreq::call(&req);
         let (k, _) = planreq::kernel_day_of(&resp, &world, &order).map_err(unplanned)?;
         Ok(Asked { day: k.day, removed: k.overtime.map(|d| d.removed).unwrap_or_default(), ranking: None })

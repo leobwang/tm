@@ -618,3 +618,36 @@ fn the_process_remembers_a_checked_table_by_zone_and_whole_text() {
     assert_eq!(tz_table::wire_for(Some(&cache), chicago), truth, "a text the process had not checked was served");
     assert_eq!(fs::read_to_string(&file).expect("rewritten"), tz_table::cache_text(&truth), "and it is rebuilt");
 }
+
+/// **A day before a zone's first change is planned in the offset the host decodes it in** (the
+/// W-46 audit, README gap 4902). The table began in 1900 and read every earlier second at its
+/// 1900 offset, while chrono-tz reads local mean time before a zone's first change — America/Chicago
+/// is −05:50:36 before 12:09:24 local on 1883-11-18 — so after R3 `tm plan`, `tm now`, `tm check` and
+/// `tm review day` at such an instant faulted on the day's hash (the kernel planned in −06:00, the
+/// host decoded in −05:50:36), where fork 4748911's planner, which never read the table, planned
+/// it. The span begins in 1800, before tzdb's earliest change (Asia/Manila's, 1844), so each verb
+/// answers at an instant either side of Chicago's change, on a tree with no cache and on one whose
+/// cache the first verb wrote.
+#[test]
+fn a_day_before_the_zones_first_change_is_planned_in_the_hosts_offset() {
+    let tm = cli_common::Tm::empty();
+    assert_eq!(tm.run(&["init", "--example"]).code, 0);
+    for now in ["1850-07-01T12:00:00-06:00", "1883-11-17T12:00:00-06:00", "1883-11-18T13:00:00-06:00"] {
+        for verb in [&["plan"][..], &["now"][..], &["check"][..], &["review", "day"][..]] {
+            let out = tm.run_at(now, verb);
+            assert!(
+                !out.stderr.contains("kernel fault") && !out.stdout.contains("kernel fault"),
+                "`tm {}` at {now}: {}{}",
+                verb.join(" "),
+                out.stdout,
+                out.stderr
+            );
+            assert!(out.code == 0 || verb == ["check"], "`tm {}` at {now} exits {}: {}", verb.join(" "), out.code, out.stderr);
+        }
+    }
+    let table = tz_table::from_cache_text(
+        &fs::read_to_string(tm.plan.join(".tm/cache/replay").join(tz_table::CACHE_FILE)).expect("the cache the verbs wrote"),
+    )
+    .expect("the cache's digest matches its table");
+    assert_eq!(table["base"], "-05:50:36", "the base is Chicago's local mean time: {table}");
+}

@@ -238,7 +238,7 @@ fn the_flight_gets_ci_1_and_the_travel_day_buffer() {
     let item = parse_line(flight[0], &ctx).unwrap();
     assert_eq!(item.ci, 1);
     assert_eq!(item.buffer.map(|d| d.to_string()).as_deref(), Some("2h"));
-    // fork `Item::is_travel_day`'s reading of the flag (R3 deletes that method, README gap 4752)
+    // fork `Item::is_travel_day`'s reading of the flag (R3 deleted that method, README gap 4752)
     assert!(item.has_flag("travel-day"));
     assert!(item.title.starts_with('✈'), "{}", item.title);
 

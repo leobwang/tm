@@ -29,7 +29,7 @@
 //! flag. Outside the fork region the kernel is held to every line by the frozen lines' one
 //! comparison, `forkclass::compare_line`, so the verdicts that assert nothing a planner
 //! produces — twelve of the sixteen — compare the kernel's whole day with the fork's, and keep
-//! doing so after R3 deletes the region's live comparison
+//! doing so after R3 deleted the region's live comparison
 //! (`the_kernel_plans_every_frozen_tui_world_as_fork_4748911_planned_it`).
 //!
 //! And no TUI test saw a cut week: `tui_common` builds every `App` with `PauseCut::default()`,

@@ -38,7 +38,9 @@ fn a_break_across_midnight_is_the_evenings() {
     let now = tm.json_at("2026-09-09T00:05:00-05:00", &["now"]);
     assert_eq!(now["active"]["elapsed_min"].as_u64(), Some(50), "the break is not worked: {now}");
     let out = tm.ok_at("2026-09-09T00:10:00-05:00", &["done"]);
-    assert_eq!(out.stdout.trim(), "✓ ^t4 Claude Code drafts tests · 50m/60m");
+    // The clause before it is the break `tm done` ended first: the owner's D101 (parity P102,
+    // the W-46 audit's repair), moved by name.
+    assert_eq!(out.stdout.trim(), "break ended · 20m of 20m · ✓ ^t4 Claude Code drafts tests · 50m/60m");
     let log = tm.log();
     let brk = &log[log.len() - 2];
     assert_eq!(

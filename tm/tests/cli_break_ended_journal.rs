@@ -140,6 +140,56 @@ fn the_verbs_that_already_said_it_say_it_once() {
     assert_eq!(j.last().map(String::as_str), Some("09:35 break ended 15m/30m"), "{j:?}");
 }
 
+/// **The terminal and `--json` say it too** — the owner's **D101** (README gap 4551, parity
+/// **P102**, built at the W-46 audit's repair): `tm start`, `tm stop` and `tm done` over a running
+/// break print `tm break`'s clause before their own words, as `tm interrupt` and `tm resume` do,
+/// and carry `break_ended` — `tm break`'s report of the ending — in `--json`; with no break
+/// running neither appears. Fork 4748911 printed and carried nothing of the break.
+#[test]
+fn d101_start_stop_and_done_print_and_carry_the_break_they_ended() {
+    let tm = woken();
+    tm.ok_at(&at("09:00"), &["break", "20m"]);
+    let out = tm.ok_at(&at("09:10"), &["start", "^m1", "--energy", "3"]);
+    assert!(out.stdout.starts_with("break ended · 10m of 20m · ▶ ^m1 "), "{}", out.stdout);
+
+    let tm = a_block_and_a_break();
+    let out = tm.ok_at(&at("09:35"), &["stop"]);
+    assert!(out.stdout.starts_with("break ended · 15m of 30m · stopped ^m1 after 20m"), "{}", out.stdout);
+
+    let tm = a_block_and_a_break();
+    let out = tm.ok_at(&at("09:35"), &["done"]);
+    assert!(out.stdout.starts_with("break ended · 15m of 30m · ✓ ^m1 "), "{}", out.stdout);
+
+    for verb in [&["--json", "stop"][..], &["--json", "done"][..]] {
+        let tm = a_block_and_a_break();
+        let out = tm.ok_at(&at("09:35"), verb);
+        let v: serde_json::Value = serde_json::from_str(&out.stdout).expect("JSON");
+        assert_eq!(
+            v["break_ended"],
+            serde_json::json!({"action": "ended", "planned_min": 30, "actual_min": 15, "place": null}),
+            "`tm {}`: {v}",
+            verb.join(" ")
+        );
+    }
+    let tm = woken();
+    tm.ok_at(&at("09:00"), &["break", "20m"]);
+    let out = tm.ok_at(&at("09:10"), &["--json", "start", "^m1", "--energy", "3"]);
+    let v: serde_json::Value = serde_json::from_str(&out.stdout).expect("JSON");
+    assert_eq!(v["break_ended"]["actual_min"], 10, "{v}");
+
+    // No over-bite: no break running, no clause and no key.
+    let tm = woken();
+    let out = tm.ok_at(&at("09:00"), &["--json", "start", "^m1", "--energy", "3"]);
+    let v: serde_json::Value = serde_json::from_str(&out.stdout).expect("JSON");
+    assert!(v.get("break_ended").is_none(), "{v}");
+    for verb in ["stop", "done"] {
+        let tm = woken();
+        tm.ok_at(&at("09:00"), &["start", "^m1", "--energy", "3"]);
+        let out = tm.ok_at(&at("09:30"), &[verb]);
+        assert!(!out.stdout.contains("break ended"), "`tm {verb}`: {}", out.stdout);
+    }
+}
+
 /// **No over-bite**: with no break running, none of the six writes the line.
 #[test]
 fn with_no_break_running_nothing_says_a_break_ended() {
@@ -194,7 +244,9 @@ fn bodies(text: &str) -> Vec<(String, String)> {
 ///
 /// * a running break is TAKEN out of the state (`.break_.take()`) in `end_break_at` alone, and set
 ///   to nothing (`.break_ = None`) only where no break can be running — `tm wake`, which refuses
-///   over one first (D76, D81) — or where a state is built afresh;
+///   over one first (D76, D81), and D42's reconcile, which drops a cached break only where the LOG
+///   already ended it and writes no line (the W-46 audit, README gap 4903) — or where a state is
+///   built afresh;
 /// * `end_break_at` is called by `end_break` and `end_break_first_at` alone, `end_break` by
 ///   `end_break_first` alone — so every verb ends a break through the two bodies;
 /// * every function that calls `end_break_first` or `end_break_first_at` writes the line through
@@ -250,7 +302,11 @@ fn the_class_of_verbs_that_end_a_break_is_read_off_the_code() {
     calls_now.sort();
     enders.sort();
     assert_eq!(takes, ["tm/src/cli/day.rs:end_break_at"], "a second place takes a running break");
-    assert_eq!(clears, ["tm/src/cli/day.rs:wake"], "a running break set to nothing outside `tm wake`");
+    assert_eq!(
+        clears,
+        ["tm/src/cli/ctx.rs:reconcile_state", "tm/src/cli/day.rs:wake"],
+        "a running break set to nothing outside `tm wake` and the reconcile of a break the log ended"
+    );
     assert_eq!(calls_at, ["tm/src/cli/day.rs:end_break", "tm/src/cli/day.rs:end_break_first_at"]);
     assert_eq!(calls_now, ["tm/src/cli/day.rs:end_break_first"]);
     assert!(silent.is_empty(), "a verb that ends a running break and writes no journal line: {silent:?}");

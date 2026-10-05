@@ -4,7 +4,7 @@
 //! `plan-basic` with `^t4`'s line edited to carry a tab or a no-break space after its state box or
 //! after its `ci` digit — to one separator rule for the host and the kernel. Its only comparison
 //! with fork 4748911's PLANNER, `the_kernel_plans_the_nbsp_box_day_as_the_fork_does`, asks the
-//! in-tree fork, in a `BEGIN THE FORK PLANNER` region R3 deletes: after R3 the `nbsp-box` claim (a
+//! in-tree fork, in a `BEGIN THE FORK PLANNER` region R3 deleted: after R3 the `nbsp-box` claim (a
 //! box the host reads as no box, so `^t4` is planned no row) would rest on the reader comparison
 //! alone (README gap 4168).
 //!
@@ -35,7 +35,7 @@
 //!   line edited, rebuilt now and compared by value, and one the shipped binary holds.
 //!
 //! The bless and the oracle arm ask fork 4748911 out of the tree; the in-tree fork is asked only in
-//! the one region below, which R3 deletes, and which holds the frozen days to it while it stands.
+//! the one region below, which R3 deleted, and which holds the frozen days to it while it stands.
 
 #[path = "support/replay.rs"]
 #[allow(dead_code)]
