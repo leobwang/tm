@@ -223,8 +223,8 @@ pub const KERNEL_LOAD: &str = "kernel-load";
 /// **The kernel refused to plan the day** — the request R3's `tm plan` sends
 /// (the W-41 repair, README gaps 4130 and 4142; parity P78).
 ///
-/// A planner refusal stops `tm plan`, `tm now` and the TUI once R3 swaps the
-/// planner's body, and the owner's D80 made two of them refusals BY NAME —
+/// A planner refusal stops `tm plan`, `tm now` and the TUI since R3 swapped the
+/// planner's body (W-45), and the owner's D80 made two of them refusals BY NAME —
 /// `ciDisagrees` and `eveningPastTheCalendar` — so that a disagreement would be
 /// LOUD and findable (D32's shape). It was loud and not findable: `tm check`
 /// asked the kernel to LOAD the tree and never asked it for the DAY, so a tree

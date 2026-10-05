@@ -7,10 +7,11 @@
 //! (`support/forkday.rs`, `planner_fixtures.rs`' `DAYS`). None of them runs a
 //! block, a break, an interruption, overtime or a wall on `now` — the §9 states
 //! where gap 550 and the owner's D57 divergences (parity P45-P47) live — and
-//! every GENERATED day `planner_invariants.rs`' differential arms draw compares
-//! the kernel against `planner::plan`, which R3 deletes. So at R3 every
-//! generated class would lose its comparand at once, on the least reviewable
-//! commit of the stage: a LIST where the rule is a CLASS (W-35's critic).
+//! every GENERATED day `planner_invariants.rs`' differential arms drew compared
+//! the kernel against the in-tree fork's planner::plan, which R3 deleted. So at
+//! R3 every generated class would have lost its comparand at once, on the least
+//! reviewable commit of the stage: a LIST where the rule is a CLASS (W-35's
+//! critic).
 //!
 //! # What a class is, and why it is a property and not a list
 //!
@@ -110,8 +111,8 @@
 //! # Neither side of a comparison here is the fork's code
 //!
 //! One side is a day the KERNEL planned, read back by the host's codec
-//! (`tm_core::planwire`, what R3 swaps in); the other is bytes on disk. So R3's
-//! deletion cannot turn this into a self-comparison.
+//! (`tm_core::planwire`, what R3 swapped in); the other is bytes on disk. So R3's
+//! deletion did not turn this into a self-comparison.
 //!
 //! # Where the worlds came from — re-drawn from the tree (README gap 3080)
 //!
@@ -317,7 +318,7 @@ impl Built {
     /// **The worked minutes of the running block, as fork `active_run` reads
     /// them**: the log's open block when it is this item's
     /// (`OpenBlock::worked_min_at`), the clock since `started` otherwise —
-    /// `planner_invariants`' `w35_fork_worked`.
+    /// planner_invariants' w35_fork_worked, in the fork region R3 deleted.
     pub fn worked(&self) -> Option<u32> {
         self.worked_for(&self.world.state)
     }
@@ -2188,12 +2189,10 @@ pub fn whatif_item(st: &RuntimeState) -> Option<&Id> {
 /// after `now`, so it read 0 of a block worked across midnight where the binary
 /// reads the log's minutes (D75, parity P65).
 pub fn host_worked(b: &Built) -> Option<u32> {
-    let st = &b.world.state;
-    let a = st.active.as_ref()?;
-    let tz = b.cfg.tz;
-    let today = b.world.now.date_naive();
-    let running_break = st.break_.as_ref().and_then(|x| x.started_at(tz, b.world.now)).map(|t| t.fixed_offset());
-    b.replay.running_worked_min(a.id.as_str(), today, b.world.now.fixed_offset(), running_break)
+    // The binary's one reading (`planwire::running_worked_min`, README gap 4875): the
+    // running break at its LOGGED start since D105, where this placed it by the cache's clock.
+    let now = b.world.now;
+    planwire::running_worked_min(&b.world.state, &b.replay, b.cfg.tz, now, now.date_naive(), now.fixed_offset())
 }
 
 /// **§9.1's what-if as R3's host will ask it** (owner D58): one block on the
@@ -2201,14 +2200,8 @@ pub fn host_worked(b: &Built) -> Option<u32> {
 /// `PlanOverrides::apply` grows them (`planwire::grown`, the host's one reading;
 /// `None` when the extension grows nothing).
 pub fn whatif_json(b: &Built) -> Option<Value> {
-    whatif_item(&b.world.state).map(|id| {
-        let grown = b
-            .cands
-            .iter()
-            .find(|c| c.id == *id)
-            .and_then(|c| planwire::grown(c, None, b.cfg.block_min(), &b.cfg));
-        planwire::overtime_json(id, 1, grown.as_ref())
-    })
+    // The binary's one builder (`planwire::whatif_json`, README gap 4875).
+    whatif_item(&b.world.state).map(|id| planwire::whatif_json(&b.cands, id, 1, &b.cfg))
 }
 
 /// **The kernel's answer for a world, asked as the binary will ask it at R3**,

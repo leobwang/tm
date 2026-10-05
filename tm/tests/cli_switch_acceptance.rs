@@ -242,6 +242,43 @@ fn moved(a: &[(String, String)], b: &[(String, String)]) -> Vec<String> {
         .collect()
 }
 
+/// **The `drift_min` of each `plan` event among `lines` logged on the local date `day`** (`YYYY-MM-DD`,
+/// read off each line's own stamp, which carries its offset), in log order.
+fn logged_drifts(lines: &[String], day: &str) -> Vec<u64> {
+    lines
+        .iter()
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .filter(|v| v["ev"] == "plan" && v["t"].as_str().is_some_and(|t| t.starts_with(day)))
+        .map(|v| v["drift_min"].as_u64().expect("a plan event carries drift_min"))
+        .collect()
+}
+
+/// **The drift R3 logs in [`tm_undo_across_a_seal_restores_the_facts`], by value** (RULE M; README gap
+/// 4877, the W-46 repair): the `drift_min` of each `plan` event appended on 2026-09-10 after the
+/// `start` three days back, in log order, MEASURED on the switched binary. Fork 4748911 logged drift 0
+/// on every one (it read the cache's `13:00` on the planned date, after `now`, so the old start moved
+/// no row). Since R3 the kernel's day reserves that block from its LOGGED start (parity **P69**) in
+/// overtime (parity **P46**), so the start moves the day's rows and the plans after it carry drift.
+/// A drift the binary logs that is not exactly this list fails here: the moved value is named, never
+/// accounted from whatever the run produced (which is what the W-45 and W-46 switches did, gap 4744).
+const R3_DRIFTS_P69_P46: &[u64] = &[500, 500];
+
+/// `answers` with `drift` minutes added to every review of the date `day` — the answer a review
+/// of that day gives once the log holds that much more drift, every other byte as it was.
+fn with_logged_drift(answers: Vec<(String, String)>, day: &str, drift: u64) -> Vec<(String, String)> {
+    answers
+        .into_iter()
+        .map(|(name, body)| match serde_json::from_str::<serde_json::Value>(&body) {
+            Ok(mut v) if v["review"]["date"] == day => {
+                let was = v["review"]["drift_min"].as_u64().expect("a day review carries drift_min");
+                v["review"]["drift_min"] = serde_json::json!(was + drift);
+                (name, serde_json::to_string_pretty(&v).expect("JSON"))
+            }
+            _ => (name, body),
+        })
+        .collect()
+}
+
 /// The log's physical lines.
 fn log_lines(tm: &Tm) -> Vec<String> {
     fs::read_to_string(tm.plan.join(".tm/log.jsonl"))
@@ -308,11 +345,29 @@ fn tm_undo_across_a_seal_restores_the_facts() {
     );
 
     let after_undo = without_replans(answers(&tm, LATER, RESTORED_SPELLINGS));
+    // **The drift the day's `plan` events logged since `before`, accounted from the log** (RULE M;
+    // README gap 4744, the W-45 repair). `tm review day`'s `drift_min` sums the day's `plan` events'
+    // `drift_min`, a count of history like `replans`: on fork 4748911's day every plan event here had
+    // drift 0 (the fork read the cache's `13:00` on the planned date, after `now`, so the start three
+    // days back moved no row), and since R3 the kernel's day reserves that block from its LOGGED
+    // start (parity P69) in overtime (P46), so the start moves the day's rows and the plan events
+    // logged after it carry drift. The moved value is not masked: `before` is advanced by exactly
+    // the drift the log's appended `plan` events carry on the reviewed day — every one of them is
+    // appended before `review day` runs (`plan` is the second spelling, and none after it writes
+    // one) — and then the answers must be equal.
+    let all = log_lines(&tm);
+    let day = &LATER[..10];
+    let drifts = logged_drifts(&all[prefix.len()..], day);
+    eprintln!("R3 drifts logged on {day}: {drifts:?}");
+    assert_eq!(drifts, R3_DRIFTS_P69_P46, "the drift R3 logs on {day} is the measured list, P69 and P46's");
+    let drift: u64 = R3_DRIFTS_P69_P46.iter().sum();
+    let before = with_logged_drift(before, day, drift);
     same(&before, &after_undo, "the undo did not restore the facts");
 
     eprintln!(
         "undo across a seal: {days} dated days, {} fact spellings compared, {} moved by the command \
-         ({THE_SEALED_DAY} among them), {} log lines appended and 0 rewritten",
+         ({THE_SEALED_DAY} among them), {} log lines appended and 0 rewritten, {drift} minutes of \
+         drift logged on {day} since and accounted",
         RESTORED_SPELLINGS.len(),
         bite.len(),
         now_lines.len() - prefix.len()
@@ -499,8 +554,9 @@ fn deleting_the_runtime_state_changes_nothing() {
 /// moves on the fixture measured, which is why this is a gap and not a repair."* Measured here,
 /// before the repair, with the field assertions relaxed to prints: `moved()` reports **five** of
 /// the eleven spellings — `plan`, `log`, `log --tail 5`, `log --since 7d`, `review day`.
-/// `planner::Planner::window_and_budget` reads `.tm/state.json`'s window when it has one and
-/// falls back to the formula when it does not, so a rebuilt window re-lays the afternoon, moves
+/// Fork 4748911's `Planner::window_and_budget` read `.tm/state.json`'s window when it had one and
+/// fell back to the formula when it did not (so does the kernel's day since R3, gap 320's reading),
+/// so a rebuilt window re-lays the afternoon, moves
 /// the plan hash and appends a second `Event::Plan` — which is what the three `log` spellings and
 /// the day review are seeing. The gap's own measurement was taken on a day whose arrival had
 /// already rolled away; this one is taken on the arrival's own day.

@@ -259,34 +259,3 @@ fn the_frozen_conference_days_are_blessed() {
     std::fs::write(&out_path, out).expect("the frozen conference days are written");
 }
 
-// BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gaps 3556, 3712)
-/// The fork's conference Wednesday at `now`, ranked by the kernel's §7 as the binary ranks it (D53).
-fn fork_conference_day(fx: &Fixture, state: &RuntimeState, now: DateTime<Tz>) -> DayPlan {
-    let day = tm_core::planwire::plan_date(state, now);
-    let cands = tm_core::priority::collect_candidates(&fx.tree, &fx.replay, &fx.cfg, &fx.model, day, now);
-    let w = planreq::World { docs: &fx.docs, log: &fx.log, tree: &fx.tree, cfg: &fx.cfg, state, now, cands: &cands, replay: &fx.replay };
-    let (_, ans) = planreq::kernel_day(&w, None).expect("the kernel ranks the day");
-    tm_core::planner::plan(&fx.input(state, now).with_ranking(&cands, &ans.prios))
-}
-
-/// **The fork's Wednesday ends on Thursday, inside the night, and plans no work —
-/// and the frozen days ARE the fork's today.**  Each frozen line is recomputed
-/// from the live fork and must be byte-equal; a line the fork answers
-/// differently is a finding, never a line to rewrite (D64).
-#[test]
-fn the_fork_ends_the_wednesday_inside_the_night() {
-    let (_dir, fx) = conference();
-    let state = wednesday();
-    let lines = frozen_conference();
-    assert_eq!(lines.len(), INSTANTS.len());
-    for ((h, m), line) in INSTANTS.iter().zip(&lines) {
-        let now = at("2026-09-09", *h, *m);
-        let f = fork_conference_day(&fx, &state, now);
-        assert!(f.window.1 < at("2026-09-11", 0, 0), "{h:02}:{m:02}: the fork's window ends {}", f.window.1);
-        assert_eq!(work_in(&f, at("2026-09-09", 0, 0), at("2026-09-12", 0, 0)), 0, "{h:02}:{m:02}: the fork planned work");
-        let want = forkday::basic_line(&format!("wednesday {h:02}:{m:02}"), &state, now, &f);
-        assert_eq!(want.trim_end(), serde_json::to_string(line).expect("a line"), "{h:02}:{m:02}: the frozen day is not the fork's today");
-    }
-}
-
-// END THE FORK PLANNER

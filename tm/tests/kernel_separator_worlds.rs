@@ -231,38 +231,6 @@ fn the_nbsp_box_world_is_box_less_to_both_readers() {
     );
 }
 
-// BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gap 4168)
-/// **The `nbsp-box` day is fork 4748911's, BY VALUE** — and the unedited day too, as the
-/// comparator's control: the kernel's day against the in-tree fork's, ranked by the shipped
-/// binary's grants (D53), through `forkday::compare_day_with_fork`, the comparator the frozen class
-/// lines use (every row in order, the date, the window, the budget, the diagnostics, the
-/// priorities and the hash).  Until D83 the kernel read a box on this line where the fork reads
-/// none.  R3 deletes this region; what stands after it is the reader comparison above.
-#[test]
-fn the_kernel_plans_the_nbsp_box_day_as_the_fork_does() {
-    let mut tally = forkday::DayTally::default();
-    for (name, line) in [("unedited", LINE), WORLDS[3]] {
-        let b = world(line);
-        let k = kernel_of(&b).unwrap_or_else(|e| panic!("{name}: the kernel refused the day: {e}"));
-        let prios = forkplan::capacity_grants(&b, None).expect("the shipped grants");
-        let ask = forkplan::ForkAsk {
-            state: &b.world.state,
-            now: b.world.now,
-            d60: false,
-            p64: false,
-            prios: &prios,
-            extend: None,
-            log_line: None,
-        };
-        let fork = forkplan::ForkPlan::plan(&forkplan::InTree, &b, &ask).expect("the fork's day");
-        let findings =
-            forkday::compare_day_with_fork(name, &k, &forkplan::frozen_day_json(&fork.day), b.world.now, &mut tally);
-        forkday::no_disagreement(&findings);
-    }
-    println!("{}", tally.line("the separator worlds", 0));
-    assert_eq!(tally.days, 2, "both days compared");
-}
-// END THE FORK PLANNER
 
 /// **`ci:+5`: a signed `ci:` value is read ONE way** (the W-42 repair, README gaps 4162 and 4330).
 /// The host reads a `ci:` value with Rust's `u8::from_str` (`grammar.rs`), which takes one leading

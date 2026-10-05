@@ -366,19 +366,19 @@ pub fn rank(ctx: &Ctx, cands: &[Candidate], yesterday: &BTreeMap<Id, u8>, allow_
     ask(ctx, allow_home, want, Some(&Ranked { cands, yesterday }))
 }
 
-/// **R3's planner request, built by the binary today** (the W-41 repair, README
-/// gaps 4130 and 4142): the ranked capacity request `tm plan` sends ([`rank`]'s
-/// own [`request`], over [`Ctx::priorities`]' candidates and hysteresis input)
-/// with the `planner` section the body swap adds — `planwire::planner_json`
-/// over `.tm/state.json`, the replay and the plan date's routine instances,
-/// and the running block's worked minutes as the binary reads them
-/// (`day::worked_min`, gap 3043) — spliced by `planwire::with_planner`.
+/// **R3's planner request** (the W-41 repair, README gaps 4130 and 4142; sent by
+/// every planning verb since R3): the ranked capacity request ([`request`], over
+/// the candidates `priority::collect_candidates` collects and the hysteresis
+/// input) with the `planner` section — `planwire::planner_json` over
+/// `.tm/state.json`, the replay and the plan date's routine instances, and the
+/// running block's worked minutes as the binary reads them (`day::worked_min`,
+/// gap 3043) — spliced by `planwire::with_planner`.
 ///
-/// Its one caller today is `tm check`, which asks the kernel for this day and
-/// names every refusal of it (P78): a planner refusal stops `tm plan`, `tm now`
-/// and the TUI once R3 swaps the body, and D80 made two of them refusals BY
-/// NAME so they would be findable (D32's shape). R3's swap sends exactly this
-/// request from `planning::build_ranked`.
+/// `tm check` asks the kernel for this day and names every refusal of it (P78);
+/// [`plan_day`] — `tm plan`, `tm now`, every verb that replans, and the TUI
+/// (R3) — sends it and reads the day back. A planner refusal stops each of
+/// them, and D80 made two of them refusals BY NAME so they are findable (D32's
+/// shape).
 ///
 /// **It reads `.tm/state.json` as `tm plan`'s roll leaves it, in memory**
 /// (`RuntimeState::roll_to`; the owner's D84, parity P83's rule for the TUI,
@@ -392,13 +392,23 @@ pub fn rank(ctx: &Ctx, cands: &[Candidate], yesterday: &BTreeMap<Id, u8>, allow_
 ///
 /// **Its reads and its build are two halves** (W-45 track Q, README gap 4662): [`tick_inputs`] reads from the plan
 /// directory, once, everything the request carries that the context does not hold in memory, and
-/// [`planner_request_from`] builds the request from them and the context alone. This is the two in one call, so
+/// [`planner_ask_from`] builds the request from them and the context alone (it was `planner_request_from` until
+/// the W-45 repair, which made [`planner_ask`] the one entry `tm check` and T19 build through). This is the two in one call, so
 /// `tm plan` and `tm check` read the files as they stand when the verb runs. The TUI's minute tick (the owner's
 /// D103) is the caller the halves exist for: it holds the context its last reload read, and a tick built from
 /// that reload's [`TickInputs`] reads NOTHING from disk — the documents, the log, the configured literals and the
 /// stored plan it was ranked from all the reload's, one consistent read, as fork 4748911's tick replanned from the
 /// App's own data.
+#[cfg(test)]
 pub fn planner_request(ctx: &Ctx, allow_home: bool) -> Result<String, CliError> {
+    Ok(planner_ask(ctx, allow_home)?.request)
+}
+
+/// **[`planner_request`] and what it was built from** — the plan directory read
+/// once and [`planner_ask_from`] over that read, with T19's instrument. `tm check`
+/// asks this and reads the answer with [`read_day`], the decoder every planning
+/// verb reads its day with (the W-45 repair, README gap 4742).
+pub fn planner_ask(ctx: &Ctx, allow_home: bool) -> Result<PlannerAsk, CliError> {
     let read = std::time::Instant::now();
     let inputs = tick_inputs(ctx)?;
     let read = read.elapsed();
@@ -408,21 +418,22 @@ pub fn planner_request(ctx: &Ctx, allow_home: bool) -> Result<String, CliError> 
     // instrument is measuring something other than one tick's request.
     let builds = std::env::var(TRACE_BUILD_ENV).ok().and_then(|k| k.parse::<usize>().ok()).filter(|k| *k > 0);
     let Some(k) = builds.filter(|_| !kernel_bridge::capturing_kernel_stderr()) else {
-        return planner_request_from(ctx, &inputs, allow_home);
+        return planner_ask_from(ctx, &inputs, allow_home, None);
     };
     let mut took = Vec::with_capacity(k);
-    let mut request = String::new();
-    for i in 0..k {
+    let mut asked: Option<PlannerAsk> = None;
+    for _ in 0..k {
         let t = std::time::Instant::now();
-        let built = planner_request_from(ctx, &inputs, allow_home)?;
+        let built = planner_ask_from(ctx, &inputs, allow_home, None)?;
         took.push(t.elapsed().as_nanos().to_string());
-        if i > 0 && built != request {
+        if asked.as_ref().is_some_and(|a| a.request != built.request) {
             return Err(defect("two builds of one tick's request differ"));
         }
-        request = built;
+        asked = Some(built);
     }
-    eprintln!("{TRACE_BUILD_PREFIX}read {} ns; built {} ns; {} bytes", read.as_nanos(), took.join(","), request.len());
-    Ok(request)
+    let asked = asked.ok_or_else(|| defect("no build of the tick's request"))?;
+    eprintln!("{TRACE_BUILD_PREFIX}read {} ns; built {} ns; {} bytes", read.as_nanos(), took.join(","), asked.request.len());
+    Ok(asked)
 }
 
 /// **The opt-in that times [`planner_request`]'s two halves** (T19, README gap 4662): its value is how many times
@@ -445,25 +456,136 @@ pub fn tick_inputs(ctx: &Ctx) -> Result<TickInputs, CliError> {
     Ok(TickInputs { reads: reads(ctx)?, yesterday: ctx.hysteresis_input() })
 }
 
-/// **The planner request from `inputs` and the context alone** — [`planner_request`]'s build, which reads
-/// nothing from the plan directory: measured with the plan root renamed away after the read, the build is the
-/// same request byte for byte, and `planner_request` itself fails (README gap 4662).
-pub fn planner_request_from(ctx: &Ctx, inputs: &TickInputs, allow_home: bool) -> Result<String, CliError> {
+
+/// **[`planner_request`] and what it was built from**: the request, the
+/// candidates it ranks (in `collect_candidates` order) and the order they were
+/// sent in (`planwire::send_order`, which [`read_answer`] reads the grants by),
+/// and the lookahead's horizon — the days asked for, the days wanted, and
+/// whether `planwire::horizon` clamped them (gap 98, parity P30).
+pub struct PlannerAsk {
+    /// The request's text.
+    pub request: String,
+    /// The candidates the capacity section ranks.
+    pub cands: Vec<Candidate>,
+    /// The order they were sent in.
+    pub order: Vec<usize>,
+    /// The lookahead's days.
+    pub days: u32,
+    /// The days `priority::lookahead_days` wanted.
+    pub want: u32,
+    /// Whether the horizon clamped them.
+    pub clamped: bool,
+}
+
+/// **[`planner_request`], with §9.1's what-if when `extend` names one** — `blocks`
+/// more blocks on the item, its candidate facts grown as fork
+/// `PlanOverrides::apply` grows them (`planwire::grown`, the owner's D58: the host's
+/// one reading of the facts, never derived in the kernel, D34) — over
+/// [`TickInputs`] already read: nothing here touches the plan directory.
+pub fn planner_ask_from(
+    ctx: &Ctx,
+    inputs: &TickInputs,
+    allow_home: bool,
+    extend: Option<(&Id, u32)>,
+) -> Result<PlannerAsk, CliError> {
     let mut state = ctx.state.clone();
     state.roll_to(ctx.today);
     let cands = priority::collect_candidates(&ctx.tree, &ctx.replay, &ctx.cfg, &ctx.model, ctx.today, ctx.now_tz);
     let yesterday = &inputs.yesterday;
-    let (days, _) = planwire::horizon(ctx.today, priority::lookahead_days(&cands, ctx.today));
+    let want = priority::lookahead_days(&cands, ctx.today);
+    let (days, clamped) = planwire::horizon(ctx.today, want);
     let ranked = Ranked { cands: &cands, yesterday };
-    let (request, _) = request_with(ctx, &state, allow_home, days, Some(&ranked), &inputs.reads)?;
+    let (request, order) = request_with(ctx, &state, allow_home, days, Some(&ranked), &inputs.reads)?;
     let tz = ctx.cfg.tz;
     let date = planwire::plan_date(&state, ctx.now_tz);
     let routines = planwire::routine_instances(&cands, &ctx.tree, ctx.now_tz, date, tz);
-    let mut planner = planwire::planner_json(&state, &ctx.replay, ctx.now_tz, tz, &routines, None);
+    let overtime = extend.map(|(id, blocks)| planwire::whatif_json(&cands, id, blocks, &ctx.cfg));
+    let mut planner = planwire::planner_json(&state, &ctx.replay, ctx.now_tz, tz, &routines, overtime);
     if let Some(worked) = super::day::worked_min(ctx) {
         planwire::add_worked_min(&mut planner, worked);
     }
-    Ok(planwire::with_planner(&request, &planner))
+    Ok(PlannerAsk { request: planwire::with_planner(&request, &planner), cands, order, days, want, clamped })
+}
+
+/// **The day the kernel planned** (R3), with what it was ranked by: the
+/// candidates and their priorities (1:1, the grants of the same response), and
+/// §9.1's what-if when one was asked.
+pub struct Planned {
+    /// The day, read by the host's codec (`planwire::read_plan`).
+    pub day: tm_core::dayplan::DayPlan,
+    /// The candidates the day was ranked over.
+    pub cands: Vec<Candidate>,
+    /// Their priorities.
+    pub prios: Vec<tm_core::priority::Prio>,
+    /// The lookahead's days, from the same answer (the Queue's "fits"; the W-45
+    /// repair, README gap 4743).
+    pub caps: Vec<UnitCapacity>,
+    /// §9.1's what-if (`plan.overtime`), when `extend` asked for one.
+    pub overtime: Option<tm_core::dayplan::PlanDiff>,
+}
+
+/// **§8's day, asked of the kernel** — R3's body swap (D48, D50): the plan
+/// directory read once ([`tick_inputs`]) and [`plan_day_from`] over that read.
+/// `tm plan`, `tm now` and every verb that replans call this, so they read the
+/// files as they stand when the verb runs.
+pub fn plan_day(ctx: &Ctx, allow_home: bool, extend: Option<(&Id, u32)>) -> Result<Planned, CliError> {
+    plan_day_from(ctx, &tick_inputs(ctx)?, allow_home, extend)
+}
+
+/// **[`plan_day`] over [`TickInputs`] already read** — the request
+/// [`planner_ask_from`] builds from them and the context alone, sent once, and
+/// the answer read by the host's codec: the grants into priorities
+/// ([`read_answer`], each checked to answer its own candidate) and the `plan`
+/// object into a [`tm_core::dayplan::DayPlan`] (`planwire::read_plan`, whose
+/// hash check refuses a day the decoder bent). A refusal is the kernel's, by
+/// name — a configured value's by file and key (P26, [`named_refusal`]); a
+/// response the codec cannot read is a fault, never a wrong day. **The TUI's
+/// minute tick calls this** with the inputs its last reload or re-collection
+/// read (the owner's D103, README gap 4662): a tick reads nothing from the
+/// plan directory, as fork 4748911's tick replanned from the App's own data.
+pub fn plan_day_from(
+    ctx: &Ctx,
+    inputs: &TickInputs,
+    allow_home: bool,
+    extend: Option<(&Id, u32)>,
+) -> Result<Planned, CliError> {
+    let ask = planner_ask_from(ctx, inputs, allow_home, extend)?;
+    if ask.clamped {
+        say_clamped(ctx.today, ask.want, ask.days);
+    }
+    if std::env::var_os(TRACE_REQUEST_ENV).is_some() && !kernel_bridge::capturing_kernel_stderr() {
+        eprintln!("{TRACE_REQUEST_PREFIX}{}", ask.request);
+    }
+    read_day(ctx, ask).map_err(|e| match e {
+        CliError::Kernel(issue) => named_refusal(&issue).unwrap_or(CliError::Kernel(issue)),
+        e => e,
+    })
+}
+
+/// **The kernel's answer to a [`PlannerAsk`], read by the host's ONE codec** (the
+/// W-45 repair, README gap 4742): sent once, the grants read into priorities
+/// ([`read_answer`], each checked to answer its own candidate) and the `plan`
+/// object into a [`tm_core::dayplan::DayPlan`] (`planwire::read_plan`, whose hash
+/// check refuses a day the decoder bent). A refusal comes back as the kernel's
+/// own issue, unrenamed, so `tm check` can point at the line it names; a
+/// response the codec cannot read is a fault. [`plan_day_from`] and `tm check`
+/// both read through this, so a decoder fault `tm plan` would meet is one `tm
+/// check` meets: until the repair `tm check` sent the request and never decoded
+/// the answer, and printed `no problems` on a tree every planning verb faulted on
+/// (README gap 4711).
+pub fn read_day(ctx: &Ctx, ask: PlannerAsk) -> Result<Planned, CliError> {
+    let (resp, _) = kernel_bridge::call_text(&ask.request)?;
+    let answer = read_answer(&resp, &ask.order, true)?;
+    for (c, p) in ask.cands.iter().zip(&answer.prios) {
+        if c.id != p.id {
+            return Err(defect("a grant answers another candidate"));
+        }
+    }
+    let read = planwire::DayCtx { tz: ctx.cfg.tz, cands: &ask.cands, prios: &answer.prios };
+    let day = planwire::read_plan(&resp["ok"]["plan"], &read).map_err(|e| {
+        CliError::Kernel(kernel_bridge::fault_issue(&format!("planner response: {e}"), ""))
+    })?;
+    Ok(Planned { day: day.day, cands: ask.cands, prios: answer.prios, caps: answer.days, overtime: day.overtime })
 }
 
 /// **`tm plan --week`'s seven days** from the kernel.

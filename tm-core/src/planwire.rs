@@ -22,10 +22,11 @@
 //! test that asked the kernel for a day therefore carried its OWN encoder and
 //! its own reading of the answer — `tm/tests/planner_invariants.rs`' world and
 //! `kernel_planner_wire.rs` among them — and the binary had none at all (gap
-//! 2720). This module is the one spelling both can call. **It is not wired into
-//! any verb**: `tm plan` and the TUI still plan with `planner::plan`, and the
-//! body swap is R3's (D48). What lands here is the codec R3 swaps in, built and
-//! tested first so the swap is the only thing R3 changes.
+//! 2720). This module is the one spelling both can call. **Since R3 it is the
+//! codec every planning verb and the TUI read the kernel's day through**
+//! (`kernel_capacity::plan_day`, D48, D50): it was built and tested first,
+//! while fork 4748911's planner still planned the binary's day, so R3's body
+//! swap changed no codec.
 //!
 //! # What it encodes, and what it deliberately does not
 //!
@@ -902,7 +903,7 @@ pub struct Ranked<'a> {
 }
 
 /// **The order the candidates are sent in**: the fork's `(effective_due,
-/// own_order, index)` (`priority::compute`'s sort), so the kernel's stable sort
+/// own_order, index)` (fork 4748911's own §7 pass sorted so), so the kernel's stable sort
 /// by due date serves a date's deadlines in the fork's order (P12 does not
 /// bite). Undated candidates follow, in their own order.
 pub fn send_order(cands: &[Candidate]) -> Vec<usize> {
@@ -1448,6 +1449,49 @@ pub fn overtime_json(id: &Id, blocks: u32, grown: Option<&Grown>) -> Value {
         o["grown"] = json!({"remaining": g.remaining_min, "plannedMin": g.planned_min});
     }
     o
+}
+
+/// **§9.1's what-if as the host asks it** (D58): `blocks` more blocks on `id`,
+/// its candidate's facts grown as fork `PlanOverrides::apply` grows them
+/// ([`grown`]), as the section's `overtime` object. **The ONE builder** — the
+/// shipped TUI's request (`kernel_capacity::planner_ask_from`) and every
+/// harness that compares the kernel's what-if with fork 4748911's
+/// (`support/forkclass.rs`' `whatif_json`) call it, so the binary-only half of
+/// the request is not a second definition the fork comparison never meets
+/// (the W-46 repair, README gap 4875: a growth bent in the binary's own copy
+/// passed the whole workspace).
+pub fn whatif_json(cands: &[Candidate], id: &Id, blocks: u32, cfg: &Config) -> Value {
+    let grown = cands
+        .iter()
+        .find(|c| c.id == *id)
+        .and_then(|c| grown(c, None, blocks.saturating_mul(cfg.block_min()), cfg));
+    overtime_json(id, blocks, grown.as_ref())
+}
+
+/// **The running block's worked minutes as the host sends them**
+/// (`state.active.workedMin`, README gap 3043): the log's reading
+/// ([`crate::log::Replay::running_worked_min`], D75) to `end`, net of the
+/// running break placed where every host site places it — its LOGGED start
+/// when the log holds one (the owner's D105, `started_at_logged`), the cache's
+/// clock otherwise. `None` with nothing running. **The ONE reading** the
+/// binary's request (`day::worked_min`) and the harness's (`forkclass::host_worked`)
+/// both call (README gap 4875: the harness placed the break by the cache's
+/// clock alone).
+pub fn running_worked_min(
+    state: &RuntimeState,
+    replay: &crate::log::Replay,
+    tz: Tz,
+    now: DateTime<Tz>,
+    today: NaiveDate,
+    end: DateTime<chrono::FixedOffset>,
+) -> Option<u32> {
+    let a = state.active.as_ref()?;
+    let brk = state
+        .break_
+        .as_ref()
+        .and_then(|b| b.started_at_logged(replay.open_break.as_ref(), tz, now))
+        .map(|t| t.fixed_offset());
+    replay.running_worked_min(a.id.as_str(), today, end, brk)
 }
 
 /// **The whole `planner` section**: `state`, `routines`, and `overtime` when a
@@ -2376,8 +2420,8 @@ mod tests {
 
     /// **D58, by value** — fork `PlanOverrides::apply`'s arithmetic on one
     /// candidate, written down so it survives the fork's deletion at R3. The
-    /// comparison against `apply` itself runs in `planner.rs`'s own tests while
-    /// the fork is there to be compared with.
+    /// comparison against `apply` itself ran in `planner.rs`'s own tests until
+    /// R3 deleted the fork; this value is what holds the arithmetic since.
     #[test]
     fn the_grown_facts_are_apply_s_by_value() {
         let cfg = Config::default(); // safety 1.3

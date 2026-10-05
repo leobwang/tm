@@ -1845,6 +1845,33 @@ impl Ctx {
         Ok(())
     }
 
+    /// **A copy of this context** for the TUI's planner (R3; `tui::mod.rs`'s
+    /// `kernel_planner`), which asks the kernel for the day at every minute over
+    /// the plan directory as this context read it — the documents and the log
+    /// as held (D84, D91, D96), `.tm/state.json`, the tree and the replay —
+    /// and moves only its own clock. Its store is a store over the same root,
+    /// with no write hook: the planner writes nothing.
+    pub fn fork(&self) -> Ctx {
+        Ctx {
+            store: FsStore::new(self.store.root()),
+            cfg: self.cfg.clone(),
+            json: self.json,
+            now: self.now,
+            now_tz: self.now_tz,
+            today: self.today,
+            state: self.state.clone(),
+            files: self.files.clone(),
+            tree: self.tree.clone(),
+            replay: self.replay.clone(),
+            replay_fault: self.replay_fault.clone(),
+            ledger_day: self.ledger_day,
+            scope: self.scope,
+            model: self.model.clone(),
+            timed_out: self.timed_out.clone(),
+            held: self.held.clone(),
+        }
+    }
+
     /// `cfg.day.block_min`.
     pub fn block_min(&self) -> u32 {
         self.cfg.block_min()
@@ -1861,9 +1888,12 @@ impl Ctx {
 
     /// Today's wake: `state.wake`, else the `wake` event of the day, else the
     /// fallback [`Model::wake_or_expected`] owns — the weekday's expected
-    /// arrival (§8.4, §16 `[expected]`). This is the resolution `planner.rs`
-    /// runs, in the same order and through the same fallback, so a plan and
-    /// the verbs that cut their own slots read one wake.
+    /// arrival (§8.4, §16 `[expected]`). This is the resolution the kernel's
+    /// day reads too — the capacity request sends [`Ctx::logged_wake`] and
+    /// `Look.wakeOf` applies this fallback, fork `Ctx::wake_time`'s, which fork
+    /// 4748911's planner ran until R3 deleted it — in the same order and
+    /// through the same fallback, so a plan and the verbs that cut their own
+    /// slots read one wake.
     pub fn wake_time(&self) -> NaiveTime {
         self.model
             .wake_or_expected(self.logged_wake(), self.today.weekday(), &self.cfg)

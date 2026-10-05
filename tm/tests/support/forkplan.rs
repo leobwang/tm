@@ -8,20 +8,21 @@
 //! by their properties — P45's comparand after a running break, P46, P47, P51, P52,
 //! P55, P56. Until W-39 that comparand was built in ONE place, `planner_classes.rs`'
 //! fork region, calling the in-tree `tm-core/src/planner.rs` directly — so it could
-//! answer only while that file exists, and R3 deletes it. The owner's D72 keeps both
+//! answer only while that file existed, and R3 deleted it. The owner's D72 keeps both
 //! kinds of fork comparison past R3: a seeded batch frozen by value (the frozen half),
 //! and fresh proptest draws against fork 4748911's planner run OUT of the tree by
 //! `tm-oracle plan` (the oracle half).
 //!
 //! So the comparand is built here, once, over [`ForkPlan`] — anything that plans a day
-//! as the shipped binary's fork plans it — and the two backends are:
+//! as the shipped binary's fork planned it — and there were two backends until R3:
 //!
-//! * **the in-tree fork** ([`InTree`], this file's one region, deleted at R3): what the
-//!   live checks that the frozen answers are still the in-tree fork's call (and, until
-//!   W-45 track C, every bless of a frozen line — README gap 4680: each asks the oracle
-//!   now, so none is final at R3);
+//! * **the in-tree fork** (InTree, this file's one region, deleted at R3): what the
+//!   live checks that the frozen answers were still the in-tree fork's called (and,
+//!   until W-45 track C, every bless of a frozen line — README gap 4680: each asks the
+//!   oracle now, so none was final at R3);
 //! * **the out-of-tree oracle** ([`Oracle`]): fork `4748911` extracted and built by
-//!   `kernel/tm-kernel-ffi/examples/oracle/build-oracle.sh`, run as `tm-oracle plan`.
+//!   `kernel/tm-kernel-ffi/examples/oracle/build-oracle.sh`, run as `tm-oracle plan` —
+//!   the one backend since R3.
 //!
 //! [`comparand_answers`] is the ONE definition of the comparand's answers (AGENTS
 //! §5.3): the departures are applied to the day's JSON — the frozen lines' own
@@ -232,7 +233,7 @@ pub fn frozen_day_json(day: &Value) -> Value {
     json!({"hash": day_hash(day), "day": day})
 }
 
-/// **P46's row, by its property** (`planner_invariants`' `w35_p46_row`): the running
+/// **P46's row, by its property** (planner_invariants' w35_p46_row, in the fork region R3 deleted): the running
 /// block's reservation — a Block row marked current, with no slot energy, from `now` —
 /// carries the fork's own saturating `left`, 0 in overtime.
 pub fn p46_row(now: DateTime<Tz>, day: &mut Value) {
@@ -245,7 +246,7 @@ pub fn p46_row(now: DateTime<Tz>, day: &mut Value) {
     }
 }
 
-/// **P47, by its property** (`w35_p47_day` over `w35_pause_open_rows`): a wall whose
+/// **P47, by its property** (w35_p47_day over w35_pause_open_rows, in the fork region R3 deleted): a wall whose
 /// rows span `now` pauses the open row — no `▶`, clipped at the first of those walls'
 /// rows that starts after it. Whether the rule fired.
 pub fn p47_pause(now: DateTime<Tz>, day: &mut Value) -> bool {
@@ -1087,136 +1088,3 @@ impl ForkPlan for Oracle {
     }
 }
 
-// BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gap 3533)
-use tm_core::dayplan::{DayPlan, SegFlags, SegKind, Segment};
-use tm_core::planner::{self, PlanOverrides};
-
-/// **The in-tree fork** — `tm-core/src/planner.rs`, as the shipped binary runs it
-/// (`planning::build_ranked`: `plan` over the kernel's grants, D53). R3 deletes it.
-pub struct InTree;
-
-/// **Fork 4748911's drawing of a replayed pause** (parity P56, README gap 3320): W-37
-/// track T changed the in-tree fork's `past_segments` to agree with P56 — the part of a
-/// replayed Pause a wall of the day covers is cut out — so the SHIPPED fork's day on a
-/// line whose log holds a meeting's pause cannot be recomputed from the in-tree fork. This
-/// is `b3c29a3`'s `past_segments` for the one kind T changed: every `paused` Lost row the
-/// in-tree fork drew is taken out, and each of the day's replayed Pause segments is put back
-/// WHOLE (clipped to the day's start and to `now`, `done` when the log closed its item
-/// today), ahead of every other row at one `(start, end)` as `plan`'s stable sort puts the
-/// replayed past first. On a day whose replay holds no Pause a wall touches it is the
-/// in-tree day exactly. The frozen P56 lines were checked BY VALUE against `b3c29a3`'s own
-/// planner built in a scratch clone (README, W-38 track H). Since W-39 over the replay and
-/// the instant the day was planned from (it read the world's, which is the same on every
-/// ask whose fork drawing a comparand reads).
-fn as_4748911(b: &Built, replay: &tm_core::log::Replay, now: DateTime<Tz>, day: &DayPlan) -> DayPlan {
-    let Some(d) = replay.day(day.date) else { return day.clone() };
-    let tz = b.cfg.tz;
-    let (lo, _) = b.day_bounds();
-    let mut past: Vec<Segment> = Vec::new();
-    for seg in &d.segments {
-        let tm_core::log::SegmentKind::Pause { id } = &seg.kind else { continue };
-        let start = seg.start.with_timezone(&tz).max(lo);
-        let end = seg.end.with_timezone(&tz).min(now);
-        if end <= start {
-            continue;
-        }
-        past.push(Segment {
-            start,
-            end,
-            kind: SegKind::Lost,
-            energy: None,
-            item: Some(Id::new(id.clone())),
-            instance: None,
-            flags: SegFlags {
-                done: d.done.iter().any(|x| x == id),
-                note: Some("paused".to_string()),
-                ..SegFlags::default()
-            },
-        });
-    }
-    let mut out = day.clone();
-    let rest: Vec<Segment> = day
-        .segments
-        .iter()
-        .filter(|s| !(s.kind == SegKind::Lost && s.flags.note.as_deref() == Some("paused")))
-        .cloned()
-        .collect();
-    out.segments = past.into_iter().chain(rest).collect();
-    out.segments.sort_by(|a, z| a.start.cmp(&z.start).then(a.end.cmp(&z.end)));
-    out
-}
-
-/// **A serialised day's rows as the fork's `diff` reads them** — each row's start, end,
-/// kind (a batch's members with it) and item; `diff` reads nothing else.
-fn day_of_json(tz: Tz, v: &Value) -> Result<DayPlan, String> {
-    let when = |x: &Value, what: &str| at(x).map(|t| t.with_timezone(&tz)).ok_or_else(|| format!("{what}: {x}"));
-    let date = v["date"].as_str().and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()).ok_or("the day's date")?;
-    let window = (when(&v["window"][0], "window")?, when(&v["window"][1], "window")?);
-    let mut day = DayPlan::empty(date, window, v["budget_blocks"].as_u64().unwrap_or(0) as u32);
-    for s in segments_of(v) {
-        let kind = match &s["kind"] {
-            Value::String(k) => match k.as_str() {
-                "block" => SegKind::Block,
-                "break" => SegKind::Break,
-                "routine" => SegKind::Routine,
-                "wall" => SegKind::Wall,
-                "rest" => SegKind::Rest,
-                "optional" => SegKind::Optional,
-                "winddown" => SegKind::WindDown,
-                "sleep" => SegKind::Sleep,
-                "lost" => SegKind::Lost,
-                other => return Err(format!("a row of kind `{other}`")),
-            },
-            k => SegKind::Batch(
-                k["batch"].as_array().ok_or_else(|| format!("a row of kind {k}"))?.iter().filter_map(Value::as_str).map(Id::new).collect(),
-            ),
-        };
-        day.segments.push(Segment {
-            start: when(&s["start"], "start")?,
-            end: when(&s["end"], "end")?,
-            kind,
-            energy: None,
-            item: s["item"].as_str().map(Id::new),
-            instance: None,
-            flags: SegFlags::default(),
-        });
-    }
-    Ok(day)
-}
-
-impl ForkPlan for InTree {
-    fn plan(&self, b: &Built, ask: &ForkAsk<'_>) -> Result<Planned, String> {
-        let replay = match &ask.log_line {
-            Some(l) => crate::chokepoint::replay_of_text(&format!("{}{l}", b.world.log), b.cfg.tz),
-            None => b.replay.clone(),
-        };
-        let cands = if ask.d60 { forkclass::d60_cands(&b.cands, ask.prios) } else { b.cands.clone() };
-        let ov = ask.extend.map(|(id, m)| PlanOverrides::new().extending(id, m));
-        let mut input = planner::PlanInput::new(&b.tree, &replay, &b.cfg, &b.model, ask.state, ask.now)
-            .with_ranking(&cands, ask.prios)
-            .with_runs(ask.p64);
-        if let Some(ov) = ov.as_ref() {
-            input = input.with_overrides(ov);
-        }
-        let day = planner::plan(&input);
-        let fork = as_4748911(b, &replay, ask.now, &day);
-        let ranked = tm_core::priority::sorted_candidates(ask.prios, &cands).iter().map(|c| c.id.as_str().to_string()).collect();
-        Ok(Planned {
-            day: serde_json::to_value(&day).map_err(|e| e.to_string())?,
-            fork_day: serde_json::to_value(&fork).map_err(|e| e.to_string())?,
-            ranked,
-        })
-    }
-
-    fn diff(&self, tz: Tz, old: &Value, new: &Value) -> Result<Value, String> {
-        let (a, z) = (day_of_json(tz, old)?, day_of_json(tz, new)?);
-        serde_json::to_value(planner::diff(&a, &z)).map_err(|e| e.to_string())
-    }
-
-    /// The in-tree fork plans over the replay it is handed — the kernel's — so its reading is
-    /// `Built::worked_for`'s.
-    fn worked(&self, b: &Built, st: &RuntimeState) -> Result<Option<u32>, String> {
-        Ok(b.worked_for(st))
-    }
-}
-// END THE FORK PLANNER

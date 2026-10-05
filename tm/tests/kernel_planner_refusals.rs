@@ -555,8 +555,9 @@ fn an_id_past_the_bound_is_refused_by_the_capacity_section_first() {
 /// candidate the kernel's plan does not hold: P72's `ciDisagrees <id> wire <w> plan none`, the owner's D80 (b). Until
 /// W-46 the assembler read the routines first and named it `routineRefused unknownItem stretch ^é1` — one
 /// disagreement, two names, and the second no register row gives; since W-46 it asks D80 first. `tm check` names it
-/// as the task twin is named (P78, exit 2), and `tm plan`, on fork 4748911's planner until R3, plans the routine (exit
-/// 0) — at R3 `tm plan` meets P72's refusal, which P72's row licenses by this very text.
+/// as the task twin is named (P78, exit 2), and `tm plan` — which on fork 4748911's planner planned the routine (exit
+/// 0) until R3 — meets P72's refusal since R3 (exit 1), which P72's row licenses by this very text (RULE M, the W-46
+/// repair's README block §7).
 #[test]
 fn a_routine_word_the_two_readers_key_apart_is_p72s_refusal_by_name() {
     let tm = Tm::empty();
@@ -570,8 +571,9 @@ fn a_routine_word_the_two_readers_key_apart_is_p72s_refusal_by_name() {
     assert!(check.stdout.contains("ciDisagrees stretch ^é1 wire 1 plan none"), "{}", check.stdout);
     assert!(!check.stdout.contains("routineRefused"), "the routine's own refusal named first: {}", check.stdout);
     let plan = tm.run_at(now, &["plan"]);
-    assert_eq!(plan.code, 0, "{}{}", plan.stdout, plan.stderr);
-    assert!(plan.stdout.contains("stretch ^é1"), "{}", plan.stdout);
+    assert_eq!(plan.code, 1, "since R3 `tm plan` meets P72's refusal: {}{}", plan.stdout, plan.stderr);
+    assert!(plan.stderr.contains("ciDisagrees stretch ^é1 wire 1 plan none"), "{}", plan.stderr);
+    assert!(!plan.stderr.contains("routineRefused"), "{}", plan.stderr);
 
     // The task-side twin: the same `^` word on a task is P72's, by name.
     let twin = Tm::empty();
@@ -592,8 +594,9 @@ fn a_routine_word_the_two_readers_key_apart_is_p72s_refusal_by_name() {
 /// routine: its instance's window opens past the calendar and the section's reader refuses it (`badRoutine 0 winLo`),
 /// and that refusal yields to D80 (a) (`PlanWire.eveningFirst`; until the repair it reached the host under its own
 /// name). A routine whose window crosses midnight past the calendar is refused by the capacity section first, on fork
-/// 4748911's binary as on the kernel's. Today `tm check` names each (P78) and `tm plan`, on fork 4748911's planner,
-/// plans the first two; at R3 `tm plan` meets both under P71's name. And the binary cannot log a running block past
+/// 4748911's binary as on the kernel's. `tm check` names each (P78), and `tm plan` — which on fork 4748911's planner
+/// planned the first two until R3 — meets both under P71's name since R3 (RULE M, the W-46 repair's README block §7).
+/// And the binary cannot log a running block past
 /// the calendar — the kernel's `emit` refuses the line (`badAt`) — which is why `badActive started` is a hand edit's.
 #[test]
 fn the_calendars_last_day_reaches_the_planner_section_by_p71s_name() {
@@ -621,7 +624,9 @@ fn the_calendars_last_day_reaches_the_planner_section_by_p71s_name() {
     let check = plain.run_at(now, &["check"]);
     assert_eq!(check.code, 2, "{}{}", check.stdout, check.stderr);
     assert!(check.stdout.contains("eveningPastTheCalendar"), "{}", check.stdout);
-    assert_eq!(plain.run_at(now, &["plan"]).code, 0, "fork 4748911's planner plans the calendar's last day");
+    let plan = plain.run_at(now, &["plan"]);
+    assert_eq!(plan.code, 1, "since R3 `tm plan` meets P71's refusal: {}{}", plan.stdout, plan.stderr);
+    assert!(plan.stderr.contains("eveningPastTheCalendar"), "{}", plan.stderr);
 
     let evening = tree(Some("- wind  win:20:00-23:00 dur:30m  every:day"));
     let check = evening.run_at(now, &["check"]);
@@ -629,7 +634,8 @@ fn the_calendars_last_day_reaches_the_planner_section_by_p71s_name() {
     assert!(check.stdout.contains("eveningPastTheCalendar"), "{}", check.stdout);
     assert!(!check.stdout.contains("badRoutine"), "{}", check.stdout);
     let plan = evening.run_at(now, &["plan"]);
-    assert_eq!(plan.code, 0, "fork 4748911's planner plans it: {}{}", plan.stdout, plan.stderr);
+    assert_eq!(plan.code, 1, "since R3 `tm plan` meets P71's refusal: {}{}", plan.stdout, plan.stderr);
+    assert!(plan.stderr.contains("eveningPastTheCalendar") && !plan.stderr.contains("badRoutine"), "{}", plan.stderr);
 
     let night = tree(Some("- sleep  win:22:00-08:00 dur:8h  every:day"));
     let check = night.run_at(now, &["check"]);

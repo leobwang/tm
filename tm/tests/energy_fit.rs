@@ -285,10 +285,6 @@ fn fit_leaves_unobserved_weekdays_out_of_the_model() {
         model.expected_arrival_on(Weekday::Sat, &cfg),
         *cfg.expected.arrival.get(Weekday::Sat)
     );
-    assert_eq!(
-        model.p_lounge_on(Weekday::Tue, &cfg),
-        *cfg.expected.p_lounge.get(Weekday::Tue)
-    );
 
     // A weekday already in the base model survives a fit that saw nothing
     // new for it (it was learned once; no observation is not evidence

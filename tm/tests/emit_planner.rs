@@ -469,33 +469,3 @@ fn the_frozen_fork_renderings_are_blessed() {
     }
 }
 
-// BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gaps 2722, 2872)
-//
-// The fork's rendering, snapshotted: these three WRITE the files the kernel arm
-// above reads as the fork's frozen answer, and R3 deletes them with this region
-// so the files are final.
-use planner_common::Fork;
-
-/// (a) on the fork.
-#[test]
-fn plan_basic_early_start_section_and_svg_on_the_fork() {
-    insta::assert_snapshot!("plan_basic_early_emit", render_with(&Fork, "plan_basic_early_emit"));
-}
-
-/// (b) on the fork.
-#[test]
-fn plan_basic_late_start_section_and_svg_on_the_fork() {
-    insta::assert_snapshot!("plan_basic_late_emit", render_with(&Fork, "plan_basic_late_emit"));
-}
-
-/// (c) on the fork.
-#[test]
-fn plan_home_day_section_and_svg_on_the_fork() {
-    insta::assert_snapshot!("plan_home_day_emit", render_with(&Fork, "plan_home_day_emit"));
-}
-
-#[test]
-fn no_row_repeats_its_own_title_or_actual_on_the_fork() {
-    no_row_repeats_its_own_title_or_actual_on(&Fork);
-}
-// END THE FORK PLANNER

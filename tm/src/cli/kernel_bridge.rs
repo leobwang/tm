@@ -1627,8 +1627,8 @@ fn refusal(err: &Value) -> KernelIssue {
         ))
     } else if let Some(text) = err.get("planner").and_then(Value::as_str) {
         // The `planner` section's refusal (`PlanWire.PlannerRefusal`, `<name> <key…>`).
-        // No shipped verb sends the section until R3's swap; `tm check` asks it
-        // since the W-41 repair (`kernel_capacity::planner_request`, README gap 4142),
+        // Every planning verb sends the section since R3's swap (`kernel_capacity::plan_day`),
+        // and `tm check` since the W-41 repair (`kernel_capacity::planner_ask`, README gap 4142),
         // and a `ciDisagrees` names the item, so the problem can name its line.
         let (name, rest) = match text.split_once(' ') {
             Some((n, k)) => (n, Some(k)),

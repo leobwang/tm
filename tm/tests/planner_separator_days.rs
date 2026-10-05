@@ -431,37 +431,3 @@ fn the_frozen_separator_days_are_blessed() {
     std::fs::write(out_path, out).expect("the frozen separator days are written");
 }
 
-// BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gap 4168)
-/// **The frozen separator days are the in-tree fork's answer today** — while the in-tree fork
-/// stands, it plans each frozen world's day exactly as frozen (the claim
-/// `kernel_separator_worlds.rs`' region makes of `nbsp-box`, now of every world and against the
-/// frozen day), and no registered number departs on it. Deleted with the region.
-#[test]
-fn the_frozen_separator_days_are_the_in_tree_forks_answer_today() {
-    for l in frozen() {
-        let name = l["name"].as_str().unwrap_or("?");
-        let b = built(&l);
-        let day = shipped_day(&b, &forkplan::InTree).unwrap_or_else(|e| panic!("{name}: {e}"));
-        assert_eq!(day, l["shipped"], "{name}: the in-tree fork plans another day ({:?})", forkplan::first_difference("day", &l["shipped"], &day));
-        no_departure(name, &b, &day, &forkplan::InTree);
-        let suite = Built::of(suite_world_of(l["line"].as_str().unwrap_or_default()));
-        let theirs = shipped_day(&suite, &forkplan::InTree).unwrap_or_else(|e| panic!("{name} (the suite's construction): {e}"));
-        assert_eq!(theirs, l["shipped"], "{name}: the in-tree fork plans the suite's construction otherwise");
-    }
-}
-
-/// **[`no_departure`] bites** (AGENTS §5.8): on a frozen class line whose comparand departs from the
-/// shipped fork's day (D60's order, parity P51 — its `shipped` held beside a `day` that is not it),
-/// the assertion that holds the separator days to the shipped day with nothing applied refuses.
-#[test]
-fn no_departure_refuses_a_world_a_registered_number_departs_on() {
-    let line = forkclass::frozen_lines()
-        .iter()
-        .find(|l| l["d60"]["p51"] == true && l["secondary"].is_null() && l["world"]["state"]["active"].is_null())
-        .expect("a frozen class line D60's order departs on, no block running");
-    let b = Built::of(ClassWorld::of_json(&line["world"], tz()).expect("a stored world"));
-    let day = shipped_day(&b, &forkplan::InTree).expect("the in-tree fork plans the day");
-    let refused = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| no_departure("a P51 line", &b, &day, &forkplan::InTree)));
-    assert!(refused.is_err(), "no_departure let a world D60's order departs on through");
-}
-// END THE FORK PLANNER

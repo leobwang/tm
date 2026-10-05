@@ -935,11 +935,11 @@ fn t18_the_planner_call_on_the_example_three_year_and_far_deadline_trees() {
 // revises D38's reload-only fallback): one planner request, built from the
 // context the TUI's last reload read, and one call. T18 times the call `tm
 // check` makes; it never timed the BUILD, and it times one call in a fresh
-// process. This row times both halves of `kernel_capacity::planner_request`
+// process. This row times both halves of `kernel_capacity::planner_ask`
 // INSIDE the binary — `TM_TRACE_PLANNER_BUILD=k` (`kernel_capacity::TRACE_BUILD_ENV`)
 // makes the request's one read (`kernel_capacity::tick_inputs`: the documents,
 // the log, `config.toml`, `.tm/model.json`, `tz.json`, `.tm/last_plan.json`)
-// be timed once and its build from that read (`kernel_capacity::planner_request_from`,
+// be timed once and its build from that read (`kernel_capacity::planner_ask_from`,
 // which reads nothing from disk) be timed `k` times, warm — and then asks the
 // kernel the request `k` times in-process, on a thread with the binary's
 // main-thread stack, as T18's what-if does. A tick that holds its reload's

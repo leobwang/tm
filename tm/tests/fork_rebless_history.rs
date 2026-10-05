@@ -359,7 +359,8 @@ fn test_fns(text: &str) -> Vec<(String, String)> {
 /// **A bless of a FORK comparand, by its shape**: it writes a file, it reads a variable whose name
 /// is a bless's — `TM_` and `BLESS` in one literal, or the class lines' re-draw, `TM_PLANNER_DRAW` —
 /// and what it writes is the fork's: its code names a fork-side helper (an identifier that begins
-/// `fork` and continues as a name or a path, `forkclass::`, `forkplan::`, `fork_conference_day`…).
+/// `fork` and continues as a name or a path, `forkclass::`, `forkplan::`, or fork_conference_day as the
+/// conference file's region declared it until R3…).
 /// A bless of the binary's OWN bytes — `cli_switch_acceptance`'s `tm log` pin, `TM_LOG_BLESS` — is
 /// a snapshot, which is never re-blessed against a committed answer, and names no fork.
 fn is_bless(body: &str) -> bool {

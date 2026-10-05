@@ -300,9 +300,7 @@ pub(crate) fn worked_min(ctx: &Ctx) -> Option<u32> {
 /// span clipped to `[start, end]`, so the night after a forgotten block's end
 /// is not counted as worked.
 fn worked_min_at(ctx: &Ctx, end: DateTime<FixedOffset>) -> Option<u32> {
-    let active = ctx.state.active.as_ref()?;
-    ctx.replay
-        .running_worked_min(active.id.as_str(), ctx.today, end, running_break_at(ctx))
+    tm_core::planwire::running_worked_min(&ctx.state, &ctx.replay, ctx.cfg.tz, ctx.now_tz, ctx.today, end)
 }
 
 /// **What `tm now` shows for the running block** — [`log::Replay::shown_worked_min`],

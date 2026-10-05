@@ -3,8 +3,9 @@
 //! # API overview
 //!
 //! * [`plan`] — §8's `plan(state, now)`: collect the §6.2 candidates, size
-//!   the §8.4 lookahead from the furthest deadline, run §7's priority pass,
-//!   call [`tm_core::planner::plan`], then write the day file's
+//!   the §8.4 lookahead from the furthest deadline, and ask the kernel for §7's
+//!   priority pass and §8.2's day in one request
+//!   ([`kernel_capacity::plan_day`], R3), then write the day file's
 //!   `<!-- tm:plan … -->` section and `day/<date>.svg`, append the §10.1
 //!   `plan` event and store the plan and its priorities (§7.4's hysteresis
 //!   reads them tomorrow). `--week` prints the §8.4 capacity grid instead,
@@ -15,9 +16,9 @@
 //!   capacity on `--json` (the owner's D15).
 //! * [`now`] — the running block and the next three segments (§13).
 //!
-//! The segments come from `tm_core::planner` (§8.2's eight steps); everything
-//! around them — the window, the budget, the priorities, the files written,
-//! the events logged — belongs to this layer.
+//! The segments are the kernel's since R3 (`Planner.dayPlan`, §8.2's eight
+//! steps, read back by `tm_core::planwire::read_plan`); everything around them —
+//! the files written, the events logged, the renderings — belongs to this layer.
 
 use std::collections::BTreeSet;
 
@@ -26,7 +27,6 @@ use tm_core::capacity::{self, Exact, UnitCapacity};
 use tm_core::log::Event;
 use tm_core::model::{Id, IsoWeek};
 use tm_core::dayplan::{DayPlan, Diagnostics};
-use tm_core::planner::{self, PlanInput};
 use tm_core::priority::{self, Candidate, Prio};
 use tm_core::store::Store;
 
@@ -151,33 +151,15 @@ pub fn build(ctx: &Ctx, allow_home: bool) -> Result<(DayPlan, Vec<Prio>), CliErr
     Ok((plan, prios))
 }
 
-/// [`build`], with the candidates the priorities rank. The planner ranks by the
-/// kernel's priorities (stage 5 D10 L8: [`PlanInput::with_ranking`]) and never
-/// runs a lookahead or a pass of its own.
+/// [`build`], with the candidates the priorities rank — **the kernel's day**
+/// (R3's body swap, D48 and D50): one request carries the capacity section the
+/// priorities come from and the `planner` section, and the kernel answers both
+/// (`kernel_capacity::plan_day`), so the day is ranked by the very grants it
+/// returns. `--allow-home` reaches both halves of the request (§8.2 step 3 and
+/// the §8.4 lookahead).
 pub fn build_ranked(ctx: &Ctx, allow_home: bool) -> Result<(DayPlan, Vec<Candidate>, Vec<Prio>), CliError> {
-    let (cands, prios, caps) = ctx.priorities(allow_home)?;
-    let input = PlanInput::new(
-        &ctx.tree,
-        &ctx.replay,
-        &ctx.cfg,
-        &ctx.model,
-        &ctx.state,
-        ctx.now_tz,
-    )
-    .with_caps(&caps)
-    .with_ranking(&cands, &prios)
-    // §8.2 step 3: `--allow-home` lifts `home_max_ci`; the planner cuts its
-    // own slots, so the flag has to reach `PlanInput` too, not only the
-    // lookahead `ctx.priorities` sizes.
-    .with_allow_home(allow_home);
-    let mut plan = planner::plan(&input);
-    if plan.priorities.is_empty() {
-        plan.priorities = prios
-            .iter()
-            .map(|p| (p.id.clone(), p.clone()))
-            .collect::<Vec<_>>();
-    }
-    Ok((plan, cands, prios))
+    let planned = kernel_capacity::plan_day(ctx, allow_home, None)?;
+    Ok((planned.day, planned.cands, planned.prios))
 }
 
 /// The segments of a plan as JSON rows.

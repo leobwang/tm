@@ -564,7 +564,8 @@ const CLOCK_HOME: &str = "tm-core/src/dayplan.rs";
 /// `cli/ctx.rs`, `planner.rs`, `check.rs`, `review.rs`, `model.rs` and
 /// `config.rs`. They are not all this cell — a day-bar cursor label and a review
 /// window line are not §4.3 rows — so unifying them is a judgement this step did
-/// not take. README gap **1214**.
+/// not take. README gap **1214**. (Re-counted at R3, which deleted `planner.rs` and
+/// its one: 17, in ten files of `tm/src` and `tm-core/src`, 18 the step before.)
 #[test]
 fn exactly_one_function_renders_a_clock_by_hand() {
     let mut hits = Vec::new();

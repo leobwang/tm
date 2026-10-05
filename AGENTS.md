@@ -206,6 +206,15 @@ What is true is narrower: `tm-core`'s own lifecycle functions are still the
 fork-point Rust, **pre-stage-0** (its `move_to` has no destination check), and
 every verb the kernel does not yet back — `close`, `plan`, `review`, `recur`,
 `check`, id-less lines — still runs on them.
+*Status at R3 (built at W-45, rebuilt over the W-46 tracks, landed at the W-46 repair; kernel/README.md, "Stage 6 —
+W-45 switch", "Stage 6 — W-46 switch" and "Stage 6 — W-46 repair"): the planner is the kernel's — `tm plan`, `tm now`, every verb that replans and the TUI,
+its minute tick included (D103), plan the day `kernel_capacity::plan_day` asks the
+kernel for and `tm_core::planwire::read_plan` reads back — and fork 4748911's
+planner, `tm-core/src/planner.rs`, is deleted with the 21 `BEGIN THE FORK PLANNER`
+regions of `tm/tests`, and so is the class of `tm-core` functions only it reached (§7's own pass,
+the slot cut, the energy pass and the lookahead; README gap 4752): each is reached only through
+frozen answers and `tm-oracle plan` or `tm-oracle capacity` (D72). The list above was stale before R3 too: `close` has been the kernel's since
+stage 4, and the log's one reader and writer since stage 5.*
 
 The oracle is the fork point, not `main`, and the delta between them is stage
 0's fix, as far as this repository can know:
@@ -3080,6 +3089,11 @@ single-run goals that remained; the proptest still runs beside them (D5).*
 accepts, D80 refusing the two the fork cannot produce (README gap 3977).*
 *Since W-43 check 7 reads **1**: `plan_places_no_block_over_a_break` came back when D92 took its refutation away
 (README gaps 4362 and 4366).*
+*R3 (built at W-45, rebuilt over the W-46 tracks, landed at the W-46 repair): `tm plan` is kernel-backed — the plan acceptance's "worth alone" — and fork 4748911's
+planner is deleted; kernel/README.md's "Stage 6 — W-45 switch" block lists every registered planner divergence
+the user sees for the first time at the switch, the owner's §5.13 drive of the switched binary uses it as its
+checklist (with the W-46 repair block's §7), and check 7 still reads **1** (`plan_places_no_block_over_a_break`, W-47's
+by D99 as the W-46 brief scheduled it).*
 
 **Depends on.** All of stage 5 and stage 4, plus runtime state that lives in
 Rust: `active`, `window`, `budget`, `break`, `interrupt`, `last_plan_hash`.

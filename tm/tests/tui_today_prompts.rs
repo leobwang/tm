@@ -72,12 +72,19 @@ fn the_overtime_prompt_asks_again_after_the_reprompt_interval() {
 
 #[test]
 fn the_overtime_box_names_what_extending_would_drop() {
-    // §9.1: the consequence is computed by re-planning with the extension.
-    // On a day whose budget is nearly spent the extra block costs the tail.
+    // §9.1: the consequence is computed by re-planning with the extension — the
+    // kernel's what-if since R3 (`Planner.overtimeDiff`, through the App's planner).
+    // On this day `^t3` is in overtime (70 of 60 minutes worked) with one block of
+    // budget left, and parity P46 keeps a running block in overtime reserved to the
+    // end of its block: the kernel's day already spends that block on `^t3`, so
+    // extending it drops nothing. Fork 4748911's `active_run` refused the overtime
+    // block, spent the block on `^t4`, and extending `^t3` dropped `^t4` —
+    // `["Claude Code drafts tests (p3)"]` until R3 (W-45 track D: the drops line and
+    // the box's width, P46's; `tui_kernel_answers`' `Verdict::Registered(46)`).
     let over = tui_common::tight_overtime_app()
         .overtime_due()
         .expect("overtime is due");
-    assert_eq!(over.drops, vec!["Claude Code drafts tests (p3)"]);
+    assert_eq!(over.drops, Vec::<String>::new());
     insta::assert_snapshot!(overlay(|f| {
         prompts::draw(f, Rect::new(0, 0, 80, 12), &Prompt::Overtime(over.clone()));
     }));
@@ -155,8 +162,9 @@ fn the_overtime_box_names_the_remainder_that_stays_in_the_week_queue() {
 #[test]
 fn the_elapsed_minutes_are_worked_minutes_not_wall_clock() {
     // §9.1 fires at `est × r` of *worked* time: a pause (§12.6's `Space`) does
-    // not bring the prompt closer, and the number in the box is the one
-    // `planner::active_run` sizes the rest of the block from.
+    // not bring the prompt closer, and the number in the box is the one the
+    // planner sizes the rest of the block from (`Planner.PlanReq.activeRun`
+    // since R3; fork 4748911's active_run until then).
     let cfg = tui_common::config();
     let paused = tui_common::log_plus(
         &cfg,

@@ -1,7 +1,7 @@
 //! **The planner request's read, held** — stage 6 W-45, track Q (README gap 4662).
 //!
 //! `kernel_capacity::planner_request` is two halves since this step: `kernel_capacity::tick_inputs` reads, once,
-//! everything the request carries that a context does not hold in memory, and `kernel_capacity::planner_request_from`
+//! everything the request carries that a context does not hold in memory, and `kernel_capacity::planner_ask_from`
 //! builds the request from that read and the context alone — the call the TUI's minute tick makes after R3 (the
 //! owner's D103), with the read its last reload took.  One of the things the read holds is not a file the request
 //! carries verbatim: the HYSTERESIS INPUT, `Ctx::hysteresis_input` — `.tm/last_plan.json`'s priorities before the

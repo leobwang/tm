@@ -1,16 +1,16 @@
 //! **The planner's comparand that survives R3** (README gap 2722; D21's shape,
 //! stage 5's gap 146).
 //!
-//! R3 deletes `tm-core/src/planner.rs`, and every differential arm that plans
-//! a day compares the kernel against it. The moment it goes, an arm either goes
-//! with it or starts comparing the kernel with itself — AGENTS §9.2's worst
+//! R3 deleted `tm-core/src/planner.rs`, and every differential arm that planned
+//! a day compared the kernel against it. The moment it went, an arm either went
+//! with it or started comparing the kernel with itself — AGENTS §9.2's worst
 //! disguised gap, on the least reviewable commit of the stage. Stage 5 met the
 //! same shape at its switch (gap 146) and D21 put the instrument BEFORE the
 //! change it watches; this is that move, one comparand along.
 //!
 //! **What is frozen, and why it is the shipped configuration (D53).** Each
-//! named input's fork day is taken the way the binary plans today —
-//! `planner::plan(input.with_ranking(cands, prios))` with the kernel's own
+//! named input's fork day is taken the way the binary planned until R3 —
+//! fork planner::plan(input.with_ranking(cands, prios)) with the kernel's own
 //! grants for `prios`, read by the binary's own reader (`planwire::prio_of`) —
 //! and written **by value**, the whole serialised `DayPlan` and its hash, never
 //! a digest of it: a digest would have to normalise the classes below out,
@@ -25,9 +25,10 @@
 //! **Neither side of a comparison here is the fork's code.** One side is a
 //! `DayPlan` the *kernel* produced and the host's codec (`tm_core::planwire`)
 //! decoded; the other is bytes on disk. So R3's deletion cannot turn it into a
-//! self-comparison — and the suites that use it keep their fork-reading half in
+//! self-comparison — and the suites that used it kept their fork-reading half in
 //! one `BEGIN THE FORK PLANNER` … `END THE FORK PLANNER` region, which
-//! [`fork_scan`] holds to that: R3 deletes the region and nothing else.
+//! [`fork_scan`] held to that: R3 deleted the regions and nothing else, and with
+//! no region left [`fork_scan`] holds that no reference to the fork remains.
 //!
 //! Re-bless with, from the repository root, asking fork 4748911 out of the tree
 //! (`tm-oracle plan`, built by `kernel/tm-kernel-ffi/examples/oracle/build-oracle.sh`):
@@ -39,7 +40,7 @@
 //!
 //! A re-bless is a decision about what the fork says, never a way to make a
 //! failure go away (AGENTS §7.2). Until W-45 it planned with the in-tree fork,
-//! in the region R3 deletes, and this file would have been the fork's last word
+//! in the region R3 deleted, and this file would have been the fork's last word
 //! on these days; since W-45 track C (README gap 4680) it asks the oracle, so it
 //! outlives R3.
 //!

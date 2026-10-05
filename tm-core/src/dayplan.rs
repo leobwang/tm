@@ -6,25 +6,25 @@
 //! # Why these are not `planner.rs`'s any more (stage 6 W-35, README gap 2721)
 //!
 //! They were declared in `tm-core/src/planner.rs`, the fork's planner, and R3
-//! deletes that file (D48, D50). But they are not the fork's planning: they are
+//! deleted that file (D48, D50). But they are not the fork's planning: they are
 //! the shape the **renderers** read — `emit.rs` (the one padder, D43), the day
 //! file, `tm plan --json`, `.tm/last_plan.json`, the TUI's timeline, the ghost
 //! row `cli/ghost.rs` builds from recorded starts — and the shape the host
 //! decodes the kernel's `plan` answer into (`crate::planwire`, README gap
-//! 2720). A day the kernel planned still has to reach those surfaces after R3,
+//! 2720). A day the kernel planned still had to reach those surfaces after R3,
 //! so the types had to leave the file before it could be deleted whole.
 //!
 //! **The move is byte for byte**: every declaration below, its doc comment and
 //! its `Serialize` derive are exactly what `planner.rs` held at `fe49a8b`, so
 //! `tm plan --json`, `.tm/last_plan.json` and every snapshot are unchanged
-//! (serde's derive names no module path). `planner.rs` re-exports all of them
-//! until R3, so a caller that still names them through `planner::` compiles
-//! unchanged — `tm/tests/planner_invariants.rs` does, and is not this step's to
-//! touch.
+//! (serde's derive names no module path). `planner.rs` re-exported all of them
+//! until R3 deleted it, so a caller that named them through the fork's module
+//! compiled unchanged until then.
 //!
-//! What stayed in `planner.rs`, because it is the fork's planning and dies with
-//! it: `plan`, `week_plan`, `overtime_drops`, `diff`, `explain`, `PlanInput`,
-//! `PlanOverrides` and `WeekPlan`.
+//! What stayed in `planner.rs`, because it was the fork's planning, went with
+//! it at R3: plan, week_plan, overtime_drops, diff, explain, PlanInput,
+//! PlanOverrides and WeekPlan — fork 4748911's, which `tm-oracle plan` still
+//! builds out of the tree (D72).
 
 use std::collections::BTreeSet;
 

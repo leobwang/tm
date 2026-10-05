@@ -9,6 +9,10 @@
 > month` on a fresh `tm init --example` tree is refused `occupied`). The record of what
 > the binary runs is `kernel/README.md` (AGENTS §2.2); whether its DAY is the kernel's
 > or fork 4748911's planner's is R3's, and README's W-45 blocks say where that stands.
+> **At R3 the day is the kernel's**: `tm plan`, `tm now`, the TUI (its minute tick
+> included, D103) and every verb that replans plan the day the kernel answers, and fork
+> 4748911's planner and the `tm-core` functions only it reached are deleted (README gap
+> 4752; the R3 blocks of `kernel/README.md`).
 
 This directory holds the frontend of the Rust `tm`: the CLI verbs (§13), the
 ratatui TUI (§12), and `tm init`'s generated content (§14). It was dormant

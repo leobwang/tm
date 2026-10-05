@@ -264,19 +264,21 @@ fn expected_walls_calls(verb: &str) -> u32 {
 
 /// **The per-verb `planner`-section count** — the day R3's `tm plan` asks the
 /// kernel for, pinned from its first sender (the W-41 repair, README gap 4142):
-/// `tm check` asks it so that a refusal of the day is named before R3 ships it
-/// (P78). No other verb sends it until the swap; a planner call is the costliest
-/// the binary makes (about a second on the example tree at gap 4142; 7.6-14 ms
-/// since W-42 track S's `@[csimp]` twin, README gap 4150, and still the most a
-/// verb pays), so a verb that starts sending one fails here by name.
+/// `tm check` asks it so that a refusal of the day is named (P78). **Since R3 every
+/// verb that plans the day sends it** (W-45: `planning::build_ranked` asks
+/// `kernel_capacity::plan_day`): `arrive` and `energy` replan and `review day`
+/// ranks, and each sends the `planner` section INSIDE the capacity call it already
+/// made — the `capacity` column did not move, and neither did `calls`. A planner
+/// call is the costliest the binary makes (7.6-14 ms on the example tree since W-42
+/// track S's `@[csimp]` twin, README gap 4150), so a verb that starts — or stops —
+/// sending one fails here by name.
 fn expected_planner_calls(verb: &str) -> u32 {
     match verb {
-        "check" => 1,
-        "wake" | "arrive" | "start" | "pause" | "done" | "energy" | "break" | "drop" | "undo"
-        | "review day" | "log" => 0,
-        // `interrupt` and `resume` since the W-45 repair (README gap 4745): `resume` replans, on fork 4748911's planner until R3 (its row reads 1 there).
+        "check" | "arrive" | "energy" | "review day" => 1,
+        "wake" | "start" | "pause" | "done" | "break" | "drop" | "undo" | "log" => 0,
+        // `interrupt` and `resume` since the W-45 repair (README gap 4745): `resume` replans.
         "interrupt" => 0,
-        "resume" => 0,
+        "resume" => 1,
         other => panic!("`tm {other}` is not in the measured table"),
     }
 }
@@ -612,6 +614,18 @@ fn expected_capacity_verb_log_sections(verb: &str) -> u32 {
     }
 }
 
+/// **The capacity call's traced line** — since R3 (W-45) the three verbs that plan
+/// the day send the `planner` section inside their one capacity call
+/// (`kernel_capacity::plan_day`), and `tm review week`, which ranks without
+/// planning, sends the capacity request alone.
+fn expected_capacity_line(verb: &str) -> &'static str {
+    match verb {
+        "plan" | "now" | "review day" => "capacity+log+planner",
+        "review week" => "capacity+log",
+        other => panic!("`tm {other}` is not in the capacity-verb table"),
+    }
+}
+
 /// The week-cut calls each of the four makes — a `log` and a `walls` section
 /// on one line (W-39 track T): `tm review week` one, the others none.
 fn expected_week_cut_calls(verb: &str) -> u32 {
@@ -680,9 +694,10 @@ fn every_capacity_verb_replays_the_log_a_second_time_inside_its_capacity_call() 
             c.multi,
             1 + cuts
         );
+        let want_line = expected_capacity_line(name);
         assert!(
-            c.lines.iter().any(|l| l == "capacity+log"),
-            "`tm {name}` traced no `capacity+log` call: {:?}",
+            c.lines.iter().any(|l| l == want_line),
+            "`tm {name}` traced no `{want_line}` call: {:?}",
             c.lines
         );
     }

@@ -527,16 +527,3 @@ fn plan_without_a_stored_window_uses_the_spec_formula() {
     plan_without_a_stored_window_uses_the_spec_formula_on(&Kernel);
 }
 
-// BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gaps 2722, 2872)
-use planner_common::Fork;
-
-#[test]
-fn planner_types_carry_the_window_budget_and_hash_on_the_fork() {
-    planner_types_carry_the_window_budget_and_hash_on(&Fork);
-}
-
-#[test]
-fn plan_without_a_stored_window_uses_the_spec_formula_on_the_fork() {
-    plan_without_a_stored_window_uses_the_spec_formula_on(&Fork);
-}
-// END THE FORK PLANNER

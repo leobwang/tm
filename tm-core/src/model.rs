@@ -1422,10 +1422,6 @@ impl Item {
     pub fn is_manual(&self) -> bool {
         self.has_flag("manual")
     }
-    /// `travel-day`.
-    pub fn is_travel_day(&self) -> bool {
-        self.has_flag("travel-day")
-    }
     /// `hot` — forced p = 0.
     pub fn is_hot(&self) -> bool {
         self.has_flag("hot")
@@ -1492,7 +1488,7 @@ impl InstanceKey {
     /// W-35, of the `inst` a row of the kernel's planned day carries
     /// (`crate::planwire`). It was `recur.rs`'s private `parse_instance_key`,
     /// moved here with its body unchanged rather than copied a third time
-    /// (AGENTS §5.3); fork `planner.rs` keeps its own until R3 deletes it.
+    /// (AGENTS §5.3); fork `planner.rs` kept its own until R3 deleted it.
     pub fn parse(s: &str) -> Option<InstanceKey> {
         if let Some(n) = s.strip_prefix('#') {
             return n.parse().ok().map(InstanceKey::Nth);

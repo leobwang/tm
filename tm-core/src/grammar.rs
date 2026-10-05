@@ -1961,7 +1961,7 @@ mod tests {
             }
         );
         assert_eq!(it.buffer, Some(Dur::hours(2)));
-        assert!(it.is_travel_day());
+        assert!(it.has_flag("travel-day"));
         assert_eq!(it.horizon, Horizon::Calendar(IsoWeek::new(2026, 37)));
         let it = week("- [ ] 3 Trip at:2026-09-12T08:15/2026-09-13T10:40 ^z1");
         assert_eq!(

@@ -33,7 +33,7 @@ use tm_core::capacity::{local_dt, DayCapacity};
 use tm_core::config::Config;
 use tm_core::energy::Model;
 use tm_core::log::{Event, LogEntry, Replay};
-use tm_core::model::{Id, InstanceKey, Period};
+use tm_core::model::{Id, Period};
 use tm_core::priority::{self, Candidate, Ineligible, Prio, PrioClass};
 use tm_core::tree::Tree;
 
@@ -167,82 +167,9 @@ fn the_lookahead_reaches_the_end_of_a_floor_period() {
 // §7.3: an instance with a real deadline competes like any other
 // ---------------------------------------------------------------------------
 
-/// §5.1's `after-done:`/`on-event:` occurrence of a shapeless item carries a
-/// `due` and **no** `win:` — a deadline, not a placement range — so it takes
-/// part in the EDF pass and reserves capacity like any dated line. Excluding
-/// every instance gave it the pure-rank `p` and let the next deadline believe
-/// the day was free.
-#[test]
-fn an_instance_deadline_without_a_window_enters_the_edf_pass() {
-    let cfg = Config::default();
-    let caps = flat(7, 5, 240);
-    let today = date(MONDAY);
-
-    // Both need 180 × 1.3 = 234 min, both due tonight; the instance is first.
-    let mut inst = Candidate::new(Id::new("i1"), 3, 3, 180, &cfg);
-    inst.effective_due = Some(due(MONDAY));
-    inst.instance = Some(InstanceKey::Date(today));
-    inst.own_order = (0, 1);
-    let mut line = Candidate::new(Id::new("l1"), 3, 3, 180, &cfg);
-    line.effective_due = Some(due(MONDAY));
-    line.own_order = (0, 2);
-    // A window instance is placement, not a deadline: it stays out.
-    let mut win = Candidate::new(Id::new("w1"), 3, 3, 30, &cfg);
-    win.effective_due = Some(at(MONDAY, 21, 0));
-    win.instance = Some(InstanceKey::Date(today));
-    win.window = Some((at(MONDAY, 9, 0), at(MONDAY, 21, 0)));
-    win.own_order = (0, 3);
-
-    let cands = vec![inst, line, win];
-    let prios = priority::compute(&cands, &caps, &empty(), &cfg, today);
-
-    // p = k + bin(u), and the 234 minutes it reserved are gone from the day.
-    assert_eq!(prios[0].class, PrioClass::Dated);
-    assert_eq!(prios[0].avail_min, 240);
-    assert_eq!(prios[0].allocation_min, 234);
-    assert_eq!(prios[0].bin, Some(0)); // u = 0.975
-    assert_eq!(prios[0].p, 3);
-    assert_eq!(prios[1].avail_min, 6);
-    assert_eq!(prios[1].class, PrioClass::Impossible);
-    assert_eq!(prios[1].shortfall_min, 228);
-    // The window instance neither scores a `u` nor eats the day.
-    assert_eq!(prios[2].class, PrioClass::Rank);
-    assert_eq!(prios[2].u, None);
-    assert_eq!(prios[2].allocation_min, 0);
-}
-
 // ---------------------------------------------------------------------------
 // §7.2/§7.4: hysteresis never moves an optional off p = 5
 // ---------------------------------------------------------------------------
-
-/// §7.2 pins `optional.md` at `p = 5` ("never compete"). Hysteresis used to
-/// hold an optional at 6 for a day whenever yesterday's stored `p` was 7,
-/// which sorts it *below* every ordinary p ≤ 5 candidate — the opposite of
-/// the rule.
-#[test]
-fn an_optional_is_never_held_above_p_five_by_hysteresis() {
-    let cfg = Config::default();
-    let caps = flat(7, 5, 240);
-    let today = date(MONDAY);
-    let id = Id::new("oooo");
-
-    let mut opt = Candidate::new(id.clone(), 0, 3, 60, &cfg);
-    opt.is_optional = true;
-    let yesterday: BTreeMap<Id, u8> = [(id.clone(), 7)].into_iter().collect();
-
-    let prios = priority::compute(&[opt], &caps, &yesterday, &cfg, today);
-    assert_eq!(prios[0].class, PrioClass::Optional);
-    assert_eq!(prios[0].raw_p, 5);
-    assert_eq!(prios[0].p, 5);
-    assert!(!prios[0].hysteresis_applied);
-
-    // The binned classes still get their one-step damping.
-    let mut dated = Candidate::new(Id::new("dd"), 0, 2, 500, &cfg); // u = 0.65 → raw 2
-    dated.effective_due = Some(due(MONDAY));
-    let yesterday: BTreeMap<Id, u8> = [(Id::new("dd"), 5)].into_iter().collect();
-    let prios = priority::compute(&[dated], &flat(1, 5, 1000), &yesterday, &cfg, today);
-    assert_eq!((prios[0].raw_p, prios[0].p), (2, 4));
-}
 
 // ---------------------------------------------------------------------------
 // §8.2 step 1: walls are the intervals that cover *today*

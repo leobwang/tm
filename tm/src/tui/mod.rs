@@ -75,6 +75,68 @@ use crate::cli::{dayfile, undo, Cli, Command};
 
 use app::{App, AppData, Effect, Hover, Screen};
 
+/// **A day the App could not plan, as the error a verb gives** — the kernel's
+/// own error when the planner carried it ([`kernel_planner`] always does), so a
+/// fault ends the TUI with everything it captured and a refusal is the one `tm
+/// plan` gives on the same tree.
+fn unplanned_error(u: app::Unplanned) -> CliError {
+    match u.cause.and_then(|c| c.downcast::<CliError>().ok()) {
+        Some(e) => *e,
+        None => CliError::msg(u.message),
+    }
+}
+
+/// **A fault the App's planner answered, ended here** (AGENTS §5.10: a kernel
+/// that returned nothing usable ends the TUI, loudly; a refusal stays on the
+/// hint line).
+fn planner_fault(app: &App) -> Result<(), CliError> {
+    match app.take_fault() {
+        Some(f) => Err(unplanned_error(f)),
+        None => Ok(()),
+    }
+}
+
+/// **The App's planner over a context** (R3's body swap; the owner's D103): the
+/// kernel's day at the instant the App asks for, over the plan directory as
+/// `ctx` read it — its documents and log as `tm plan`'s housekeeping would leave
+/// them, held in memory past midnight (D84, D91, D96) — and `.tm/state.json` as
+/// the App holds it: the one request `tm plan` sends. The planner keeps its own
+/// copy of the context ([`Ctx::fork`]), its clock moved to each instant asked,
+/// and **the request's inputs as this load read them**
+/// (`kernel_capacity::tick_inputs`, read here, once): every ask — the minute
+/// tick's, the overtime box's what-if — is built from them and the context
+/// alone (`kernel_capacity::plan_day_from`), so a tick reads NOTHING from the
+/// plan directory and never mixes newer bytes with the reload's tree, replay
+/// and candidates (README gap 4662), as fork 4748911's tick replanned from the
+/// App's own data. A re-collection or a reload hands the App a new planner with
+/// its data ([`data_with`]), and reads them again. A read that failed here is
+/// asked again at the ask, where it fails by name as `tm plan`'s would.
+fn kernel_planner(ctx: &Ctx) -> app::Planner {
+    let read = std::cell::RefCell::new(ctx.fork());
+    let inputs = crate::cli::kernel_capacity::tick_inputs(ctx).ok();
+    Box::new(move |ask: &app::Ask<'_>| {
+        let mut read = read.borrow_mut();
+        read.now = ask.now.fixed_offset();
+        read.now_tz = ask.now;
+        read.today = ask.now.date_naive();
+        read.state = ask.state.clone();
+        let planned = match &inputs {
+            Some(inputs) => crate::cli::kernel_capacity::plan_day_from(&read, inputs, false, ask.extend),
+            None => crate::cli::kernel_capacity::plan_day(&read, false, ask.extend),
+        };
+        let whatif = ask.extend.is_some();
+        planned
+            .map(|p| app::Asked {
+                day: p.day,
+                removed: p.overtime.map(|d| d.removed).unwrap_or_default(),
+                // The day's own ranking (README gap 4743): what the Queue shows is what the day
+                // was planned by. A what-if's ranks the grown request (P52), never the Queue's.
+                ranking: (!whatif).then_some(app::Ranking { candidates: p.cands, prios: p.prios, caps: p.caps }),
+            })
+            .map_err(|e| app::Unplanned { message: e.to_string(), fault: e.is_kernel_fault(), cause: Some(Box::new(e)) })
+    })
+}
+
 /// §17.2: "`notify` debounce 200 ms".
 const DEBOUNCE: StdDuration = StdDuration::from_millis(200);
 /// How long the loop waits for a key before ticking the clock.
@@ -210,11 +272,14 @@ fn at(g: &Globals, now: DateTime<Tz>) -> Globals {
 
 /// Read the plan directory into the shape [`App`] wants. `week_cut` is the
 /// heat grid's cut, which [`reload`] reads where the Review screen is shown.
-fn data_of(ctx: &Ctx, week_cut: PauseCut) -> Result<AppData, CliError> {
-    // §12.2/§12.3 read §7's numbers; they are the same pass `tm plan` runs —
-    // the kernel's since stage 5 D10 L8, and the minute replan ranks by them.
-    let (cands, prios, caps) = ctx.priorities(false)?;
-    Ok(data_with(ctx, cands, prios, caps, week_cut))
+fn data_of(ctx: &Ctx, week_cut: PauseCut) -> AppData {
+    // §12.2/§12.3 read §7's numbers, and they are the day's own: the App's first
+    // replan ([`App::new`]) asks the kernel for the day and takes its candidates,
+    // priorities and lookahead from that one answer (`app::Asked::ranking`), and so
+    // does every replan after it. Until the W-45 repair this asked a SECOND request
+    // first (`Ctx::priorities`, over `.tm/state.json` unrolled) and the Queue showed
+    // that ranking while the Today pane showed the day's (README gap 4743).
+    data_with(ctx, Vec::new(), Vec::new(), Vec::new(), week_cut)
 }
 
 /// [`data_of`] with the ranking given.
@@ -238,6 +303,7 @@ fn data_with(
         caps,
         week_cut,
         now: ctx.now_tz,
+        planner: kernel_planner(ctx),
     }
 }
 
@@ -275,7 +341,7 @@ fn tui_scope(
 /// date change re-collects from (D84, [`recollect`]).
 fn load(g: &Globals) -> Result<(Ctx, App), CliError> {
     let ctx = Ctx::load_scoped(g, true, |state, today| tui_scope(Screen::default(), state, today))?;
-    let app = App::new(data_of(&ctx, PauseCut::default())?);
+    let app = App::new(data_of(&ctx, PauseCut::default())).map_err(unplanned_error)?;
     Ok((ctx, app))
 }
 
@@ -364,29 +430,28 @@ fn advance(ctx: &mut Ctx, now: DateTime<Tz>) -> Result<Option<String>, CliError>
     read_as_tm_plan(ctx)
 }
 
-/// **The App drawn from `read`** — the ranking is the kernel's, and a refused
-/// capacity request (a file saved half-edited into a tree the kernel cannot
-/// load, or a configured value it cannot read, parity P26) keeps the last
-/// ranking, adopts the rest, and says so on the status line; a kernel fault
-/// still ends the TUI. One body for [`reload`] and [`recollect`]. `said` is a
-/// sentence the read itself raised (an automatic close it could not hold, D91),
-/// shown when nothing above it is.
+/// **The App drawn from `read`** — the ranking is the day's own (README gap
+/// 4743): the App adopts the rest with its last ranking and replans, which
+/// replaces the ranking with the one the new day was planned by. A refused day
+/// (a file saved half-edited into a tree the kernel cannot load, or a configured
+/// value it cannot read, parity P26) keeps the last day and the last ranking and
+/// says so on the status line (`plan not refreshed: …`); a kernel fault still
+/// ends the TUI. One body for [`reload`] and [`recollect`]. `said` is a sentence
+/// the read itself raised (an automatic close it could not hold, D91), shown when
+/// nothing above it is.
 fn adopt_read(app: &mut App, read: &Ctx, week_cut: PauseCut, cut_refused: Option<String>, said: Option<String>) -> Result<(), CliError> {
-    let (data, refused) = match data_of(read, week_cut.clone()) {
-        Ok(data) => (data, None),
-        Err(e) if !e.is_kernel_fault() => {
-            let data = data_with(read, app.candidates.clone(), app.prios.clone(), app.caps.clone(), week_cut);
-            (data, Some(e.to_string()))
-        }
-        Err(e) => return Err(e),
-    };
+    let data = data_with(read, app.candidates.clone(), app.prios.clone(), app.caps.clone(), week_cut);
+    // The App's replan is the only thing in `adopt` that writes the status line: a sentence
+    // there afterwards is the refusal's, and it stands.
+    let before = app.message.take();
     app.adopt(data);
-    if let Some(why) = refused {
-        app.message = Some(format!("priorities not refreshed: {why}"));
-    } else if let Some(why) = cut_refused {
-        app.message = Some(format!("week grid not refreshed: {why}"));
-    } else if let Some(said) = said {
-        app.message = Some(said);
+    planner_fault(app)?;
+    if app.message.is_none() {
+        app.message = match (cut_refused, said) {
+            (Some(why), _) => Some(format!("week grid not refreshed: {why}")),
+            (None, Some(said)) => Some(said),
+            (None, None) => before,
+        };
     }
     Ok(())
 }
@@ -416,15 +481,19 @@ fn recollect(app: &mut App, read: &mut Ctx, now: DateTime<Tz>) -> Result<(), Cli
 /// ([`App::crosses_a_wall`]), the one other instant `tm plan`'s housekeeping
 /// writes something new (D61's wall marks, held by D96's one body); then
 /// [`App::tick`] moves `now`, replans on a new minute and raises §9's prompts.
-/// Returns whether anything changed. Every other minute asks the kernel
-/// nothing (D38: the TUI replans on reload, not on a tick).
+/// Returns whether anything changed. Every other minute asks the kernel for
+/// the day once, through the App's planner and nothing else — the owner's
+/// D103 (D38 revised): the minute tick replans through the kernel, as the
+/// fork's tick replanned, so the rows move when `tm plan`'s day moves.
 fn advance_clock(app: &mut App, read: &mut Ctx, now: DateTime<Tz>) -> Result<bool, CliError> {
     let dated = now.date_naive() != app.today;
     let walled = !dated && app.crosses_a_wall(now);
     if dated || walled {
         recollect(app, read, now)?;
     }
-    Ok(app.tick(now) || dated || walled)
+    let changed = app.tick(now) || dated || walled;
+    planner_fault(app)?;
+    Ok(changed)
 }
 
 /// Re-read the plan directory into an existing [`App`], keeping the UI state,
@@ -1527,6 +1596,223 @@ mod tests {
         assert_eq!(on_disk.state.date, Some(tui_date(2026, 9, 7)), "and writes nothing to `.tm/state.json`");
     }
 
+    /// **D103: the minute tick asks the KERNEL for the day, built from the read its load made, and
+    /// reads nothing from the plan directory** (the owner's D103, D38 revised; README gap 4662, the
+    /// W-45 switch). §4.3's morning — woken 06:05, arrived 07:00, `^t3` started at 09:00 — with the
+    /// TUI opened at 09:05; the plan directory is then moved away, and the loop's own step
+    /// ([`advance_clock`]) moves the clock one minute — no wall, no date change, so nothing is
+    /// re-collected. The App replans (the reservation runs from `now`, so the day moves with the
+    /// minute) with no file to read, and its day is the one `tm plan` asks the kernel for at that
+    /// instant over the same files, hash and all. Fork 4748911's tick replanned from the App's own
+    /// data the same way, with its own planner, until R3.
+    #[test]
+    fn d103_the_minute_tick_replans_through_the_kernel_from_the_loads_read() {
+        let _env = kernel_env();
+        let (tmp, g) = fixture();
+        for (when, args) in [
+            ("2026-09-07T06:05:00-05:00", &["wake", "06:05", "--slept", "8h10m"][..]),
+            ("2026-09-07T07:00:00-05:00", &["arrive", "lounge"][..]),
+            ("2026-09-07T09:00:00-05:00", &["start", "^t3", "--energy", "3"][..]),
+        ] {
+            let argv: Vec<String> = args.iter().map(|a| (*a).to_string()).collect();
+            let said = verb(&at_str(&g, when), &argv).expect("a verb of the world");
+            assert!(said.ends_with(": ok"), "`tm {}`: {said}", args.join(" "));
+        }
+        let (mut read, mut app) = load(&at_str(&g, "2026-09-07T09:05:00-05:00")).expect("the TUI opens at 09:05");
+        let opened = app.plan.clone();
+        let plan = g.dir.clone().expect("the plan directory");
+        let away = tmp.path().join("away");
+        fs::rename(&plan, &away).expect("the plan directory moved away");
+        let minute = DateTime::parse_from_rfc3339("2026-09-07T09:06:00-05:00").expect("now").with_timezone(&app.cfg.tz);
+        let ticked = advance_clock(&mut app, &mut read, minute);
+        fs::rename(&away, &plan).expect("and back");
+        assert!(ticked.expect("a tick with no plan directory to read"), "a new minute changes the App");
+        assert!(
+            !app.message.as_deref().is_some_and(|m| m.starts_with("plan not refreshed")),
+            "the tick planned from the load's read: {:?}",
+            app.message
+        );
+        assert_eq!((app.today, read.today), (tui_date(2026, 9, 7), tui_date(2026, 9, 7)), "no re-collection");
+        assert_ne!(app.plan, opened, "the tick replanned: the day runs from 09:06 now");
+
+        let copy = tmp.path().join("tm-plan");
+        copy_dir(&plan, &copy);
+        let plan_g = Globals { dir: Some(copy), now: Some(minute.fixed_offset()), json: false };
+        let plan_ctx = Ctx::load(&plan_g, true).expect("tm plan's load, its housekeeping run");
+        let day = crate::cli::kernel_capacity::plan_day(&plan_ctx, false, None).expect("tm plan's day").day;
+        assert_eq!(app.plan, day, "the tick's day is the one `tm plan` asks the kernel for at 09:06");
+        assert_eq!(app.plan.hash(), day.hash());
+    }
+
+    /// **The Queue ranks by the day's own answer, at the load and at every tick** (README gap 4743,
+    /// the W-45 repair). The App's candidates, priorities and lookahead — what the Queue,
+    /// Necessities and Inbox screens read — are the ones the Today pane's day was planned by: the
+    /// TUI opened at 09:05 holds `tm plan`'s ranking at 09:05, and the loop's step to 16:00 holds
+    /// `tm plan`'s at 16:00, which is a DIFFERENT ranking (the capacity left shrinks with the day).
+    /// Until the repair the load asked a second request for them (`Ctx::priorities`, over
+    /// `.tm/state.json` unrolled) and a tick never replaced them, so the Queue ranked by the load's
+    /// instant while the Today pane re-ranked every minute.
+    #[test]
+    fn the_queue_ranks_by_the_days_own_answer_at_every_tick() {
+        let _env = kernel_env();
+        let (tmp, g) = fixture();
+        for (when, args) in [
+            ("2026-09-07T06:05:00-05:00", &["wake", "06:05", "--slept", "8h10m"][..]),
+            ("2026-09-07T07:00:00-05:00", &["arrive", "lounge"][..]),
+        ] {
+            let argv: Vec<String> = args.iter().map(|a| (*a).to_string()).collect();
+            let said = verb(&at_str(&g, when), &argv).expect("a verb of the world");
+            assert!(said.ends_with(": ok"), "`tm {}`: {said}", args.join(" "));
+        }
+        let ranking_at = |when: &str, name: &str| {
+            let copy = tmp.path().join(name);
+            copy_dir(g.dir.as_ref().expect("the plan directory"), &copy);
+            let at = DateTime::parse_from_rfc3339(when).expect("now");
+            let ctx = Ctx::load(&Globals { dir: Some(copy), now: Some(at), json: false }, true).expect("tm plan's load");
+            let p = crate::cli::kernel_capacity::plan_day(&ctx, false, None).expect("tm plan's day");
+            (p.cands.iter().map(|c| c.id.clone()).collect::<Vec<_>>(), p.prios, p.caps)
+        };
+        let opened = ranking_at("2026-09-07T09:05:00-05:00", "at-0905");
+        let (mut read, mut app) = load(&at_str(&g, "2026-09-07T09:05:00-05:00")).expect("the TUI opens at 09:05");
+        let held = |app: &App| (app.candidates.iter().map(|c| c.id.clone()).collect::<Vec<_>>(), app.prios.clone(), app.caps.clone());
+        assert_eq!(held(&app), opened, "the opened App ranks by `tm plan`'s answer at 09:05");
+        let later = ranking_at("2026-09-07T16:00:00-05:00", "at-1600");
+        assert_ne!(later.1, opened.1, "the world must re-rank between 09:05 and 16:00, or this proves nothing");
+        let four = DateTime::parse_from_rfc3339("2026-09-07T16:00:00-05:00").expect("now").with_timezone(&app.cfg.tz);
+        assert!(advance_clock(&mut app, &mut read, four).expect("the tick"), "a new minute changes the App");
+        assert_eq!(held(&app), later, "the ticked App ranks by `tm plan`'s answer at 16:00, as its day is planned by it");
+    }
+
+    /// **§9.1's "extend → drops" line is the KERNEL's what-if, and it names what it drops** (README
+    /// gap 4631, the W-45 switch): since R3 the box's consequence line is `Planner.overtimeDiff`'s
+    /// answer, asked through the App's planner, and the one test that drew a drop — `tui_today_prompts`'
+    /// overtime box — shows "nothing" since P46. §4.3's morning with `^t3` (est 2b = 1h) started at
+    /// 09:00 and still running: the loop's own step to 10:00 replans and raises §9.1's box, whose drops
+    /// are the kernel's answer to one more block on `^t3` — the item the extension leaves no room for —
+    /// and that answer is the one `tm plan`'s own request carries at 10:00
+    /// (`kernel_capacity::plan_day` with the what-if). Fork 4748911 dropped nothing here (P46: it
+    /// refused the overtime block and spent the block elsewhere), as track D's pty drive measured.
+    #[test]
+    fn the_overtime_box_names_what_the_kernels_what_if_drops() {
+        let _env = kernel_env();
+        let (tmp, g) = fixture();
+        for (when, args) in [
+            ("2026-09-07T06:05:00-05:00", &["wake", "06:05", "--slept", "8h10m"][..]),
+            ("2026-09-07T07:00:00-05:00", &["arrive", "lounge"][..]),
+            ("2026-09-07T09:00:00-05:00", &["start", "^t3", "--energy", "4"][..]),
+        ] {
+            let argv: Vec<String> = args.iter().map(|a| (*a).to_string()).collect();
+            let said = verb(&at_str(&g, when), &argv).expect("a verb of the world");
+            assert!(said.ends_with(": ok"), "`tm {}`: {said}", args.join(" "));
+        }
+        let (mut read, mut app) = load(&at_str(&g, "2026-09-07T09:59:00-05:00")).expect("the TUI opens at 09:59");
+        assert!(app.prompt.is_none(), "no prompt before the estimate runs out: {:?}", app.prompt.as_ref().map(app::Prompt::kind));
+        let ten = DateTime::parse_from_rfc3339("2026-09-07T10:00:00-05:00").expect("now").with_timezone(&app.cfg.tz);
+        advance_clock(&mut app, &mut read, ten).expect("the 10:00 tick");
+        let Some(app::Prompt::Overtime(over)) = app.prompt.as_ref() else {
+            panic!("§9.1's box is raised at 10:00: {:?}", app.prompt.as_ref().map(app::Prompt::kind));
+        };
+        assert_eq!((over.id.as_str(), over.elapsed_min), ("t3", 60));
+        assert_eq!(over.drops, vec!["Rollback path passes tests (p3)".to_string()], "the kernel's what-if names its drop");
+
+        let plan = g.dir.clone().expect("the plan directory");
+        let copy = tmp.path().join("tm-plan");
+        copy_dir(&plan, &copy);
+        let plan_ctx = Ctx::load(&Globals { dir: Some(copy), now: Some(ten.fixed_offset()), json: false }, true)
+            .expect("tm plan's load, its housekeeping run");
+        let t3 = tm_core::model::Id::new("t3");
+        let planned = crate::cli::kernel_capacity::plan_day(&plan_ctx, false, Some((&t3, 1))).expect("tm plan's request with the what-if");
+        let removed = planned.overtime.expect("the what-if was asked").removed;
+        assert_eq!(removed.len(), 1, "one item dropped: {removed:?}");
+        assert_eq!(
+            plan_ctx.tree.get(&removed[0]).map(|i| i.title.as_str()),
+            Some("Rollback path passes tests"),
+            "the drop the box names is the what-if's"
+        );
+    }
+
+    /// **The TUI's world at 09:05 with `^t3` running since 09:00** (wake, arrive, start), and the
+    /// App's data read from it — for the planner's refusal and fault paths below.
+    fn running_data() -> (tempfile::TempDir, Globals, Ctx, AppData) {
+        let (tmp, g) = fixture();
+        for (when, args) in [
+            ("2026-09-07T06:05:00-05:00", &["wake", "06:05", "--slept", "8h10m"][..]),
+            ("2026-09-07T07:00:00-05:00", &["arrive", "lounge"][..]),
+            ("2026-09-07T09:00:00-05:00", &["start", "^t3", "--energy", "3"][..]),
+        ] {
+            let argv: Vec<String> = args.iter().map(|a| (*a).to_string()).collect();
+            let said = verb(&at_str(&g, when), &argv).expect("a verb of the world");
+            assert!(said.ends_with(": ok"), "`tm {}`: {said}", args.join(" "));
+        }
+        let at = at_str(&g, "2026-09-07T09:05:00-05:00");
+        let ctx = Ctx::load_scoped(&at, true, |state, today| tui_scope(Screen::default(), state, today)).expect("the TUI's read");
+        let data = data_of(&ctx, PauseCut::default());
+        (tmp, g, ctx, data)
+    }
+
+    /// **A day the kernel refuses at a tick keeps the last day and says why; a FAULT is held for the
+    /// driver** (R3, the W-45 switch; README gap 4712): the App's planner since the body swap can
+    /// answer what fork 4748911's total planner never did — a refusal by name, or a response the
+    /// codec cannot read. The App is handed a planner that plans the load and then answers the
+    /// tick's ask with a refusal, and then with a fault: the refusal leaves the day as it stood and
+    /// puts `plan not refreshed: <why>` on the hint line, holding no fault; the fault leaves the day
+    /// too and is held for [`App::take_fault`], once.
+    #[test]
+    fn r3_a_refused_tick_keeps_the_last_day_and_a_fault_is_held_for_the_driver() {
+        let _env = kernel_env();
+        let (_tmp, _g, _ctx, mut data) = running_data();
+        let real = std::mem::replace(&mut data.planner, Box::new(|_: &app::Ask<'_>| unreachable!()));
+        let asks = std::sync::atomic::AtomicUsize::new(0);
+        data.planner = Box::new(move |ask: &app::Ask<'_>| match asks.fetch_add(1, std::sync::atomic::Ordering::SeqCst) {
+            0 => real(ask),
+            1 => Err(app::Unplanned { message: "a refusal by name".to_string(), fault: false, cause: None }),
+            _ => Err(app::Unplanned { message: "a response the codec cannot read".to_string(), fault: true, cause: None }),
+        });
+        let mut app = App::new(data).unwrap_or_else(|e| panic!("the load plans: {}", e.message));
+        let opened = app.plan.clone();
+        assert!(!opened.segments.is_empty(), "the load's day has rows");
+        let tz = app.cfg.tz;
+        let minute = |m: u32| DateTime::parse_from_rfc3339(&format!("2026-09-07T09:{m:02}:00-05:00")).expect("now").with_timezone(&tz);
+        assert!(app.tick(minute(6)), "a new minute");
+        assert_eq!(app.plan, opened, "a refused tick keeps the day as it stood");
+        assert_eq!(app.message.as_deref(), Some("plan not refreshed: a refusal by name"));
+        assert!(app.take_fault().is_none(), "a refusal is not a fault");
+        app.tick(minute(7));
+        assert_eq!(app.plan, opened, "a faulted tick keeps the day as it stood");
+        let fault = app.take_fault().expect("the fault is held for the driver");
+        assert_eq!(fault.message, "a response the codec cannot read");
+        assert!(app.take_fault().is_none(), "and taken once");
+    }
+
+    /// **A day the kernel refuses when the TUI opens is the TUI's to refuse to open on**, with the
+    /// planner's reason (README gap 4633, the W-45 switch): `App::new` returns it, as `tm plan`
+    /// refuses the same tree, and fork 4748911's total planner never did.
+    #[test]
+    fn r3_the_tui_refuses_to_open_on_a_day_the_kernel_refuses() {
+        let _env = kernel_env();
+        let (_tmp, _g, _ctx, mut data) = running_data();
+        data.planner = Box::new(|_: &app::Ask<'_>| Err(app::Unplanned { message: "a refusal by name".to_string(), fault: false, cause: None }));
+        let refused = App::new(data).err().expect("the App does not open on a refused day");
+        assert_eq!((refused.message.as_str(), refused.fault), ("a refusal by name", false));
+    }
+
+    /// **A kernel FAULT at the minute tick ends the TUI, loudly** (R3, the W-45 switch; README gap
+    /// 4712; AGENTS §5.10): the constructed probe (`TM_KERNEL_FAULT_PROBE`, the real call made and its
+    /// bytes replaced) set after the TUI opened, the loop's own step one minute on returns the
+    /// kernel's fault — never a day kept quietly — as every verb's seam does.
+    #[test]
+    fn r3_a_kernel_fault_at_the_minute_tick_ends_the_tui_loudly() {
+        let _env = kernel_env();
+        let (_tmp, g, _ctx, _data) = running_data();
+        let (mut read, mut app) = load(&at_str(&g, "2026-09-07T09:05:00-05:00")).expect("the TUI opens at 09:05");
+        let minute = DateTime::parse_from_rfc3339("2026-09-07T09:06:00-05:00").expect("now").with_timezone(&app.cfg.tz);
+        std::env::set_var("TM_KERNEL_FAULT_PROBE", "1");
+        let ticked = advance_clock(&mut app, &mut read, minute);
+        std::env::remove_var("TM_KERNEL_FAULT_PROBE");
+        let err = ticked.expect_err("a fault at the tick ends the TUI");
+        assert!(err.is_kernel_fault(), "{err}");
+    }
+
     /// **The TUI's clock runs from `--now` only when asked** (README gap 4127):
     /// fixed by default, the real clock with no `--now`, and with
     /// [`CLOCK_RUNS_ENV`] the injected instant plus the time since the TUI started.
@@ -1854,7 +2140,7 @@ mod tests {
     /// * the running block's worked minutes are 35 — 23:30 to 00:30, less the planned-only break
     ///   (23:35-23:45) and the held call (00:05-00:20) — read so by the request the TUI sends
     ///   (`workedMin`), by the host's union over the held log (`Replay::running_worked_min`) and by
-    ///   the kernel replay's own open block (`OpenBlock::worked_min_at`, `Replay.openOf`).
+    ///   the kernel replay's own open block (its `worked_min` and `since`, `Replay.openOf`).
     ///
     /// Without D94 the replay's open block credits the break (45); without D95 the host's union
     /// does not net it (45).
@@ -1887,7 +2173,7 @@ mod tests {
 
         let now = tuesday.fixed_offset();
         let host = read.replay.running_worked_min("t3", read.today, now, None);
-        let open = read.replay.open_block.as_ref().filter(|b| b.id == "t3").map(|b| b.worked_min_at(now));
+        let open = read.replay.open_block.as_ref().filter(|b| b.id == "t3").map(|b| b.worked_min + b.since.map_or(0, |s| now.signed_duration_since(s).num_minutes().max(0) as u32));
         assert_eq!((host, open), (Some(35), Some(35)), "the host's union and the replay's open block read ^t3 one way");
 
         let (plan_text, _copy) = tm_plans_request(&tmp, &plan, tuesday, "tm-plan");

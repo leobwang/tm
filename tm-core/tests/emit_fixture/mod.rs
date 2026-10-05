@@ -8,9 +8,10 @@
 //! the window 07:00–16:00 and a budget of 6 blocks.
 //!
 //! Because it is hand-built it cannot catch a *disagreement* between the
-//! planner and the renderer — change a field `planner.rs` sets on a `Segment`
-//! and every snapshot here still passes. `emit_planner.rs` covers that: the
-//! same three §17 M4 fixture days, through `planner::plan`.
+//! planner and the renderer — change a field the planner sets on a `Segment`
+//! and every snapshot here still passes. `tm/tests/emit_planner.rs` covers
+//! that: the same three §17 M4 fixture days, through the kernel's day since R3
+//! (fork 4748911's planner::plan until then).
 //!
 //! One deliberate artefact: the three finished segments start on the planned
 //! grid (07:00, 08:00, 09:00) but last as long as the log says they did (67m,

@@ -1381,18 +1381,6 @@ with_minute
 9 deleting_the_runtime_state_while_a_break_runs_resumes_the_block
 2 a_break_lost_with_no_block_running_is_still_named
 
-# W-45 REPAIR (README gaps 4753 and 4757).  The W-45 switch's README block is committed verbatim as the record of a
-# refused step, and it cites names that exist only in the switch's ARCHIVED commit (`refs/archive/w45/r3-switch`, never
-# on a branch): the TUI's kernel planner, the tests it added and the request builder's half.  Each is counted at its
-# measured number; the commit that lands R3 deletes this banner's entries, because the names resolve there.
-1 planner_ask_from
-1 tui::kernel_planner
-1 tui::tests::d103_the_minute_tick_replans_through_the_kernel_from_the_loads_read
-1 tui::tests::r3_a_kernel_fault_at_the_minute_tick_ends_the_tui_loudly
-1 tui::tests::r3_a_refused_tick_keeps_the_last_day_and_a_fault_is_held_for_the_driver
-1 tui::tests::r3_the_tui_refuses_to_open_on_a_day_the_kernel_refuses
-1 tui::tests::the_overtime_box_names_what_the_kernels_what_if_drops
-
 # W-46 TRACK H (README gaps 4621 and 4661; the owner's D104 and D106).  Two tests are RENAMED with the statement each
 # makes: `cli_tz_cache_digest`'s assertion is restated under D104 (a re-digested table that disagrees with the binary's
 # zone database is rebuilt, never served) and `cli_resume_replan`'s pin is flipped under D106 (`tm resume` plans after
@@ -1411,3 +1399,205 @@ with_minute
 2 a_routine_word_the_two_readers_key_apart_is_named_by_tm_check_and_planned_by_tm_plan
 1 pw_oldorder.log
 4 the_calendars_last_day_reaches_the_planner_section_by_two_names
+
+# W-45 SWITCH (R3; README gaps 4710-4739, the switch's block; README gap 4691: 133 names on the deletion, 125 once
+# the switch's own rewording named eight without backticks).  R3 DELETES
+# tm-core/src/planner.rs, fork 4748911's planner as the binary ran it, with its `pub mod`, and the 21
+# `BEGIN THE FORK PLANNER` regions of tm/tests with every test and helper they declared (README W-45 track C
+# §7).  Every name counted here was declared by one of the two and is cited, as it stood, by an append-only
+# README block, a Lean note that names the fork function a definition ports (`Planner.lean`, `Lookahead.lean`,
+# `PlanCheck.lean`, `PlanDiff.lean`, `EmitWire.lean`, `PlannerWit.lean`, `Recur.lean`, `PlanWire.lean`,
+# `Check.lean`, `Negative.lean`, `Goals.lean`), `tm-core/src/planwire.rs`'s note on the fork's sentences, or
+# the oracle's `p64-runs.patch`.  The fork's functions are still fork 4748911's, which `tm-oracle plan`
+# extracts and builds out of the tree (D72); the region's names are dead.  The switch's own prose and the
+# surviving test files' doc comments name them without backticks.  Counted, so a NEW sentence citing one
+# shows up in a diff.
+5 a_batch_row_is_digested_on_every_run
+2 a_comparand_that_is_not_the_forks_is_caught
+101 active_run
+2 ActiveRun
+2 a_p44_day_is_answered_as_the_shipped_tui_answers_it_on_every_run
+5 a_p46_day_is_compared_on_every_run
+2 a_re_ranked_what_if_is_answered_by_the_grown_ranking_on_every_run
+3 as_4748911
+5 a_sub_second_now_moves_the_forks_day_and_not_the_kernels
+2 basic_fork_day
+1 blocked_start
+6 blocks_since_last_break
+42 build_groups
+1 capacity_min
+25 collect_routines
+49 collect_walls
+2 commit_min
+18 contiguous_fits
+21 current_block_end
+3 daily_window
+2 day_plan_satisfies_every_invariant_on_the_fork
+1 day_start
+1 diff_reports_what_moved_and_the_drift
+5 earliest_free
+86 emit_segments
+1 extending_a_block_names_what_it_drops
+7 fork_answers
+2 fork_assigned
+2 forkplan::InTree
+1 g.left_min
+3 Group::left_min
+2 HASH_CENSUS
+27 kept_breaks
+3 kernel_assigned
+7 left_min
+11 loc_ok
+1 mark_current
+8 occupied_now
+36 open_block_segment
+3 overlaps_any
+28 overtime_drops
+1 p56_cut_is_cut_out_on_every_seeded_p56_day
+3 parse_instance_key
+1 past_segment
+40 past_segments
+35 place_deferred
+17 place_mandatory_and_pref
+1 plan_basic_is_planned_as_the_shipped_fork_plans_it_every_ten_minutes
+1 PlanInput::with_caps
+5 PlanInput::with_runs
+6 planner::active_run
+7 Planner::active_run
+6 Planner::build_groups
+1 Planner.collect_routines
+2 Planner::collect_routines
+1 Planner::collect_walls
+1 Planner::current_block_end
+2 Planner::daily_window
+1 Planner::day_end
+1 Planner::day_start
+1 Planner::loc_ok
+2 Planner::open_block_segment
+17 planner::overtime_drops
+1 Planner::past_segments
+3 Planner::place_deferred
+2 planner::week_plan
+8 raw_slots
+1 recur::parse_instance_key
+1 shipped_input
+1 SLEEP_MIN_MINUTES
+20 split_by_filters
+4 the_fork_and_the_kernel_answer_every_tui_world_as_the_verdicts_say
+1 the_fork_batches_across_a_ci_too
+1 the_fork_drops_the_same_item_and_names_nothing
+1 the_fork_ends_the_wednesday_inside_the_night
+1 the_fork_serves_the_later_sibling_first
+2 the_forks_oracle_answers_as_the_in_tree_fork_on_every_fresh_draw
+1 the_forks_runs_opt_in_serves_the_split_batch_as_the_kernel_does
+1 the_frozen_batch_is_the_forks_answer_today
+15 the_frozen_classes_are_the_forks_answer_today
+1 the_frozen_p56_days_are_the_in_tree_forks_answer_today
+1 the_frozen_plan_basic_days_are_the_forks_answer_today
+1 the_frozen_separator_days_are_the_in_tree_forks_answer_today
+4 the_frozen_start_days_are_the_in_tree_forks_answer_today
+1 the_host_grows_the_facts_apply_grows
+5 the_kernel_answers_the_what_if_with_the_hosts_grown_facts
+2 the_kernel_cuts_a_meeting_out_of_a_pause_as_the_fork_does
+4 the_kernel_draws_the_open_block_and_answers_the_overtime_what_if_the_fork_answers
+13 the_kernel_hashes_the_day_the_fork_hashes
+6 the_kernel_keeps_the_break_the_overtime_block_and_the_wall_pause
+12 the_kernel_plans_the_day_the_fork_plans
+4 the_kernel_plans_the_nbsp_box_day_as_the_fork_does
+9 the_kernel_reads_every_day_the_fork_planned
+11 the_kernel_reads_the_hosts_worked_minutes
+4 the_kernel_serves_impossible_ties_by_due_date
+7 the_kernel_writes_the_rest_of_step_8_as_the_fork_does
+3 the_logged_arrival_is_the_forks_planners_and_the_kernels
+1 the_oracle_draws_every_seeded_p56_day_as_the_in_tree_fork
+2 the_overrun_lines_witness_p45s_reset
+5 the_reversed_day_is_served_by_due_date_on_every_run
+2 the_woken_and_the_rebuilt_days_are_the_forks
+1 tm_core::planner::overtime_drops
+1 tui_kernel_answers::the_fork_and_the_kernel_answer_every_tui_world_as_the_verdicts_say
+3 two_routines_contend_for_one_position_on_the_fork
+1 W34_CENSUS
+9 w35_fork_plan
+2 w35_is_p46
+4 w35_p46_state
+2 w35_pause_open_rows
+1 W36_CENSUS
+7 w36_fork_plan
+1 w36_fork_whatif
+1 w36_grown_request
+1 w36_rank_view
+1 W36_WORKED
+7 wall_conflicts
+3 WallSeg
+2 WallSeg::id
+1 WallSeg::start
+1 WallSeg::title
+2 week_from_run
+6 week_plan
+2 WeekPlan
+1 week_plan_fills_the_grid
+3 with_runs
+
+# W-45 REPAIR (README gap 4742), in the switch's archived commit: `kernel_capacity::planner_request_from` is DELETED --
+# `planner_ask` is the one entry `tm check` and T19 build the planner request through, and `planner_ask_from` the build.
+# Every citation counted here names it as it stood, in the append-only README blocks of W-45 track Q and the W-45 land.
+1 kernel_capacity::planner_request_from
+6 planner_request_from
+
+# W-46 SWITCH (R3, archived and refused; README gaps 4752, 4814 and the switch's block).  R3 deletes, with fork
+# 4748911's planner, the class of tm-core functions the switch orphans (W-46 track C §5: 38 functions, their tests and
+# helpers), and so these names -- fork 4748911's own functions, cited by the Lean notes that port them (`Priority.lean`,
+# `Capacity.lean`, `Lookahead.lean`, `GridCut.lean`, `PlanCheck.lean`), by `Check.lean`'s and `Negative.lean`'s notes,
+# and by the append-only README blocks, with the deleted tests' names those blocks cite -- resolve to nothing on the
+# deleted tree.  Fork 4748911's functions are still fork 4748911's, which `tm-oracle capacity` extracts and builds out
+# of the tree (D72); the deleted tests' names are dead.  Counted at the number measured on the switch's tree, so a NEW
+# sentence citing one shows up in a diff.
+2 an_instance_deadline_without_a_window_enters_the_edf_pass
+2 an_optional_is_never_held_above_p_five_by_hysteresis
+2 an_unreachable_floor_is_impossible
+3 apply_hysteresis
+7 available_until
+2 batching_groups_small_equal_ci_items
+10 bin_of
+1 bin_of_matches_the_spec_table
+1 bins_at_the_edges
+2 blocks_since_break
+1 breaks_and_slots_are_disjoint_and_ordered
+1 capacity_lookahead__lookahead_plan_basic_week.snap
+7 capacity::available_until
+8 capacity::free_intervals
+8 capacity::remaining_budget
+11 capacity::reserve
+3 capacity::upto
+3 clamp_p
+7 Ctx::walls_by_date
+7 DayCapacity::at_least
+20 DayCapacity::from_slots
+1 edf_reserves_by_energy_level
+2 energize_applies_the_home_cap_and_the_posterior
+1 energize_counts_blocks_and_break_gaps
+6 EnergyCtx::with_allow_home
+4 Exact::of_minutes
+8 floor_pass
+9 free_intervals
+4 from_slots
+2 hysteresis_limits_improvement_to_one_step
+1 is_travel_day
+13 Item::is_travel_day
+1 jointly_infeasible_deadlines_flag_the_later_one
+18 limit_to_budget
+4 lookahead_follows_the_learned_arrival_and_location
+2 lookahead_uses_the_learned_energy_curve
+8 Model::p_lounge_on
+7 normalize_walls
+2 p_is_clamped_to_seven
+4 Planner::walls_by_date
+9 priority::apply_hysteresis
+5 priority::bin_of
+6 priority::clamp_p
+3 priority::floor_pass
+8 priority::utilization
+14 remaining_budget
+1 wake_default
+1 with_allow_home
+1 zero_capacity_is_infinite_utilization

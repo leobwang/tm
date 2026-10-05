@@ -484,16 +484,3 @@ fn the_frozen_p85_days_are_blessed() {
     std::fs::write(out_path, out).expect("the frozen P85 days are written");
 }
 
-// BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gap 4367)
-/// **The frozen P85 days are the in-tree fork's answers today** — while the in-tree fork stands, it
-/// plans each frozen world's two days exactly as frozen. Deleted with the region.
-#[test]
-fn the_frozen_p85_days_are_the_in_tree_forks_answer_today() {
-    for l in frozen() {
-        let name = l["name"].as_str().unwrap_or("?");
-        let (shipped, p85) = fork_days(&built(&l), &forkplan::InTree).unwrap_or_else(|e| panic!("{name}: {e}"));
-        assert_eq!(p85, l["p85"], "{name}: the in-tree fork plans another D92 day ({:?})", forkplan::first_difference("p85", &l["p85"], &p85));
-        let _ = shipped;
-    }
-}
-// END THE FORK PLANNER

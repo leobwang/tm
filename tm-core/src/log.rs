@@ -1049,16 +1049,6 @@ pub struct OpenBlock {
 }
 
 impl OpenBlock {
-    /// Worked minutes as of `now`: the closed sub-segments plus the stretch
-    /// running since [`OpenBlock::since`] (nothing accrues while the block is
-    /// paused or interrupted). This is the elapsed time the overtime prompt
-    /// (§9.1) compares against `est × r`.
-    pub fn worked_min_at(&self, now: DateTime<FixedOffset>) -> u32 {
-        let running = self
-            .since
-            .map_or(0, |s| now.signed_duration_since(s).num_minutes().max(0) as u32);
-        self.worked_min + running
-    }
 }
 
 /// A `start` event (for adherence and start latency).
@@ -1728,7 +1718,7 @@ impl Replay {
     /// only when it ends) included. This is fork `day::worked_min`, the rule
     /// fork `tm done` logged, moved here unchanged so the header can call it.
     ///
-    /// **It is not the log's open block** ([`OpenBlock::worked_min_at`]),
+    /// **It is not the log's open block** (its `worked_min` and `since`),
     /// which W-35 track E made the header's reading: the replay's open block is
     /// fork `Machine::step`'s and never sees a `break`, so after a five-minute
     /// break `tm now` said `30m of 30m` while `tm done` logged 25 (the W-35

@@ -14,7 +14,6 @@ pub mod energy;
 pub mod capacity;
 pub mod priority;
 pub mod dayplan;
-pub mod planner;
 pub mod planwire;
 pub mod emit;
 pub mod review;

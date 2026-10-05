@@ -1889,7 +1889,7 @@ mod tests {
             assert!(item.title.contains(ev.summary.split(' ').next().unwrap()));
         }
         let flight = parse_line(&lines[2], &ctx).unwrap();
-        assert!(flight.is_travel_day());
+        assert!(flight.has_flag("travel-day"));
         assert_eq!(flight.buffer.map(|d| d.as_minutes()), Some(120));
         assert_eq!(flight.ci, 1);
     }
@@ -2291,7 +2291,7 @@ Notes below the block.
                 item.problems
             );
             assert!(
-                !item.is_travel_day() && !item.has_flag("manual"),
+                !item.has_flag("travel-day") && !item.has_flag("manual"),
                 "{summary}"
             );
         }

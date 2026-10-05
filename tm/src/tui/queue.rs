@@ -98,7 +98,7 @@ pub struct View<'a> {
     pub replay: &'a Replay,
     /// Today's candidates (§6.2), in `priority::collect_candidates` order.
     pub candidates: &'a [Candidate],
-    /// `priority::compute`'s output, 1:1 with `candidates` (§7).
+    /// The kernel's ranking (§7; `kernel_capacity::rank`), 1:1 with `candidates`.
     pub prios: &'a [Prio],
     /// The week lookahead the EDF pass ran on (§8.4): the kernel's days, in
     /// exact units (stage 5 D10 L8).

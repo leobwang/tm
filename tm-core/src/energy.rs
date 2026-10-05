@@ -369,14 +369,6 @@ impl Model {
             .unwrap_or(cfg.energy.sleep_debt.shift)
     }
 
-    /// `P(lounge | weekday)`: learned, else `config.expected.p_lounge`.
-    pub fn p_lounge_on(&self, wd: Weekday, cfg: &Config) -> f64 {
-        self.p_lounge
-            .get(wd)
-            .copied()
-            .unwrap_or_else(|| *cfg.expected.p_lounge.get(wd))
-    }
-
     /// Expected arrival: learned, else `config.expected.arrival`.
     pub fn expected_arrival_on(&self, wd: Weekday, cfg: &Config) -> NaiveTime {
         self.expected_arrival
@@ -707,10 +699,6 @@ impl Default for Posterior {
 }
 
 impl Posterior {
-    /// No reports yet: [`Posterior::correct`] is the identity.
-    pub fn none(cfg: &Config) -> Posterior {
-        Posterior::from_reports(&[], cfg)
-    }
 
     /// Build from `(time, pred, rep)` triples in any order.
     pub fn from_reports(reports: &[(DateTime<Tz>, u8, u8)], cfg: &Config) -> Posterior {

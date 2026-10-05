@@ -18,6 +18,14 @@
 //!   [`App::new`] plans from `now`; [`App::with_plan`] takes a plan as given
 //!   (tests); [`App::replan`] recomputes it — §9's "one keystroke changes one
 //!   fact, `plan()` reruns from `now`".
+//! * [`Planner`] — **where the App's days come from** (R3, D48 and D50; the
+//!   owner's D103 for the minute tick): the kernel's day at the App's instant,
+//!   asked through a function the App is HANDED with its data ([`AppData::planner`]).
+//!   The App never names the kernel, the store or a clock: the driver
+//!   (`tui::mod.rs`) hands it one that asks the kernel over the context it
+//!   read, and a test hands it one over its own world. A refusal keeps the last
+//!   day and says why on the hint line; a fault is held for the driver
+//!   ([`App::take_fault`]), which ends the TUI loudly.
 //! * [`Screen`] — §12's five screens. Screens 2–5 live in their own modules
 //!   ([`super::queue`], [`super::necessities`], [`super::review`],
 //!   [`super::inbox`]); this module owns the enum, holds each screen's cursor
@@ -33,8 +41,9 @@
 //!   action goes through the same code path as the §13 verb), open the
 //!   editor, reload, replan, quit.
 //! * [`Prompt`] — §9.1's overtime box and §9.2's idle box, with the
-//!   consequence lines §9.1 wants computed by re-planning
-//!   ([`tm_core::planner::overtime_drops`]).
+//!   consequence lines §9.1 wants computed by re-planning — the kernel's
+//!   what-if (`Planner.overtimeDiff`, asked through [`Planner`] with
+//!   [`Ask::extend`]).
 //!
 //! ## Two keys §12.6 assigns twice
 //!
@@ -65,7 +74,6 @@ use tm_core::log::Replay;
 
 use tm_core::model::{Id, IsoWeek, Loc, Recur};
 use tm_core::dayplan::{DayPlan, SegFlags, SegKind, Segment};
-use tm_core::planner::{self, PlanInput, PlanOverrides};
 use tm_core::priority::{Candidate, Prio, PrioClass};
 use tm_core::recur;
 use tm_core::review::{self, PlannedBlock, StatusHead, StatusLine};
@@ -457,6 +465,63 @@ pub struct ArrivalBlock {
     pub id: Option<Id>,
 }
 
+/// **One question the App asks of the kernel** (R3): the day planned from
+/// `now` over `.tm/state.json` as the App holds it, and — for §9.1's overtime
+/// box — the items `blocks` more blocks on one item would remove.
+pub struct Ask<'a> {
+    /// The instant the day is planned from.
+    pub now: DateTime<Tz>,
+    /// `.tm/state.json` as the App holds it.
+    pub state: &'a RuntimeState,
+    /// §9.1's what-if: `blocks` more blocks on the item.
+    pub extend: Option<(&'a Id, u32)>,
+}
+
+/// **The kernel's answer to an [`Ask`]**: the day, the items the what-if
+/// removes (empty when none was asked), and the ranking the day was planned by.
+pub struct Asked {
+    /// The day (§8).
+    pub day: DayPlan,
+    /// What the extension would drop (§9.1), `Planner.overtimeDiff`'s `removed`.
+    pub removed: Vec<Id>,
+    /// **The candidates, their priorities and the lookahead's days of the SAME
+    /// answer** (the W-45 repair, README gap 4743): the Queue, Necessities and
+    /// Inbox screens read [`App::view`] over the ranking the Today pane's day was
+    /// planned by, replaced at every replan that is not a what-if. `None` keeps the
+    /// App's ranking (a planner that ranks nothing, as a test's may).
+    pub ranking: Option<Ranking>,
+}
+
+/// **The ranking of one kernel answer** (§7): the candidates in
+/// `collect_candidates` order, their priorities 1:1, and the lookahead's days.
+pub struct Ranking {
+    /// The candidates (§7).
+    pub candidates: Vec<Candidate>,
+    /// Their priorities.
+    pub prios: Vec<Prio>,
+    /// The lookahead's days (the Queue's "fits").
+    pub caps: Vec<UnitCapacity>,
+}
+
+/// **Why an [`Ask`] has no answer**: the sentence the hint line shows, whether
+/// it is a FAULT (the kernel returned nothing usable — the TUI must end, loudly,
+/// as every verb does), and the error itself for the driver, which alone knows
+/// its type: the App is pure and names no `crate::cli` type, so it carries the
+/// cause opaquely.
+pub struct Unplanned {
+    /// What the hint line says.
+    pub message: String,
+    /// A fault, not a refusal.
+    pub fault: bool,
+    /// The error, for the driver.
+    pub cause: Option<Box<dyn std::any::Any + Send>>,
+}
+
+/// **Where the App's days come from** — the kernel's day for an [`Ask`] (R3;
+/// the owner's D103: the minute tick replans through it, as the fork's tick
+/// replanned). Handed to the App with its data ([`AppData::planner`]).
+pub type Planner = Box<dyn Fn(&Ask<'_>) -> Result<Asked, Unplanned> + Send>;
+
 /// Everything [`App::new`] needs that comes from the plan directory.
 pub struct AppData {
     /// `config.toml` (§16).
@@ -488,6 +553,9 @@ pub struct AppData {
     pub week_cut: review::PauseCut,
     /// The instant the TUI is at, in `cfg.tz`.
     pub now: DateTime<Tz>,
+    /// **Where the App's days come from** ([`Planner`]): asked over this same
+    /// plan directory.
+    pub planner: Planner,
 }
 
 /// The whole TUI state.
@@ -568,16 +636,22 @@ pub struct App {
     pub idle_at: Option<DateTime<Tz>>,
     /// Set once `q` has been pressed.
     pub quit: bool,
+    /// [`AppData::planner`].
+    planner: Planner,
+    /// A FAULT the planner answered, held for the driver ([`App::take_fault`]).
+    fault: std::cell::RefCell<Option<Unplanned>>,
 }
 
 impl App {
-    /// Build the TUI state and plan today from `now` (§8).
-    pub fn new(data: AppData) -> App {
+    /// Build the TUI state and plan today from `now` (§8). A day the kernel
+    /// does not plan is the TUI's to refuse to open on, as `tm plan` refuses
+    /// it: the reason comes back.
+    pub fn new(data: AppData) -> Result<App, Unplanned> {
         let today = data.now.date_naive();
         let window = (data.now, data.now);
         let mut app = App::with_plan(data, DayPlan::empty(today, window, 0), None);
-        app.replan();
-        app
+        app.try_replan()?;
+        Ok(app)
     }
 
     /// Build the TUI state around a plan that is given, not computed — the
@@ -642,6 +716,8 @@ impl App {
             overtime_at: None,
             idle_at: None,
             quit: false,
+            planner: data.planner,
+            fault: std::cell::RefCell::new(None),
         }
     }
 
@@ -649,29 +725,53 @@ impl App {
     // Planning (§8) — pure, so a replan is just data
     // -----------------------------------------------------------------
 
-    /// The planner's input for `now`, ranked by the kernel's priorities and
-    /// lookahead of the last load (stage 5 D10 L8, gap 111: the planner reads
-    /// no walls of its own and runs no pass of its own; a file change or a verb
-    /// reloads them).
-    fn input(&self) -> PlanInput<'_> {
-        PlanInput::new(
-            &self.tree,
-            &self.replay,
-            &self.cfg,
-            &self.model,
-            &self.state,
-            self.now,
-        )
-        .with_caps(&self.caps)
-        .with_ranking(&self.candidates, &self.prios)
+    /// **Ask the planner** ([`Planner`]).
+    fn ask(&self, ask: &Ask<'_>) -> Result<Asked, Unplanned> {
+        (self.planner)(ask)
     }
 
-    /// §9: recompute the plan from `now` and refresh every digest.
-    pub fn replan(&mut self) {
-        let plan = planner::plan(&self.input());
-        self.plan = plan;
+    /// The FAULT the planner last answered, for the driver to end the TUI with
+    /// (`None` when there is none) — a kernel that returned nothing usable is
+    /// never a day kept quietly (AGENTS §5.10).
+    pub fn take_fault(&self) -> Option<Unplanned> {
+        self.fault.borrow_mut().take()
+    }
+
+    /// Hold `e` for the driver when it is a fault; its sentence either way.
+    fn unplanned(&self, e: Unplanned) -> String {
+        let message = e.message.clone();
+        if e.fault {
+            *self.fault.borrow_mut() = Some(e);
+        }
+        message
+    }
+
+    /// The kernel's day from `now` (R3), and every digest refreshed.
+    fn try_replan(&mut self) -> Result<(), Unplanned> {
+        let asked = self.ask(&Ask { now: self.now, state: &self.state, extend: None })?;
+        if let Some(r) = asked.ranking {
+            self.candidates = r.candidates;
+            self.prios = r.prios;
+            self.caps = r.caps;
+        }
+        self.plan = asked.day;
         self.ghost = self.arrival_plan();
         self.refresh();
+        Ok(())
+    }
+
+    /// §9: recompute the plan from `now` and refresh every digest. The day is
+    /// the kernel's (R3; the owner's D103: the minute tick replans through
+    /// it). A day the kernel refuses — a file saved half-edited, a configured
+    /// value it cannot read — keeps the last one, and the hint line says why;
+    /// a fault is held for the driver ([`App::take_fault`]).
+    pub fn replan(&mut self) {
+        if let Err(e) = self.try_replan() {
+            let why = self.unplanned(e);
+            self.ghost = self.arrival_plan();
+            self.refresh();
+            self.message = Some(format!("plan not refreshed: {why}"));
+        }
     }
 
     /// The plan as it stood at arrival (§12.1's ghost row), read back from
@@ -1072,7 +1172,8 @@ impl App {
     // -----------------------------------------------------------------
 
     /// Replace the plan-directory half of the state after a write or a file
-    /// change, keeping the UI half (screen, mode, selection), then replan.
+    /// change, keeping the UI half (screen, mode, selection), then replan —
+    /// with the planner over the plan directory as now read.
     pub fn adopt(&mut self, data: AppData) {
         self.cfg = data.cfg;
         self.model = data.model;
@@ -1087,6 +1188,7 @@ impl App {
         self.week_cut = data.week_cut;
         self.now = data.now;
         self.today = data.now.date_naive();
+        self.planner = data.planner;
         self.replan();
     }
 
@@ -1107,7 +1209,10 @@ impl App {
     }
 
     /// Advance to `now`: replan when the minute has moved on (the timeline is
-    /// written to the minute) and raise §9's prompts.
+    /// written to the minute) and raise §9's prompts. The replan is the
+    /// kernel's — the owner's D103 (D38 revised): the minute tick asks the
+    /// kernel once, as the fork's tick replanned, so the rows never stand still
+    /// while `tm plan`'s day moves (an overrunning block's tail drops on both).
     ///
     /// Returns whether anything changed, so the driver can skip a redraw.
     pub fn tick(&mut self, now: DateTime<Tz>) -> bool {
@@ -1193,41 +1298,20 @@ impl App {
     }
 
     /// §9.1's "x extend +1 block → drops: …": the items an extension would
-    /// leave no room for.
-    ///
-    /// [`planner::overtime_drops`] is the intended entry point, but it moves
-    /// nothing when the item is the **running** block — which is the only
-    /// case §9.1 has: `planner::active_run` sizes that block from
-    /// `runtime.active.est_min` and never reads
-    /// `PlanOverrides::extra_min` (planner.rs:1419, see the report). So for
-    /// the running block the what-if is run here the way `tm extend` actually
-    /// changes the world: `active.est_min` grows *and* the item's remaining
-    /// estimate grows.
+    /// leave no room for — the kernel's what-if (`Planner.overtimeDiff`, R3):
+    /// the day as it stands against the day with `blocks` more blocks on `id`,
+    /// the running block's estimate grown *and* its candidate facts grown as
+    /// `tm extend` grows them (the owner's D58, the host's one reading). A
+    /// refusal drops nothing (the replan at the same instant says why); a fault
+    /// is held for the driver.
     fn extend_drops(&self, id: &Id, blocks: u32) -> Vec<Id> {
-        let minutes = blocks.saturating_mul(self.cfg.block_min());
-        if !self.state.active.as_ref().is_some_and(|a| &a.id == id) {
-            return planner::overtime_drops(&self.input(), id, blocks);
+        match self.ask(&Ask { now: self.now, state: &self.state, extend: Some((id, blocks)) }) {
+            Ok(asked) => asked.removed,
+            Err(e) => {
+                self.unplanned(e);
+                Vec::new()
+            }
         }
-        let base = planner::plan(&self.input());
-        let mut runtime = self.state.clone();
-        if let Some(active) = runtime.active.as_mut() {
-            active.est_min = active.est_min.saturating_add(minutes);
-        }
-        let overrides = PlanOverrides::new().extending(id, minutes);
-        let alt = planner::plan(
-            &PlanInput::new(
-                &self.tree,
-                &self.replay,
-                &self.cfg,
-                &self.model,
-                &runtime,
-                self.now,
-            )
-            .with_caps(&self.caps)
-            .with_ranking(&self.candidates, &self.prios)
-            .with_overrides(&overrides),
-        );
-        planner::diff(&base, &alt).removed
     }
 
     /// Build §9.1's box for one running block, consequences included.

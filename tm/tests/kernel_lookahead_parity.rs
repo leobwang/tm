@@ -566,9 +566,10 @@ fn fork_walls_on(tree: &Tree, tz: Tz, date: NaiveDate) -> Vec<Wall> {
     out
 }
 
-/// **Fork `Planner::walls_by_date`, copied** (`tm-core/src/planner.rs` at this commit):
-/// the planner's own lookahead input when `PlanInput` carries no capacities, which is
-/// the TUI's replan.  It differs from `Ctx::walls_on` three ways: only `[ ]` and `[>]`
+/// **Fork `Planner::walls_by_date`, copied** (`tm-core/src/planner.rs` as it stood when this
+/// was written; R3 deleted the file, and this copy is what remains of it here): the planner's
+/// own lookahead input when its input carried no capacities, which was the TUI's replan
+/// until stage 5 D10 L8 (gap 111).  It differs from `Ctx::walls_on` three ways: only `[ ]` and `[>]`
 /// items, the buffer taken off the instant, and each date's walls clipped to it.
 /// Measured below for gap 111; the kernel follows `Ctx` (L2).
 fn planner_walls_by_date(tree: &Tree, tz: Tz, today: NaiveDate, days: u32) -> WallsByDate {

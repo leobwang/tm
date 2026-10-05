@@ -1244,13 +1244,20 @@ fn kernel_problems(ctx: &Ctx) -> Result<Vec<validate::CheckProblem>, CliError> {
 /// what that leaves unseen) — and that includes a log the kernel refuses to
 /// window (`reachTooFar`, D18: `tm check` is the one verb that survives it). A
 /// kernel FAULT of the day's call is propagated, as [`kernel_problems`]
-/// propagates one.
+/// propagates one — and so is a day the host's codec cannot read: the answer is
+/// read back by `kernel_capacity::read_day`, the decoder `tm plan` reads its day
+/// with (the W-45 repair, README gap 4742). Until then this sent the request and
+/// never decoded the answer, so on README gap 4621's tree it printed `no
+/// problems` while every planning verb faulted (gap 4711).
 fn planner_problems(ctx: &Ctx) -> Result<Vec<validate::CheckProblem>, CliError> {
-    let request = match super::kernel_capacity::planner_request(ctx, false) {
-        Ok(r) => r,
+    let ask = match super::kernel_capacity::planner_ask(ctx, false) {
+        Ok(a) => a,
         Err(_) => return Ok(Vec::new()),
     };
-    match super::kernel_bridge::call_text(&request) {
+    let request = ask.request.clone();
+    // The day read back by the decoder every planning verb reads it with (README gap 4742, the
+    // W-45 repair): a response `tm plan` could not read is a fault here too, never `no problems`.
+    match super::kernel_capacity::read_day(ctx, ask) {
         Ok(_) => Ok(Vec::new()),
         Err(CliError::Kernel(issue)) if issue.name != "kernelFault" => {
             let item = issue

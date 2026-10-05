@@ -92534,9 +92534,9 @@ step.
 
 ## Stage 6 — W-46 repair: the tracks landed whole, the calendar's last day refused by P71's name, then R3
 
-**Status.**  Kept current while the step runs; §9 is its clock.  Two commits are planned on `rebuild-on-lean`, each
-measured green on its own tree before it lands (D19: the switch is ONE commit with everything separable before it): the
-LAND (this block's §1-§6) and the SWITCH (§7 onward, appended when it is measured).
+**Status.**  §9 is its clock.  Two commits on `rebuild-on-lean`, each measured green on its own tree before it landed
+(D19: the switch is ONE commit with everything separable before it): the LAND (this block's §1-§6, `e2f8155`) and the
+SWITCH (§7-§8, the commit that carries them).
 
 ### 0. The brief, measured before it was acted on
 
@@ -92684,6 +92684,131 @@ are not on this commit; they come with R3 (§7).
   deleting the cache mid-extended-block moves `tm now`'s and `tm plan`'s minutes by the rounding difference and logs
   one `plan` line.  (4) W-47, with the owner's ruling on the direction.
 
+### 7. R3 — the switch, landed (the W-46 switch's archive carried onto the land, and the auditors' findings on it)
+
+**What the commit is.**  `refs/archive/w46/r3-switch` (`e52e34a`: the W-45 archive's body swap and deletion, track C's
+deletion of the class R3 orphans, gap 4815's guard, gap 4816's doc, the week grid re-drawn once under D64(b), the R3
+lines of AGENTS.md and `tm/DORMANT.md`) cherry-picked onto the land; its one conflict, `kernel/citations-allow.txt`,
+resolved by keeping the land's banners, DELETING the W-45 repair's banner (its seven names resolve once R3 lands —
+README gap 4757, as that banner said) and keeping the W-45 switch's 49 counted names (gap 4882 below).  Then the
+repair's own changes, each below.  The day `tm plan`, `tm now`, every verb that replans and the TUI (its minute tick
+included, D103) draw is the kernel's — `kernel_capacity::plan_day` asks it and `planwire::read_plan` reads it back —
+and fork 4748911's planner, `tm-core/src/planner.rs`, is gone with the class of `tm-core` functions only it reached
+(track C's census, gap 4752: 35 by two instruments, 38 with a three-function closure; each comparison that read one
+reads fork 4748911's frozen answer or `tm-oracle plan`/`tm-oracle capacity` now, D72).
+
+**The census of the switched binary, by class** (one workspace run before the fixes below, 12:22-12:34; README's
+R3 classes):
+* **(A) the in-process swap class**: 0 failing.
+* **(B) moved output a registered number licenses, each line named (RULE M)** — every one listed here, and nothing
+  else of the binary's own output moved:
+  1. `tm/tests/snapshots/tui_today_prompts__the_overtime_box_names_what_extending_would_drop.snap`, its 7 lines, and
+     the drops in `tui_today_prompts.rs`' `the_overtime_box_names_what_extending_would_drop` (the fork's
+     `["Claude Code drafts tests (p3)"]` to none) — **P46** (the W-45 switch block's §4 items 1-2, carried).
+  2. `cli_switch_acceptance.rs`' `tm_undo_across_a_seal_restores_the_facts`: `review day`'s `drift_min` on 2026-09-10
+     moves by the drift of the two `plan` events R3 logs after the sealed `start`, **500 and 500** minutes, the list
+     named by value in `R3_DRIFTS_P69_P46` and asserted EQUAL to what the binary logs — **P69** (the `start` reserved
+     from its logged instant) in overtime, **P46**.  Fork 4748911 logged drift 0 there.  (Gap 4877: the archive
+     ADDED whatever drift the run logged, so any drift passed — the reuse critic's RULE M finding, reproduced by
+     reading the archive's diff; fixed by naming the measured list.)
+  3. `kernel_planner_refusals.rs`' `the_calendars_last_day_reaches_the_planner_section_by_p71s_name`: `tm plan` on
+     9999-12-31 in Chicago, with no routine and with an evening routine, from exit 0 (fork 4748911 planned it) to exit
+     1 `kernel refusal: eveningPastTheCalendar` — **P71** (D80 (a)), by gap 4843's order the same name on both trees.
+  4. `kernel_planner_refusals.rs`' `a_routine_word_the_two_readers_key_apart_is_p72s_refusal_by_name`: `tm plan` on a
+     routine `- stretch ^é1 …` from exit 0 to exit 1 `kernel refusal: ciDisagrees stretch ^é1 wire 1 plan none` —
+     **P72** (D80 (b)); never `routineRefused` (gap 4795, track H's part 2, now on the branch).
+  The frozen comparands the archive re-drew (the week grid's 18 lines, D64(b)) are comparands, not RULE M lines.
+* **(C) moved output no number licenses**: **0**.  The archive's two (gap 4740's break deletion and gap 4843's
+  calendar refusal) are cleared on the land (D105, §5's drive; gap 4843's order, §2) and re-driven on this binary:
+  `brk.sh` moves nothing and writes no line, the calendar drive's sixteen trees name `eveningPastTheCalendar` or the
+  capacity section's `badCandidate 0 due` (exit 1 on fork 4748911's binary too) and nothing else, and the reuse
+  critic's gap-4795 world names P72's refusal (item 4) — gap 4878, the critic's finding that the switch's census
+  omitted gap 4795, closed: the class it named ("a planner-section refusal a fork-planned tree reaches by a name no
+  row gives") is `kernel_planner_refusals.rs`' instrument, 22 of 22 on this binary, every name a register row's.
+* **(D) latency**: 0 failing (§8's runs).
+* **(E) other**: one — `kernel_break_start.rs`' `a_running_breaks_start_has_one_reading` counted three callers of
+  the logged reading where there are now four (gap 4875's `planwire::running_worked_min`); its census is restated
+  at four, named.
+
+**Gap 4875 — the what-if and the worked minutes had a second builder only the binary called** (the reuse critic's
+first finding, MAJOR).  *Reproduced* by reading the archive: `planner_ask_from` grew the extended candidate with its
+own `planwire::grown(c, None, blocks × block_min, …)` and every fork comparison planned the HARNESS's request,
+built by `forkclass::whatif_json`'s copy — so a growth bent in the binary's copy met no comparison (the critic's
+plant, `+30`, left the whole workspace at its unplanted figures).  And the harness placed a running break by the
+cache's clock (`BreakState::started_at`) where the binary has read the logged start since D105.  *Fixed as the class*:
+`planwire::whatif_json` and `planwire::running_worked_min` (tm-core) are the ONE builder of the request's
+binary-only halves; `kernel_capacity::planner_ask_from` and `day::worked_min_at` call them, and so do every harness
+that builds a what-if or a worked minute (`forkclass::whatif_json`/`host_worked`, `tui_common`'s planner,
+`planner_invariants`' `w36_host_worked`, `planner_request_keys`' swap section).  *Bitten*, in a clone
+(`scratchpad/repair-w46/plant`, porcelain empty before and after): the critic's `+30` planted in the one builder, one
+workspace run, 155 result lines, 2,885 passed, **8 failed** — `planner_classes`' generated classes, frozen batch and
+W-38 bite; `planner_w41_starts`' frozen starts and their bite; `tui_kernel_answers`' frozen TUI worlds, their answer
+and their bite.  And `planner_request_keys` gains two worlds whose request halves only the binary builds — an open
+interruption over a running block, and a running break inside one — each held to the harness's by value (21 → 21
+tests; the worlds join the existing loops).
+
+**Gap 4881 — the second-planner guard read a list of shapes** (minor, reproduced by the critic's two plants: a cloned
+day given rest rows by hand, and a day built through a helper).  `no_second_planner.rs` gains a census of every site
+that builds a day or adds a segment to one — a `Segment`/`DayPlan` literal, `DayPlan::empty`, a push, insert or extend
+into `segments` — over the same files, MEASURED after R3 (`dayplan.rs` 1, `planwire.rs` 7, `cli/ghost.rs` 3,
+`tui/app.rs` 5, each with why it is not a planner) and held EXACTLY; both plants are a build it counts
+(`the_day_builder_census_bites`).  What it cannot see: a segment built through a constructor function written under
+another name, or by mutating a cloned segment's fields.
+
+**Carried, not reworded (gap 4882).**  The 49 names the deletion leaves (253 citations) stay COUNTED in
+`citations-allow.txt` under the W-45 switch's banner, as the archive had them: every one is cited by an append-only
+README block, a Lean note naming the fork function a definition ports, or the oracle's patch, and D41 keeps check 8
+off rewording the record; a NEW citation of one moves a count and shows in a diff.
+
+**Dead with what it tested.**  `energy_fit.rs` loses one assertion, on the model's p_lounge_on (named bare, gap 4882's rule), which R3 deletes with
+the class only the fork's lookahead reached (track C's census); it asserted the deleted function, not the binary's
+output.
+
+**Closed on the branch with the archive** (each its own W-46 switch block's record): **4757** (the W-45 repair's
+citation banner deleted, its names resolving), **4814** (the deletion's names counted), **4815** (the guard's cut half
+restated as the cut's own types) and **4816** (`capacity_lookahead.rs`' doc); and **4840**, **4841**, **4844**,
+**4845** and **4846** (R3 not landed, the tracks' work uncommitted, what was not run on the archive, done in the
+archive only, the archive conflicting with the uncommitted work) with this commit and the land.  **4842** (the
+composition red on check 8) is gap 4870's.  **4847** (`Cut`, `Break` and `SlotOrBreak` outlive R3 with nothing
+building them) stands as its block says: they are types outside track C's class of functions, the second-planner
+guard reads `Slot` and `Cut` as a cut's shape, and gap 4810's sort clears them.
+
+**Measured (capped, in the switch's worktree `w46-sw`).**  The build warning-free.  `check.sh` (in a clone,
+`scratchpad/repair-w46/plant`, porcelain empty before and after): **seventeen lines, all ok** — axiom audit **6,397**;
+FFI **96**; corpus **29/37 and 4/5**; stage goals **1**; prose citations **61,935** (58,296 resolved, 3,639 allowed,
+698 counted); check 9 **750**, 0 owed; parity **P1-P101, next free P102** (this commit issues none); check 12 **1,520**
+reachable, **1,099** exempt, 0 unanswered; replay **95**.  Its first run failed one line — this block named a deleted
+function in backticks a ninth time — and the name is written bare.  `cargo test --workspace --no-fail-fast`, **three
+runs**: **155 result lines, 2,893 passed, 0 failed, 51 ignored**, each (12:56-13:07, load 2 → 5; 13:07-13:18, load 5 → 4;
+13:18-13:30, load 4 → 6), porcelain empty after each; `cli_latency --include-ignored` **8 passed** (13:30).  Against
+the land: 3,004 → 2,893 passed and 53 → 51 ignored, the tests of the deleted fork planner and of the class it orphaned
+(track C's census) going with them — and the planner and the class are gone, which is the point.  Driven on the
+switched binary: `brk.sh`, `resume.sh` and `tz.py` answer as on the land (§5); the calendar drive as above; the extend
+world (§8); and the TUI through a pty (`script`, 120×40, `TM_TUI_CLOCK_RUNS=1`, `--now` 09:35 with `^m1` running and
+a break begun at 09:30): it opens, draws the day with the break's row and the block paused, and quits on `q` (exit
+0) — with `--now` fixed the clock does not advance, so this drives the load and not two reloads (AGENTS §5.13).
+
+### 8. Open after R3, by name
+
+* **4876** (§6) stands: `tm extend`'s cached `est_min` and the rebuild's disagree under a learned multiplier —
+  reproduced on the switched binary exactly as on the land (`scratchpad/repair-w46/extend.sh`: `est_min` 108 → 117,
+  `running · 88m left` → `97m left`, plan hash `2de437e0259d6fd2` → `542894c11b2a73f6`, the log 6 → 7 lines).
+* **4879 — D34's "`collect_candidates` dies with `planner.rs` at R3" is false at R3.**  (1) `priority::collect_candidates`
+  survives: `kernel_capacity::planner_ask_from` and `Ctx`'s ranking call it, because the kernel may not derive a
+  candidate fact (D34) and D27 has not landed.  (2) D34 placed D27 after R3; the sentence that says it dies AT R3
+  was the plan, not a measurement.  (3) Gaps 113, 114 and 116 stay open with it.  (4) D27's step.
+* **4880 — `tm review day`'s "tomorrow" list sorts by fork 4748911's §7.4 key** (`priority::sorted`, `(p, root
+  line, own line)`), while the kernel's day serves impossible p0 items by due date (P51, D63) and joins batches only
+  consecutively (P64, D74).  (1) Two definitions of rank in the binary after R3.  (2) Tomorrow is not a day the
+  kernel plans in that verb; asking it is a second planner request per review, unpriced.  (3) The list may order
+  two p0 items as the kernel's day would not.  (4) W-47.
+* **4883 — nothing of W-46 is on `origin`**: this step commits locally and does not push; `refs/archive/w46/*`, the
+  land's steps (`refs/archive/w46/repair-land-steps`) and the switch's (`refs/archive/w46/repair-switch-steps`) are
+  local refs.
+* The ledger: AGENTS.md's R3 line said the last goal was "W-46's (D99)"; the brief and the repair schedule
+  `plan_places_no_block_over_a_break` for W-47, and the line says so.  Gap 4843's drive is in the repository now
+  (§2's table, and the test that pins it).
+
 ### 9. The clock
 
 * 10:35 — the step began (its first session): the auditor's scripts re-run on a HEAD build (§0), the worktree
@@ -92694,3 +92819,11 @@ are not on this commit; they come with R3 (§7).
   (`30490cf`); `check.sh` green; the first workspace run red on gap 4874's placement, fixed (`b493261`); three green
   runs and `cli_latency` (11:35-12:13); the three decisions driven (12:15); this block; the land committed on
   `rebuild-on-lean` as one commit.
+* 12:15-12:22 — the switch's worktree (`w46-sw`) from the land's code: the archive cherry-picked, the conflict resolved
+  (§7); gaps 4875 and 4877 fixed; built warning-free; the critical suites, two red pins flipped under P71 and P72.
+* 12:22-12:34 — the switch's first workspace run: 2,890 passed, 1 failed (class E, §7), 51 ignored; the reader census
+  restated; the day-builder census (gap 4881); gap 4875's plant in a clone (12:41-12:55, 8 caught); the decisions,
+  the calendar and gap 4876 driven on the switched binary.
+* 12:56-13:30 — three green workspace runs and `cli_latency`; `check.sh` green (13:35); the TUI driven (13:32); the
+  switch committed on `rebuild-on-lean` as ONE commit over the land, its steps kept under
+  `refs/archive/w46/repair-switch-steps`.

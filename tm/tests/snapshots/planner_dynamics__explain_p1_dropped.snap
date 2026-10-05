@@ -1,5 +1,0 @@
----
-source: tm/tests/planner_dynamics.rs
-expression: dropped
----
-p = k(3) + 2 (no due, no floor) = 5; no slot (dropped from the tail); deps ok

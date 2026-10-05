@@ -178,38 +178,6 @@ impl DayPlanner for Kernel {
     }
 }
 
-// BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gap 2722)
-/// The fork's planning input for this fixture. The suites that plan with the
-/// fork read it; `planner_fixtures.rs`' surviving arm does not, and its
-/// `the_fork_half_of_this_suite_is_one_region` holds this file to one region.
-impl Fixture {
-    pub fn input<'a>(&'a self, state: &'a RuntimeState, now: DateTime<Tz>) -> tm_core::planner::PlanInput<'a> {
-        tm_core::planner::PlanInput::new(
-            &self.tree,
-            &self.replay,
-            &self.cfg,
-            &self.model,
-            state,
-            now,
-        )
-    }
-}
-
-/// The fork's planner, with its own §7 pass — what the suites pinned until W-36.
-pub struct Fork;
-
-impl DayPlanner for Fork {
-    fn day(&self, fx: &Fixture, state: &RuntimeState, now: DateTime<Tz>) -> DayPlan {
-        tm_core::planner::plan(&fx.input(state, now))
-    }
-    fn day_allowing_home(&self, fx: &Fixture, state: &RuntimeState, now: DateTime<Tz>) -> DayPlan {
-        tm_core::planner::plan(&fx.input(state, now).with_allow_home(true))
-    }
-    fn name(&self) -> &'static str {
-        "the fork"
-    }
-}
-// END THE FORK PLANNER
 
 /// The `plan-basic` history the planner tests plan against: eight weeks of
 /// laundry, a shower two days ago, and this morning up to `tm arrive`.

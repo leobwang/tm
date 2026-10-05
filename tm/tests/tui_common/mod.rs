@@ -84,7 +84,7 @@ use tm_core::priority::{Prio, PrioClass};
 use tm_core::store::{ActiveBlock, MemStore, PlanFiles, RuntimeState, Store};
 use tm_core::tree::Tree;
 
-use app::{App, AppData, ArrivalBlock};
+use app::{App, AppData, ArrivalBlock, Ask, Asked, Planner, Unplanned};
 
 /// The day every snapshot is taken on (§4.3's day file).
 pub const DATE: (i32, u32, u32) = (2026, 9, 7);
@@ -622,6 +622,7 @@ pub fn app_of_world(
     let prios: Vec<Prio> = answer.prios;
     assert_eq!(candidates.len(), prios.len(), "the ranking is 1:1 with the candidates");
     let caps = answer.days;
+    let planner = world_planner(texts.to_vec(), log.to_string(), cfg.clone());
     let data = AppData {
         model,
         state,
@@ -635,8 +636,53 @@ pub fn app_of_world(
         week_cut,
         now,
         cfg,
+        planner,
     };
     App::with_plan(data, plan, ghost)
+}
+
+/// **The App's planner over a test's world** (R3): the kernel's day for an
+/// [`Ask`], built by the HARNESS's request builder ([`planreq::request`]) — a
+/// SECOND builder beside the binary's (`kernel_capacity::planner_ask_from`),
+/// because `tm` is a `[[bin]]` and no test can call into it. So the App tests
+/// that plan through this exercise the harness's request, never the shipped
+/// planner's: what holds the two requests to one another — every scalar, and the
+/// kernel's day from each — is `tests/planner_request_keys.rs`'
+/// `the_binarys_planner_request_and_the_harnesss_agree_in_value` (README gap
+/// 4741, the W-45 repair; until it this paragraph said "built as the binary
+/// builds it"), and the shipped TUI planner (`tui::kernel_planner`) is reached by
+/// the binary's own `tui::tests` and the pty drive. It spells what the binary
+/// sends: `.tm/state.json` read as `tm plan`'s roll leaves it, the candidates of `now`'s
+/// date, the request [`planreq::request`] spells with the binary's own sections,
+/// the running block's worked minutes as `day::worked_min` reads them
+/// (`Replay::running_worked_min`, the running break included), and §9.1's
+/// what-if with the extended candidate's grown facts (`planwire::grown`, D58) —
+/// read back by the host's codec ([`planreq::kernel_day_of`]). Every refusal is a
+/// refusal here: the harness has no faults to tell apart.
+pub fn world_planner(texts: Vec<(String, String)>, log: String, cfg: Config) -> Planner {
+    Box::new(move |ask: &Ask<'_>| {
+        let unplanned = |message: String| Unplanned { message, fault: false, cause: None };
+        let today = ask.now.date_naive();
+        let mut state = ask.state.clone();
+        state.roll_to(today);
+        let replay: Replay = chokepoint::replay_of_text(&log, cfg.tz);
+        let refs: Vec<(&str, &str)> = texts.iter().map(|(p, t)| (p.as_str(), t.as_str())).collect();
+        let tree = Tree::from_texts(&refs, &cfg);
+        let model = tm_core::energy::Model::default();
+        let cands = tm_core::priority::collect_candidates(&tree, &replay, &cfg, &model, today, ask.now);
+        let world = planreq::World { docs: &texts, log: &log, tree: &tree, cfg: &cfg, state: &state, now: ask.now, cands: &cands, replay: &replay };
+        // The binary's one builder and one reading (README gap 4875).
+        let overtime = ask.extend.map(|(id, blocks)| tm_core::planwire::whatif_json(&cands, id, blocks, &cfg));
+        let (mut req, order) = planreq::request(&world, overtime);
+        if let Some(worked) =
+            tm_core::planwire::running_worked_min(&state, &replay, cfg.tz, ask.now, today, ask.now.fixed_offset())
+        {
+            tm_core::planwire::add_worked_min(&mut req["planner"], worked);
+        }
+        let resp = planreq::call(&req);
+        let (k, _) = planreq::kernel_day_of(&resp, &world, &order).map_err(unplanned)?;
+        Ok(Asked { day: k.day, removed: k.overtime.map(|d| d.removed).unwrap_or_default(), ranking: None })
+    })
 }
 
 /// One log entry on the day under test (§10.1).

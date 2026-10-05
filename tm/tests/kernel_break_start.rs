@@ -331,8 +331,11 @@ fn rust_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
 /// reader read the cache, and the writer's commit moved the CLI to the log. So: the only call to
 /// the cache's reading (`BreakState::started_at`) in `tm/src` and `tm-core/src` is the logged
 /// reading's own fallback (`BreakState::started_at_logged`), and the logged reading is called by
-/// the three readers there are — `Ctx::running_break` (every CLI verb), `App::running_break` (the
-/// TUI's timer and break-overrun prompt) and `planwire::state_json` (the planner request).
+/// the four readers there are — `Ctx::running_break` (every CLI verb), `App::running_break` (the
+/// TUI's timer and break-overrun prompt), `planwire::state_json` (the planner request) and, since
+/// the W-46 repair, `planwire::running_worked_min` (the running block's worked minutes the binary's
+/// request and every harness's send — one function both call, README gap 4875; until it the
+/// harnesses placed the break by the cache's clock).
 #[test]
 fn a_running_breaks_start_has_one_reading() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
@@ -361,7 +364,7 @@ fn a_running_breaks_start_has_one_reading() {
     logged.sort();
     assert_eq!(
         logged,
-        vec!["tm-core/src/planwire.rs", "tm/src/cli/ctx.rs", "tm/src/tui/app.rs"],
-        "the readers of a running break's start are not the three there are"
+        vec!["tm-core/src/planwire.rs", "tm-core/src/planwire.rs", "tm/src/cli/ctx.rs", "tm/src/tui/app.rs"],
+        "the readers of a running break's start are not the four there are"
     );
 }

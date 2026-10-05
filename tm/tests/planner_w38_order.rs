@@ -9,15 +9,17 @@
 //!   row and a Wall row that start and end at one instant are drawn in THAT
 //!   order; the kernel drew the Lost row first every time. `Planner.dayRows`
 //!   walks step 1 through `Planner.stepOneOrder` since W-38.
-//!   [`the_interruption_and_the_meeting_are_drawn_as_the_fork_draws_them`]
-//!   plans `plan-basic` with an interruption running since `^g1`'s meeting began,
-//!   naming a block that sorts after `g1`, one that sorts before it and none,
-//!   and compares every row, every diagnostic and the hash with the fork.
+//!   the_interruption_and_the_meeting_are_drawn_as_the_fork_draws_them, in the
+//!   fork region R3 deleted, planned `plan-basic` with an interruption running
+//!   since `^g1`'s meeting began, naming a block that sorts after `g1`, one that
+//!   sorts before it and none, and compared every row, every diagnostic and the
+//!   hash with the in-tree fork.
 //! * **Gap 320** — fork `Planner::window_and_budget` reads `state.window`,
 //!   `state.budget` and `state.arrival` on `plan_date`'s day, a state naming no
 //!   day included, and a window with no budget beside it; the kernel read day
 //!   0's capacity rule (a window only with its budget, only on a state dated
-//!   today). [`gap_320s_inputs_are_planned_as_the_forks_planner_plans_them`].
+//!   today). gap_320s_inputs_are_planned_as_the_forks_planner_plans_them, in the
+//!   fork region R3 deleted, compared them with the in-tree fork.
 //! * **Gap 3390, CLOSED at W-39 (track A)** — with no arrival in the state the
 //!   fork's planner falls back to the day's first logged `arrive`, and since W-39
 //!   so does the kernel's (`Look.Today.planArrivalSec` over
@@ -34,8 +36,8 @@
 //!   switch is the harness owner's). It is OUTSIDE the fork region: neither
 //!   `sorted_candidates` nor `d60_cands` is the fork planner.
 //!
-//! The three fork comparisons are one `BEGIN THE FORK PLANNER` region, which R3
-//! deletes; the kernel's half of each is `PlannerWit`'s W-38 block — and, since W-45
+//! The three fork comparisons were one `BEGIN THE FORK PLANNER` region, which R3
+//! deleted; the kernel's half of each is `PlannerWit`'s W-38 block — and, since W-45
 //! track C (README gap 4682), the same three days asked of the kernel through the FFI
 //! outside the region ([`the_kernel_draws_the_interruption_and_the_meeting_in_the_forks_order`],
 //! [`gap_320s_inputs_are_planned_by_the_kernel_from_the_states_window`],
@@ -312,133 +314,3 @@ fn the_kernel_plans_the_woken_day_from_the_logged_arrival() {
 }
 
 
-// BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gaps 2722, 3281, 320)
-/// The fork's day for `state` at `now`, ranked by the kernel's own §7 answer —
-/// `planning::build_ranked`'s wiring (D53).
-fn fork_day(fx: &Fixture, state: &RuntimeState, now: DateTime<Tz>, cands: &[Candidate], prios: &[tm_core::priority::Prio]) -> tm_core::dayplan::DayPlan {
-    tm_core::planner::plan(&fx.input(state, now).with_ranking(cands, prios))
-}
-
-/// The kernel's day and the fork's, compared by value (`forkday::compare_day_with_fork`:
-/// the date, the window, the budget, every diagnostic, the priorities, every row in
-/// order and the hash). Returns both days for the caller's own assertions.
-fn compare(
-    fx: &Fixture,
-    label: &str,
-    state: &RuntimeState,
-    now: DateTime<Tz>,
-    t: &mut forkday::DayTally,
-    findings: &mut Vec<String>,
-) -> (tm_core::dayplan::DayPlan, tm_core::dayplan::DayPlan) {
-    let day = tm_core::planwire::plan_date(state, now);
-    let cands = priority::collect_candidates(&fx.tree, &fx.replay, &fx.cfg, &fx.model, day, now);
-    let w = planner_common::planreq::World {
-        docs: &fx.docs,
-        log: &fx.log,
-        tree: &fx.tree,
-        cfg: &fx.cfg,
-        state,
-        now,
-        cands: &cands,
-        replay: &fx.replay,
-    };
-    let (k, ans) = planner_common::planreq::kernel_day(&w, None)
-        .unwrap_or_else(|e| panic!("{label}: the kernel did not plan the day: {e}"));
-    let fork = fork_day(fx, state, now, &cands, &ans.prios);
-    let frozen = serde_json::json!({
-        "day": serde_json::to_value(&fork).expect("a day serialises"),
-        "hash": fork.hash(),
-    });
-    findings.extend(forkday::compare_day_with_fork(label, &k, &frozen, now, t));
-    (k.day, fork)
-}
-
-/// **README gap 3281: the interruption and the meeting are drawn as the fork
-/// draws them.** `^g1`'s meeting runs 12:50–13:50 and an interruption has run
-/// since 12:50. Planned at 13:50 the Lost row and the Wall row tie on start and
-/// end, and the fork's `(blocked_start, id)` sort decides: an interruption naming
-/// `t4` follows `g1`, one naming `a1`, or no block, precedes it. Planned at 13:30
-/// the Lost row ends first and both draw it first. Every row, every diagnostic
-/// and the hash are compared, each day against the fork.
-#[test]
-fn the_interruption_and_the_meeting_are_drawn_as_the_fork_draws_them() {
-    let fx = basic();
-    let mut t = forkday::DayTally::default();
-    let mut findings = Vec::new();
-    let begun = at("2026-09-07", 12, 50);
-    let wall = (String::from("wall"), Some(String::from("g1")));
-    for (id, after_the_wall) in [(Some("t4"), true), (Some("a1"), false), (None, false)] {
-        let state = interrupted_at_the_meeting(id);
-        let lost = (String::from("lost"), id.map(str::to_string));
-        for (h, m, tie) in [(13, 50, true), (13, 30, false)] {
-            let now = at("2026-09-07", h, m);
-            let label = format!("interrupted {id:?} at {h}:{m:02}");
-            let (_, f) = compare(&fx, &label, &state, now, &mut t, &mut findings);
-            let want = if tie && after_the_wall { vec![wall.clone(), lost.clone()] } else { vec![lost.clone(), wall.clone()] };
-            assert_eq!(rows_at(&f, begun), want, "{label}: the fork's rows at 12:50");
-        }
-    }
-    println!("{}", t.line("gap 3281's interruption at the meeting", findings.len()));
-    forkday::no_disagreement(&findings);
-    assert_eq!(t.hashes_equal, t.days, "every day hashes as the fork's: {t:?}");
-    assert_eq!(t.days, 6, "{t:?}");
-}
-
-/// **README gap 320's inputs, planned as the fork's planner plans them**: a
-/// stored window with NO date (the window, the budget and the arrival are
-/// today's to the fork's `plan_date`), the same window dated today with NO
-/// budget beside it, and a state naming no day that carries an arrival and no
-/// window — each at four instants, every row and value against the fork.
-#[test]
-fn gap_320s_inputs_are_planned_as_the_forks_planner_plans_them() {
-    let fx = basic();
-    let mut t = forkday::DayTally::default();
-    let mut findings = Vec::new();
-    let tz = fx.cfg.tz;
-    let states = gap_320_states();
-    for (name, state, (h0, m0, h1, m1)) in &states {
-        for (h, m) in [(8, 0), (10, 30), (12, 0), (14, 0)] {
-            let now = at("2026-09-07", h, m);
-            let label = format!("{name} at {h}:{m:02}");
-            let (_, f) = compare(&fx, &label, state, now, &mut t, &mut findings);
-            // The day is the window the state says, on both sides — not one from `now` (the kernel's
-            // side: `gap_320s_inputs_are_planned_by_the_kernel_from_the_states_window`).
-            let want = (at("2026-09-07", *h0, *m0), at("2026-09-07", *h1, *m1));
-            assert_eq!((f.window.0.with_timezone(&tz), f.window.1.with_timezone(&tz)), want, "{label}: the fork's window");
-        }
-    }
-    println!("{}", t.line("gap 320's two inputs and the undated arrival", findings.len()));
-    forkday::no_disagreement(&findings);
-    assert_eq!(t.hashes_equal, t.days, "every day hashes as the fork's: {t:?}");
-    assert_eq!(t.days, 12, "{t:?}");
-}
-
-/// **README gap 3390, CLOSED (W-39 track A)**: with no arrival stored — `tm wake`
-/// logged after `tm arrive` clears it, and the log keeps the 07:00 `arrive` — the
-/// fork's planner starts the day at the logged arrival and, since W-39, so does the
-/// kernel's (`Look.Today.planArrivalSec`, fork `Planner::new`'s order: the state's
-/// arrival, else the day's first logged `arrive`, else `now`). The W-38 pin
-/// the_logged_arrival_is_the_forks_planners_and_not_yet_the_kernels asserted the
-/// kernel at `now`; it is refuted by the first assertion below and renamed to what
-/// holds. Every row, every diagnostic and the hash are compared with the fork at four
-/// instants, each window asserted on both sides.
-#[test]
-fn the_logged_arrival_is_the_forks_planners_and_the_kernels() {
-    let fx = basic();
-    let tz = fx.cfg.tz;
-    let mut t = forkday::DayTally::default();
-    let mut findings = Vec::new();
-    let state = woken_state();
-    for (h, m) in [(8, 0), (10, 30), (12, 0), (14, 0)] {
-        let now = at("2026-09-07", h, m);
-        let label = format!("woken after arriving, at {h}:{m:02}");
-        let (_, f) = compare(&fx, &label, &state, now, &mut t, &mut findings);
-        let want = (at("2026-09-07", 7, 0), at("2026-09-07", 16, 0));
-        assert_eq!((f.window.0.with_timezone(&tz), f.window.1.with_timezone(&tz)), want, "{label}: the fork's window");
-    }
-    println!("{}", t.line("gap 3390's woken day", findings.len()));
-    forkday::no_disagreement(&findings);
-    assert_eq!(t.hashes_equal, t.days, "every day hashes as the fork's: {t:?}");
-    assert_eq!(t.days, 4, "{t:?}");
-}
-// END THE FORK PLANNER

@@ -10,6 +10,19 @@
 //! `DateTime<Tz>` in `cfg.tz`, and no function reads a clock, a file or a
 //! random number.
 //!
+//! **Since R3 the kernel ranks** (stage 6, W-46; the owner's D53 and README
+//! gap 4752).  §7.2-§7.5's pass — the rule, the EDF reservation, the bins,
+//! hysteresis and the batches — is the kernel's (`Priority.lean`,
+//! `Capacity.lean`, `Look.prioritiesWithFloors`), asked through the binary's
+//! one ranking request; fork 4748911's own pass, which lived here, was
+//! deleted at R3 with the class it orphans (W-46 track C §5), and its answers
+//! are frozen by value and asked of `tm-oracle capacity`
+//! (`tm/tests/support/forkcap.rs`).  What stays is the host's half: the
+//! candidates the request carries, and the readers of a ranking the kernel
+//! computed.  The rule table and the choices below are the record of what
+//! the fork's pass decided; the kernel's port keeps each, and the parity
+//! register names where it does not.
+//!
 //! # API overview
 //!
 //! * [`collect_candidates`]`(tree, replay, cfg, model, today, now) ->
@@ -26,33 +39,26 @@
 //!   **kept** (§5.5: "a blocked high-priority item shows in diagnostics as
 //!   blocked by ^id rather than silently vanishing") —
 //!   [`Candidate::eligible`] and [`Candidate::ineligible_reason`] say why.
-//! * [`compute`]`(cands, caps, yesterday, cfg, today) -> Vec<Prio>` — §7.2 +
-//!   §7.3 + §7.4, one [`Prio`] per candidate **in the same order**. `caps` is
-//!   [`capacity::lookahead`]'s output, ascending by date and long enough to
-//!   reach the furthest deadline ([`lookahead_days`] says how long);
-//!   `yesterday` is `state.priorities_yesterday` (§10.2).
-//! * [`sort_key`]`(prio, cand) -> (p, root_order, own_order)` (§7.4) and
-//!   [`sorted`] — the assignable ids, today's walls first (they are placed by
-//!   §8.2 step 1, not competed), then by key. An Interval that does not cover
-//!   today is a wall of another day and is left out entirely.
-//!   [`blocked`] is the list §8.2 step 8 puts in `diagnostics.blocked`.
-//! * [`batches`]`(sorted_cands, cfg) -> Vec<Batch>` (§7.5) — the assignment
-//!   order as groups: runs of small equal-`ci` candidates merged into one
-//!   block-sized batch, everything else a one-item group, so the planner can
-//!   consume the vector linearly. A candidate with a placement window
-//!   ([`Candidate::window`]) is never merged: §8.2 places those at step 2 or
-//!   step 6, inside their own window, not by rank.
+//! * [`Prio`] — one candidate's ranking, **in the candidates' order**, as the
+//!   kernel answers it (§7.2 + §7.3 + §7.4); [`lookahead_days`] says how many
+//!   days of lookahead reach the furthest deadline; `yesterday` is
+//!   `state.priorities_yesterday` (§10.2).
+//! * [`sorted`] — the assignable ids, today's walls first (they are placed by
+//!   §8.2 step 1, not competed), then by §7.4's key `(p, root_order,
+//!   own_order)`. An Interval that does not cover today is a wall of another
+//!   day and is left out entirely. [`blocked`] is the list §8.2 step 8 puts
+//!   in `diagnostics.blocked`.
 //! * [`explain`]`(id, cands, prios, cfg) -> String` (§13) —
 //!   `p = k(3) + bin(u=0.31 → +1) = 4; need 2b, avail 6b by 2026-09-11;
 //!   deps ok; cap 2b/d: 1b used`. [`explanation`] returns the structured
-//!   [`Explanation`], whose `slot_part`/`extra` are the hook the planner
-//!   fills with the slot, energy and gap half of the same line.
+//!   [`Explanation`], whose `slot_part`/`extra` are the hook for the slot,
+//!   energy and gap half of the same line (nothing fills it since R3 deleted
+//!   fork `planner.rs`, whose own `explain` no verb called).
 //! * [`deadline_health`] (§11), [`priorities_for_state`] (§10.2),
 //!   [`done_this_period`] and [`period_range`] (the `min:`/`max:` periods),
-//!   [`utilization`] and [`bin_of`] (§7.1's `u` and its bins),
 //!   [`fmt_blocks`] (minutes as `6b` / `2.6b` / `20m`).
 //!
-//! # How the rule is implemented (§7.2)
+//! # The rule, as fork 4748911's pass implemented it (§7.2)
 //!
 //! ```text
 //! walls (Interval shape)                       class Wall   — off the scale, placed by §8.2 step 1
@@ -122,7 +128,7 @@
 //!    `−d`.
 //! 8. **Batching gathers forward, but never past an equal-`ci` candidate.**
 //!    §7.5 says small equal-`ci` candidates are grouped "in key order"; small
-//!    items are rarely adjacent, so [`batches`] starts a batch at the first
+//!    items are rarely adjacent, so the fork's batching started a batch at the first
 //!    ungrouped small candidate and scans forward for the others of the same
 //!    `ci` that still fit in a block — skipping candidates of a *different*
 //!    `ci` (which §8.3's monotone-rank invariant does not compare) and
@@ -132,7 +138,7 @@
 //!    groups are in the key order of their first member.
 //! 9. **A window instance is not batched and does not compete for a slot by
 //!    rank.** §8.2 places a mandatory window instance at step 2 and a
-//!    deferred one at step 6, both inside their own window, so [`batches`]
+//!    deferred one at step 6, both inside their own window, so the batching
 //!    leaves every candidate with a [`Candidate::window`] in a group of its
 //!    own. They stay in [`sorted`] — the Queue, the diagnostics and
 //!    `--explain` all want them — so a step-5 consumer skips the groups whose
@@ -145,7 +151,7 @@ use chrono_tz::Tz;
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::capacity::{self, available_until, DayCapacity, Exact};
+use crate::capacity::{self, Exact};
 use crate::config::Config;
 use crate::energy::{self, Model};
 use crate::log::Replay;
@@ -321,23 +327,6 @@ impl Candidate {
         None
     }
 
-    /// Minutes of the `max:` cap left in its period (`None` without a cap).
-    pub fn cap_left_min(&self) -> Option<u32> {
-        self.cap
-            .as_ref()
-            .map(|c| c.amount.as_minutes().saturating_sub(self.cap_done_min))
-    }
-
-    /// `(floor − done_this_period) × safety` — §7.2's floor need, `None`
-    /// when the item has no `min:` (see deviation 1).
-    pub fn floor_need_min(&self, cfg: &Config) -> Option<u32> {
-        let floor = self.floor.as_ref()?;
-        let left = floor
-            .amount
-            .as_minutes()
-            .saturating_sub(self.floor_done_min);
-        Some(safety_minutes(left, cfg))
-    }
 }
 
 /// `round(minutes × config.priority.safety)` — §7.1's `need`.
@@ -416,7 +405,7 @@ pub fn done_this_period(
     total
 }
 
-/// How many days of [`capacity::lookahead`] [`compute`] needs: through the
+/// How many days of lookahead §7's pass needs: through the
 /// furthest date it sums capacity to — the furthest effective due among
 /// `cands` and the end of the period of every `min:` floor — and never fewer
 /// than seven (the week `tm plan --week` shows).
@@ -425,7 +414,7 @@ pub fn done_this_period(
 /// over the rest of the floor's period, so a lookahead that stops before
 /// either reports a false shortfall — a `min:30b/m` floor scored against one
 /// week of capacity is IMPOSSIBLE every day of the month. The caller sizes
-/// the lookahead with this before calling [`compute`].
+/// the lookahead the kernel is asked for with this.
 pub fn lookahead_days(cands: &[Candidate], today: NaiveDate) -> u32 {
     let furthest = cands
         .iter()
@@ -841,27 +830,6 @@ pub struct Prio {
 }
 
 impl Prio {
-    /// A wall's placeholder priority: off the scale (§7.2).
-    fn wall(id: Id, k: u8) -> Prio {
-        Prio {
-            id,
-            p: 0,
-            class: PrioClass::Wall,
-            k,
-            u: None,
-            bin: None,
-            need_min: 0,
-            avail_min: 0,
-            avail_min_exact: Exact::default(),
-            allocation_min: 0,
-            allocation_min_exact: Exact::default(),
-            shortfall_min: 0,
-            shortfall_min_exact: Exact::default(),
-            until: None,
-            hysteresis_applied: false,
-            raw_p: 0,
-        }
-    }
     /// True when the pass found `u ≥ 1` — §7.3's "mark IMPOSSIBLE if
     /// need > avail else HOT", i.e. HOT *or* IMPOSSIBLE.
     ///
@@ -878,202 +846,6 @@ impl Prio {
     /// IMPOSSIBLE though its floor reads 0.
     pub fn is_impossible(&self) -> bool {
         self.is_hot() && self.shortfall_min_exact.num > 0
-    }
-}
-
-/// §7.1's `u = need / capacity`: capacity 0 → `∞`, need 0 → 0.
-pub fn utilization(need_min: u32, avail_min: u32) -> f64 {
-    if need_min == 0 {
-        return 0.0;
-    }
-    if avail_min == 0 {
-        return f64::INFINITY;
-    }
-    need_min as f64 / avail_min as f64
-}
-
-/// §7.1's `bin(u)` against `config.priority.bins` (edges descending, default
-/// `[0.5, 0.25, 0.1]` → `+0 / +1 / +2 / +3`). `None` means HOT (`u ≥ 1`, or
-/// a non-finite `u`).
-pub fn bin_of(u: f64, bins: &[f64]) -> Option<u8> {
-    if !u.is_finite() || u >= 1.0 {
-        return None;
-    }
-    for (i, edge) in bins.iter().enumerate() {
-        if u >= *edge {
-            return Some(i as u8);
-        }
-    }
-    Some(bins.len() as u8)
-}
-
-/// The outcome of one EDF reservation (§7.3).
-#[derive(Clone, Copy, Debug)]
-struct Edf {
-    avail_min: u32,
-    allocation_min: u32,
-    u: f64,
-    until: NaiveDate,
-}
-
-/// §7.2 + §7.3 + §7.4: one [`Prio`] per candidate, in the order of `cands`.
-///
-/// `caps` is the §8.4 lookahead, **ascending by date** and reaching at least
-/// the furthest deadline ([`lookahead_days`]); it is not modified — the EDF
-/// pass runs on a working copy. `yesterday` is `state.priorities_yesterday`
-/// (§10.2); pass an empty map on the first day.
-pub fn compute(
-    cands: &[Candidate],
-    caps: &[DayCapacity],
-    yesterday: &BTreeMap<Id, u8>,
-    cfg: &Config,
-    today: NaiveDate,
-) -> Vec<Prio> {
-    let mut work: Vec<DayCapacity> = caps.to_vec();
-
-    // §7.3: the EDF pass, over the dated non-wall, non-optional candidates
-    // that have a real deadline — a window's close is a placement range, not
-    // a deadline (see deviation 2) — by due ascending (ties: line order, then
-    // input order).
-    let mut order: Vec<usize> = (0..cands.len())
-        .filter(|&i| {
-            let c = &cands[i];
-            !c.is_wall && !c.is_optional && c.window.is_none() && c.effective_due.is_some()
-        })
-        .collect();
-    order.sort_by(|&a, &b| {
-        let (ca, cb) = (&cands[a], &cands[b]);
-        ca.effective_due
-            .cmp(&cb.effective_due)
-            .then(ca.own_order.cmp(&cb.own_order))
-            .then(a.cmp(&b))
-    });
-
-    let mut edf: Vec<Option<Edf>> = vec![None; cands.len()];
-    for i in order {
-        let c = &cands[i];
-        let due = c.effective_due.expect("filtered to dated").date_naive();
-        let avail_min = available_until(&work, due, c.ci);
-        let n = capacity::upto(&work, due);
-        let take = c.need_min.min(avail_min);
-        let allocation_min = capacity::reserve(&mut work[..n], take, c.ci);
-        edf[i] = Some(Edf {
-            avail_min,
-            allocation_min,
-            u: utilization(c.need_min, avail_min),
-            until: due,
-        });
-    }
-
-    // §7.2, in rule order.
-    let mut out = Vec::with_capacity(cands.len());
-    for (i, c) in cands.iter().enumerate() {
-        if c.is_wall {
-            out.push(Prio::wall(c.id.clone(), c.k));
-            continue;
-        }
-        let floor = floor_pass(c, &work, cfg, today);
-        let pass = edf[i].or(floor);
-        let mut prio = Prio {
-            id: c.id.clone(),
-            p: 0,
-            class: PrioClass::Rank,
-            k: c.k,
-            u: pass.map(|e| e.u),
-            bin: pass.and_then(|e| bin_of(e.u, &cfg.priority.bins)),
-            need_min: if edf[i].is_some() {
-                c.need_min
-            } else if floor.is_some() {
-                c.floor_need_min(cfg).unwrap_or(0)
-            } else {
-                c.need_min
-            },
-            avail_min: pass.map_or(0, |e| e.avail_min),
-            avail_min_exact: Exact::of_minutes(pass.map_or(0, |e| e.avail_min)),
-            allocation_min: pass.map_or(0, |e| e.allocation_min),
-            allocation_min_exact: Exact::of_minutes(pass.map_or(0, |e| e.allocation_min)),
-            shortfall_min: 0,
-            shortfall_min_exact: Exact::default(),
-            until: pass.map(|e| e.until),
-            hysteresis_applied: false,
-            raw_p: 0,
-        };
-        let over = pass.is_some_and(|e| !e.u.is_finite() || e.u >= 1.0);
-        if over {
-            prio.shortfall_min = prio.need_min.saturating_sub(prio.avail_min);
-            prio.shortfall_min_exact = Exact::of_minutes(prio.shortfall_min);
-        }
-
-        let (class, raw_p) = if c.is_optional {
-            (PrioClass::Optional, 5)
-        } else if c.overdue {
-            (PrioClass::Overdue, 0)
-        } else if c.mandatory {
-            (PrioClass::Mandatory, 0)
-        } else if c.hot {
-            (PrioClass::HotFlag, 0)
-        } else if let Some(e) = pass {
-            if !e.u.is_finite() || e.u >= 1.0 {
-                let class = if prio.shortfall_min > 0 {
-                    PrioClass::Impossible
-                } else {
-                    PrioClass::Hot
-                };
-                (class, 0)
-            } else {
-                let base = if edf[i].is_some() {
-                    PrioClass::Dated
-                } else {
-                    PrioClass::Floor
-                };
-                let bin = prio.bin.unwrap_or(0);
-                (base, clamp_p(u32::from(c.k) + u32::from(bin)))
-            }
-        } else {
-            (PrioClass::Rank, clamp_p(u32::from(c.k) + 2))
-        };
-        prio.class = class;
-        prio.raw_p = raw_p;
-        // §7.2 pins optionals at 5 whatever happened yesterday (deviation 5).
-        prio.p = if class == PrioClass::Optional {
-            raw_p
-        } else {
-            apply_hysteresis(raw_p, yesterday.get(&c.id).copied(), cfg)
-        };
-        prio.hysteresis_applied = prio.p != prio.raw_p;
-        out.push(prio);
-    }
-    out
-}
-
-/// §7.2's floor line: `need = (floor − done_this_period) × safety`, capacity
-/// = what is left of the period at levels ≥ `ci` after the EDF pass.
-fn floor_pass(c: &Candidate, work: &[DayCapacity], cfg: &Config, today: NaiveDate) -> Option<Edf> {
-    let rate = c.floor.as_ref()?;
-    let need = c.floor_need_min(cfg)?;
-    let until = period_range(rate.per, today).1;
-    let avail_min = available_until(work, until, c.ci);
-    Some(Edf {
-        avail_min,
-        allocation_min: need.min(avail_min),
-        u: utilization(need, avail_min),
-        until,
-    })
-}
-
-fn clamp_p(p: u32) -> u8 {
-    p.min(7) as u8
-}
-
-/// §7.4: `p` may improve (decrease) by at most one per day relative to
-/// yesterday's stored value, unless the new value is 0; worsening is free.
-fn apply_hysteresis(raw_p: u8, yesterday: Option<u8>, cfg: &Config) -> u8 {
-    if !cfg.priority.hysteresis || raw_p == 0 {
-        return raw_p;
-    }
-    match yesterday {
-        Some(y) if raw_p + 1 < y => y - 1,
-        _ => raw_p,
     }
 }
 
@@ -1101,14 +873,8 @@ pub fn priorities_for_state(prios: &[Prio]) -> BTreeMap<Id, u8> {
 /// §7.4's sort key: `(p, root line order, own line order)`.
 pub type SortKey = (u8, (usize, usize), (usize, usize));
 
-/// §7.4: `(p, root_line_order, own_line_order)`. Walls are off the scale —
-/// [`sorted`] puts them first rather than giving them a key.
-pub fn sort_key(prio: &Prio, cand: &Candidate) -> SortKey {
-    (prio.p, cand.root_order, cand.own_order)
-}
-
 /// The assignment order (§7.4, §8.2 step 5): today's walls first (placed by
-/// step 1), then eligible candidates by [`sort_key`]. Ineligible candidates
+/// step 1), then eligible candidates by §7.4's key. Ineligible candidates
 /// are left out — [`blocked`] keeps them with their reason (§5.5) — and so
 /// are Intervals that do not cover today ([`Candidate::wall_today`]): they
 /// are another day's walls, and nothing about them can be placed in this one.
@@ -1123,8 +889,7 @@ pub fn sorted(prios: &[Prio], cands: &[Candidate]) -> Vec<Id> {
         .collect()
 }
 
-/// [`sorted`], keeping the candidates themselves — the input [`batches`]
-/// wants.
+/// [`sorted`], keeping the candidates themselves.
 pub fn sorted_candidates<'a>(prios: &[Prio], cands: &'a [Candidate]) -> Vec<&'a Candidate> {
     // Walls sort first; a candidate with no computed priority (the caller
     // passed a shorter list) sorts last rather than first.
@@ -1146,7 +911,7 @@ pub fn sorted_candidates<'a>(prios: &[Prio], cands: &'a [Candidate]) -> Vec<&'a 
 
 /// The [`Prio`] of the candidate at index `i`.
 ///
-/// [`compute`] returns one [`Prio`] per candidate in the same order, so the
+/// The kernel answers one [`Prio`] per candidate in the same order, so the
 /// index is the pairing; the id lookup is only the fallback for a caller that
 /// passed a shorter or reordered list. Two candidates *can* share an id — a
 /// carried `on-miss:persist` routine instance and today's fresh one (§5.3) —
@@ -1201,66 +966,6 @@ impl Batch {
     }
 }
 
-/// §7.5: the assignment order as groups. Candidates with
-/// `remaining ≤ config.priority.batch_max_min` and equal `ci` are gathered
-/// into one group of at most `block_min` planned minutes ("batch: package ·
-/// insurance · bank (3)"); every other candidate is a one-item group. The
-/// groups come back in the key order of their first member, so the planner
-/// walks the vector once.
-///
-/// Two rules keep the groups honest (deviations 8 and 9): gathering skips
-/// candidates of a different `ci` but stops at the first candidate of the
-/// *same* `ci` that cannot join, so §8.3's monotone rank holds — a batched
-/// item never overtakes an equal-`(p, ci)` candidate with an earlier line
-/// order; and a candidate with a placement window is never merged, because
-/// §8.2 places it inside that window, not in whatever block its batch got.
-pub fn batches(sorted: &[&Candidate], cfg: &Config) -> Vec<Batch> {
-    let block_min = cfg.block_min();
-    let max_small = cfg.priority.batch_max_min;
-    // Walls are placed as intervals, optionals only fill rest slots and
-    // window instances are placed inside their own window, so none of them
-    // ever shares a block with a task.
-    let small = |c: &Candidate| {
-        c.remaining_min > 0
-            && c.remaining_min <= max_small
-            && !c.is_wall
-            && !c.is_optional
-            && c.window.is_none()
-    };
-
-    let mut used = vec![false; sorted.len()];
-    let mut out: Vec<Batch> = Vec::new();
-    for i in 0..sorted.len() {
-        if used[i] {
-            continue;
-        }
-        used[i] = true;
-        let c = sorted[i];
-        let mut batch = Batch {
-            ids: vec![c.id.clone()],
-            ci: c.ci,
-            total_min: c.planned_min,
-            total_remaining_min: c.remaining_min,
-        };
-        if small(c) {
-            for (j, other) in sorted.iter().enumerate().skip(i + 1) {
-                if other.ci != c.ci || used[j] {
-                    continue; // another `ci` is not comparable; already grouped
-                }
-                if !small(other) || batch.total_min + other.planned_min > block_min {
-                    break; // §8.3: never gather past an equal-`ci` candidate
-                }
-                used[j] = true;
-                batch.ids.push(other.id.clone());
-                batch.total_min += other.planned_min;
-                batch.total_remaining_min += other.remaining_min;
-            }
-        }
-        out.push(batch);
-    }
-    out
-}
-
 // ---------------------------------------------------------------------------
 // Explain (§13)
 // ---------------------------------------------------------------------------
@@ -1273,10 +978,13 @@ pub fn batches(sorted: &[&Candidate], cfg: &Config) -> Vec<Batch> {
 /// p = k(3) + bin(u=0.31 → +1) = 4; need 2b, avail 6b by 2026-09-11; deps ok; cap 2b/d: 1b used
 /// ```
 ///
-/// `slot_part` and `extra` are the documented hook for `planner.rs`: once a
-/// plan exists it fills in `slot 11:50 energy 4, ci 3, gap 1` (and anything
-/// else it wants to add) and the same [`Display`](std::fmt::Display) prints
-/// the whole §13 line.
+/// `slot_part` and `extra` are the documented hook for the slot half: once a
+/// plan exists something fills in `slot 11:50 energy 4, ci 3, gap 1` (and
+/// anything else it wants to add) and the same
+/// [`Display`](std::fmt::Display) prints the whole §13 line. Fork 4748911's
+/// `planner.rs` filled it in its own `explain`, which no verb called (`tm plan
+/// --explain` prints [`explain`]'s §7 half) and which R3 deleted with the
+/// file; nothing fills it since.
 #[derive(Clone, Debug, PartialEq, Default, Serialize)]
 pub struct Explanation {
     /// The candidate.

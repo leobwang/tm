@@ -8,8 +8,8 @@
 //!
 //! * [`overtime_lines`] — §9.1's box, including the consequence lines the
 //!   spec wants computed by re-planning (`x extend +1 block → drops: Review
-//!   the drafts (p3)`). The drops come from
-//!   [`tm_core::planner::overtime_drops`] via
+//!   the drafts (p3)`). The drops are the kernel's what-if
+//!   (`Planner.overtimeDiff`, R3), asked through the App's planner by
 //!   [`super::app::App::overtime_due`].
 //! * [`idle_lines`] — §9.2's box.
 //! * [`help_lines`] — §12.6's keymap, including the two keys the table

@@ -8,7 +8,8 @@
 //! reads a clock: the day, week or month under review is a parameter, and
 //! the monitors that need the *plan* (adherence, the underused-slot count,
 //! tomorrow's candidates, the optional quota, deadline health) take that
-//! data as parameters too, so `review.rs` never depends on `planner.rs`.
+//! data as parameters too, so `review.rs` never depends on a planner (fork
+//! 4748911's `planner.rs` until R3 deleted it, the kernel's day since).
 //!
 //! # API overview
 //!
@@ -1452,7 +1453,7 @@ impl DayHeat {
 /// `Planner.pastSpans`' own composition (`GridCut.pastSpans_is_segSpans`), over
 /// the walls §8.2 step 1 places. Until W-39 the grid cut a pause itself, over
 /// the host's own reader of the calendar (`Tree::walls_on`) and
-/// `capacity::free_intervals` — two definitions of one cut and two readers of
+/// fork 4748911's free-interval cut (which R3 deleted) — two definitions of one cut and two readers of
 /// the walls (AGENTS §5.3). The host keeps neither for the grid.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PauseCut {

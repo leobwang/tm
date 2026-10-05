@@ -310,6 +310,27 @@ fn worlds() -> Vec<World> {
             "2026-09-07T09:55:00-05:00",
         ),
         midnight_world(),
+        // README gap 4875 (the W-46 repair): the runtime states whose request halves only the
+        // binary builds — an open interruption over a running block, and a running break inside
+        // one — each held to the harness's by value like every other world.
+        drive(
+            "plan-basic, ^t4 interrupted",
+            Tm::new(),
+            &[
+                ("2026-09-07T09:00:00-05:00", &["start", "^t4", "--energy", "4"]),
+                ("2026-09-07T09:20:00-05:00", &["interrupt"]),
+            ],
+            "2026-09-07T09:35:00-05:00",
+        ),
+        drive(
+            "plan-basic, ^t4 running with a break inside it",
+            Tm::new(),
+            &[
+                ("2026-09-07T09:00:00-05:00", &["start", "^t4", "--energy", "4"]),
+                ("2026-09-07T09:30:00-05:00", &["break", "20m", "--where", "walk"]),
+            ],
+            "2026-09-07T09:40:00-05:00",
+        ),
         drive("plan-basic with a learned model", model_world(), &[], cli_common::NOW),
         drive("plan-home-day", fixture("plan-home-day"), &[], "2026-09-07T10:00:00-05:00"),
         drive("plan-travel-day", fixture("plan-travel-day"), &[], "2026-09-07T10:00:00-05:00"),
@@ -403,14 +424,12 @@ fn swap_planner(r: &Read) -> Value {
             // README gap 3941's half in this file; until it this read the cache's clock on
             // the plan's date, which after midnight is tonight's and reads 0).
             "planner.state.active.workedMin" => {
-                if let Some(a) = &r.state.active {
-                    // The running break, where every host site places it (P73; README gap
-                    // 4121: until W-41's land step this passed none, so a block with a break
-                    // running counted the break as worked).
-                    let brk = r.state.break_.as_ref().and_then(|b| b.started_at(tz, r.now)).map(|t| t.fixed_offset());
-                    if let Some(worked) = r.replay.running_worked_min(a.id.as_str(), today, r.now.fixed_offset(), brk) {
-                        planwire::add_worked_min(&mut planner, worked);
-                    }
+                // The binary's one reading (`planwire::running_worked_min`, README gap 4875),
+                // the running break where every host site places it (P73, D105; gap 4121).
+                if let Some(worked) =
+                    planwire::running_worked_min(&r.state, &r.replay, tz, r.now, today, r.now.fixed_offset())
+                {
+                    planwire::add_worked_min(&mut planner, worked);
                 }
             }
             other => panic!("SWAP names `{other}`, which this file does not know how to add"),
@@ -424,6 +443,26 @@ fn swap_planner(r: &Read) -> Value {
 fn with_planner(request: &str, planner: &Value) -> String {
     assert!(request.trim_end().ends_with('}'), "a request is an object");
     planwire::with_planner(request, planner)
+}
+
+/// **The `planner` section the binary SENT**, when it sent one (R3: every planning
+/// verb sends it since the body swap, `kernel_capacity::plan_day`).
+fn sent_planner(w: &World) -> Option<Value> {
+    let sent: Value = serde_json::from_str(&w.request).expect("the binary's request is JSON");
+    sent.get("planner").cloned()
+}
+
+/// **The request R3 plans with, and its `planner` section**: the binary's own, as sent,
+/// once it sends one — nothing synthesised, as [`the_binarys_planner_request_and_the_harnesss_differ_only_by_name`]
+/// reads it — and until then the binary's capacity request with [`swap_planner`] spliced on.
+fn r3_request(w: &World, r: &Read) -> (String, Value) {
+    match sent_planner(w) {
+        Some(planner) => (w.request.clone(), planner),
+        None => {
+            let planner = swap_planner(r);
+            (with_planner(&w.request, &planner), planner)
+        }
+    }
 }
 
 /// **Gap 3720.** On every world the binary's planner request and the harness's
@@ -561,9 +600,8 @@ const NAMED_DAYS: &[(&str, u32, &str)] = &[(
 /// here (that is what the classes and the batch compare, against the fork)" — but the
 /// classes, the batch, the driven worlds and the oracle arms all plan the HARNESS's
 /// request (`support/planreq.rs`), so a bent value in the binary's encoder reached no fork
-/// comparison at all: driven by W-45's critic, the switch with `worked + 10` in its
-/// planner request builder (kernel_capacity's planner_ask_from, in the switch's archived
-/// commit, README gap 4753) failed ten tests and no fork comparison. Three
+/// comparison at all: driven by W-45's critic, the switch with `worked + 10` in
+/// `kernel_capacity::planner_ask_from` failed ten tests and no fork comparison. Three
 /// assertions, on every world, against the directory the binary read ([`World::seen`]):
 ///
 /// 1. **Every scalar both requests send is equal** ([`leaves`]), outside the `log`
@@ -689,7 +727,7 @@ fn the_binarys_request_with_the_swaps_planner_section_is_planned() {
             w.name,
             sent["capacity"]["priority"]
         );
-        let req = with_planner(&w.request, &swap_planner(&r));
+        let (req, _) = r3_request(&w, &r);
         let raw = tm_kernel_ffi::call(&req).expect("the kernel call returns");
         let resp: Value = serde_json::from_str(&raw).expect("the response is JSON");
         assert!(
@@ -767,7 +805,7 @@ fn the_swaps_request_on_two_worlds_the_binary_builds() {
     ];
     for (w, want) in cases {
         let r = read(&w);
-        let req = with_planner(&w.request, &swap_planner(&r));
+        let (req, _) = r3_request(&w, &r);
         let raw = tm_kernel_ffi::call(&req).expect("the kernel call returns");
         let resp: Value = serde_json::from_str(&raw).expect("the response is JSON");
         assert_eq!(
@@ -789,10 +827,14 @@ fn the_swaps_request_on_two_worlds_the_binary_builds() {
 /// start, which is what a synced machine's clock ahead of this one leaves. The codec
 /// sends the start as it reads it (the log's 10:00) and the kernel PLANS it: the
 /// running row from 09:55, `now`, to 11:00, `block_min` after the start — fork
-/// `active_run`'s `current_block_end(started)` — which is the shipped binary's own
-/// row, 09:55–11:00. From the W-40 repair until W-41 the kernel refused it `badActive
-/// wf`; from W-40 track E until the repair the codec sent the start AS `now` and the
-/// kernel drew 09:55–10:55.
+/// `active_run`'s `current_block_end(started)` — which was the shipped binary's own
+/// row, 09:55–11:00, while the binary planned with the fork. From the W-40 repair until
+/// W-41 the kernel refused it `badActive wf`; from W-40 track E until the repair the
+/// codec sent the start AS `now` and the kernel drew 09:55–10:55. **Since R3 the
+/// binary's row IS the kernel's** (README gap 4627): the last assertion holds `tm plan
+/// --json` to the same hand-written row, never to the kernel's answer above, and the
+/// fork's own day on this world is held by value by the frozen start days' `p68` line
+/// (`fork-4748911-planner-starts.jsonl`, compared in `planner_w41_starts.rs`).
 #[test]
 fn a_running_block_started_after_now_is_planned_from_now_as_the_fork_plans_it() {
     let w = drive(
@@ -803,10 +845,9 @@ fn a_running_block_started_after_now_is_planned_from_now_as_the_fork_plans_it() 
     );
     let r = read(&w);
     let tz = r.cfg.tz;
-    let planner = swap_planner(&r);
+    let (req, planner) = r3_request(&w, &r);
     let ten = DateTime::parse_from_rfc3339("2026-09-07T10:00:00-05:00").expect("instant").with_timezone(&tz);
     assert_eq!(planner["state"]["active"]["started"], serde_json::json!(planwire::kernel_sec(ten)), "sent as read");
-    let req = with_planner(&w.request, &planner);
     let raw = tm_kernel_ffi::call(&req).expect("the kernel call returns");
     let resp: Value = serde_json::from_str(&raw).expect("the response is JSON");
     assert!(planwire::planner_refusal(&resp).is_none(), "planned from now (D78): {}", &raw[..raw.len().min(300)]);
@@ -825,11 +866,12 @@ fn a_running_block_started_after_now_is_planned_from_now_as_the_fork_plans_it() 
         !day.day.segments.iter().any(|s| s.flags.open && s.item.as_ref().map(|i| i.as_str()) == Some("m1")),
         "no open row before the block's start"
     );
-    // The fork's, today: the shipped binary — the same row.
-    let fork = w._tm.json_at(w.now, &["plan"]);
-    let row = fork["segments"].as_array().expect("segments").iter()
-        .find(|s| s["item"] == "m1" && s["kind"] == "block").expect("the fork's running row");
-    assert_eq!((row["start"].as_str(), row["end"].as_str()), (Some("09:55"), Some("11:00")), "the fork's row: {row}");
+    // The shipped binary's — the kernel's day since R3, decoded and printed by the binary —
+    // held to the same hand-written row (the fork's is the frozen p68 line's).
+    let shipped = w._tm.json_at(w.now, &["plan"]);
+    let row = shipped["segments"].as_array().expect("segments").iter()
+        .find(|s| s["item"] == "m1" && s["kind"] == "block").expect("the binary's running row");
+    assert_eq!((row["start"].as_str(), row["end"].as_str()), (Some("09:55"), Some("11:00")), "the binary's row: {row}");
 }
 
 /// **A block begun before local midnight is planned from the log's start after it**
@@ -846,11 +888,10 @@ fn a_block_begun_before_midnight_is_planned_from_the_logs_start_after_it() {
     let r = read(&w);
     let tz = r.cfg.tz;
     assert_eq!(r.state.date.map(|d| d.to_string()).as_deref(), Some("2026-09-08"), "the cache's date rolled");
-    let planner = swap_planner(&r);
+    let (req, planner) = r3_request(&w, &r);
     let started = DateTime::parse_from_rfc3339("2026-09-07T23:00:00-05:00").expect("instant").with_timezone(&tz);
     assert_eq!(planner["state"]["active"]["started"], serde_json::json!(planwire::kernel_sec(started)), "the log's start");
     assert_eq!(planner["state"]["active"]["workedMin"], serde_json::json!(100), "the log's worked minutes");
-    let req = with_planner(&w.request, &planner);
     let raw = tm_kernel_ffi::call(&req).expect("the kernel call returns");
     let resp: Value = serde_json::from_str(&raw).expect("the response is JSON");
     assert!(planwire::planner_refusal(&resp).is_none(), "planned: {}", &raw[..raw.len().min(300)]);
@@ -886,14 +927,13 @@ fn a_break_begun_before_midnight_is_sent_from_its_start_and_planned() {
     let r = read(&w);
     let tz = r.cfg.tz;
     assert!(r.state.break_.as_ref().is_some_and(|b| b.started.is_some()), "a break runs: {:?}", r.state.break_);
-    let planner = swap_planner(&r);
+    let (req, planner) = r3_request(&w, &r);
     let started = DateTime::parse_from_rfc3339("2026-09-07T23:50:00-05:00").expect("instant").with_timezone(&tz);
     assert_eq!(
         planner["state"]["break"]["started"],
         serde_json::json!(planwire::kernel_sec(started)),
         "the latest 23:50 at or before now, yesterday's (P73)"
     );
-    let req = with_planner(&w.request, &planner);
     let raw = tm_kernel_ffi::call(&req).expect("the kernel call returns");
     let resp: Value = serde_json::from_str(&raw).expect("the response is JSON");
     assert_eq!(planwire::planner_refusal(&resp), None, "planned: {}", &raw[..raw.len().min(300)]);
